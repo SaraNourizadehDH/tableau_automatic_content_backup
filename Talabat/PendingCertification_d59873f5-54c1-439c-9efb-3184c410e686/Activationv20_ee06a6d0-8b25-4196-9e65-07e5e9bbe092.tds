@@ -1,0 +1,2487 @@
+<?xml version='1.0' encoding='utf-8' ?>
+
+<!-- build 20233.25.0106.1650                               -->
+<datasource formatted-name='Activation v2.0' inline='true' source-platform='linux' version='18.1' xmlns:user='http://www.tableausoftware.com/xml/user'>
+  <document-format-change-manifest>
+    <_.fcp.ObjectModelEncapsulateLegacy.true...ObjectModelEncapsulateLegacy />
+    <_.fcp.ObjectModelExtractV2.true...ObjectModelExtractV2 />
+    <_.fcp.ObjectModelTableType.true...ObjectModelTableType />
+    <_.fcp.SchemaViewerObjectModel.true...SchemaViewerObjectModel />
+  </document-format-change-manifest>
+  <repository-location id='Activationv2_0' path='/t/Talabat/datasources' revision='1.1' site='Talabat' />
+  <connection class='federated'>
+    <named-connections>
+      <named-connection caption='BigQuery' name='bigquery.04k2w321b2rxy919xf0t51nnslb5'>
+        <connection CATALOG='tlb-data-prod' EXECCATALOG='tlb-data-prod' authentication='oauth' bq-dataset-fetch-rows='' bq-fetch-rows='' bq-fetch-tasks='' bq-large-fetch-rows='' bq-project-fetch-rows='' bq-response-rows='' class='bigquery' connection-dialect='google-sql' project='tlb-data-prod' schema='data_platform' server-oauth='' username='ali.anees@talabat.com' workgroup-auth-mode='prompt' />
+      </named-connection>
+    </named-connections>
+    <_.fcp.ObjectModelEncapsulateLegacy.false...relation connection='bigquery.04k2w321b2rxy919xf0t51nnslb5' name='Custom SQL Query' type='text'><![CDATA[with dineout_logic as
+ ( SELECT
+     DISTINCT v.vendor_id,
+     salesforce_id,
+     avg(case when c.name__c = "tDine" then  commission__c/100  end) as tdine_commission,
+     avg(case when c.name__c <<>> "tDine" then  commission__c/100  end)  as other_commission
+   FROM `tlb-data-prod.data_platform.dim_vendor_info` v
+   LEFT JOIN `tlb-data-prod.data_platform.dim_location_info` l
+   ON l.location_id = v.location_id
+   LEFT JOIN `fulfillment-dwh-production.curated_data_shared_salesforce.account` a
+   ON v.salesforce_id = a.grid__c
+   LEFT JOIN `fulfillment-dwh-production.curated_data_shared_salesforce.contract` c
+   ON a.id = c.accountid
+   WHERE 1=1
+   AND c.name__c IN ('TGO Basic Commission','TMP Basic Commission','TGO Basic Commission SSU','TGO Basic Commision','OD Basic Commission','MP Basic Commission','TGO Basic Commission N','TGO Basic commission','S01- Growth Package TGO Commission','B01 - Basic Package TGO Commission', 'TGO Incremental Orders Commission','BH S01 - Growth Package TGO Commission','BH B01 - Standard Package TGO Commission','OD Basic Commission trial','OM B01 - Standard Package (Restaurant) Commission OD','OM S01 - Growth Package (Restaurant) Commission OD','tDine','TGO Incremental GMV Commission')
+   AND c.status = 'Activated'
+   AND c.end_date__c IS NULL
+   group by 1 ,2
+   )
+   
+
+   /* 
+
+-- get monthly vendor_id, is_new or not, and acquisition type is not switch 
+case when date_diff(month,date_trunc(first_online_date,month),month)=0
+and acquisition_business_type<<>>'Switch'
+ and is_contracted then vendor_id else null
+end as onboarded_m0,
+
+   */
+   ,Base as (
+   select 
+     k.vendor_id,
+     k.salesforce_id,
+     k.vendor_name, 
+     k.chain_id,
+     k.chain_name,
+     k.country_code,
+     is_tpro,
+     f.is_managed_by_vendor_helpdesk as is_launchpad,
+     f.account_manager_email,
+     f.team_leader_email,
+     f.account_manager_name,
+     f.team_leader_name,
+     --f.is_vendor_helpdesk,
+     month,
+     k.main_cuisine,
+     k.is_active,
+     k.successful_orders,
+     k.m1_successful_orders,
+     is_new,
+     k.first_online_date, 
+     k.first_order_date,
+     acquisition_business_type,
+     k.vendor_grade,
+     ch.group_name,
+     date_trunc(k.first_online_date,month) as first_online_month
+   from `tlb-data-prod.data_platform.agg_vendor_inventory_kpi_monthly` k 
+   left join `tlb-data-prod.data_platform.dim_vendor_info` f on k.vendor_id=f.vendor_id
+   left join `tlb-data-prod.data_platform.dim_chain` ch on ch.chain_id=k.chain_id
+   where k.vertical='Restaurant'
+   and month = date_trunc(current_date,month) 
+   and date_trunc(k.first_online_date,month) >>='2024-10-01'
+   and k.country_code <<>> "SA"
+   )
+
+
+,no_dineout as (
+select * 
+   
+   from (
+   select b.*, IFNULL(case when ifnull(tdine_commission,0) >> 0 and  ifnull(other_commission,0) = 0 then TRUE ELSE FALSE END,FALSE)  as vendor_dineout_flag from Base b
+     left join dineout_logic c on b.vendor_id=c.vendor_id  
+   --where month='2025-05-01'
+   --and is_new
+   ) 
+   where vendor_dineout_flag=False
+) 
+--- getting the real first order date for winback vendors from fct order info 
+,no_dineout_clean as (
+select d.*, min(case when first_order_date << first_online_date  then o.order_date end) as win_back_first_order_date
+ from no_dineout d 
+left join `tlb-data-prod.data_platform.fct_order_info` o 
+on d.vendor_id=o.vendor_id and o.is_successful 
+and o.order_date >>=d.first_online_date 
+--where d.acquisition_business_type='Win Back'
+
+group by all
+
+) 
+--sanity check, 
+,no_dineout_clean_first_order as (
+ select * except(first_order_date,win_back_first_order_date) 
+, case when first_order_date << first_online_date  then win_back_first_order_date else first_order_date end as first_order_date
+ from no_dineout_clean
+ --where onboarded_m0 is not null
+ )
+
+/* 
+the goal is to take go live month as reference (cohort) 
+and check since go live month till current month 
+-vendor status 
+-vendor orders 
+...etc 
+
+
+
+
+
+*/
+
+
+,metrics_metadata AS (
+     /* Active vendors in December 2024 */
+     SELECT
+       k.vendor_id,
+     IFNULL(case when ifnull(tdine_commission,0) >> 0 and  ifnull(other_commission,0) = 0 then TRUE ELSE FALSE END,FALSE)  as vendor_dineout_flag,
+     k.country_code,
+     date_trunc(snapshot_date,month) as month,
+
+     sum(successful_order_count) as succ_orders, 
+     sum(gmv_amount_eur) as gmv, 
+     sum(vendor_acquisition_customer_count) as new_customers_to_vendors_numbers,
+    sum(platform_acquisition_customer_count) as platform_new_customers_to_vendors_numbers,
+    sum( IFNULL((cpp_featured_product_revenue_eur),0) +
+IFNULL((kwords_revenue_eur),0) +
+IFNULL((cpp_revenue_eur),0) +
+IFNULL((deal_targeting_revenue_eur),0) +
+IFNULL((gem_commission_amount_eur),0) +
+--IFNULL((organic_placement_revenue_eur),0) +
+IFNULL(display_ads_revenue_eur,0)) ad_rev,
+sum(ifnull(cpc_revenue_eur,0)) as cpc,
+sum(ifnull(discount_amount_eur,0)) as discount,
+
+
+--- add here offline time 
+sum(offline_duration_in_hours) as offline_duration_in_hours,
+sum(schedule_duration_in_hours) as schedule_duration_in_hours,
+-- dlp and dld 
+max(active_menu_item_count) as active_menu_item_count, 
+max(item_with_image_count) as item_with_image_count,
+max(item_with_description_count) as item_with_description_count,
+-- Engagement vs Impressions 
+sum(vendor_list_impression_session_count) as vendor_list_impression_count,
+sum(viewed_menu_session_count) as viewed_menu_session_count,
+sum(net_order_count) as placed_order_count,
+sum(cpc_order_count) as cpc_order_count,
+sum(vendor_active_customer_count) as vendor_active_customers,
+sum(vendor_list_session_count) as vendor_list_session_count,
+sum(case when snapshot_date=date(first_online_date) then schedule_duration_in_hours end) as first_day_schedule_duration_in_hours,
+sum(case when snapshot_date=date(first_online_date) then successful_order_count end) as first_day_successful_order_count,
+sum(case when snapshot_date=date(first_online_date) then net_order_count end) as first_day_net_orders,
+
+
+
+
+
+     FROM `tlb-data-prod.data_platform.agg_vendor_performance_metrics_daily` k
+     left join dineout_logic c on k.vendor_id=c.vendor_id  
+     left join `tlb-data-prod.data_platform.dim_vendor_info` vf on vf.vendor_id=k.vendor_Id
+     WHERE vertical = 'food'
+       AND snapshot_date >>= '2024-09-01'  -- December 2024
+       and k.country_code <<>> 'SA'
+       group by all)
+
+--select * from metrics_metadata
+--where vendor_id=36731
+
+/* 
+construct the cohort by creating index from snapshot months vs onboarding month 
+
+
+*/
+
+,vws as (
+  
+  select 
+snapshot_month as month,
+w.country_code,
+w.vendor_id,
+--is_active,
+sum(basket_amount_eur) as basket_amount_eur ,
+sum(
+IFNULL(commission_amount_eur,0) + 
+IFNULL(tgo_amount_eur,0) +
+IFNULL(featured_product_revenue_eur,0) + 
+IFNULL(kwords_search_revenue_eur,0) + 
+IFNULL(cpp_monthly_revenue_eur,0) + 
+IFNULL(deal_targeting_revenue_eur_excl_vat,0) +
+IFNULL(discount_amount_eur,0) + -- discount should not be counted as it's for customer not talabat 
+IFNULL(gem_commission_amount_eur,0) + 
+IFNULL(organic_placement_revenue_eur,0) +  
+IFNULL(cash_fee_eur,0) + 
+IFNULL(card_fee_eur,0) + 
+IFNULL(vendor_tpro_cost_eur,0)+
+IFNULL(display_ads_revenue_eur_excl_vat,0)+
+IFNULL(tpro_commission_saving_amount_eur,0)+ -- q 
+IFNULL(reward_commission_saving_amount_eur,0)+ -- q 
+IFNULL(tpro_discount_amount_eur,0)+ --q 
+IFNULL(vendor_reward_cost_eur,0) --q 
+
+) as total_spend,
+
+from `tlb-data-prod.data_platform.agg_vendor_wallet_share_monthly`  w 
+left join `tlb-data-prod.data_platform.dim_vendor_info` v on v.vendor_id=w.vendor_id and v.chain_id=w.chain_id
+where snapshot_month >>= "2024-09-01"
+and vertical = "food"
+group by all
+
+)
+, vws_index as (
+
+
+  select base.vendor_id, 
+  vws.basket_amount_eur, 
+  vws.total_spend, 
+  date_diff(vws.month,first_online_month,month) as index,
+   from no_dineout_clean_first_order base 
+   left join vws  on vws.vendor_id=base.vendor_id 
+  and vws.month >>= first_online_month 
+)
+
+,output_p1 as (select base.*, 
+m.* except(vendor_id,month,country_code,vendor_dineout_flag), 
+date_diff(m.month,first_online_month,month) as index,
+case when succ_orders >>0 then 1 else 0 end as active_status,
+
+
+from no_dineout_clean_first_order base
+left join metrics_metadata m 
+on base.vendor_id=m.vendor_id 
+and m.month >>=first_online_month)
+
+
+,output_p2 as (
+
+  select * from (
+select vendor_id,
+index,
+active_status as m0_status, 
+lead(active_status) over(partition by vendor_id order by index) as m1_active_status,
+lead(active_status,2) over(partition by vendor_id order by index) as m2_active_status,
+lead(active_status,3) over(partition by vendor_id order by index) as m3_active_status,
+lead(active_status,4) over(partition by vendor_id order by index) as m4_active_status,
+lead(active_status,5) over(partition by vendor_id order by index) as m5_active_status,
+
+from output_p1  ) 
+
+where index=0
+)
+
+
+select p1.*, 
+coalesce(m0_status,0) as m0_status, 
+coalesce(m1_active_status,0) as m1_active_status, 
+coalesce(m2_active_status,0) as m2_active_status, 
+coalesce(m3_active_status,0) as m3_active_status, 
+coalesce(m4_active_status,0) as m4_active_status, 
+coalesce(m5_active_status,0) as m5_active_status, 
+v.basket_amount_eur,
+v.total_spend,
+lag(active_status) over(partition by p1.vendor_id order by p1.index) as last_month_active_status
+from output_p1 p1 
+left join vws_index v on v.vendor_id=p1.vendor_id and v.index=0
+join output_p2 p2 on p1.vendor_id=p2.vendor_id]]></_.fcp.ObjectModelEncapsulateLegacy.false...relation>
+    <_.fcp.ObjectModelEncapsulateLegacy.true...relation connection='bigquery.04k2w321b2rxy919xf0t51nnslb5' name='Custom SQL Query' type='text'><![CDATA[with dineout_logic as
+ ( SELECT
+     DISTINCT v.vendor_id,
+     salesforce_id,
+     avg(case when c.name__c = "tDine" then  commission__c/100  end) as tdine_commission,
+     avg(case when c.name__c <<>> "tDine" then  commission__c/100  end)  as other_commission
+   FROM `tlb-data-prod.data_platform.dim_vendor_info` v
+   LEFT JOIN `tlb-data-prod.data_platform.dim_location_info` l
+   ON l.location_id = v.location_id
+   LEFT JOIN `fulfillment-dwh-production.curated_data_shared_salesforce.account` a
+   ON v.salesforce_id = a.grid__c
+   LEFT JOIN `fulfillment-dwh-production.curated_data_shared_salesforce.contract` c
+   ON a.id = c.accountid
+   WHERE 1=1
+   AND c.name__c IN ('TGO Basic Commission','TMP Basic Commission','TGO Basic Commission SSU','TGO Basic Commision','OD Basic Commission','MP Basic Commission','TGO Basic Commission N','TGO Basic commission','S01- Growth Package TGO Commission','B01 - Basic Package TGO Commission', 'TGO Incremental Orders Commission','BH S01 - Growth Package TGO Commission','BH B01 - Standard Package TGO Commission','OD Basic Commission trial','OM B01 - Standard Package (Restaurant) Commission OD','OM S01 - Growth Package (Restaurant) Commission OD','tDine','TGO Incremental GMV Commission')
+   AND c.status = 'Activated'
+   AND c.end_date__c IS NULL
+   group by 1 ,2
+   )
+   
+
+   /* 
+
+-- get monthly vendor_id, is_new or not, and acquisition type is not switch 
+case when date_diff(month,date_trunc(first_online_date,month),month)=0
+and acquisition_business_type<<>>'Switch'
+ and is_contracted then vendor_id else null
+end as onboarded_m0,
+
+   */
+   ,Base as (
+   select 
+     k.vendor_id,
+     k.salesforce_id,
+     k.vendor_name, 
+     k.chain_id,
+     k.chain_name,
+     k.country_code,
+     is_tpro,
+     f.is_managed_by_vendor_helpdesk as is_launchpad,
+     f.account_manager_email,
+     f.team_leader_email,
+     f.account_manager_name,
+     f.team_leader_name,
+     --f.is_vendor_helpdesk,
+     month,
+     k.main_cuisine,
+     k.is_active,
+     k.successful_orders,
+     k.m1_successful_orders,
+     is_new,
+     k.first_online_date, 
+     k.first_order_date,
+     acquisition_business_type,
+     k.vendor_grade,
+     ch.group_name,
+     date_trunc(k.first_online_date,month) as first_online_month
+   from `tlb-data-prod.data_platform.agg_vendor_inventory_kpi_monthly` k 
+   left join `tlb-data-prod.data_platform.dim_vendor_info` f on k.vendor_id=f.vendor_id
+   left join `tlb-data-prod.data_platform.dim_chain` ch on ch.chain_id=k.chain_id
+   where k.vertical='Restaurant'
+   and month = date_trunc(current_date,month) 
+   and date_trunc(k.first_online_date,month) >>='2024-10-01'
+   and k.country_code <<>> "SA"
+   )
+
+
+,no_dineout as (
+select * 
+   
+   from (
+   select b.*, IFNULL(case when ifnull(tdine_commission,0) >> 0 and  ifnull(other_commission,0) = 0 then TRUE ELSE FALSE END,FALSE)  as vendor_dineout_flag from Base b
+     left join dineout_logic c on b.vendor_id=c.vendor_id  
+   --where month='2025-05-01'
+   --and is_new
+   ) 
+   where vendor_dineout_flag=False
+) 
+--- getting the real first order date for winback vendors from fct order info 
+,no_dineout_clean as (
+select d.*, min(case when first_order_date << first_online_date  then o.order_date end) as win_back_first_order_date
+ from no_dineout d 
+left join `tlb-data-prod.data_platform.fct_order_info` o 
+on d.vendor_id=o.vendor_id and o.is_successful 
+and o.order_date >>=d.first_online_date 
+--where d.acquisition_business_type='Win Back'
+
+group by all
+
+) 
+--sanity check, 
+,no_dineout_clean_first_order as (
+ select * except(first_order_date,win_back_first_order_date) 
+, case when first_order_date << first_online_date  then win_back_first_order_date else first_order_date end as first_order_date
+ from no_dineout_clean
+ --where onboarded_m0 is not null
+ )
+
+/* 
+the goal is to take go live month as reference (cohort) 
+and check since go live month till current month 
+-vendor status 
+-vendor orders 
+...etc 
+
+
+
+
+
+*/
+
+
+,metrics_metadata AS (
+     /* Active vendors in December 2024 */
+     SELECT
+       k.vendor_id,
+     IFNULL(case when ifnull(tdine_commission,0) >> 0 and  ifnull(other_commission,0) = 0 then TRUE ELSE FALSE END,FALSE)  as vendor_dineout_flag,
+     k.country_code,
+     date_trunc(snapshot_date,month) as month,
+
+     sum(successful_order_count) as succ_orders, 
+     sum(gmv_amount_eur) as gmv, 
+     sum(vendor_acquisition_customer_count) as new_customers_to_vendors_numbers,
+    sum(platform_acquisition_customer_count) as platform_new_customers_to_vendors_numbers,
+    sum( IFNULL((cpp_featured_product_revenue_eur),0) +
+IFNULL((kwords_revenue_eur),0) +
+IFNULL((cpp_revenue_eur),0) +
+IFNULL((deal_targeting_revenue_eur),0) +
+IFNULL((gem_commission_amount_eur),0) +
+--IFNULL((organic_placement_revenue_eur),0) +
+IFNULL(display_ads_revenue_eur,0)) ad_rev,
+sum(ifnull(cpc_revenue_eur,0)) as cpc,
+sum(ifnull(discount_amount_eur,0)) as discount,
+
+
+--- add here offline time 
+sum(offline_duration_in_hours) as offline_duration_in_hours,
+sum(schedule_duration_in_hours) as schedule_duration_in_hours,
+-- dlp and dld 
+max(active_menu_item_count) as active_menu_item_count, 
+max(item_with_image_count) as item_with_image_count,
+max(item_with_description_count) as item_with_description_count,
+-- Engagement vs Impressions 
+sum(vendor_list_impression_session_count) as vendor_list_impression_count,
+sum(viewed_menu_session_count) as viewed_menu_session_count,
+sum(net_order_count) as placed_order_count,
+sum(cpc_order_count) as cpc_order_count,
+sum(vendor_active_customer_count) as vendor_active_customers,
+sum(vendor_list_session_count) as vendor_list_session_count,
+sum(case when snapshot_date=date(first_online_date) then schedule_duration_in_hours end) as first_day_schedule_duration_in_hours,
+sum(case when snapshot_date=date(first_online_date) then successful_order_count end) as first_day_successful_order_count,
+sum(case when snapshot_date=date(first_online_date) then net_order_count end) as first_day_net_orders,
+
+
+
+
+
+     FROM `tlb-data-prod.data_platform.agg_vendor_performance_metrics_daily` k
+     left join dineout_logic c on k.vendor_id=c.vendor_id  
+     left join `tlb-data-prod.data_platform.dim_vendor_info` vf on vf.vendor_id=k.vendor_Id
+     WHERE vertical = 'food'
+       AND snapshot_date >>= '2024-09-01'  -- December 2024
+       and k.country_code <<>> 'SA'
+       group by all)
+
+--select * from metrics_metadata
+--where vendor_id=36731
+
+/* 
+construct the cohort by creating index from snapshot months vs onboarding month 
+
+
+*/
+
+,vws as (
+  
+  select 
+snapshot_month as month,
+w.country_code,
+w.vendor_id,
+--is_active,
+sum(basket_amount_eur) as basket_amount_eur ,
+sum(
+IFNULL(commission_amount_eur,0) + 
+IFNULL(tgo_amount_eur,0) +
+IFNULL(featured_product_revenue_eur,0) + 
+IFNULL(kwords_search_revenue_eur,0) + 
+IFNULL(cpp_monthly_revenue_eur,0) + 
+IFNULL(deal_targeting_revenue_eur_excl_vat,0) +
+IFNULL(discount_amount_eur,0) + -- discount should not be counted as it's for customer not talabat 
+IFNULL(gem_commission_amount_eur,0) + 
+IFNULL(organic_placement_revenue_eur,0) +  
+IFNULL(cash_fee_eur,0) + 
+IFNULL(card_fee_eur,0) + 
+IFNULL(vendor_tpro_cost_eur,0)+
+IFNULL(display_ads_revenue_eur_excl_vat,0)+
+IFNULL(tpro_commission_saving_amount_eur,0)+ -- q 
+IFNULL(reward_commission_saving_amount_eur,0)+ -- q 
+IFNULL(tpro_discount_amount_eur,0)+ --q 
+IFNULL(vendor_reward_cost_eur,0) --q 
+
+) as total_spend,
+
+from `tlb-data-prod.data_platform.agg_vendor_wallet_share_monthly`  w 
+left join `tlb-data-prod.data_platform.dim_vendor_info` v on v.vendor_id=w.vendor_id and v.chain_id=w.chain_id
+where snapshot_month >>= "2024-09-01"
+and vertical = "food"
+group by all
+
+)
+, vws_index as (
+
+
+  select base.vendor_id, 
+  vws.basket_amount_eur, 
+  vws.total_spend, 
+  date_diff(vws.month,first_online_month,month) as index,
+   from no_dineout_clean_first_order base 
+   left join vws  on vws.vendor_id=base.vendor_id 
+  and vws.month >>= first_online_month 
+)
+
+,output_p1 as (select base.*, 
+m.* except(vendor_id,month,country_code,vendor_dineout_flag), 
+date_diff(m.month,first_online_month,month) as index,
+case when succ_orders >>0 then 1 else 0 end as active_status,
+
+
+from no_dineout_clean_first_order base
+left join metrics_metadata m 
+on base.vendor_id=m.vendor_id 
+and m.month >>=first_online_month)
+
+
+,output_p2 as (
+
+  select * from (
+select vendor_id,
+index,
+active_status as m0_status, 
+lead(active_status) over(partition by vendor_id order by index) as m1_active_status,
+lead(active_status,2) over(partition by vendor_id order by index) as m2_active_status,
+lead(active_status,3) over(partition by vendor_id order by index) as m3_active_status,
+lead(active_status,4) over(partition by vendor_id order by index) as m4_active_status,
+lead(active_status,5) over(partition by vendor_id order by index) as m5_active_status,
+
+from output_p1  ) 
+
+where index=0
+)
+
+
+select p1.*, 
+coalesce(m0_status,0) as m0_status, 
+coalesce(m1_active_status,0) as m1_active_status, 
+coalesce(m2_active_status,0) as m2_active_status, 
+coalesce(m3_active_status,0) as m3_active_status, 
+coalesce(m4_active_status,0) as m4_active_status, 
+coalesce(m5_active_status,0) as m5_active_status, 
+v.basket_amount_eur,
+v.total_spend,
+lag(active_status) over(partition by p1.vendor_id order by p1.index) as last_month_active_status
+from output_p1 p1 
+left join vws_index v on v.vendor_id=p1.vendor_id and v.index=0
+join output_p2 p2 on p1.vendor_id=p2.vendor_id]]></_.fcp.ObjectModelEncapsulateLegacy.true...relation>
+    <metadata-records>
+      <metadata-record class='column'>
+        <remote-name>vendor_id</remote-name>
+        <remote-type>20</remote-type>
+        <local-name>[vendor_id]</local-name>
+        <parent-name>[Custom SQL Query]</parent-name>
+        <remote-alias>vendor_id</remote-alias>
+        <local-type>integer</local-type>
+        <aggregation>Sum</aggregation>
+        <contains-null>true</contains-null>
+        <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_7E52BC6491834C26A6B813024FA538DB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+      </metadata-record>
+      <metadata-record class='column'>
+        <remote-name>salesforce_id</remote-name>
+        <remote-type>130</remote-type>
+        <local-name>[salesforce_id]</local-name>
+        <parent-name>[Custom SQL Query]</parent-name>
+        <remote-alias>salesforce_id</remote-alias>
+        <local-type>string</local-type>
+        <aggregation>Count</aggregation>
+        <contains-null>true</contains-null>
+        <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_7E52BC6491834C26A6B813024FA538DB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+      </metadata-record>
+      <metadata-record class='column'>
+        <remote-name>vendor_name</remote-name>
+        <remote-type>130</remote-type>
+        <local-name>[vendor_name]</local-name>
+        <parent-name>[Custom SQL Query]</parent-name>
+        <remote-alias>vendor_name</remote-alias>
+        <local-type>string</local-type>
+        <aggregation>Count</aggregation>
+        <contains-null>true</contains-null>
+        <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_7E52BC6491834C26A6B813024FA538DB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+      </metadata-record>
+      <metadata-record class='column'>
+        <remote-name>chain_id</remote-name>
+        <remote-type>20</remote-type>
+        <local-name>[chain_id]</local-name>
+        <parent-name>[Custom SQL Query]</parent-name>
+        <remote-alias>chain_id</remote-alias>
+        <local-type>integer</local-type>
+        <aggregation>Sum</aggregation>
+        <contains-null>true</contains-null>
+        <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_7E52BC6491834C26A6B813024FA538DB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+      </metadata-record>
+      <metadata-record class='column'>
+        <remote-name>chain_name</remote-name>
+        <remote-type>130</remote-type>
+        <local-name>[chain_name]</local-name>
+        <parent-name>[Custom SQL Query]</parent-name>
+        <remote-alias>chain_name</remote-alias>
+        <local-type>string</local-type>
+        <aggregation>Count</aggregation>
+        <contains-null>true</contains-null>
+        <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_7E52BC6491834C26A6B813024FA538DB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+      </metadata-record>
+      <metadata-record class='column'>
+        <remote-name>country_code</remote-name>
+        <remote-type>130</remote-type>
+        <local-name>[country_code]</local-name>
+        <parent-name>[Custom SQL Query]</parent-name>
+        <remote-alias>country_code</remote-alias>
+        <local-type>string</local-type>
+        <aggregation>Count</aggregation>
+        <contains-null>true</contains-null>
+        <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_7E52BC6491834C26A6B813024FA538DB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+      </metadata-record>
+      <metadata-record class='column'>
+        <remote-name>is_tpro</remote-name>
+        <remote-type>11</remote-type>
+        <local-name>[is_tpro]</local-name>
+        <parent-name>[Custom SQL Query]</parent-name>
+        <remote-alias>is_tpro</remote-alias>
+        <local-type>boolean</local-type>
+        <aggregation>Count</aggregation>
+        <contains-null>true</contains-null>
+        <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_7E52BC6491834C26A6B813024FA538DB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+      </metadata-record>
+      <metadata-record class='column'>
+        <remote-name>is_launchpad</remote-name>
+        <remote-type>11</remote-type>
+        <local-name>[is_launchpad]</local-name>
+        <parent-name>[Custom SQL Query]</parent-name>
+        <remote-alias>is_launchpad</remote-alias>
+        <local-type>boolean</local-type>
+        <aggregation>Count</aggregation>
+        <contains-null>true</contains-null>
+        <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_7E52BC6491834C26A6B813024FA538DB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+      </metadata-record>
+      <metadata-record class='column'>
+        <remote-name>account_manager_email</remote-name>
+        <remote-type>130</remote-type>
+        <local-name>[account_manager_email]</local-name>
+        <parent-name>[Custom SQL Query]</parent-name>
+        <remote-alias>account_manager_email</remote-alias>
+        <local-type>string</local-type>
+        <aggregation>Count</aggregation>
+        <contains-null>true</contains-null>
+        <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_7E52BC6491834C26A6B813024FA538DB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+      </metadata-record>
+      <metadata-record class='column'>
+        <remote-name>team_leader_email</remote-name>
+        <remote-type>130</remote-type>
+        <local-name>[team_leader_email]</local-name>
+        <parent-name>[Custom SQL Query]</parent-name>
+        <remote-alias>team_leader_email</remote-alias>
+        <local-type>string</local-type>
+        <aggregation>Count</aggregation>
+        <contains-null>true</contains-null>
+        <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_7E52BC6491834C26A6B813024FA538DB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+      </metadata-record>
+      <metadata-record class='column'>
+        <remote-name>account_manager_name</remote-name>
+        <remote-type>130</remote-type>
+        <local-name>[account_manager_name]</local-name>
+        <parent-name>[Custom SQL Query]</parent-name>
+        <remote-alias>account_manager_name</remote-alias>
+        <local-type>string</local-type>
+        <aggregation>Count</aggregation>
+        <contains-null>true</contains-null>
+        <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_7E52BC6491834C26A6B813024FA538DB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+      </metadata-record>
+      <metadata-record class='column'>
+        <remote-name>team_leader_name</remote-name>
+        <remote-type>130</remote-type>
+        <local-name>[team_leader_name]</local-name>
+        <parent-name>[Custom SQL Query]</parent-name>
+        <remote-alias>team_leader_name</remote-alias>
+        <local-type>string</local-type>
+        <aggregation>Count</aggregation>
+        <contains-null>true</contains-null>
+        <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_7E52BC6491834C26A6B813024FA538DB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+      </metadata-record>
+      <metadata-record class='column'>
+        <remote-name>month</remote-name>
+        <remote-type>7</remote-type>
+        <local-name>[month]</local-name>
+        <parent-name>[Custom SQL Query]</parent-name>
+        <remote-alias>month</remote-alias>
+        <local-type>date</local-type>
+        <aggregation>Year</aggregation>
+        <contains-null>true</contains-null>
+        <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_7E52BC6491834C26A6B813024FA538DB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+      </metadata-record>
+      <metadata-record class='column'>
+        <remote-name>main_cuisine</remote-name>
+        <remote-type>130</remote-type>
+        <local-name>[main_cuisine]</local-name>
+        <parent-name>[Custom SQL Query]</parent-name>
+        <remote-alias>main_cuisine</remote-alias>
+        <local-type>string</local-type>
+        <aggregation>Count</aggregation>
+        <contains-null>true</contains-null>
+        <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_7E52BC6491834C26A6B813024FA538DB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+      </metadata-record>
+      <metadata-record class='column'>
+        <remote-name>is_active</remote-name>
+        <remote-type>11</remote-type>
+        <local-name>[is_active]</local-name>
+        <parent-name>[Custom SQL Query]</parent-name>
+        <remote-alias>is_active</remote-alias>
+        <local-type>boolean</local-type>
+        <aggregation>Count</aggregation>
+        <contains-null>true</contains-null>
+        <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_7E52BC6491834C26A6B813024FA538DB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+      </metadata-record>
+      <metadata-record class='column'>
+        <remote-name>successful_orders</remote-name>
+        <remote-type>5</remote-type>
+        <local-name>[successful_orders]</local-name>
+        <parent-name>[Custom SQL Query]</parent-name>
+        <remote-alias>successful_orders</remote-alias>
+        <local-type>real</local-type>
+        <aggregation>Sum</aggregation>
+        <contains-null>true</contains-null>
+        <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_7E52BC6491834C26A6B813024FA538DB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+      </metadata-record>
+      <metadata-record class='column'>
+        <remote-name>m1_successful_orders</remote-name>
+        <remote-type>5</remote-type>
+        <local-name>[m1_successful_orders]</local-name>
+        <parent-name>[Custom SQL Query]</parent-name>
+        <remote-alias>m1_successful_orders</remote-alias>
+        <local-type>real</local-type>
+        <aggregation>Sum</aggregation>
+        <contains-null>true</contains-null>
+        <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_7E52BC6491834C26A6B813024FA538DB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+      </metadata-record>
+      <metadata-record class='column'>
+        <remote-name>is_new</remote-name>
+        <remote-type>11</remote-type>
+        <local-name>[is_new]</local-name>
+        <parent-name>[Custom SQL Query]</parent-name>
+        <remote-alias>is_new</remote-alias>
+        <local-type>boolean</local-type>
+        <aggregation>Count</aggregation>
+        <contains-null>true</contains-null>
+        <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_7E52BC6491834C26A6B813024FA538DB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+      </metadata-record>
+      <metadata-record class='column'>
+        <remote-name>first_online_date</remote-name>
+        <remote-type>7</remote-type>
+        <local-name>[first_online_date]</local-name>
+        <parent-name>[Custom SQL Query]</parent-name>
+        <remote-alias>first_online_date</remote-alias>
+        <local-type>date</local-type>
+        <aggregation>Year</aggregation>
+        <contains-null>true</contains-null>
+        <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_7E52BC6491834C26A6B813024FA538DB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+      </metadata-record>
+      <metadata-record class='column'>
+        <remote-name>acquisition_business_type</remote-name>
+        <remote-type>130</remote-type>
+        <local-name>[acquisition_business_type]</local-name>
+        <parent-name>[Custom SQL Query]</parent-name>
+        <remote-alias>acquisition_business_type</remote-alias>
+        <local-type>string</local-type>
+        <aggregation>Count</aggregation>
+        <contains-null>true</contains-null>
+        <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_7E52BC6491834C26A6B813024FA538DB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+      </metadata-record>
+      <metadata-record class='column'>
+        <remote-name>vendor_grade</remote-name>
+        <remote-type>130</remote-type>
+        <local-name>[vendor_grade]</local-name>
+        <parent-name>[Custom SQL Query]</parent-name>
+        <remote-alias>vendor_grade</remote-alias>
+        <local-type>string</local-type>
+        <aggregation>Count</aggregation>
+        <contains-null>true</contains-null>
+        <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_7E52BC6491834C26A6B813024FA538DB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+      </metadata-record>
+      <metadata-record class='column'>
+        <remote-name>group_name</remote-name>
+        <remote-type>130</remote-type>
+        <local-name>[group_name]</local-name>
+        <parent-name>[Custom SQL Query]</parent-name>
+        <remote-alias>group_name</remote-alias>
+        <local-type>string</local-type>
+        <aggregation>Count</aggregation>
+        <contains-null>true</contains-null>
+        <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_7E52BC6491834C26A6B813024FA538DB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+      </metadata-record>
+      <metadata-record class='column'>
+        <remote-name>first_online_month</remote-name>
+        <remote-type>7</remote-type>
+        <local-name>[first_online_month]</local-name>
+        <parent-name>[Custom SQL Query]</parent-name>
+        <remote-alias>first_online_month</remote-alias>
+        <local-type>date</local-type>
+        <aggregation>Year</aggregation>
+        <contains-null>true</contains-null>
+        <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_7E52BC6491834C26A6B813024FA538DB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+      </metadata-record>
+      <metadata-record class='column'>
+        <remote-name>vendor_dineout_flag</remote-name>
+        <remote-type>11</remote-type>
+        <local-name>[vendor_dineout_flag]</local-name>
+        <parent-name>[Custom SQL Query]</parent-name>
+        <remote-alias>vendor_dineout_flag</remote-alias>
+        <local-type>boolean</local-type>
+        <aggregation>Count</aggregation>
+        <contains-null>true</contains-null>
+        <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_7E52BC6491834C26A6B813024FA538DB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+      </metadata-record>
+      <metadata-record class='column'>
+        <remote-name>first_order_date</remote-name>
+        <remote-type>7</remote-type>
+        <local-name>[first_order_date]</local-name>
+        <parent-name>[Custom SQL Query]</parent-name>
+        <remote-alias>first_order_date</remote-alias>
+        <local-type>date</local-type>
+        <aggregation>Year</aggregation>
+        <contains-null>true</contains-null>
+        <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_7E52BC6491834C26A6B813024FA538DB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+      </metadata-record>
+      <metadata-record class='column'>
+        <remote-name>succ_orders</remote-name>
+        <remote-type>20</remote-type>
+        <local-name>[succ_orders]</local-name>
+        <parent-name>[Custom SQL Query]</parent-name>
+        <remote-alias>succ_orders</remote-alias>
+        <local-type>integer</local-type>
+        <aggregation>Sum</aggregation>
+        <contains-null>true</contains-null>
+        <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_7E52BC6491834C26A6B813024FA538DB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+      </metadata-record>
+      <metadata-record class='column'>
+        <remote-name>gmv</remote-name>
+        <remote-type>5</remote-type>
+        <local-name>[gmv]</local-name>
+        <parent-name>[Custom SQL Query]</parent-name>
+        <remote-alias>gmv</remote-alias>
+        <local-type>real</local-type>
+        <aggregation>Sum</aggregation>
+        <contains-null>true</contains-null>
+        <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_7E52BC6491834C26A6B813024FA538DB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+      </metadata-record>
+      <metadata-record class='column'>
+        <remote-name>new_customers_to_vendors_numbers</remote-name>
+        <remote-type>20</remote-type>
+        <local-name>[new_customers_to_vendors_numbers]</local-name>
+        <parent-name>[Custom SQL Query]</parent-name>
+        <remote-alias>new_customers_to_vendors_numbers</remote-alias>
+        <local-type>integer</local-type>
+        <aggregation>Sum</aggregation>
+        <contains-null>true</contains-null>
+        <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_7E52BC6491834C26A6B813024FA538DB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+      </metadata-record>
+      <metadata-record class='column'>
+        <remote-name>platform_new_customers_to_vendors_numbers</remote-name>
+        <remote-type>20</remote-type>
+        <local-name>[platform_new_customers_to_vendors_numbers]</local-name>
+        <parent-name>[Custom SQL Query]</parent-name>
+        <remote-alias>platform_new_customers_to_vendors_numbers</remote-alias>
+        <local-type>integer</local-type>
+        <aggregation>Sum</aggregation>
+        <contains-null>true</contains-null>
+        <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_7E52BC6491834C26A6B813024FA538DB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+      </metadata-record>
+      <metadata-record class='column'>
+        <remote-name>ad_rev</remote-name>
+        <remote-type>5</remote-type>
+        <local-name>[ad_rev]</local-name>
+        <parent-name>[Custom SQL Query]</parent-name>
+        <remote-alias>ad_rev</remote-alias>
+        <local-type>real</local-type>
+        <aggregation>Sum</aggregation>
+        <contains-null>true</contains-null>
+        <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_7E52BC6491834C26A6B813024FA538DB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+      </metadata-record>
+      <metadata-record class='column'>
+        <remote-name>cpc</remote-name>
+        <remote-type>5</remote-type>
+        <local-name>[cpc]</local-name>
+        <parent-name>[Custom SQL Query]</parent-name>
+        <remote-alias>cpc</remote-alias>
+        <local-type>real</local-type>
+        <aggregation>Sum</aggregation>
+        <contains-null>true</contains-null>
+        <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_7E52BC6491834C26A6B813024FA538DB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+      </metadata-record>
+      <metadata-record class='column'>
+        <remote-name>discount</remote-name>
+        <remote-type>5</remote-type>
+        <local-name>[discount]</local-name>
+        <parent-name>[Custom SQL Query]</parent-name>
+        <remote-alias>discount</remote-alias>
+        <local-type>real</local-type>
+        <aggregation>Sum</aggregation>
+        <contains-null>true</contains-null>
+        <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_7E52BC6491834C26A6B813024FA538DB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+      </metadata-record>
+      <metadata-record class='column'>
+        <remote-name>offline_duration_in_hours</remote-name>
+        <remote-type>5</remote-type>
+        <local-name>[offline_duration_in_hours]</local-name>
+        <parent-name>[Custom SQL Query]</parent-name>
+        <remote-alias>offline_duration_in_hours</remote-alias>
+        <local-type>real</local-type>
+        <aggregation>Sum</aggregation>
+        <contains-null>true</contains-null>
+        <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_7E52BC6491834C26A6B813024FA538DB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+      </metadata-record>
+      <metadata-record class='column'>
+        <remote-name>schedule_duration_in_hours</remote-name>
+        <remote-type>5</remote-type>
+        <local-name>[schedule_duration_in_hours]</local-name>
+        <parent-name>[Custom SQL Query]</parent-name>
+        <remote-alias>schedule_duration_in_hours</remote-alias>
+        <local-type>real</local-type>
+        <aggregation>Sum</aggregation>
+        <contains-null>true</contains-null>
+        <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_7E52BC6491834C26A6B813024FA538DB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+      </metadata-record>
+      <metadata-record class='column'>
+        <remote-name>active_menu_item_count</remote-name>
+        <remote-type>20</remote-type>
+        <local-name>[active_menu_item_count]</local-name>
+        <parent-name>[Custom SQL Query]</parent-name>
+        <remote-alias>active_menu_item_count</remote-alias>
+        <local-type>integer</local-type>
+        <aggregation>Sum</aggregation>
+        <contains-null>true</contains-null>
+        <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_7E52BC6491834C26A6B813024FA538DB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+      </metadata-record>
+      <metadata-record class='column'>
+        <remote-name>item_with_image_count</remote-name>
+        <remote-type>20</remote-type>
+        <local-name>[item_with_image_count]</local-name>
+        <parent-name>[Custom SQL Query]</parent-name>
+        <remote-alias>item_with_image_count</remote-alias>
+        <local-type>integer</local-type>
+        <aggregation>Sum</aggregation>
+        <contains-null>true</contains-null>
+        <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_7E52BC6491834C26A6B813024FA538DB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+      </metadata-record>
+      <metadata-record class='column'>
+        <remote-name>item_with_description_count</remote-name>
+        <remote-type>20</remote-type>
+        <local-name>[item_with_description_count]</local-name>
+        <parent-name>[Custom SQL Query]</parent-name>
+        <remote-alias>item_with_description_count</remote-alias>
+        <local-type>integer</local-type>
+        <aggregation>Sum</aggregation>
+        <contains-null>true</contains-null>
+        <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_7E52BC6491834C26A6B813024FA538DB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+      </metadata-record>
+      <metadata-record class='column'>
+        <remote-name>vendor_list_impression_count</remote-name>
+        <remote-type>20</remote-type>
+        <local-name>[vendor_list_impression_count]</local-name>
+        <parent-name>[Custom SQL Query]</parent-name>
+        <remote-alias>vendor_list_impression_count</remote-alias>
+        <local-type>integer</local-type>
+        <aggregation>Sum</aggregation>
+        <contains-null>true</contains-null>
+        <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_7E52BC6491834C26A6B813024FA538DB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+      </metadata-record>
+      <metadata-record class='column'>
+        <remote-name>viewed_menu_session_count</remote-name>
+        <remote-type>20</remote-type>
+        <local-name>[viewed_menu_session_count]</local-name>
+        <parent-name>[Custom SQL Query]</parent-name>
+        <remote-alias>viewed_menu_session_count</remote-alias>
+        <local-type>integer</local-type>
+        <aggregation>Sum</aggregation>
+        <contains-null>true</contains-null>
+        <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_7E52BC6491834C26A6B813024FA538DB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+      </metadata-record>
+      <metadata-record class='column'>
+        <remote-name>placed_order_count</remote-name>
+        <remote-type>20</remote-type>
+        <local-name>[placed_order_count]</local-name>
+        <parent-name>[Custom SQL Query]</parent-name>
+        <remote-alias>placed_order_count</remote-alias>
+        <local-type>integer</local-type>
+        <aggregation>Sum</aggregation>
+        <contains-null>true</contains-null>
+        <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_7E52BC6491834C26A6B813024FA538DB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+      </metadata-record>
+      <metadata-record class='column'>
+        <remote-name>cpc_order_count</remote-name>
+        <remote-type>20</remote-type>
+        <local-name>[cpc_order_count]</local-name>
+        <parent-name>[Custom SQL Query]</parent-name>
+        <remote-alias>cpc_order_count</remote-alias>
+        <local-type>integer</local-type>
+        <aggregation>Sum</aggregation>
+        <contains-null>true</contains-null>
+        <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_7E52BC6491834C26A6B813024FA538DB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+      </metadata-record>
+      <metadata-record class='column'>
+        <remote-name>vendor_active_customers</remote-name>
+        <remote-type>20</remote-type>
+        <local-name>[vendor_active_customers]</local-name>
+        <parent-name>[Custom SQL Query]</parent-name>
+        <remote-alias>vendor_active_customers</remote-alias>
+        <local-type>integer</local-type>
+        <aggregation>Sum</aggregation>
+        <contains-null>true</contains-null>
+        <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_7E52BC6491834C26A6B813024FA538DB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+      </metadata-record>
+      <metadata-record class='column'>
+        <remote-name>vendor_list_session_count</remote-name>
+        <remote-type>20</remote-type>
+        <local-name>[vendor_list_session_count]</local-name>
+        <parent-name>[Custom SQL Query]</parent-name>
+        <remote-alias>vendor_list_session_count</remote-alias>
+        <local-type>integer</local-type>
+        <aggregation>Sum</aggregation>
+        <contains-null>true</contains-null>
+        <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_7E52BC6491834C26A6B813024FA538DB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+      </metadata-record>
+      <metadata-record class='column'>
+        <remote-name>first_day_schedule_duration_in_hours</remote-name>
+        <remote-type>5</remote-type>
+        <local-name>[first_day_schedule_duration_in_hours]</local-name>
+        <parent-name>[Custom SQL Query]</parent-name>
+        <remote-alias>first_day_schedule_duration_in_hours</remote-alias>
+        <local-type>real</local-type>
+        <aggregation>Sum</aggregation>
+        <contains-null>true</contains-null>
+        <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_7E52BC6491834C26A6B813024FA538DB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+      </metadata-record>
+      <metadata-record class='column'>
+        <remote-name>first_day_successful_order_count</remote-name>
+        <remote-type>20</remote-type>
+        <local-name>[first_day_successful_order_count]</local-name>
+        <parent-name>[Custom SQL Query]</parent-name>
+        <remote-alias>first_day_successful_order_count</remote-alias>
+        <local-type>integer</local-type>
+        <aggregation>Sum</aggregation>
+        <contains-null>true</contains-null>
+        <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_7E52BC6491834C26A6B813024FA538DB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+      </metadata-record>
+      <metadata-record class='column'>
+        <remote-name>first_day_net_orders</remote-name>
+        <remote-type>20</remote-type>
+        <local-name>[first_day_net_orders]</local-name>
+        <parent-name>[Custom SQL Query]</parent-name>
+        <remote-alias>first_day_net_orders</remote-alias>
+        <local-type>integer</local-type>
+        <aggregation>Sum</aggregation>
+        <contains-null>true</contains-null>
+        <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_7E52BC6491834C26A6B813024FA538DB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+      </metadata-record>
+      <metadata-record class='column'>
+        <remote-name>index</remote-name>
+        <remote-type>20</remote-type>
+        <local-name>[index]</local-name>
+        <parent-name>[Custom SQL Query]</parent-name>
+        <remote-alias>index</remote-alias>
+        <local-type>integer</local-type>
+        <aggregation>Sum</aggregation>
+        <contains-null>true</contains-null>
+        <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_7E52BC6491834C26A6B813024FA538DB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+      </metadata-record>
+      <metadata-record class='column'>
+        <remote-name>active_status</remote-name>
+        <remote-type>20</remote-type>
+        <local-name>[active_status]</local-name>
+        <parent-name>[Custom SQL Query]</parent-name>
+        <remote-alias>active_status</remote-alias>
+        <local-type>integer</local-type>
+        <aggregation>Sum</aggregation>
+        <contains-null>true</contains-null>
+        <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_7E52BC6491834C26A6B813024FA538DB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+      </metadata-record>
+      <metadata-record class='column'>
+        <remote-name>m0_status</remote-name>
+        <remote-type>20</remote-type>
+        <local-name>[m0_status]</local-name>
+        <parent-name>[Custom SQL Query]</parent-name>
+        <remote-alias>m0_status</remote-alias>
+        <local-type>integer</local-type>
+        <aggregation>Sum</aggregation>
+        <contains-null>true</contains-null>
+        <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_7E52BC6491834C26A6B813024FA538DB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+      </metadata-record>
+      <metadata-record class='column'>
+        <remote-name>m1_active_status</remote-name>
+        <remote-type>20</remote-type>
+        <local-name>[m1_active_status]</local-name>
+        <parent-name>[Custom SQL Query]</parent-name>
+        <remote-alias>m1_active_status</remote-alias>
+        <local-type>integer</local-type>
+        <aggregation>Sum</aggregation>
+        <contains-null>true</contains-null>
+        <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_7E52BC6491834C26A6B813024FA538DB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+      </metadata-record>
+      <metadata-record class='column'>
+        <remote-name>m2_active_status</remote-name>
+        <remote-type>20</remote-type>
+        <local-name>[m2_active_status]</local-name>
+        <parent-name>[Custom SQL Query]</parent-name>
+        <remote-alias>m2_active_status</remote-alias>
+        <local-type>integer</local-type>
+        <aggregation>Sum</aggregation>
+        <contains-null>true</contains-null>
+        <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_7E52BC6491834C26A6B813024FA538DB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+      </metadata-record>
+      <metadata-record class='column'>
+        <remote-name>m3_active_status</remote-name>
+        <remote-type>20</remote-type>
+        <local-name>[m3_active_status]</local-name>
+        <parent-name>[Custom SQL Query]</parent-name>
+        <remote-alias>m3_active_status</remote-alias>
+        <local-type>integer</local-type>
+        <aggregation>Sum</aggregation>
+        <contains-null>true</contains-null>
+        <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_7E52BC6491834C26A6B813024FA538DB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+      </metadata-record>
+      <metadata-record class='column'>
+        <remote-name>m4_active_status</remote-name>
+        <remote-type>20</remote-type>
+        <local-name>[m4_active_status]</local-name>
+        <parent-name>[Custom SQL Query]</parent-name>
+        <remote-alias>m4_active_status</remote-alias>
+        <local-type>integer</local-type>
+        <aggregation>Sum</aggregation>
+        <contains-null>true</contains-null>
+        <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_7E52BC6491834C26A6B813024FA538DB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+      </metadata-record>
+      <metadata-record class='column'>
+        <remote-name>m5_active_status</remote-name>
+        <remote-type>20</remote-type>
+        <local-name>[m5_active_status]</local-name>
+        <parent-name>[Custom SQL Query]</parent-name>
+        <remote-alias>m5_active_status</remote-alias>
+        <local-type>integer</local-type>
+        <aggregation>Sum</aggregation>
+        <contains-null>true</contains-null>
+        <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_7E52BC6491834C26A6B813024FA538DB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+      </metadata-record>
+      <metadata-record class='column'>
+        <remote-name>basket_amount_eur</remote-name>
+        <remote-type>5</remote-type>
+        <local-name>[basket_amount_eur]</local-name>
+        <parent-name>[Custom SQL Query]</parent-name>
+        <remote-alias>basket_amount_eur</remote-alias>
+        <local-type>real</local-type>
+        <aggregation>Sum</aggregation>
+        <contains-null>true</contains-null>
+        <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_7E52BC6491834C26A6B813024FA538DB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+      </metadata-record>
+      <metadata-record class='column'>
+        <remote-name>total_spend</remote-name>
+        <remote-type>5</remote-type>
+        <local-name>[total_spend]</local-name>
+        <parent-name>[Custom SQL Query]</parent-name>
+        <remote-alias>total_spend</remote-alias>
+        <local-type>real</local-type>
+        <aggregation>Sum</aggregation>
+        <contains-null>true</contains-null>
+        <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_7E52BC6491834C26A6B813024FA538DB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+      </metadata-record>
+      <metadata-record class='column'>
+        <remote-name>last_month_active_status</remote-name>
+        <remote-type>20</remote-type>
+        <local-name>[last_month_active_status]</local-name>
+        <parent-name>[Custom SQL Query]</parent-name>
+        <remote-alias>last_month_active_status</remote-alias>
+        <local-type>integer</local-type>
+        <aggregation>Sum</aggregation>
+        <contains-null>true</contains-null>
+        <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_7E52BC6491834C26A6B813024FA538DB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+      </metadata-record>
+    </metadata-records>
+  </connection>
+  <aliases enabled='yes' />
+  <column datatype='string' name='[:Measure Names]' role='dimension' type='nominal'>
+    <aliases>
+      <alias key='&quot;[Activation v2.0].[med:Calculation_6566107552026607622:qk]&quot;' value='Median Schedule per day' />
+      <alias key='&quot;[Activation v2.0].[med:first_day_schedule_duration_in_hours:qk]&quot;' value='Median Schedule Day 0' />
+      <alias key='&quot;[Activation v2.0].[sum:cpc:qk]&quot;' value='cpc revenue' />
+      <alias key='&quot;[Activation v2.0].[sum:placed_order_count:qk]&quot;' value='Total Orders' />
+      <alias key='&quot;[Activation v2.0].[sum:succ_orders:qk]&quot;' value='Total Successful Orders' />
+      <alias key='&quot;[Activation v2.0].[usr:Calculation_440789845940994055:qk]&quot;' value='vendors on cpc' />
+      <alias key='&quot;[Activation v2.0].[usr:Calculation_6566107552032251917:qk]&quot;' value='Vendors on CPC %' />
+    </aliases>
+  </column>
+  <column caption='Retained' datatype='integer' name='[Calculation_3605624119586951168]' role='measure' type='quantitative'>
+    <calculation class='tableau' formula='COUNTD(if [active_status]=1 and [last_month_active_status]=1 and [index]&gt;0 then [vendor_id] END)' />
+  </column>
+  <column caption='Retained %' datatype='real' name='[Calculation_3605624119619035137]' role='measure' type='quantitative'>
+    <calculation class='tableau' formula='[Calculation_3605624119586951168]/COUNTD([vendor_id])' />
+  </column>
+  <column caption='Active Status ' datatype='string' name='[Calculation_440789845935165441]' role='dimension' type='nominal'>
+    <calculation class='tableau' formula='IF [active_status]=1 then &apos;Activated&apos;&#10;ELSEIF [active_status] = 0 THEN &apos;Not activated&apos;&#10;END' />
+  </column>
+  <column caption='Activated vs not yet activated' datatype='string' name='[Calculation_440789845937479682]' role='dimension' type='nominal'>
+    <calculation class='tableau' formula='IF [m0_status] = 0 AND [index] = 0 THEN &apos;not yet activated&apos;&#10;ELSEIF [m0_status] = 1 AND [index] = 0 THEN &apos;activated&apos;&#10;&#10;ELSEIF [m0_status] = 0 AND [m1_active_status] = 0 AND [index] = 1 THEN &apos;not yet activated&apos;&#10;ELSEIF [m0_status] = 0 AND [m1_active_status] = 1 AND [index] = 1 THEN &apos;activated&apos;&#10;&#10;ELSEIF [m0_status] = 0 AND [m1_active_status] = 0 AND [m2_active_status] = 0 AND [index] = 2 THEN &apos;not yet activated&apos;&#10;ELSEIF [m0_status] = 0 AND [m1_active_status] = 0 AND [m2_active_status] = 1 AND [index] = 2 THEN &apos;activated&apos;&#10;&#10;ELSEIF [m0_status] = 0 AND [m1_active_status] = 0 AND [m2_active_status] = 0 AND [m3_active_status] = 0 AND [index] = 3 THEN &apos;not yet activated&apos;&#10;ELSEIF [m0_status] = 0 AND [m1_active_status] = 0 AND [m2_active_status] = 0 AND [m3_active_status] = 1 AND [index] = 3 THEN &apos;activated&apos;&#10;&#10;ELSEIF [m0_status] = 0 AND [m1_active_status] = 0 AND [m2_active_status] = 0 AND [m3_active_status] = 0 AND [m4_active_status] = 0 AND [index] = 4 THEN &apos;not yet activated&apos;&#10;ELSEIF [m0_status] = 0 AND [m1_active_status] = 0 AND [m2_active_status] = 0 AND [m3_active_status] = 0 AND [m4_active_status] = 1 AND [index] = 4 THEN &apos;activated&apos;&#10;&#10;ELSEIF [m0_status] = 0 AND [m1_active_status] = 0 AND [m2_active_status] = 0 AND [m3_active_status] = 0 AND [m4_active_status] = 0 AND [m5_active_status] = 0 AND [index] = 5 THEN &apos;not yet activated&apos;&#10;ELSEIF [m0_status] = 0 AND [m1_active_status] = 0 AND [m2_active_status] = 0 AND [m3_active_status] = 0 AND [m4_active_status] = 0 AND [m5_active_status] = 1 AND [index] = 5 THEN &apos;activated&apos;&#10;&#10;END' />
+  </column>
+  <column caption='DLP' datatype='real' name='[Calculation_440789845940518915]' role='measure' type='quantitative'>
+    <calculation class='tableau' formula='sum([item_with_image_count])/sum([active_menu_item_count])' />
+  </column>
+  <column caption='DLD' datatype='real' name='[Calculation_440789845940654084]' role='measure' type='quantitative'>
+    <calculation class='tableau' formula='sum([item_with_description_count])/sum([active_menu_item_count])' />
+  </column>
+  <column caption='CVR' datatype='real' name='[Calculation_440789845940789253]' role='measure' type='quantitative'>
+    <calculation class='tableau' formula='sum([placed_order_count])/sum([viewed_menu_session_count])' />
+  </column>
+  <column caption='view_menu_to_vendor_list_impressions' datatype='real' name='[Calculation_440789845940850694]' role='measure' type='quantitative'>
+    <calculation class='tableau' formula='sum([viewed_menu_session_count])/sum([vendor_list_impression_count])' />
+  </column>
+  <column caption='on_cpc' datatype='integer' name='[Calculation_440789845940994055]' role='measure' type='quantitative'>
+    <calculation class='tableau' formula='count(if [cpc]&gt;0 then [vendor_id] else null end)' />
+  </column>
+  <column caption='on discount' datatype='integer' name='[Calculation_440789845941346312]' role='measure' type='quantitative'>
+    <calculation class='tableau' formula='count(if [discount]&gt;0 then [vendor_id] else null end)' />
+  </column>
+  <column caption='Vendors on Adrev' datatype='integer' name='[Calculation_440789845941448713]' role='measure' type='quantitative'>
+    <calculation class='tableau' formula='count(if [ad_rev]&gt;0 then [vendor_id] else null end)' />
+  </column>
+  <column caption='Offline time percent' datatype='real' name='[Calculation_440789845941555210]' role='measure' type='quantitative'>
+    <calculation class='tableau' formula='sum([offline_duration_in_hours])/sum([schedule_duration_in_hours])' />
+  </column>
+  <column caption='#vendors' datatype='integer' name='[Calculation_440789845942054923]' role='measure' type='quantitative'>
+    <calculation class='tableau' formula='COUNTD([vendor_id])' />
+  </column>
+  <column caption='Succ Orders' datatype='real' name='[Calculation_440789845956866060]' role='measure' type='quantitative'>
+    <calculation class='tableau' formula='{fixed [vendor_id],[index]:MEDIAN([succ_orders])}' />
+  </column>
+  <column caption=' OfflineTimePercent' datatype='real' name='[Calculation_440789845957152781]' role='measure' type='quantitative'>
+    <calculation class='tableau' formula='{fixed [vendor_id],[index]:sum([offline_duration_in_hours])}/&#10;{fixed [vendor_id],[index]:sum([schedule_duration_in_hours])}' />
+  </column>
+  <column caption='Time to first order in days' datatype='integer' name='[Calculation_440789845962608654]' role='measure' type='quantitative'>
+    <calculation class='tableau' formula='[first_order_date]-[first_online_date]' />
+  </column>
+  <column caption='M-index' datatype='string' name='[Calculation_440789845986099215]' role='dimension' type='nominal'>
+    <calculation class='tableau' formula='&quot;M&quot; + str([index])' />
+  </column>
+  <column caption='Vendors with offline time &lt;20%' datatype='integer' name='[Calculation_6566107551969435648]' role='measure' type='quantitative'>
+    <calculation class='tableau' formula='COUNTD(if([Calculation_440789845957152781]) &lt;0.2 then [vendor_id] else null END)' />
+  </column>
+  <column caption='Vendors with offline time &lt;20% percent' datatype='real' name='[Calculation_6566107551970091011]' role='measure' type='quantitative'>
+    <calculation class='tableau' formula='([Calculation_6566107551969435648])/COUNTD([vendor_id])' />
+  </column>
+  <column caption='tpro vendors' datatype='integer' name='[Calculation_6566107551983439876]' role='measure' type='quantitative'>
+    <calculation class='tableau' formula='countd(if [is_tpro] then [vendor_id] else null end)' />
+  </column>
+  <column caption='Tpro %' datatype='real' name='[Calculation_6566107551983558661]' role='measure' type='quantitative'>
+    <calculation class='tableau' formula='[Calculation_6566107551983439876]/COUNTD([vendor_id])' />
+  </column>
+  <column caption='Avg Schedule per day' datatype='real' name='[Calculation_6566107552026607622]' role='measure' type='quantitative'>
+    <calculation class='tableau' formula='[schedule_duration_in_hours]/30' />
+  </column>
+  <column caption='Vendors with schedule &lt;4 hours ' datatype='integer' name='[Calculation_6566107552026882055]' role='measure' type='quantitative'>
+    <calculation class='tableau' formula='COUNTD(if [Calculation_6566107552026607622] &lt;4 then [vendor_id] else null end)' />
+  </column>
+  <column caption='impressions' datatype='integer' name='[Calculation_6566107552030208008]' role='measure' type='quantitative'>
+    <calculation class='tableau' formula='{fixed [vendor_id],[index]:sum([vendor_list_impression_count])}' />
+  </column>
+  <column caption='Vendor list sessions' datatype='integer' name='[Calculation_6566107552030486537]' role='measure' type='quantitative'>
+    <calculation class='tableau' formula='{fixed [vendor_id],[index]:sum([vendor_list_session_count])}' />
+  </column>
+  <column caption='SuccOrders %' datatype='real' name='[Calculation_6566107552031014922]' role='measure' type='quantitative'>
+    <calculation class='tableau' formula='{fixed [vendor_id],[index]:MEDIAN([succ_orders])}/&#10;{fixed [vendor_id],[index]:MEDIAN([placed_order_count])}' />
+  </column>
+  <column caption='FirstOrder succ%' datatype='real' name='[Calculation_6566107552031481867]' role='measure' type='quantitative'>
+    <calculation class='tableau' formula='{fixed [vendor_id],[index]:sum([first_day_successful_order_count])}&#10;/{fixed [vendor_id],[index]:sum([first_day_net_orders])}' />
+  </column>
+  <column caption='Vendors on CPC' datatype='real' name='[Calculation_6566107552032251917]' role='measure' type='quantitative'>
+    <calculation class='tableau' formula='[Calculation_440789845940994055]/COUNTD([vendor_id])' />
+  </column>
+  <column caption='Vendors on Adrev %' datatype='real' name='[Calculation_6566107552032522254]' role='measure' type='quantitative'>
+    <calculation class='tableau' formula='[Calculation_440789845941448713]/COUNTD([vendor_id])' />
+  </column>
+  <column caption='Vendors on discount' datatype='real' name='[Calculation_6566107552032727055]' role='measure' type='quantitative'>
+    <calculation class='tableau' formula='[Calculation_440789845941346312]/COUNTD([vendor_id])' />
+  </column>
+  <column caption='VendorGrade' datatype='string' name='[Calculation_6566107553045872656]' role='dimension' type='nominal'>
+    <calculation class='tableau' formula='IFNULL([vendor_grade],&apos;ungraded&apos;)' />
+  </column>
+  <column caption='M0 Activated' datatype='integer' name='[Calculation_6566107553049260049]' role='measure' type='quantitative'>
+    <calculation class='tableau' formula='{fixed [country_code],[m0_status]=1:COUNTD(if [m0_status]=1 then [vendor_id] else null end)}' />
+  </column>
+  <column caption='Vendors %' datatype='real' name='[Calculation_6566107553051983890]' role='measure' type='quantitative'>
+    <calculation class='tableau' formula='[Calculation_440789845942054923]/sum([Calculation_6566107553049260049])' />
+  </column>
+  <column caption='VWS' datatype='real' name='[Calculation_6857856367863042049]' role='measure' type='quantitative'>
+    <calculation class='tableau' formula='{fixed [vendor_id],[index]:sum([total_spend])}/&#10;{fixed [vendor_id],[index]:sum([basket_amount_eur])}' />
+  </column>
+  <_.fcp.ObjectModelTableType.true...column caption='Custom SQL Query' datatype='table' name='[__tableau_internal_object_id__].[_7E52BC6491834C26A6B813024FA538DB]' role='measure' type='quantitative' />
+  <column aggregation='Sum' datatype='integer' name='[active_status]' role='dimension' type='ordinal' />
+  <column caption='Adrev' datatype='real' name='[ad_rev]' role='measure' type='quantitative' />
+  <column aggregation='Sum' datatype='integer' name='[chain_id]' role='dimension' type='ordinal' />
+  <column datatype='string' name='[country_code]' role='dimension' semantic-role='[Country].[ISO3166_2]' type='nominal' />
+  <column datatype='real' name='[cpc]' role='measure' type='quantitative' />
+  <column datatype='real' name='[first_day_schedule_duration_in_hours]' role='measure' type='quantitative' />
+  <column caption='Go Live Month' datatype='date' name='[first_online_month]' role='dimension' type='ordinal' />
+  <column aggregation='Sum' datatype='integer' name='[index]' role='dimension' type='ordinal' />
+  <column aggregation='Sum' datatype='integer' name='[last_month_active_status]' role='dimension' type='ordinal' />
+  <column aggregation='Sum' datatype='integer' name='[m0_status]' role='dimension' type='ordinal' />
+  <column aggregation='Sum' datatype='integer' name='[m1_active_status]' role='dimension' type='ordinal' />
+  <column aggregation='Sum' datatype='integer' name='[m2_active_status]' role='dimension' type='ordinal' />
+  <column caption='NewCustomers to Vendors' datatype='integer' name='[new_customers_to_vendors_numbers]' role='measure' type='quantitative' />
+  <column datatype='integer' name='[placed_order_count]' role='measure' type='quantitative' />
+  <column caption='Platform NewVendors' datatype='integer' name='[platform_new_customers_to_vendors_numbers]' role='measure' type='quantitative' />
+  <column caption='SuccOrders' datatype='integer' name='[succ_orders]' role='measure' type='quantitative' />
+  <column aggregation='Sum' datatype='integer' name='[vendor_id]' role='dimension' type='ordinal' />
+  <column caption='Impressions' datatype='integer' name='[vendor_list_impression_count]' role='measure' type='quantitative' />
+  <column-instance column='[Calculation_6566107552026607622]' derivation='Median' name='[med:Calculation_6566107552026607622:qk]' pivot='key' type='quantitative' />
+  <column-instance column='[first_day_schedule_duration_in_hours]' derivation='Median' name='[med:first_day_schedule_duration_in_hours:qk]' pivot='key' type='quantitative' />
+  <column-instance column='[cpc]' derivation='Sum' name='[sum:cpc:qk]' pivot='key' type='quantitative' />
+  <column-instance column='[placed_order_count]' derivation='Sum' name='[sum:placed_order_count:qk]' pivot='key' type='quantitative' />
+  <column-instance column='[succ_orders]' derivation='Sum' name='[sum:succ_orders:qk]' pivot='key' type='quantitative' />
+  <column-instance column='[Calculation_440789845940994055]' derivation='User' name='[usr:Calculation_440789845940994055:qk]' pivot='key' type='quantitative' />
+  <column-instance column='[Calculation_6566107552032251917]' derivation='User' name='[usr:Calculation_6566107552032251917:qk]' pivot='key' type='quantitative' />
+  <extract _.fcp.ObjectModelExtractV2.true...object-id='' count='-1' enabled='true' units='records'>
+    <connection access_mode='readonly' author-locale='en_US' class='hyper' dbname='extract/02/ce/{00A87B40-EB68-43A8-8C3A-1170D1196A65}/Activation v2_0.hyper' extract-engine='true' schema='Extract' sslmode='' tablename='Extract' update-time='08/21/2025 10:02:15 AM'>
+      <_.fcp.ObjectModelEncapsulateLegacy.false...relation name='Extract' table='[Extract].[Extract]' type='table' />
+      <_.fcp.ObjectModelEncapsulateLegacy.true...relation name='Extract' table='[Extract].[Extract]' type='table' />
+      <metadata-records>
+        <metadata-record class='column'>
+          <remote-name>vendor_id</remote-name>
+          <remote-type>20</remote-type>
+          <local-name>[vendor_id]</local-name>
+          <parent-name>[Extract]</parent-name>
+          <remote-alias>vendor_id</remote-alias>
+          <ordinal>0</ordinal>
+          <family>Custom SQL Query</family>
+          <local-type>integer</local-type>
+          <aggregation>Sum</aggregation>
+          <approx-count>60298</approx-count>
+          <contains-null>true</contains-null>
+          <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_7E52BC6491834C26A6B813024FA538DB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+        </metadata-record>
+        <metadata-record class='column'>
+          <remote-name>salesforce_id</remote-name>
+          <remote-type>129</remote-type>
+          <local-name>[salesforce_id]</local-name>
+          <parent-name>[Extract]</parent-name>
+          <remote-alias>salesforce_id</remote-alias>
+          <ordinal>1</ordinal>
+          <family>Custom SQL Query</family>
+          <local-type>string</local-type>
+          <aggregation>Count</aggregation>
+          <approx-count>60298</approx-count>
+          <contains-null>true</contains-null>
+          <collation flag='0' name='LROOT' />
+          <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_7E52BC6491834C26A6B813024FA538DB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+        </metadata-record>
+        <metadata-record class='column'>
+          <remote-name>vendor_name</remote-name>
+          <remote-type>129</remote-type>
+          <local-name>[vendor_name]</local-name>
+          <parent-name>[Extract]</parent-name>
+          <remote-alias>vendor_name</remote-alias>
+          <ordinal>2</ordinal>
+          <family>Custom SQL Query</family>
+          <local-type>string</local-type>
+          <aggregation>Count</aggregation>
+          <approx-count>60298</approx-count>
+          <contains-null>true</contains-null>
+          <collation flag='0' name='LROOT' />
+          <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_7E52BC6491834C26A6B813024FA538DB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+        </metadata-record>
+        <metadata-record class='column'>
+          <remote-name>chain_id</remote-name>
+          <remote-type>20</remote-type>
+          <local-name>[chain_id]</local-name>
+          <parent-name>[Extract]</parent-name>
+          <remote-alias>chain_id</remote-alias>
+          <ordinal>3</ordinal>
+          <family>Custom SQL Query</family>
+          <local-type>integer</local-type>
+          <aggregation>Sum</aggregation>
+          <approx-count>31992</approx-count>
+          <contains-null>true</contains-null>
+          <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_7E52BC6491834C26A6B813024FA538DB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+        </metadata-record>
+        <metadata-record class='column'>
+          <remote-name>chain_name</remote-name>
+          <remote-type>129</remote-type>
+          <local-name>[chain_name]</local-name>
+          <parent-name>[Extract]</parent-name>
+          <remote-alias>chain_name</remote-alias>
+          <ordinal>4</ordinal>
+          <family>Custom SQL Query</family>
+          <local-type>string</local-type>
+          <aggregation>Count</aggregation>
+          <approx-count>30923</approx-count>
+          <contains-null>true</contains-null>
+          <collation flag='0' name='LROOT' />
+          <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_7E52BC6491834C26A6B813024FA538DB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+        </metadata-record>
+        <metadata-record class='column'>
+          <remote-name>country_code</remote-name>
+          <remote-type>129</remote-type>
+          <local-name>[country_code]</local-name>
+          <parent-name>[Extract]</parent-name>
+          <remote-alias>country_code</remote-alias>
+          <ordinal>5</ordinal>
+          <family>Custom SQL Query</family>
+          <local-type>string</local-type>
+          <aggregation>Count</aggregation>
+          <approx-count>8</approx-count>
+          <contains-null>true</contains-null>
+          <collation flag='0' name='LROOT' />
+          <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_7E52BC6491834C26A6B813024FA538DB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+        </metadata-record>
+        <metadata-record class='column'>
+          <remote-name>is_tpro</remote-name>
+          <remote-type>11</remote-type>
+          <local-name>[is_tpro]</local-name>
+          <parent-name>[Extract]</parent-name>
+          <remote-alias>is_tpro</remote-alias>
+          <ordinal>6</ordinal>
+          <family>Custom SQL Query</family>
+          <local-type>boolean</local-type>
+          <aggregation>Count</aggregation>
+          <approx-count>2</approx-count>
+          <contains-null>true</contains-null>
+          <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_7E52BC6491834C26A6B813024FA538DB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+        </metadata-record>
+        <metadata-record class='column'>
+          <remote-name>is_launchpad</remote-name>
+          <remote-type>11</remote-type>
+          <local-name>[is_launchpad]</local-name>
+          <parent-name>[Extract]</parent-name>
+          <remote-alias>is_launchpad</remote-alias>
+          <ordinal>7</ordinal>
+          <family>Custom SQL Query</family>
+          <local-type>boolean</local-type>
+          <aggregation>Count</aggregation>
+          <approx-count>2</approx-count>
+          <contains-null>true</contains-null>
+          <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_7E52BC6491834C26A6B813024FA538DB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+        </metadata-record>
+        <metadata-record class='column'>
+          <remote-name>account_manager_email</remote-name>
+          <remote-type>129</remote-type>
+          <local-name>[account_manager_email]</local-name>
+          <parent-name>[Extract]</parent-name>
+          <remote-alias>account_manager_email</remote-alias>
+          <ordinal>8</ordinal>
+          <family>Custom SQL Query</family>
+          <local-type>string</local-type>
+          <aggregation>Count</aggregation>
+          <approx-count>1056</approx-count>
+          <contains-null>true</contains-null>
+          <collation flag='0' name='LROOT' />
+          <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_7E52BC6491834C26A6B813024FA538DB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+        </metadata-record>
+        <metadata-record class='column'>
+          <remote-name>team_leader_email</remote-name>
+          <remote-type>129</remote-type>
+          <local-name>[team_leader_email]</local-name>
+          <parent-name>[Extract]</parent-name>
+          <remote-alias>team_leader_email</remote-alias>
+          <ordinal>9</ordinal>
+          <family>Custom SQL Query</family>
+          <local-type>string</local-type>
+          <aggregation>Count</aggregation>
+          <approx-count>95</approx-count>
+          <contains-null>true</contains-null>
+          <collation flag='0' name='LROOT' />
+          <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_7E52BC6491834C26A6B813024FA538DB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+        </metadata-record>
+        <metadata-record class='column'>
+          <remote-name>account_manager_name</remote-name>
+          <remote-type>129</remote-type>
+          <local-name>[account_manager_name]</local-name>
+          <parent-name>[Extract]</parent-name>
+          <remote-alias>account_manager_name</remote-alias>
+          <ordinal>10</ordinal>
+          <family>Custom SQL Query</family>
+          <local-type>string</local-type>
+          <aggregation>Count</aggregation>
+          <approx-count>1056</approx-count>
+          <contains-null>true</contains-null>
+          <collation flag='0' name='LROOT' />
+          <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_7E52BC6491834C26A6B813024FA538DB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+        </metadata-record>
+        <metadata-record class='column'>
+          <remote-name>team_leader_name</remote-name>
+          <remote-type>129</remote-type>
+          <local-name>[team_leader_name]</local-name>
+          <parent-name>[Extract]</parent-name>
+          <remote-alias>team_leader_name</remote-alias>
+          <ordinal>11</ordinal>
+          <family>Custom SQL Query</family>
+          <local-type>string</local-type>
+          <aggregation>Count</aggregation>
+          <approx-count>95</approx-count>
+          <contains-null>true</contains-null>
+          <collation flag='0' name='LROOT' />
+          <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_7E52BC6491834C26A6B813024FA538DB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+        </metadata-record>
+        <metadata-record class='column'>
+          <remote-name>month</remote-name>
+          <remote-type>133</remote-type>
+          <local-name>[month]</local-name>
+          <parent-name>[Extract]</parent-name>
+          <remote-alias>month</remote-alias>
+          <ordinal>12</ordinal>
+          <family>Custom SQL Query</family>
+          <local-type>date</local-type>
+          <aggregation>Year</aggregation>
+          <approx-count>1</approx-count>
+          <contains-null>true</contains-null>
+          <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_7E52BC6491834C26A6B813024FA538DB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+        </metadata-record>
+        <metadata-record class='column'>
+          <remote-name>main_cuisine</remote-name>
+          <remote-type>129</remote-type>
+          <local-name>[main_cuisine]</local-name>
+          <parent-name>[Extract]</parent-name>
+          <remote-alias>main_cuisine</remote-alias>
+          <ordinal>13</ordinal>
+          <family>Custom SQL Query</family>
+          <local-type>string</local-type>
+          <aggregation>Count</aggregation>
+          <approx-count>341</approx-count>
+          <contains-null>true</contains-null>
+          <collation flag='0' name='LROOT' />
+          <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_7E52BC6491834C26A6B813024FA538DB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+        </metadata-record>
+        <metadata-record class='column'>
+          <remote-name>is_active</remote-name>
+          <remote-type>11</remote-type>
+          <local-name>[is_active]</local-name>
+          <parent-name>[Extract]</parent-name>
+          <remote-alias>is_active</remote-alias>
+          <ordinal>14</ordinal>
+          <family>Custom SQL Query</family>
+          <local-type>boolean</local-type>
+          <aggregation>Count</aggregation>
+          <approx-count>2</approx-count>
+          <contains-null>true</contains-null>
+          <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_7E52BC6491834C26A6B813024FA538DB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+        </metadata-record>
+        <metadata-record class='column'>
+          <remote-name>successful_orders</remote-name>
+          <remote-type>5</remote-type>
+          <local-name>[successful_orders]</local-name>
+          <parent-name>[Extract]</parent-name>
+          <remote-alias>successful_orders</remote-alias>
+          <ordinal>15</ordinal>
+          <family>Custom SQL Query</family>
+          <local-type>real</local-type>
+          <aggregation>Sum</aggregation>
+          <approx-count>3186</approx-count>
+          <contains-null>true</contains-null>
+          <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_7E52BC6491834C26A6B813024FA538DB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+        </metadata-record>
+        <metadata-record class='column'>
+          <remote-name>m1_successful_orders</remote-name>
+          <remote-type>5</remote-type>
+          <local-name>[m1_successful_orders]</local-name>
+          <parent-name>[Extract]</parent-name>
+          <remote-alias>m1_successful_orders</remote-alias>
+          <ordinal>16</ordinal>
+          <family>Custom SQL Query</family>
+          <local-type>real</local-type>
+          <aggregation>Sum</aggregation>
+          <approx-count>4274</approx-count>
+          <contains-null>true</contains-null>
+          <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_7E52BC6491834C26A6B813024FA538DB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+        </metadata-record>
+        <metadata-record class='column'>
+          <remote-name>is_new</remote-name>
+          <remote-type>11</remote-type>
+          <local-name>[is_new]</local-name>
+          <parent-name>[Extract]</parent-name>
+          <remote-alias>is_new</remote-alias>
+          <ordinal>17</ordinal>
+          <family>Custom SQL Query</family>
+          <local-type>boolean</local-type>
+          <aggregation>Count</aggregation>
+          <approx-count>2</approx-count>
+          <contains-null>true</contains-null>
+          <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_7E52BC6491834C26A6B813024FA538DB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+        </metadata-record>
+        <metadata-record class='column'>
+          <remote-name>first_online_date</remote-name>
+          <remote-type>133</remote-type>
+          <local-name>[first_online_date]</local-name>
+          <parent-name>[Extract]</parent-name>
+          <remote-alias>first_online_date</remote-alias>
+          <ordinal>18</ordinal>
+          <family>Custom SQL Query</family>
+          <local-type>date</local-type>
+          <aggregation>Year</aggregation>
+          <approx-count>951</approx-count>
+          <contains-null>true</contains-null>
+          <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_7E52BC6491834C26A6B813024FA538DB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+        </metadata-record>
+        <metadata-record class='column'>
+          <remote-name>acquisition_business_type</remote-name>
+          <remote-type>129</remote-type>
+          <local-name>[acquisition_business_type]</local-name>
+          <parent-name>[Extract]</parent-name>
+          <remote-alias>acquisition_business_type</remote-alias>
+          <ordinal>19</ordinal>
+          <family>Custom SQL Query</family>
+          <local-type>string</local-type>
+          <aggregation>Count</aggregation>
+          <approx-count>3</approx-count>
+          <contains-null>true</contains-null>
+          <collation flag='0' name='LROOT' />
+          <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_7E52BC6491834C26A6B813024FA538DB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+        </metadata-record>
+        <metadata-record class='column'>
+          <remote-name>vendor_grade</remote-name>
+          <remote-type>129</remote-type>
+          <local-name>[vendor_grade]</local-name>
+          <parent-name>[Extract]</parent-name>
+          <remote-alias>vendor_grade</remote-alias>
+          <ordinal>20</ordinal>
+          <family>Custom SQL Query</family>
+          <local-type>string</local-type>
+          <aggregation>Count</aggregation>
+          <approx-count>5</approx-count>
+          <contains-null>true</contains-null>
+          <collation flag='0' name='LROOT' />
+          <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_7E52BC6491834C26A6B813024FA538DB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+        </metadata-record>
+        <metadata-record class='column'>
+          <remote-name>group_name</remote-name>
+          <remote-type>129</remote-type>
+          <local-name>[group_name]</local-name>
+          <parent-name>[Extract]</parent-name>
+          <remote-alias>group_name</remote-alias>
+          <ordinal>21</ordinal>
+          <family>Custom SQL Query</family>
+          <local-type>string</local-type>
+          <aggregation>Count</aggregation>
+          <approx-count>86</approx-count>
+          <contains-null>true</contains-null>
+          <collation flag='0' name='LROOT' />
+          <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_7E52BC6491834C26A6B813024FA538DB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+        </metadata-record>
+        <metadata-record class='column'>
+          <remote-name>first_online_month</remote-name>
+          <remote-type>133</remote-type>
+          <local-name>[first_online_month]</local-name>
+          <parent-name>[Extract]</parent-name>
+          <remote-alias>first_online_month</remote-alias>
+          <ordinal>22</ordinal>
+          <family>Custom SQL Query</family>
+          <local-type>date</local-type>
+          <aggregation>Year</aggregation>
+          <approx-count>11</approx-count>
+          <contains-null>true</contains-null>
+          <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_7E52BC6491834C26A6B813024FA538DB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+        </metadata-record>
+        <metadata-record class='column'>
+          <remote-name>vendor_dineout_flag</remote-name>
+          <remote-type>11</remote-type>
+          <local-name>[vendor_dineout_flag]</local-name>
+          <parent-name>[Extract]</parent-name>
+          <remote-alias>vendor_dineout_flag</remote-alias>
+          <ordinal>23</ordinal>
+          <family>Custom SQL Query</family>
+          <local-type>boolean</local-type>
+          <aggregation>Count</aggregation>
+          <approx-count>1</approx-count>
+          <contains-null>true</contains-null>
+          <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_7E52BC6491834C26A6B813024FA538DB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+        </metadata-record>
+        <metadata-record class='column'>
+          <remote-name>first_order_date</remote-name>
+          <remote-type>133</remote-type>
+          <local-name>[first_order_date]</local-name>
+          <parent-name>[Extract]</parent-name>
+          <remote-alias>first_order_date</remote-alias>
+          <ordinal>24</ordinal>
+          <family>Custom SQL Query</family>
+          <local-type>date</local-type>
+          <aggregation>Year</aggregation>
+          <approx-count>964</approx-count>
+          <contains-null>true</contains-null>
+          <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_7E52BC6491834C26A6B813024FA538DB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+        </metadata-record>
+        <metadata-record class='column'>
+          <remote-name>succ_orders</remote-name>
+          <remote-type>20</remote-type>
+          <local-name>[succ_orders]</local-name>
+          <parent-name>[Extract]</parent-name>
+          <remote-alias>succ_orders</remote-alias>
+          <ordinal>25</ordinal>
+          <family>Custom SQL Query</family>
+          <local-type>integer</local-type>
+          <aggregation>Sum</aggregation>
+          <approx-count>3531</approx-count>
+          <contains-null>true</contains-null>
+          <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_7E52BC6491834C26A6B813024FA538DB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+        </metadata-record>
+        <metadata-record class='column'>
+          <remote-name>gmv</remote-name>
+          <remote-type>5</remote-type>
+          <local-name>[gmv]</local-name>
+          <parent-name>[Extract]</parent-name>
+          <remote-alias>gmv</remote-alias>
+          <ordinal>26</ordinal>
+          <family>Custom SQL Query</family>
+          <local-type>real</local-type>
+          <aggregation>Sum</aggregation>
+          <approx-count>137238</approx-count>
+          <contains-null>true</contains-null>
+          <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_7E52BC6491834C26A6B813024FA538DB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+        </metadata-record>
+        <metadata-record class='column'>
+          <remote-name>new_customers_to_vendors_numbers</remote-name>
+          <remote-type>20</remote-type>
+          <local-name>[new_customers_to_vendors_numbers]</local-name>
+          <parent-name>[Extract]</parent-name>
+          <remote-alias>new_customers_to_vendors_numbers</remote-alias>
+          <ordinal>27</ordinal>
+          <family>Custom SQL Query</family>
+          <local-type>integer</local-type>
+          <aggregation>Sum</aggregation>
+          <approx-count>2331</approx-count>
+          <contains-null>true</contains-null>
+          <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_7E52BC6491834C26A6B813024FA538DB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+        </metadata-record>
+        <metadata-record class='column'>
+          <remote-name>platform_new_customers_to_vendors_numbers</remote-name>
+          <remote-type>20</remote-type>
+          <local-name>[platform_new_customers_to_vendors_numbers]</local-name>
+          <parent-name>[Extract]</parent-name>
+          <remote-alias>platform_new_customers_to_vendors_numbers</remote-alias>
+          <ordinal>28</ordinal>
+          <family>Custom SQL Query</family>
+          <local-type>integer</local-type>
+          <aggregation>Sum</aggregation>
+          <approx-count>302</approx-count>
+          <contains-null>true</contains-null>
+          <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_7E52BC6491834C26A6B813024FA538DB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+        </metadata-record>
+        <metadata-record class='column'>
+          <remote-name>ad_rev</remote-name>
+          <remote-type>5</remote-type>
+          <local-name>[ad_rev]</local-name>
+          <parent-name>[Extract]</parent-name>
+          <remote-alias>ad_rev</remote-alias>
+          <ordinal>29</ordinal>
+          <family>Custom SQL Query</family>
+          <local-type>real</local-type>
+          <aggregation>Sum</aggregation>
+          <approx-count>15885</approx-count>
+          <contains-null>true</contains-null>
+          <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_7E52BC6491834C26A6B813024FA538DB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+        </metadata-record>
+        <metadata-record class='column'>
+          <remote-name>cpc</remote-name>
+          <remote-type>5</remote-type>
+          <local-name>[cpc]</local-name>
+          <parent-name>[Extract]</parent-name>
+          <remote-alias>cpc</remote-alias>
+          <ordinal>30</ordinal>
+          <family>Custom SQL Query</family>
+          <local-type>real</local-type>
+          <aggregation>Sum</aggregation>
+          <approx-count>69290</approx-count>
+          <contains-null>true</contains-null>
+          <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_7E52BC6491834C26A6B813024FA538DB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+        </metadata-record>
+        <metadata-record class='column'>
+          <remote-name>discount</remote-name>
+          <remote-type>5</remote-type>
+          <local-name>[discount]</local-name>
+          <parent-name>[Extract]</parent-name>
+          <remote-alias>discount</remote-alias>
+          <ordinal>31</ordinal>
+          <family>Custom SQL Query</family>
+          <local-type>real</local-type>
+          <aggregation>Sum</aggregation>
+          <approx-count>123286</approx-count>
+          <contains-null>true</contains-null>
+          <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_7E52BC6491834C26A6B813024FA538DB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+        </metadata-record>
+        <metadata-record class='column'>
+          <remote-name>offline_duration_in_hours</remote-name>
+          <remote-type>5</remote-type>
+          <local-name>[offline_duration_in_hours]</local-name>
+          <parent-name>[Extract]</parent-name>
+          <remote-alias>offline_duration_in_hours</remote-alias>
+          <ordinal>32</ordinal>
+          <family>Custom SQL Query</family>
+          <local-type>real</local-type>
+          <aggregation>Sum</aggregation>
+          <approx-count>69460</approx-count>
+          <contains-null>true</contains-null>
+          <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_7E52BC6491834C26A6B813024FA538DB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+        </metadata-record>
+        <metadata-record class='column'>
+          <remote-name>schedule_duration_in_hours</remote-name>
+          <remote-type>5</remote-type>
+          <local-name>[schedule_duration_in_hours]</local-name>
+          <parent-name>[Extract]</parent-name>
+          <remote-alias>schedule_duration_in_hours</remote-alias>
+          <ordinal>33</ordinal>
+          <family>Custom SQL Query</family>
+          <local-type>real</local-type>
+          <aggregation>Sum</aggregation>
+          <approx-count>16918</approx-count>
+          <contains-null>true</contains-null>
+          <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_7E52BC6491834C26A6B813024FA538DB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+        </metadata-record>
+        <metadata-record class='column'>
+          <remote-name>active_menu_item_count</remote-name>
+          <remote-type>20</remote-type>
+          <local-name>[active_menu_item_count]</local-name>
+          <parent-name>[Extract]</parent-name>
+          <remote-alias>active_menu_item_count</remote-alias>
+          <ordinal>34</ordinal>
+          <family>Custom SQL Query</family>
+          <local-type>integer</local-type>
+          <aggregation>Sum</aggregation>
+          <approx-count>947</approx-count>
+          <contains-null>true</contains-null>
+          <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_7E52BC6491834C26A6B813024FA538DB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+        </metadata-record>
+        <metadata-record class='column'>
+          <remote-name>item_with_image_count</remote-name>
+          <remote-type>20</remote-type>
+          <local-name>[item_with_image_count]</local-name>
+          <parent-name>[Extract]</parent-name>
+          <remote-alias>item_with_image_count</remote-alias>
+          <ordinal>35</ordinal>
+          <family>Custom SQL Query</family>
+          <local-type>integer</local-type>
+          <aggregation>Sum</aggregation>
+          <approx-count>771</approx-count>
+          <contains-null>true</contains-null>
+          <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_7E52BC6491834C26A6B813024FA538DB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+        </metadata-record>
+        <metadata-record class='column'>
+          <remote-name>item_with_description_count</remote-name>
+          <remote-type>20</remote-type>
+          <local-name>[item_with_description_count]</local-name>
+          <parent-name>[Extract]</parent-name>
+          <remote-alias>item_with_description_count</remote-alias>
+          <ordinal>36</ordinal>
+          <family>Custom SQL Query</family>
+          <local-type>integer</local-type>
+          <aggregation>Sum</aggregation>
+          <approx-count>908</approx-count>
+          <contains-null>true</contains-null>
+          <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_7E52BC6491834C26A6B813024FA538DB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+        </metadata-record>
+        <metadata-record class='column'>
+          <remote-name>vendor_list_impression_count</remote-name>
+          <remote-type>20</remote-type>
+          <local-name>[vendor_list_impression_count]</local-name>
+          <parent-name>[Extract]</parent-name>
+          <remote-alias>vendor_list_impression_count</remote-alias>
+          <ordinal>37</ordinal>
+          <family>Custom SQL Query</family>
+          <local-type>integer</local-type>
+          <aggregation>Sum</aggregation>
+          <approx-count>53442</approx-count>
+          <contains-null>true</contains-null>
+          <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_7E52BC6491834C26A6B813024FA538DB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+        </metadata-record>
+        <metadata-record class='column'>
+          <remote-name>viewed_menu_session_count</remote-name>
+          <remote-type>20</remote-type>
+          <local-name>[viewed_menu_session_count]</local-name>
+          <parent-name>[Extract]</parent-name>
+          <remote-alias>viewed_menu_session_count</remote-alias>
+          <ordinal>38</ordinal>
+          <family>Custom SQL Query</family>
+          <local-type>integer</local-type>
+          <aggregation>Sum</aggregation>
+          <approx-count>16327</approx-count>
+          <contains-null>true</contains-null>
+          <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_7E52BC6491834C26A6B813024FA538DB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+        </metadata-record>
+        <metadata-record class='column'>
+          <remote-name>placed_order_count</remote-name>
+          <remote-type>20</remote-type>
+          <local-name>[placed_order_count]</local-name>
+          <parent-name>[Extract]</parent-name>
+          <remote-alias>placed_order_count</remote-alias>
+          <ordinal>39</ordinal>
+          <family>Custom SQL Query</family>
+          <local-type>integer</local-type>
+          <aggregation>Sum</aggregation>
+          <approx-count>3489</approx-count>
+          <contains-null>true</contains-null>
+          <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_7E52BC6491834C26A6B813024FA538DB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+        </metadata-record>
+        <metadata-record class='column'>
+          <remote-name>cpc_order_count</remote-name>
+          <remote-type>20</remote-type>
+          <local-name>[cpc_order_count]</local-name>
+          <parent-name>[Extract]</parent-name>
+          <remote-alias>cpc_order_count</remote-alias>
+          <ordinal>40</ordinal>
+          <family>Custom SQL Query</family>
+          <local-type>integer</local-type>
+          <aggregation>Sum</aggregation>
+          <approx-count>1505</approx-count>
+          <contains-null>true</contains-null>
+          <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_7E52BC6491834C26A6B813024FA538DB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+        </metadata-record>
+        <metadata-record class='column'>
+          <remote-name>vendor_active_customers</remote-name>
+          <remote-type>20</remote-type>
+          <local-name>[vendor_active_customers]</local-name>
+          <parent-name>[Extract]</parent-name>
+          <remote-alias>vendor_active_customers</remote-alias>
+          <ordinal>41</ordinal>
+          <family>Custom SQL Query</family>
+          <local-type>integer</local-type>
+          <aggregation>Sum</aggregation>
+          <approx-count>1948</approx-count>
+          <contains-null>true</contains-null>
+          <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_7E52BC6491834C26A6B813024FA538DB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+        </metadata-record>
+        <metadata-record class='column'>
+          <remote-name>vendor_list_session_count</remote-name>
+          <remote-type>20</remote-type>
+          <local-name>[vendor_list_session_count]</local-name>
+          <parent-name>[Extract]</parent-name>
+          <remote-alias>vendor_list_session_count</remote-alias>
+          <ordinal>42</ordinal>
+          <family>Custom SQL Query</family>
+          <local-type>integer</local-type>
+          <aggregation>Sum</aggregation>
+          <approx-count>10285</approx-count>
+          <contains-null>true</contains-null>
+          <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_7E52BC6491834C26A6B813024FA538DB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+        </metadata-record>
+        <metadata-record class='column'>
+          <remote-name>first_day_schedule_duration_in_hours</remote-name>
+          <remote-type>5</remote-type>
+          <local-name>[first_day_schedule_duration_in_hours]</local-name>
+          <parent-name>[Extract]</parent-name>
+          <remote-alias>first_day_schedule_duration_in_hours</remote-alias>
+          <ordinal>43</ordinal>
+          <family>Custom SQL Query</family>
+          <local-type>real</local-type>
+          <aggregation>Sum</aggregation>
+          <approx-count>15676</approx-count>
+          <contains-null>true</contains-null>
+          <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_7E52BC6491834C26A6B813024FA538DB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+        </metadata-record>
+        <metadata-record class='column'>
+          <remote-name>first_day_successful_order_count</remote-name>
+          <remote-type>20</remote-type>
+          <local-name>[first_day_successful_order_count]</local-name>
+          <parent-name>[Extract]</parent-name>
+          <remote-alias>first_day_successful_order_count</remote-alias>
+          <ordinal>44</ordinal>
+          <family>Custom SQL Query</family>
+          <local-type>integer</local-type>
+          <aggregation>Sum</aggregation>
+          <approx-count>104</approx-count>
+          <contains-null>true</contains-null>
+          <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_7E52BC6491834C26A6B813024FA538DB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+        </metadata-record>
+        <metadata-record class='column'>
+          <remote-name>first_day_net_orders</remote-name>
+          <remote-type>20</remote-type>
+          <local-name>[first_day_net_orders]</local-name>
+          <parent-name>[Extract]</parent-name>
+          <remote-alias>first_day_net_orders</remote-alias>
+          <ordinal>45</ordinal>
+          <family>Custom SQL Query</family>
+          <local-type>integer</local-type>
+          <aggregation>Sum</aggregation>
+          <approx-count>54</approx-count>
+          <contains-null>true</contains-null>
+          <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_7E52BC6491834C26A6B813024FA538DB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+        </metadata-record>
+        <metadata-record class='column'>
+          <remote-name>index</remote-name>
+          <remote-type>20</remote-type>
+          <local-name>[index]</local-name>
+          <parent-name>[Extract]</parent-name>
+          <remote-alias>index</remote-alias>
+          <ordinal>46</ordinal>
+          <family>Custom SQL Query</family>
+          <local-type>integer</local-type>
+          <aggregation>Sum</aggregation>
+          <approx-count>11</approx-count>
+          <contains-null>true</contains-null>
+          <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_7E52BC6491834C26A6B813024FA538DB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+        </metadata-record>
+        <metadata-record class='column'>
+          <remote-name>active_status</remote-name>
+          <remote-type>20</remote-type>
+          <local-name>[active_status]</local-name>
+          <parent-name>[Extract]</parent-name>
+          <remote-alias>active_status</remote-alias>
+          <ordinal>47</ordinal>
+          <family>Custom SQL Query</family>
+          <local-type>integer</local-type>
+          <aggregation>Sum</aggregation>
+          <approx-count>2</approx-count>
+          <contains-null>true</contains-null>
+          <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_7E52BC6491834C26A6B813024FA538DB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+        </metadata-record>
+        <metadata-record class='column'>
+          <remote-name>m0_status</remote-name>
+          <remote-type>20</remote-type>
+          <local-name>[m0_status]</local-name>
+          <parent-name>[Extract]</parent-name>
+          <remote-alias>m0_status</remote-alias>
+          <ordinal>48</ordinal>
+          <family>Custom SQL Query</family>
+          <local-type>integer</local-type>
+          <aggregation>Sum</aggregation>
+          <approx-count>2</approx-count>
+          <contains-null>true</contains-null>
+          <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_7E52BC6491834C26A6B813024FA538DB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+        </metadata-record>
+        <metadata-record class='column'>
+          <remote-name>m1_active_status</remote-name>
+          <remote-type>20</remote-type>
+          <local-name>[m1_active_status]</local-name>
+          <parent-name>[Extract]</parent-name>
+          <remote-alias>m1_active_status</remote-alias>
+          <ordinal>49</ordinal>
+          <family>Custom SQL Query</family>
+          <local-type>integer</local-type>
+          <aggregation>Sum</aggregation>
+          <approx-count>2</approx-count>
+          <contains-null>true</contains-null>
+          <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_7E52BC6491834C26A6B813024FA538DB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+        </metadata-record>
+        <metadata-record class='column'>
+          <remote-name>m2_active_status</remote-name>
+          <remote-type>20</remote-type>
+          <local-name>[m2_active_status]</local-name>
+          <parent-name>[Extract]</parent-name>
+          <remote-alias>m2_active_status</remote-alias>
+          <ordinal>50</ordinal>
+          <family>Custom SQL Query</family>
+          <local-type>integer</local-type>
+          <aggregation>Sum</aggregation>
+          <approx-count>2</approx-count>
+          <contains-null>true</contains-null>
+          <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_7E52BC6491834C26A6B813024FA538DB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+        </metadata-record>
+        <metadata-record class='column'>
+          <remote-name>m3_active_status</remote-name>
+          <remote-type>20</remote-type>
+          <local-name>[m3_active_status]</local-name>
+          <parent-name>[Extract]</parent-name>
+          <remote-alias>m3_active_status</remote-alias>
+          <ordinal>51</ordinal>
+          <family>Custom SQL Query</family>
+          <local-type>integer</local-type>
+          <aggregation>Sum</aggregation>
+          <approx-count>2</approx-count>
+          <contains-null>true</contains-null>
+          <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_7E52BC6491834C26A6B813024FA538DB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+        </metadata-record>
+        <metadata-record class='column'>
+          <remote-name>m4_active_status</remote-name>
+          <remote-type>20</remote-type>
+          <local-name>[m4_active_status]</local-name>
+          <parent-name>[Extract]</parent-name>
+          <remote-alias>m4_active_status</remote-alias>
+          <ordinal>52</ordinal>
+          <family>Custom SQL Query</family>
+          <local-type>integer</local-type>
+          <aggregation>Sum</aggregation>
+          <approx-count>2</approx-count>
+          <contains-null>true</contains-null>
+          <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_7E52BC6491834C26A6B813024FA538DB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+        </metadata-record>
+        <metadata-record class='column'>
+          <remote-name>m5_active_status</remote-name>
+          <remote-type>20</remote-type>
+          <local-name>[m5_active_status]</local-name>
+          <parent-name>[Extract]</parent-name>
+          <remote-alias>m5_active_status</remote-alias>
+          <ordinal>53</ordinal>
+          <family>Custom SQL Query</family>
+          <local-type>integer</local-type>
+          <aggregation>Sum</aggregation>
+          <approx-count>2</approx-count>
+          <contains-null>true</contains-null>
+          <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_7E52BC6491834C26A6B813024FA538DB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+        </metadata-record>
+        <metadata-record class='column'>
+          <remote-name>basket_amount_eur</remote-name>
+          <remote-type>5</remote-type>
+          <local-name>[basket_amount_eur]</local-name>
+          <parent-name>[Extract]</parent-name>
+          <remote-alias>basket_amount_eur</remote-alias>
+          <ordinal>54</ordinal>
+          <family>Custom SQL Query</family>
+          <local-type>real</local-type>
+          <aggregation>Sum</aggregation>
+          <approx-count>46820</approx-count>
+          <contains-null>true</contains-null>
+          <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_7E52BC6491834C26A6B813024FA538DB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+        </metadata-record>
+        <metadata-record class='column'>
+          <remote-name>total_spend</remote-name>
+          <remote-type>5</remote-type>
+          <local-name>[total_spend]</local-name>
+          <parent-name>[Extract]</parent-name>
+          <remote-alias>total_spend</remote-alias>
+          <ordinal>55</ordinal>
+          <family>Custom SQL Query</family>
+          <local-type>real</local-type>
+          <aggregation>Sum</aggregation>
+          <approx-count>47118</approx-count>
+          <contains-null>true</contains-null>
+          <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_7E52BC6491834C26A6B813024FA538DB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+        </metadata-record>
+        <metadata-record class='column'>
+          <remote-name>last_month_active_status</remote-name>
+          <remote-type>20</remote-type>
+          <local-name>[last_month_active_status]</local-name>
+          <parent-name>[Extract]</parent-name>
+          <remote-alias>last_month_active_status</remote-alias>
+          <ordinal>56</ordinal>
+          <family>Custom SQL Query</family>
+          <local-type>integer</local-type>
+          <aggregation>Sum</aggregation>
+          <approx-count>3</approx-count>
+          <contains-null>true</contains-null>
+          <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_7E52BC6491834C26A6B813024FA538DB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+        </metadata-record>
+      </metadata-records>
+    </connection>
+  </extract>
+  <layout _.fcp.SchemaViewerObjectModel.false...dim-percentage='0.5' _.fcp.SchemaViewerObjectModel.false...measure-percentage='0.4' _.fcp.SchemaViewerObjectModel.true...common-percentage='0.901116' _.fcp.SchemaViewerObjectModel.true...user-set-layout-v2='true' dim-ordering='alphabetic' measure-ordering='alphabetic' parameter-percentage='0.0988836' show-structure='true' />
+  <semantic-values>
+    <semantic-value key='[Country].[Name]' value='&quot;United States&quot;' />
+  </semantic-values>
+  <date-options start-of-week='saturday' />
+  <field-sort-info field-sort-order-type='custom-order'>
+    <field-sort-custom-order field='vendor_id' />
+    <field-sort-custom-order field='Calculation_3605624119586951168' />
+    <field-sort-custom-order field='Calculation_3605624119619035137' />
+    <field-sort-custom-order field='Calculation_6566107551983439876' />
+    <field-sort-custom-order field='Calculation_6566107551983558661' />
+    <field-sort-custom-order field='Calculation_440789845942054923' />
+    <field-sort-custom-order field='vendor_name' />
+    <field-sort-custom-order field='country_code' />
+    <field-sort-custom-order field='month' />
+    <field-sort-custom-order field='main_cuisine' />
+    <field-sort-custom-order field='is_active' />
+    <field-sort-custom-order field='successful_orders' />
+    <field-sort-custom-order field='m1_successful_orders' />
+    <field-sort-custom-order field='is_new' />
+    <field-sort-custom-order field='first_online_date' />
+    <field-sort-custom-order field='acquisition_business_type' />
+    <field-sort-custom-order field='Calculation_440789845937479682' />
+    <field-sort-custom-order field='vendor_grade' />
+    <field-sort-custom-order field='Calculation_6566107553045872656' />
+    <field-sort-custom-order field='first_online_month' />
+    <field-sort-custom-order field='vendor_dineout_flag' />
+    <field-sort-custom-order field='first_order_date' />
+    <field-sort-custom-order field='Calculation_440789845962608654' />
+    <field-sort-custom-order field='succ_orders' />
+    <field-sort-custom-order field='Calculation_440789845956866060' />
+    <field-sort-custom-order field='Calculation_6566107552031014922' />
+    <field-sort-custom-order field='gmv' />
+    <field-sort-custom-order field='new_customers_to_vendors_numbers' />
+    <field-sort-custom-order field='platform_new_customers_to_vendors_numbers' />
+    <field-sort-custom-order field='ad_rev' />
+    <field-sort-custom-order field='cpc' />
+    <field-sort-custom-order field='Calculation_440789845940994055' />
+    <field-sort-custom-order field='Calculation_6566107552032251917' />
+    <field-sort-custom-order field='Calculation_440789845941346312' />
+    <field-sort-custom-order field='Calculation_6566107552032727055' />
+    <field-sort-custom-order field='Calculation_440789845941448713' />
+    <field-sort-custom-order field='Calculation_6566107552032522254' />
+    <field-sort-custom-order field='discount' />
+    <field-sort-custom-order field='offline_duration_in_hours' />
+    <field-sort-custom-order field='Calculation_440789845957152781' />
+    <field-sort-custom-order field='Calculation_6566107551969435648' />
+    <field-sort-custom-order field='Calculation_6566107551970091011' />
+    <field-sort-custom-order field='Calculation_440789845941555210' />
+    <field-sort-custom-order field='schedule_duration_in_hours' />
+    <field-sort-custom-order field='Calculation_6566107552026607622' />
+    <field-sort-custom-order field='Calculation_6566107552026882055' />
+    <field-sort-custom-order field='active_menu_item_count' />
+    <field-sort-custom-order field='Calculation_440789845940654084' />
+    <field-sort-custom-order field='Calculation_440789845940518915' />
+    <field-sort-custom-order field='item_with_image_count' />
+    <field-sort-custom-order field='item_with_description_count' />
+    <field-sort-custom-order field='vendor_list_impression_count' />
+    <field-sort-custom-order field='Calculation_6566107552030208008' />
+    <field-sort-custom-order field='viewed_menu_session_count' />
+    <field-sort-custom-order field='placed_order_count' />
+    <field-sort-custom-order field='Calculation_440789845940850694' />
+    <field-sort-custom-order field='Calculation_440789845940789253' />
+    <field-sort-custom-order field='cpc_order_count' />
+    <field-sort-custom-order field='vendor_active_customers' />
+    <field-sort-custom-order field='index' />
+    <field-sort-custom-order field='Calculation_440789845986099215' />
+    <field-sort-custom-order field='active_status' />
+    <field-sort-custom-order field='Calculation_440789845935165441' />
+    <field-sort-custom-order field='m0_status' />
+    <field-sort-custom-order field='Calculation_6566107553049260049' />
+    <field-sort-custom-order field='Calculation_6566107553051983890' />
+    <field-sort-custom-order field='m1_active_status' />
+    <field-sort-custom-order field='m2_active_status' />
+  </field-sort-info>
+  <_.fcp.ObjectModelEncapsulateLegacy.true...object-graph>
+    <objects>
+      <object caption='Custom SQL Query' id='_7E52BC6491834C26A6B813024FA538DB'>
+        <properties context=''>
+          <relation connection='bigquery.04k2w321b2rxy919xf0t51nnslb5' name='Custom SQL Query' type='text'><![CDATA[with dineout_logic as
+ ( SELECT
+     DISTINCT v.vendor_id,
+     salesforce_id,
+     avg(case when c.name__c = "tDine" then  commission__c/100  end) as tdine_commission,
+     avg(case when c.name__c <<>> "tDine" then  commission__c/100  end)  as other_commission
+   FROM `tlb-data-prod.data_platform.dim_vendor_info` v
+   LEFT JOIN `tlb-data-prod.data_platform.dim_location_info` l
+   ON l.location_id = v.location_id
+   LEFT JOIN `fulfillment-dwh-production.curated_data_shared_salesforce.account` a
+   ON v.salesforce_id = a.grid__c
+   LEFT JOIN `fulfillment-dwh-production.curated_data_shared_salesforce.contract` c
+   ON a.id = c.accountid
+   WHERE 1=1
+   AND c.name__c IN ('TGO Basic Commission','TMP Basic Commission','TGO Basic Commission SSU','TGO Basic Commision','OD Basic Commission','MP Basic Commission','TGO Basic Commission N','TGO Basic commission','S01- Growth Package TGO Commission','B01 - Basic Package TGO Commission', 'TGO Incremental Orders Commission','BH S01 - Growth Package TGO Commission','BH B01 - Standard Package TGO Commission','OD Basic Commission trial','OM B01 - Standard Package (Restaurant) Commission OD','OM S01 - Growth Package (Restaurant) Commission OD','tDine','TGO Incremental GMV Commission')
+   AND c.status = 'Activated'
+   AND c.end_date__c IS NULL
+   group by 1 ,2
+   )
+   
+
+   /* 
+
+-- get monthly vendor_id, is_new or not, and acquisition type is not switch 
+case when date_diff(month,date_trunc(first_online_date,month),month)=0
+and acquisition_business_type<<>>'Switch'
+ and is_contracted then vendor_id else null
+end as onboarded_m0,
+
+   */
+   ,Base as (
+   select 
+     k.vendor_id,
+     k.salesforce_id,
+     k.vendor_name, 
+     k.chain_id,
+     k.chain_name,
+     k.country_code,
+     is_tpro,
+     f.is_managed_by_vendor_helpdesk as is_launchpad,
+     f.account_manager_email,
+     f.team_leader_email,
+     f.account_manager_name,
+     f.team_leader_name,
+     --f.is_vendor_helpdesk,
+     month,
+     k.main_cuisine,
+     k.is_active,
+     k.successful_orders,
+     k.m1_successful_orders,
+     is_new,
+     k.first_online_date, 
+     k.first_order_date,
+     acquisition_business_type,
+     k.vendor_grade,
+     ch.group_name,
+     date_trunc(k.first_online_date,month) as first_online_month
+   from `tlb-data-prod.data_platform.agg_vendor_inventory_kpi_monthly` k 
+   left join `tlb-data-prod.data_platform.dim_vendor_info` f on k.vendor_id=f.vendor_id
+   left join `tlb-data-prod.data_platform.dim_chain` ch on ch.chain_id=k.chain_id
+   where k.vertical='Restaurant'
+   and month = date_trunc(current_date,month) 
+   and date_trunc(k.first_online_date,month) >>='2024-10-01'
+   and k.country_code <<>> "SA"
+   )
+
+
+,no_dineout as (
+select * 
+   
+   from (
+   select b.*, IFNULL(case when ifnull(tdine_commission,0) >> 0 and  ifnull(other_commission,0) = 0 then TRUE ELSE FALSE END,FALSE)  as vendor_dineout_flag from Base b
+     left join dineout_logic c on b.vendor_id=c.vendor_id  
+   --where month='2025-05-01'
+   --and is_new
+   ) 
+   where vendor_dineout_flag=False
+) 
+--- getting the real first order date for winback vendors from fct order info 
+,no_dineout_clean as (
+select d.*, min(case when first_order_date << first_online_date  then o.order_date end) as win_back_first_order_date
+ from no_dineout d 
+left join `tlb-data-prod.data_platform.fct_order_info` o 
+on d.vendor_id=o.vendor_id and o.is_successful 
+and o.order_date >>=d.first_online_date 
+--where d.acquisition_business_type='Win Back'
+
+group by all
+
+) 
+--sanity check, 
+,no_dineout_clean_first_order as (
+ select * except(first_order_date,win_back_first_order_date) 
+, case when first_order_date << first_online_date  then win_back_first_order_date else first_order_date end as first_order_date
+ from no_dineout_clean
+ --where onboarded_m0 is not null
+ )
+
+/* 
+the goal is to take go live month as reference (cohort) 
+and check since go live month till current month 
+-vendor status 
+-vendor orders 
+...etc 
+
+
+
+
+
+*/
+
+
+,metrics_metadata AS (
+     /* Active vendors in December 2024 */
+     SELECT
+       k.vendor_id,
+     IFNULL(case when ifnull(tdine_commission,0) >> 0 and  ifnull(other_commission,0) = 0 then TRUE ELSE FALSE END,FALSE)  as vendor_dineout_flag,
+     k.country_code,
+     date_trunc(snapshot_date,month) as month,
+
+     sum(successful_order_count) as succ_orders, 
+     sum(gmv_amount_eur) as gmv, 
+     sum(vendor_acquisition_customer_count) as new_customers_to_vendors_numbers,
+    sum(platform_acquisition_customer_count) as platform_new_customers_to_vendors_numbers,
+    sum( IFNULL((cpp_featured_product_revenue_eur),0) +
+IFNULL((kwords_revenue_eur),0) +
+IFNULL((cpp_revenue_eur),0) +
+IFNULL((deal_targeting_revenue_eur),0) +
+IFNULL((gem_commission_amount_eur),0) +
+--IFNULL((organic_placement_revenue_eur),0) +
+IFNULL(display_ads_revenue_eur,0)) ad_rev,
+sum(ifnull(cpc_revenue_eur,0)) as cpc,
+sum(ifnull(discount_amount_eur,0)) as discount,
+
+
+--- add here offline time 
+sum(offline_duration_in_hours) as offline_duration_in_hours,
+sum(schedule_duration_in_hours) as schedule_duration_in_hours,
+-- dlp and dld 
+max(active_menu_item_count) as active_menu_item_count, 
+max(item_with_image_count) as item_with_image_count,
+max(item_with_description_count) as item_with_description_count,
+-- Engagement vs Impressions 
+sum(vendor_list_impression_session_count) as vendor_list_impression_count,
+sum(viewed_menu_session_count) as viewed_menu_session_count,
+sum(net_order_count) as placed_order_count,
+sum(cpc_order_count) as cpc_order_count,
+sum(vendor_active_customer_count) as vendor_active_customers,
+sum(vendor_list_session_count) as vendor_list_session_count,
+sum(case when snapshot_date=date(first_online_date) then schedule_duration_in_hours end) as first_day_schedule_duration_in_hours,
+sum(case when snapshot_date=date(first_online_date) then successful_order_count end) as first_day_successful_order_count,
+sum(case when snapshot_date=date(first_online_date) then net_order_count end) as first_day_net_orders,
+
+
+
+
+
+     FROM `tlb-data-prod.data_platform.agg_vendor_performance_metrics_daily` k
+     left join dineout_logic c on k.vendor_id=c.vendor_id  
+     left join `tlb-data-prod.data_platform.dim_vendor_info` vf on vf.vendor_id=k.vendor_Id
+     WHERE vertical = 'food'
+       AND snapshot_date >>= '2024-09-01'  -- December 2024
+       and k.country_code <<>> 'SA'
+       group by all)
+
+--select * from metrics_metadata
+--where vendor_id=36731
+
+/* 
+construct the cohort by creating index from snapshot months vs onboarding month 
+
+
+*/
+
+,vws as (
+  
+  select 
+snapshot_month as month,
+w.country_code,
+w.vendor_id,
+--is_active,
+sum(basket_amount_eur) as basket_amount_eur ,
+sum(
+IFNULL(commission_amount_eur,0) + 
+IFNULL(tgo_amount_eur,0) +
+IFNULL(featured_product_revenue_eur,0) + 
+IFNULL(kwords_search_revenue_eur,0) + 
+IFNULL(cpp_monthly_revenue_eur,0) + 
+IFNULL(deal_targeting_revenue_eur_excl_vat,0) +
+IFNULL(discount_amount_eur,0) + -- discount should not be counted as it's for customer not talabat 
+IFNULL(gem_commission_amount_eur,0) + 
+IFNULL(organic_placement_revenue_eur,0) +  
+IFNULL(cash_fee_eur,0) + 
+IFNULL(card_fee_eur,0) + 
+IFNULL(vendor_tpro_cost_eur,0)+
+IFNULL(display_ads_revenue_eur_excl_vat,0)+
+IFNULL(tpro_commission_saving_amount_eur,0)+ -- q 
+IFNULL(reward_commission_saving_amount_eur,0)+ -- q 
+IFNULL(tpro_discount_amount_eur,0)+ --q 
+IFNULL(vendor_reward_cost_eur,0) --q 
+
+) as total_spend,
+
+from `tlb-data-prod.data_platform.agg_vendor_wallet_share_monthly`  w 
+left join `tlb-data-prod.data_platform.dim_vendor_info` v on v.vendor_id=w.vendor_id and v.chain_id=w.chain_id
+where snapshot_month >>= "2024-09-01"
+and vertical = "food"
+group by all
+
+)
+, vws_index as (
+
+
+  select base.vendor_id, 
+  vws.basket_amount_eur, 
+  vws.total_spend, 
+  date_diff(vws.month,first_online_month,month) as index,
+   from no_dineout_clean_first_order base 
+   left join vws  on vws.vendor_id=base.vendor_id 
+  and vws.month >>= first_online_month 
+)
+
+,output_p1 as (select base.*, 
+m.* except(vendor_id,month,country_code,vendor_dineout_flag), 
+date_diff(m.month,first_online_month,month) as index,
+case when succ_orders >>0 then 1 else 0 end as active_status,
+
+
+from no_dineout_clean_first_order base
+left join metrics_metadata m 
+on base.vendor_id=m.vendor_id 
+and m.month >>=first_online_month)
+
+
+,output_p2 as (
+
+  select * from (
+select vendor_id,
+index,
+active_status as m0_status, 
+lead(active_status) over(partition by vendor_id order by index) as m1_active_status,
+lead(active_status,2) over(partition by vendor_id order by index) as m2_active_status,
+lead(active_status,3) over(partition by vendor_id order by index) as m3_active_status,
+lead(active_status,4) over(partition by vendor_id order by index) as m4_active_status,
+lead(active_status,5) over(partition by vendor_id order by index) as m5_active_status,
+
+from output_p1  ) 
+
+where index=0
+)
+
+
+select p1.*, 
+coalesce(m0_status,0) as m0_status, 
+coalesce(m1_active_status,0) as m1_active_status, 
+coalesce(m2_active_status,0) as m2_active_status, 
+coalesce(m3_active_status,0) as m3_active_status, 
+coalesce(m4_active_status,0) as m4_active_status, 
+coalesce(m5_active_status,0) as m5_active_status, 
+v.basket_amount_eur,
+v.total_spend,
+lag(active_status) over(partition by p1.vendor_id order by p1.index) as last_month_active_status
+from output_p1 p1 
+left join vws_index v on v.vendor_id=p1.vendor_id and v.index=0
+join output_p2 p2 on p1.vendor_id=p2.vendor_id]]></relation>
+        </properties>
+        <properties context='extract'>
+          <relation name='Extract' table='[Extract].[Extract]' type='table' />
+        </properties>
+      </object>
+    </objects>
+  </_.fcp.ObjectModelEncapsulateLegacy.true...object-graph>
+</datasource>
