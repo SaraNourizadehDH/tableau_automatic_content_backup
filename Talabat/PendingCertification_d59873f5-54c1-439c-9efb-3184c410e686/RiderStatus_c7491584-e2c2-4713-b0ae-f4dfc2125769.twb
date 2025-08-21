@@ -1,0 +1,1053 @@
+<?xml version='1.0' encoding='utf-8' ?>
+
+<!-- build 20233.25.0106.1650                               -->
+<workbook original-version='18.1' source-build='2023.3.14 (20233.25.0106.1650)' version='18.1' xml:base='https://tableau.deliveryhero.net' xmlns:user='http://www.tableausoftware.com/xml/user'>
+  <document-format-change-manifest>
+    <_.fcp.AccessibleZoneTabOrder.true...AccessibleZoneTabOrder />
+    <_.fcp.AnimationOnByDefault.true...AnimationOnByDefault />
+    <AutoCreateAndUpdateDSDPhoneLayouts />
+    <_.fcp.MarkAnimation.true...MarkAnimation />
+    <_.fcp.ObjectModelEncapsulateLegacy.true...ObjectModelEncapsulateLegacy />
+    <_.fcp.ObjectModelExtractV2.true...ObjectModelExtractV2 />
+    <_.fcp.ObjectModelTableType.true...ObjectModelTableType />
+    <_.fcp.SchemaViewerObjectModel.true...SchemaViewerObjectModel />
+    <SetMembershipControl />
+    <SheetIdentifierTracking />
+    <SortTagCleanup />
+    <_.fcp.VConnDownstreamExtractsWithWarnings.true...VConnDownstreamExtractsWithWarnings />
+    <WindowsPersistSimpleIdentifiers />
+    <ZoneBackgroundTransparency />
+  </document-format-change-manifest>
+  <repository-location derived-from='https://tableau.deliveryhero.net/t/Talabat/workbooks/RiderStatus?rev=1.9' id='RiderStatus' path='/t/Talabat/workbooks' revision='2.0' site='Talabat' />
+  <preferences />
+  <_.fcp.AnimationOnByDefault.false...style>
+    <_.fcp.AnimationOnByDefault.false..._.fcp.MarkAnimation.true...style-rule element='animation'>
+      <_.fcp.AnimationOnByDefault.false...format attr='animation-on' value='ao-on' />
+    </_.fcp.AnimationOnByDefault.false..._.fcp.MarkAnimation.true...style-rule>
+  </_.fcp.AnimationOnByDefault.false...style>
+  <datasources>
+    <datasource caption='Custom SQL Query (data_platform_logistics)' inline='true' name='federated.0xwjnbf1y7718x16hn8w01cka715' version='18.1'>
+      <connection class='federated'>
+        <named-connections>
+          <named-connection caption='BigQuery' name='bigquery.12a7gea1be4pbk19apvxv0gkg3e1'>
+            <connection CATALOG='tlb-data-dev' EXECCATALOG='tlb-data-dev' authentication='oauth' bq-dataset-fetch-rows='' bq-fetch-rows='' bq-fetch-tasks='' bq-large-fetch-rows='' bq-project-fetch-rows='' bq-response-rows='' class='bigquery' connection-dialect='google-sql' project='tlb-data-dev' schema='data_platform_logistics' server-oauth='' username='abdelrahman.nassar@talabat.com' workgroup-auth-mode='prompt' />
+          </named-connection>
+        </named-connections>
+        <_.fcp.ObjectModelEncapsulateLegacy.false...relation connection='bigquery.12a7gea1be4pbk19apvxv0gkg3e1' name='Custom SQL Query' type='text'>WITH&#13;
+  rider_recent_orders AS&#13;
+  (&#13;
+    SELECT&#13;
+      primary_rider_id AS rider_id,&#13;
+      COUNT(DISTINCT IF(DATE(created_at, timezone) &gt;&gt;= DATE_SUB(CURRENT_DATE(), INTERVAL 90 DAY), order_id, NULL)) AS orders_last_90_days,&#13;
+      COUNT(DISTINCT IF(DATE(created_at, timezone) &gt;&gt;= DATE_SUB(CURRENT_DATE(), INTERVAL 60 DAY), order_id, NULL)) AS orders_last_60_days,&#13;
+      COUNT(DISTINCT IF(DATE(created_at, timezone) &gt;&gt;= DATE_SUB(CURRENT_DATE(), INTERVAL 30 DAY), order_id, NULL)) AS orders_last_30_days,&#13;
+      COUNT(DISTINCT IF(DATE(created_at, timezone) &gt;&gt;= DATE_SUB(CURRENT_DATE(), INTERVAL 15 DAY), order_id, NULL)) AS orders_last_15_days,&#13;
+        COUNT(DISTINCT IF(DATE(created_at, timezone) &gt;&gt;= DATE_SUB(CURRENT_DATE(), INTERVAL 7 DAY), order_id, NULL)) AS orders_last_7_days&#13;
+    FROM&#13;
+      `tlb-data-prod.data_platform.fct_logistics_order`&#13;
+    WHERE&#13;
+      country_code = &apos;eg&apos;&#13;
+      AND order_status = &apos;completed&apos;&#13;
+      AND DATE(created_at, timezone) &gt;&gt;= DATE_SUB(CURRENT_DATE(), INTERVAL 90 DAY)&#13;
+    GROUP BY&#13;
+      1&#13;
+  )&#13;
+,&#13;
+  rider_all_time_months AS&#13;
+  (&#13;
+    SELECT&#13;
+      primary_rider_id AS rider_id,&#13;
+      COUNT(DISTINCT DATE_TRUNC(created_date, MONTH)) AS all_time_active_months&#13;
+    FROM&#13;
+      `tlb-data-prod.data_platform.fct_logistics_order`&#13;
+    WHERE&#13;
+      country_code = &apos;eg&apos; AND order_status = &apos;completed&apos;&#13;
+    GROUP BY&#13;
+      1&#13;
+  )&#13;
+,&#13;
+  orders_since_contract AS&#13;
+  (&#13;
+    SELECT&#13;
+      r.rider_id,&#13;
+      COUNT(DISTINCT o.order_id) AS orders_since_contract_start&#13;
+    FROM&#13;
+      `tlb-data-prod.data_platform.dim_logistics_rider` AS r&#13;
+      JOIN `tlb-data-prod.data_platform.fct_logistics_order` AS o ON r.rider_id = o.primary_rider_id&#13;
+    WHERE&#13;
+      r.country_code = &apos;eg&apos;&#13;
+      AND o.order_status = &apos;completed&apos;&#13;
+      AND DATE(o.created_at, o.timezone) &gt;&gt;= DATE(r.last_contract_start_at)&#13;
+    GROUP BY&#13;
+      1&#13;
+  )&#13;
+SELECT&#13;
+  r.rider_id,&#13;
+  r.rider_name,&#13;
+  r.is_active AS active_flag,&#13;
+  r.last_contract_name,&#13;
+  DATE_DIFF(CURRENT_DATE(), DATE(r.last_contract_start_at), MONTH) AS months_since_last_contract_start,&#13;
+  r.last_operating_zone_name,&#13;
+  COALESCE(am.all_time_active_months, 0) AS active_months,&#13;
+  COALESCE(c.orders_since_contract_start, 0) AS orders_since_contract_start,&#13;
+  COALESCE(ro.orders_last_90_days, 0) AS orders_last_90_days,&#13;
+  COALESCE(ro.orders_last_60_days, 0) AS orders_last_60_days,&#13;
+  COALESCE(ro.orders_last_30_days, 0) AS orders_last_30_days,&#13;
+  COALESCE(ro.orders_last_15_days, 0) AS orders_last_15_days,&#13;
+  COALESCE(ro.orders_last_7_days, 0) AS orders_last_7_days&#13;
+FROM&#13;
+  `tlb-data-prod.data_platform.dim_logistics_rider` AS r&#13;
+  LEFT JOIN rider_recent_orders AS ro ON r.rider_id = ro.rider_id&#13;
+  LEFT JOIN rider_all_time_months AS am ON r.rider_id = am.rider_id&#13;
+  LEFT JOIN orders_since_contract AS c ON r.rider_id = c.rider_id&#13;
+WHERE&#13;
+  r.country_code = &apos;eg&apos;</_.fcp.ObjectModelEncapsulateLegacy.false...relation>
+        <_.fcp.ObjectModelEncapsulateLegacy.true...relation connection='bigquery.12a7gea1be4pbk19apvxv0gkg3e1' name='Custom SQL Query' type='text'>WITH&#13;
+  rider_recent_orders AS&#13;
+  (&#13;
+    SELECT&#13;
+      primary_rider_id AS rider_id,&#13;
+      COUNT(DISTINCT IF(DATE(created_at, timezone) &gt;&gt;= DATE_SUB(CURRENT_DATE(), INTERVAL 90 DAY), order_id, NULL)) AS orders_last_90_days,&#13;
+      COUNT(DISTINCT IF(DATE(created_at, timezone) &gt;&gt;= DATE_SUB(CURRENT_DATE(), INTERVAL 60 DAY), order_id, NULL)) AS orders_last_60_days,&#13;
+      COUNT(DISTINCT IF(DATE(created_at, timezone) &gt;&gt;= DATE_SUB(CURRENT_DATE(), INTERVAL 30 DAY), order_id, NULL)) AS orders_last_30_days,&#13;
+      COUNT(DISTINCT IF(DATE(created_at, timezone) &gt;&gt;= DATE_SUB(CURRENT_DATE(), INTERVAL 15 DAY), order_id, NULL)) AS orders_last_15_days,&#13;
+        COUNT(DISTINCT IF(DATE(created_at, timezone) &gt;&gt;= DATE_SUB(CURRENT_DATE(), INTERVAL 7 DAY), order_id, NULL)) AS orders_last_7_days&#13;
+    FROM&#13;
+      `tlb-data-prod.data_platform.fct_logistics_order`&#13;
+    WHERE&#13;
+      country_code = &apos;eg&apos;&#13;
+      AND order_status = &apos;completed&apos;&#13;
+      AND DATE(created_at, timezone) &gt;&gt;= DATE_SUB(CURRENT_DATE(), INTERVAL 90 DAY)&#13;
+    GROUP BY&#13;
+      1&#13;
+  )&#13;
+,&#13;
+  rider_all_time_months AS&#13;
+  (&#13;
+    SELECT&#13;
+      primary_rider_id AS rider_id,&#13;
+      COUNT(DISTINCT DATE_TRUNC(created_date, MONTH)) AS all_time_active_months&#13;
+    FROM&#13;
+      `tlb-data-prod.data_platform.fct_logistics_order`&#13;
+    WHERE&#13;
+      country_code = &apos;eg&apos; AND order_status = &apos;completed&apos;&#13;
+    GROUP BY&#13;
+      1&#13;
+  )&#13;
+,&#13;
+  orders_since_contract AS&#13;
+  (&#13;
+    SELECT&#13;
+      r.rider_id,&#13;
+      COUNT(DISTINCT o.order_id) AS orders_since_contract_start&#13;
+    FROM&#13;
+      `tlb-data-prod.data_platform.dim_logistics_rider` AS r&#13;
+      JOIN `tlb-data-prod.data_platform.fct_logistics_order` AS o ON r.rider_id = o.primary_rider_id&#13;
+    WHERE&#13;
+      r.country_code = &apos;eg&apos;&#13;
+      AND o.order_status = &apos;completed&apos;&#13;
+      AND DATE(o.created_at, o.timezone) &gt;&gt;= DATE(r.last_contract_start_at)&#13;
+    GROUP BY&#13;
+      1&#13;
+  )&#13;
+SELECT&#13;
+  r.rider_id,&#13;
+  r.rider_name,&#13;
+  r.is_active AS active_flag,&#13;
+  r.last_contract_name,&#13;
+  DATE_DIFF(CURRENT_DATE(), DATE(r.last_contract_start_at), MONTH) AS months_since_last_contract_start,&#13;
+  r.last_operating_zone_name,&#13;
+  COALESCE(am.all_time_active_months, 0) AS active_months,&#13;
+  COALESCE(c.orders_since_contract_start, 0) AS orders_since_contract_start,&#13;
+  COALESCE(ro.orders_last_90_days, 0) AS orders_last_90_days,&#13;
+  COALESCE(ro.orders_last_60_days, 0) AS orders_last_60_days,&#13;
+  COALESCE(ro.orders_last_30_days, 0) AS orders_last_30_days,&#13;
+  COALESCE(ro.orders_last_15_days, 0) AS orders_last_15_days,&#13;
+  COALESCE(ro.orders_last_7_days, 0) AS orders_last_7_days&#13;
+FROM&#13;
+  `tlb-data-prod.data_platform.dim_logistics_rider` AS r&#13;
+  LEFT JOIN rider_recent_orders AS ro ON r.rider_id = ro.rider_id&#13;
+  LEFT JOIN rider_all_time_months AS am ON r.rider_id = am.rider_id&#13;
+  LEFT JOIN orders_since_contract AS c ON r.rider_id = c.rider_id&#13;
+WHERE&#13;
+  r.country_code = &apos;eg&apos;</_.fcp.ObjectModelEncapsulateLegacy.true...relation>
+        <metadata-records>
+          <metadata-record class='column'>
+            <remote-name>rider_id</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[rider_id]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>rider_id</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_8D99EB875E2548A19D373736A7D156BB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>rider_name</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[rider_name]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>rider_name</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_8D99EB875E2548A19D373736A7D156BB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>active_flag</remote-name>
+            <remote-type>11</remote-type>
+            <local-name>[active_flag]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>active_flag</remote-alias>
+            <local-type>boolean</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_8D99EB875E2548A19D373736A7D156BB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>last_contract_name</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[last_contract_name]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>last_contract_name</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_8D99EB875E2548A19D373736A7D156BB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>months_since_last_contract_start</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[months_since_last_contract_start]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>months_since_last_contract_start</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_8D99EB875E2548A19D373736A7D156BB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>last_operating_zone_name</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[last_operating_zone_name]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>last_operating_zone_name</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_8D99EB875E2548A19D373736A7D156BB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>active_months</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[active_months]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>active_months</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_8D99EB875E2548A19D373736A7D156BB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>orders_since_contract_start</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[orders_since_contract_start]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>orders_since_contract_start</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_8D99EB875E2548A19D373736A7D156BB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>orders_last_90_days</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[orders_last_90_days]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>orders_last_90_days</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_8D99EB875E2548A19D373736A7D156BB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>orders_last_60_days</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[orders_last_60_days]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>orders_last_60_days</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_8D99EB875E2548A19D373736A7D156BB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>orders_last_30_days</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[orders_last_30_days]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>orders_last_30_days</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_8D99EB875E2548A19D373736A7D156BB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>orders_last_15_days</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[orders_last_15_days]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>orders_last_15_days</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_8D99EB875E2548A19D373736A7D156BB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>orders_last_7_days</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[orders_last_7_days]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>orders_last_7_days</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_8D99EB875E2548A19D373736A7D156BB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+        </metadata-records>
+      </connection>
+      <aliases enabled='yes' />
+      <column datatype='string' name='[:Measure Names]' role='dimension' type='nominal'>
+        <aliases>
+          <alias key='&quot;[federated.0xwjnbf1y7718x16hn8w01cka715].[max:active_months:qk]&quot;' value='Active Months' />
+          <alias key='&quot;[federated.0xwjnbf1y7718x16hn8w01cka715].[max:months_since_last_contract_start:qk]&quot;' value='Months Since Last contract start' />
+          <alias key='&quot;[federated.0xwjnbf1y7718x16hn8w01cka715].[sum:active_months:qk]&quot;' value='Months Active' />
+        </aliases>
+      </column>
+      <_.fcp.ObjectModelTableType.true...column caption='Custom SQL Query' datatype='table' name='[__tableau_internal_object_id__].[_8D99EB875E2548A19D373736A7D156BB]' role='measure' type='quantitative' />
+      <column caption='Is Active' datatype='boolean' name='[active_flag]' role='dimension' type='nominal' />
+      <column datatype='integer' default-format='n#,##0;-#,##0' name='[active_months]' role='measure' type='quantitative' />
+      <column caption='3PL' datatype='string' name='[last_contract_name]' role='dimension' type='nominal' />
+      <column caption='Zone' datatype='string' name='[last_operating_zone_name]' role='dimension' type='nominal' />
+      <column caption='Months Since Last Contract Start' datatype='integer' default-format='n#,##0;-#,##0' name='[months_since_last_contract_start]' role='measure' type='quantitative' />
+      <column caption='Orders Last 15 Days' datatype='integer' name='[orders_last_15_days]' role='measure' type='quantitative' />
+      <column caption='Orders Last 30 Days' datatype='integer' name='[orders_last_30_days]' role='measure' type='quantitative' />
+      <column caption='Orders Last 60 Days' datatype='integer' name='[orders_last_60_days]' role='measure' type='quantitative' />
+      <column caption='Orders Last 7 days' datatype='integer' name='[orders_last_7_days]' role='measure' type='quantitative' />
+      <column caption='Orders Last 90 Days' datatype='integer' name='[orders_last_90_days]' role='measure' type='quantitative' />
+      <column caption='Orders Since Last Contract' datatype='integer' name='[orders_since_contract_start]' role='measure' type='quantitative' />
+      <column caption='Rider ID' datatype='integer' name='[rider_id]' role='measure' type='quantitative' />
+      <column-instance column='[months_since_last_contract_start]' derivation='Max' name='[max:months_since_last_contract_start:qk]' pivot='key' type='quantitative' />
+      <column-instance column='[active_months]' derivation='Sum' name='[sum:active_months:qk]' pivot='key' type='quantitative' />
+      <extract _.fcp.ObjectModelExtractV2.true...object-id='' _.fcp.VConnDownstreamExtractsWithWarnings.true...user-specific='false' count='-1' enabled='true' units='records'>
+        <connection access_mode='readonly' author-locale='en_US' class='hyper' dbname='extract/b0/cf/{AA3873FF-6E26-4A2A-9A20-D73E1B1BA548}/federated_0xwjnbf1y7718x16hn8w01.hyper' extract-engine='true' schema='Extract' sslmode='' tablename='Extract' update-time='08/21/2025 06:04:59 AM'>
+          <_.fcp.ObjectModelEncapsulateLegacy.false...relation name='Extract' table='[Extract].[Extract]' type='table' />
+          <_.fcp.ObjectModelEncapsulateLegacy.true...relation name='Extract' table='[Extract].[Extract]' type='table' />
+          <metadata-records>
+            <metadata-record class='column'>
+              <remote-name>rider_id</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[rider_id]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>rider_id</remote-alias>
+              <ordinal>0</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>259414</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_8D99EB875E2548A19D373736A7D156BB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>rider_name</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[rider_name]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>rider_name</remote-alias>
+              <ordinal>1</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>259414</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_8D99EB875E2548A19D373736A7D156BB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>active_flag</remote-name>
+              <remote-type>11</remote-type>
+              <local-name>[active_flag]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>active_flag</remote-alias>
+              <ordinal>2</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>boolean</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>2</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_8D99EB875E2548A19D373736A7D156BB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>last_contract_name</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[last_contract_name]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>last_contract_name</remote-alias>
+              <ordinal>3</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>388</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_8D99EB875E2548A19D373736A7D156BB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>months_since_last_contract_start</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[months_since_last_contract_start]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>months_since_last_contract_start</remote-alias>
+              <ordinal>4</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>179</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_8D99EB875E2548A19D373736A7D156BB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>last_operating_zone_name</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[last_operating_zone_name]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>last_operating_zone_name</remote-alias>
+              <ordinal>5</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>127</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_8D99EB875E2548A19D373736A7D156BB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>active_months</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[active_months]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>active_months</remote-alias>
+              <ordinal>6</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>129</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_8D99EB875E2548A19D373736A7D156BB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>orders_since_contract_start</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[orders_since_contract_start]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>orders_since_contract_start</remote-alias>
+              <ordinal>7</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>7406</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_8D99EB875E2548A19D373736A7D156BB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>orders_last_90_days</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[orders_last_90_days]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>orders_last_90_days</remote-alias>
+              <ordinal>8</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>10138</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_8D99EB875E2548A19D373736A7D156BB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>orders_last_60_days</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[orders_last_60_days]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>orders_last_60_days</remote-alias>
+              <ordinal>9</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>8291</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_8D99EB875E2548A19D373736A7D156BB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>orders_last_30_days</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[orders_last_30_days]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>orders_last_30_days</remote-alias>
+              <ordinal>10</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>3350</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_8D99EB875E2548A19D373736A7D156BB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>orders_last_15_days</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[orders_last_15_days]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>orders_last_15_days</remote-alias>
+              <ordinal>11</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>1779</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_8D99EB875E2548A19D373736A7D156BB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>orders_last_7_days</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[orders_last_7_days]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>orders_last_7_days</remote-alias>
+              <ordinal>12</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>782</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_8D99EB875E2548A19D373736A7D156BB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+          </metadata-records>
+        </connection>
+      </extract>
+      <layout _.fcp.SchemaViewerObjectModel.false...dim-percentage='0.5' _.fcp.SchemaViewerObjectModel.false...measure-percentage='0.4' dim-ordering='alphabetic' measure-ordering='alphabetic' show-structure='true' />
+      <semantic-values>
+        <semantic-value key='[Country].[Name]' value='&quot;United States&quot;' />
+      </semantic-values>
+      <_.fcp.ObjectModelEncapsulateLegacy.true...object-graph>
+        <objects>
+          <object caption='Custom SQL Query' id='_8D99EB875E2548A19D373736A7D156BB'>
+            <properties context=''>
+              <relation connection='bigquery.12a7gea1be4pbk19apvxv0gkg3e1' name='Custom SQL Query' type='text'>WITH&#13;
+  rider_recent_orders AS&#13;
+  (&#13;
+    SELECT&#13;
+      primary_rider_id AS rider_id,&#13;
+      COUNT(DISTINCT IF(DATE(created_at, timezone) &gt;&gt;= DATE_SUB(CURRENT_DATE(), INTERVAL 90 DAY), order_id, NULL)) AS orders_last_90_days,&#13;
+      COUNT(DISTINCT IF(DATE(created_at, timezone) &gt;&gt;= DATE_SUB(CURRENT_DATE(), INTERVAL 60 DAY), order_id, NULL)) AS orders_last_60_days,&#13;
+      COUNT(DISTINCT IF(DATE(created_at, timezone) &gt;&gt;= DATE_SUB(CURRENT_DATE(), INTERVAL 30 DAY), order_id, NULL)) AS orders_last_30_days,&#13;
+      COUNT(DISTINCT IF(DATE(created_at, timezone) &gt;&gt;= DATE_SUB(CURRENT_DATE(), INTERVAL 15 DAY), order_id, NULL)) AS orders_last_15_days,&#13;
+        COUNT(DISTINCT IF(DATE(created_at, timezone) &gt;&gt;= DATE_SUB(CURRENT_DATE(), INTERVAL 7 DAY), order_id, NULL)) AS orders_last_7_days&#13;
+    FROM&#13;
+      `tlb-data-prod.data_platform.fct_logistics_order`&#13;
+    WHERE&#13;
+      country_code = &apos;eg&apos;&#13;
+      AND order_status = &apos;completed&apos;&#13;
+      AND DATE(created_at, timezone) &gt;&gt;= DATE_SUB(CURRENT_DATE(), INTERVAL 90 DAY)&#13;
+    GROUP BY&#13;
+      1&#13;
+  )&#13;
+,&#13;
+  rider_all_time_months AS&#13;
+  (&#13;
+    SELECT&#13;
+      primary_rider_id AS rider_id,&#13;
+      COUNT(DISTINCT DATE_TRUNC(created_date, MONTH)) AS all_time_active_months&#13;
+    FROM&#13;
+      `tlb-data-prod.data_platform.fct_logistics_order`&#13;
+    WHERE&#13;
+      country_code = &apos;eg&apos; AND order_status = &apos;completed&apos;&#13;
+    GROUP BY&#13;
+      1&#13;
+  )&#13;
+,&#13;
+  orders_since_contract AS&#13;
+  (&#13;
+    SELECT&#13;
+      r.rider_id,&#13;
+      COUNT(DISTINCT o.order_id) AS orders_since_contract_start&#13;
+    FROM&#13;
+      `tlb-data-prod.data_platform.dim_logistics_rider` AS r&#13;
+      JOIN `tlb-data-prod.data_platform.fct_logistics_order` AS o ON r.rider_id = o.primary_rider_id&#13;
+    WHERE&#13;
+      r.country_code = &apos;eg&apos;&#13;
+      AND o.order_status = &apos;completed&apos;&#13;
+      AND DATE(o.created_at, o.timezone) &gt;&gt;= DATE(r.last_contract_start_at)&#13;
+    GROUP BY&#13;
+      1&#13;
+  )&#13;
+SELECT&#13;
+  r.rider_id,&#13;
+  r.rider_name,&#13;
+  r.is_active AS active_flag,&#13;
+  r.last_contract_name,&#13;
+  DATE_DIFF(CURRENT_DATE(), DATE(r.last_contract_start_at), MONTH) AS months_since_last_contract_start,&#13;
+  r.last_operating_zone_name,&#13;
+  COALESCE(am.all_time_active_months, 0) AS active_months,&#13;
+  COALESCE(c.orders_since_contract_start, 0) AS orders_since_contract_start,&#13;
+  COALESCE(ro.orders_last_90_days, 0) AS orders_last_90_days,&#13;
+  COALESCE(ro.orders_last_60_days, 0) AS orders_last_60_days,&#13;
+  COALESCE(ro.orders_last_30_days, 0) AS orders_last_30_days,&#13;
+  COALESCE(ro.orders_last_15_days, 0) AS orders_last_15_days,&#13;
+  COALESCE(ro.orders_last_7_days, 0) AS orders_last_7_days&#13;
+FROM&#13;
+  `tlb-data-prod.data_platform.dim_logistics_rider` AS r&#13;
+  LEFT JOIN rider_recent_orders AS ro ON r.rider_id = ro.rider_id&#13;
+  LEFT JOIN rider_all_time_months AS am ON r.rider_id = am.rider_id&#13;
+  LEFT JOIN orders_since_contract AS c ON r.rider_id = c.rider_id&#13;
+WHERE&#13;
+  r.country_code = &apos;eg&apos;</relation>
+            </properties>
+            <properties context='extract'>
+              <relation name='Extract' table='[Extract].[Extract]' type='table' />
+            </properties>
+          </object>
+        </objects>
+      </_.fcp.ObjectModelEncapsulateLegacy.true...object-graph>
+    </datasource>
+  </datasources>
+  <worksheets>
+    <worksheet name='Sheet 1'>
+      <layout-options>
+        <title>
+          <formatted-text>
+            <run bold='true'>EG Riders Status</run>
+          </formatted-text>
+        </title>
+      </layout-options>
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='Custom SQL Query (data_platform_logistics)' name='federated.0xwjnbf1y7718x16hn8w01cka715' />
+          </datasources>
+          <datasource-dependencies datasource='federated.0xwjnbf1y7718x16hn8w01cka715'>
+            <column caption='Is Active' datatype='boolean' name='[active_flag]' role='dimension' type='nominal' />
+            <column datatype='integer' default-format='n#,##0;-#,##0' name='[active_months]' role='measure' type='quantitative' />
+            <column caption='3PL' datatype='string' name='[last_contract_name]' role='dimension' type='nominal' />
+            <column caption='Zone' datatype='string' name='[last_operating_zone_name]' role='dimension' type='nominal' />
+            <column-instance column='[months_since_last_contract_start]' derivation='Max' name='[max:months_since_last_contract_start:qk]' pivot='key' type='quantitative' />
+            <column caption='Months Since Last Contract Start' datatype='integer' default-format='n#,##0;-#,##0' name='[months_since_last_contract_start]' role='measure' type='quantitative' />
+            <column-instance column='[active_flag]' derivation='None' name='[none:active_flag:nk]' pivot='key' type='nominal' />
+            <column-instance column='[active_months]' derivation='None' name='[none:active_months:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[last_contract_name]' derivation='None' name='[none:last_contract_name:nk]' pivot='key' type='nominal' />
+            <column-instance column='[last_operating_zone_name]' derivation='None' name='[none:last_operating_zone_name:nk]' pivot='key' type='nominal' />
+            <column-instance column='[months_since_last_contract_start]' derivation='None' name='[none:months_since_last_contract_start:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[rider_id]' derivation='None' name='[none:rider_id:ok]' pivot='key' type='ordinal' />
+            <column caption='Orders Last 15 Days' datatype='integer' name='[orders_last_15_days]' role='measure' type='quantitative' />
+            <column caption='Orders Last 30 Days' datatype='integer' name='[orders_last_30_days]' role='measure' type='quantitative' />
+            <column caption='Orders Last 60 Days' datatype='integer' name='[orders_last_60_days]' role='measure' type='quantitative' />
+            <column caption='Orders Last 7 days' datatype='integer' name='[orders_last_7_days]' role='measure' type='quantitative' />
+            <column caption='Orders Last 90 Days' datatype='integer' name='[orders_last_90_days]' role='measure' type='quantitative' />
+            <column caption='Orders Since Last Contract' datatype='integer' name='[orders_since_contract_start]' role='measure' type='quantitative' />
+            <column caption='Rider ID' datatype='integer' name='[rider_id]' role='measure' type='quantitative' />
+            <column-instance column='[active_months]' derivation='Sum' name='[sum:active_months:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[months_since_last_contract_start]' derivation='Sum' name='[sum:months_since_last_contract_start:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[orders_last_15_days]' derivation='Sum' name='[sum:orders_last_15_days:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[orders_last_30_days]' derivation='Sum' name='[sum:orders_last_30_days:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[orders_last_60_days]' derivation='Sum' name='[sum:orders_last_60_days:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[orders_last_7_days]' derivation='Sum' name='[sum:orders_last_7_days:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[orders_last_90_days]' derivation='Sum' name='[sum:orders_last_90_days:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[orders_since_contract_start]' derivation='Sum' name='[sum:orders_since_contract_start:qk]' pivot='key' type='quantitative' />
+          </datasource-dependencies>
+          <filter class='categorical' column='[federated.0xwjnbf1y7718x16hn8w01cka715].[:Measure Names]'>
+            <groupfilter function='union' user:op='manual'>
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.0xwjnbf1y7718x16hn8w01cka715].[sum:active_months:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.0xwjnbf1y7718x16hn8w01cka715].[sum:months_since_last_contract_start:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.0xwjnbf1y7718x16hn8w01cka715].[sum:orders_since_contract_start:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.0xwjnbf1y7718x16hn8w01cka715].[sum:orders_last_90_days:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.0xwjnbf1y7718x16hn8w01cka715].[sum:orders_last_60_days:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.0xwjnbf1y7718x16hn8w01cka715].[sum:orders_last_30_days:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.0xwjnbf1y7718x16hn8w01cka715].[sum:orders_last_15_days:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.0xwjnbf1y7718x16hn8w01cka715].[sum:orders_last_7_days:qk]&quot;' />
+            </groupfilter>
+          </filter>
+          <manual-sort column='[federated.0xwjnbf1y7718x16hn8w01cka715].[:Measure Names]' direction='ASC'>
+            <dictionary>
+              <bucket>&quot;[federated.0xwjnbf1y7718x16hn8w01cka715].[sum:active_months:qk]&quot;</bucket>
+              <bucket>&quot;[federated.0xwjnbf1y7718x16hn8w01cka715].[max:months_since_last_contract_start:qk]&quot;</bucket>
+              <bucket>&quot;[federated.0xwjnbf1y7718x16hn8w01cka715].[sum:months_since_last_contract_start:qk]&quot;</bucket>
+            </dictionary>
+          </manual-sort>
+          <filter class='categorical' column='[federated.0xwjnbf1y7718x16hn8w01cka715].[none:active_flag:nk]'>
+            <groupfilter function='level-members' level='[none:active_flag:nk]' user:ui-enumeration='all' user:ui-marker='enumerate' />
+          </filter>
+          <filter class='quantitative' column='[federated.0xwjnbf1y7718x16hn8w01cka715].[none:active_months:qk]' included-values='in-range'>
+            <min>1</min>
+            <max>77</max>
+          </filter>
+          <filter class='categorical' column='[federated.0xwjnbf1y7718x16hn8w01cka715].[none:last_operating_zone_name:nk]'>
+            <groupfilter function='union' user:ui-domain='database' user:ui-enumeration='inclusive' user:ui-marker='enumerate'>
+              <groupfilter function='member' level='[none:last_operating_zone_name:nk]' member='%null%' />
+              <groupfilter function='member' level='[none:last_operating_zone_name:nk]' member='&quot;10th of ramadan&quot;' />
+              <groupfilter function='member' level='[none:last_operating_zone_name:nk]' member='&quot;Agamy&quot;' />
+              <groupfilter function='member' level='[none:last_operating_zone_name:nk]' member='&quot;Ain shams&quot;' />
+              <groupfilter function='member' level='[none:last_operating_zone_name:nk]' member='&quot;Al mahallah al kubra&quot;' />
+              <groupfilter function='member' level='[none:last_operating_zone_name:nk]' member='&quot;Alexandria&quot;' />
+              <groupfilter function='member' level='[none:last_operating_zone_name:nk]' member='&quot;Alexandria east&quot;' />
+              <groupfilter function='member' level='[none:last_operating_zone_name:nk]' member='&quot;Assiut&quot;' />
+              <groupfilter function='member' level='[none:last_operating_zone_name:nk]' member='&quot;Aswan&quot;' />
+              <groupfilter function='member' level='[none:last_operating_zone_name:nk]' member='&quot;Banha city&quot;' />
+              <groupfilter function='member' level='[none:last_operating_zone_name:nk]' member='&quot;Beni suef&quot;' />
+              <groupfilter function='member' level='[none:last_operating_zone_name:nk]' member='&quot;Cairo_city_centre&quot;' />
+              <groupfilter function='member' level='[none:last_operating_zone_name:nk]' member='&quot;Damanhour&quot;' />
+              <groupfilter function='member' level='[none:last_operating_zone_name:nk]' member='&quot;Damietta&quot;' />
+              <groupfilter function='member' level='[none:last_operating_zone_name:nk]' member='&quot;El mahalla&quot;' />
+              <groupfilter function='member' level='[none:last_operating_zone_name:nk]' member='&quot;El rehab city&quot;' />
+              <groupfilter function='member' level='[none:last_operating_zone_name:nk]' member='&quot;Giza&quot;' />
+              <groupfilter function='member' level='[none:last_operating_zone_name:nk]' member='&quot;Hacienda to amwaj&quot;' />
+              <groupfilter function='member' level='[none:last_operating_zone_name:nk]' member='&quot;Hadayek el ahram&quot;' />
+              <groupfilter function='member' level='[none:last_operating_zone_name:nk]' member='&quot;Hadayek el qobba&quot;' />
+              <groupfilter function='member' level='[none:last_operating_zone_name:nk]' member='&quot;Hadayek helwan&quot;' />
+              <groupfilter function='member' level='[none:last_operating_zone_name:nk]' member='&quot;Hegaz and sheraton&quot;' />
+              <groupfilter function='member' level='[none:last_operating_zone_name:nk]' member='&quot;Heliopolis&quot;' />
+              <groupfilter function='member' level='[none:last_operating_zone_name:nk]' member='&quot;Helwan&quot;' />
+              <groupfilter function='member' level='[none:last_operating_zone_name:nk]' member='&quot;Hurghada&quot;' />
+              <groupfilter function='member' level='[none:last_operating_zone_name:nk]' member='&quot;Imbaba&quot;' />
+              <groupfilter function='member' level='[none:last_operating_zone_name:nk]' member='&quot;Ismalia city&quot;' />
+              <groupfilter function='member' level='[none:last_operating_zone_name:nk]' member='&quot;Kafr el dawar&quot;' />
+              <groupfilter function='member' level='[none:last_operating_zone_name:nk]' member='&quot;Kafr el sheikh&quot;' />
+              <groupfilter function='member' level='[none:last_operating_zone_name:nk]' member='&quot;Kafr el-sheikh&quot;' />
+              <groupfilter function='member' level='[none:last_operating_zone_name:nk]' member='&quot;Maadi&quot;' />
+              <groupfilter function='member' level='[none:last_operating_zone_name:nk]' member='&quot;Madinaty&quot;' />
+              <groupfilter function='member' level='[none:last_operating_zone_name:nk]' member='&quot;Manial and bahr azam&quot;' />
+              <groupfilter function='member' level='[none:last_operating_zone_name:nk]' member='&quot;Mansoura&quot;' />
+              <groupfilter function='member' level='[none:last_operating_zone_name:nk]' member='&quot;Marina el alamein&quot;' />
+              <groupfilter function='member' level='[none:last_operating_zone_name:nk]' member='&quot;Minya&quot;' />
+              <groupfilter function='member' level='[none:last_operating_zone_name:nk]' member='&quot;Mohandiseen&quot;' />
+              <groupfilter function='member' level='[none:last_operating_zone_name:nk]' member='&quot;Mokattam&quot;' />
+              <groupfilter function='member' level='[none:last_operating_zone_name:nk]' member='&quot;Nasr city&quot;' />
+              <groupfilter function='member' level='[none:last_operating_zone_name:nk]' member='&quot;New damietta&quot;' />
+              <groupfilter function='member' level='[none:last_operating_zone_name:nk]' member='&quot;Obour city&quot;' />
+              <groupfilter function='member' level='[none:last_operating_zone_name:nk]' member='&quot;October &quot;' />
+              <groupfilter function='member' level='[none:last_operating_zone_name:nk]' member='&quot;October palm hills&quot;' />
+              <groupfilter function='member' level='[none:last_operating_zone_name:nk]' member='&quot;October wahat&quot;' />
+              <groupfilter function='member' level='[none:last_operating_zone_name:nk]' member='&quot;Old cairo and fostat&quot;' />
+              <groupfilter function='member' level='[none:last_operating_zone_name:nk]' member='&quot;Portsaid city&quot;' />
+              <groupfilter function='member' level='[none:last_operating_zone_name:nk]' member='&quot;Ras el bar&quot;' />
+              <groupfilter function='member' level='[none:last_operating_zone_name:nk]' member='&quot;Sahrawy garana&quot;' />
+              <groupfilter function='member' level='[none:last_operating_zone_name:nk]' member='&quot;Shebin el koom&quot;' />
+              <groupfilter function='member' level='[none:last_operating_zone_name:nk]' member='&quot;Sheikh zayed&quot;' />
+              <groupfilter function='member' level='[none:last_operating_zone_name:nk]' member='&quot;Shobra&quot;' />
+              <groupfilter function='member' level='[none:last_operating_zone_name:nk]' member='&quot;Shorouk city&quot;' />
+              <groupfilter function='member' level='[none:last_operating_zone_name:nk]' member='&quot;Smart village&quot;' />
+              <groupfilter function='member' level='[none:last_operating_zone_name:nk]' member='&quot;Sohag&quot;' />
+              <groupfilter function='member' level='[none:last_operating_zone_name:nk]' member='&quot;Suez&quot;' />
+              <groupfilter function='member' level='[none:last_operating_zone_name:nk]' member='&quot;Suez city&quot;' />
+              <groupfilter function='member' level='[none:last_operating_zone_name:nk]' member='&quot;Tagammoa golden square&quot;' />
+              <groupfilter function='member' level='[none:last_operating_zone_name:nk]' member='&quot;Tagammoa north&quot;' />
+              <groupfilter function='member' level='[none:last_operating_zone_name:nk]' member='&quot;Tagammoa south&quot;' />
+              <groupfilter function='member' level='[none:last_operating_zone_name:nk]' member='&quot;Tahrir nesting 1&quot;' />
+              <groupfilter function='member' level='[none:last_operating_zone_name:nk]' member='&quot;Tanta&quot;' />
+              <groupfilter function='member' level='[none:last_operating_zone_name:nk]' member='&quot;Zagazig&quot;' />
+              <groupfilter function='member' level='[none:last_operating_zone_name:nk]' member='&quot;Zahran&quot;' />
+            </groupfilter>
+          </filter>
+          <filter class='quantitative' column='[federated.0xwjnbf1y7718x16hn8w01cka715].[none:months_since_last_contract_start:qk]' included-values='in-range'>
+            <min>0</min>
+            <max>307</max>
+          </filter>
+          <filter class='categorical' column='[federated.0xwjnbf1y7718x16hn8w01cka715].[none:rider_id:ok]'>
+            <groupfilter function='level-members' level='[none:rider_id:ok]' user:ui-enumeration='all' user:ui-marker='enumerate' />
+          </filter>
+          <computed-sort column='[federated.0xwjnbf1y7718x16hn8w01cka715].[none:rider_id:ok]' direction='DESC' using='[federated.0xwjnbf1y7718x16hn8w01cka715].[sum:active_months:qk]' />
+          <slices>
+            <column>[federated.0xwjnbf1y7718x16hn8w01cka715].[:Measure Names]</column>
+            <column>[federated.0xwjnbf1y7718x16hn8w01cka715].[none:last_operating_zone_name:nk]</column>
+            <column>[federated.0xwjnbf1y7718x16hn8w01cka715].[none:active_flag:nk]</column>
+            <column>[federated.0xwjnbf1y7718x16hn8w01cka715].[none:active_months:qk]</column>
+            <column>[federated.0xwjnbf1y7718x16hn8w01cka715].[none:months_since_last_contract_start:qk]</column>
+            <column>[federated.0xwjnbf1y7718x16hn8w01cka715].[none:rider_id:ok]</column>
+          </slices>
+          <aggregation value='true' />
+        </view>
+        <style>
+          <style-rule element='cell'>
+            <format attr='width' value='120' />
+          </style-rule>
+          <style-rule element='header'>
+            <format attr='width' field='[federated.0xwjnbf1y7718x16hn8w01cka715].[none:active_flag:nk]' value='72' />
+            <format attr='width' field='[federated.0xwjnbf1y7718x16hn8w01cka715].[none:last_operating_zone_name:nk]' value='124' />
+            <format attr='height' field='[federated.0xwjnbf1y7718x16hn8w01cka715].[:Measure Names]' value='38' />
+            <format attr='width' field='[federated.0xwjnbf1y7718x16hn8w01cka715].[none:last_contract_name:nk]' value='148' />
+          </style-rule>
+          <style-rule element='label'>
+            <format attr='text-align' field='[federated.0xwjnbf1y7718x16hn8w01cka715].[:Measure Names]' value='left' />
+          </style-rule>
+          <style-rule element='quick-filter'>
+            <format attr='title' field='[federated.0xwjnbf1y7718x16hn8w01cka715].[max:months_since_last_contract_start:qk]' value='Months Since Last Contract Date'>
+              <formatted-text>
+                <run fontcolor='#000000'>Months Since Last Contract Date</run>
+              </formatted-text>
+            </format>
+            <format attr='title' field='[federated.0xwjnbf1y7718x16hn8w01cka715].[none:active_months:qk]' value='Active Months'>
+              <formatted-text>
+                <run>Active Months</run>
+              </formatted-text>
+            </format>
+            <format attr='title' field='[federated.0xwjnbf1y7718x16hn8w01cka715].[sum:active_months:qk]' value='Active Months'>
+              <formatted-text>
+                <run>Active Months</run>
+              </formatted-text>
+            </format>
+          </style-rule>
+        </style>
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Automatic' />
+            <encodings>
+              <text column='[federated.0xwjnbf1y7718x16hn8w01cka715].[Multiple Values]' />
+            </encodings>
+            <customized-tooltip>
+              <formatted-text />
+            </customized-tooltip>
+            <style>
+              <style-rule element='mark'>
+                <format attr='mark-labels-cull' value='true' />
+                <format attr='mark-labels-show' value='true' />
+              </style-rule>
+              <style-rule element='pane'>
+                <format attr='minwidth' value='-1' />
+                <format attr='maxwidth' value='-1' />
+              </style-rule>
+            </style>
+          </pane>
+        </panes>
+        <rows>([federated.0xwjnbf1y7718x16hn8w01cka715].[none:rider_id:ok] / ([federated.0xwjnbf1y7718x16hn8w01cka715].[none:last_contract_name:nk] / ([federated.0xwjnbf1y7718x16hn8w01cka715].[none:last_operating_zone_name:nk] / [federated.0xwjnbf1y7718x16hn8w01cka715].[none:active_flag:nk])))</rows>
+        <cols>[federated.0xwjnbf1y7718x16hn8w01cka715].[:Measure Names]</cols>
+      </table>
+      <simple-id uuid='{15478873-00F9-4767-A15E-3A675DBD0F21}' />
+    </worksheet>
+  </worksheets>
+  <dashboards>
+    <dashboard _.fcp.AccessibleZoneTabOrder.true...enable-sort-zone-taborder='true' name='Rider List'>
+      <repository-location derived-from='https://tableau.deliveryhero.net/t/Talabat/workbooks/RiderStatus/RiderList?rev=' id='RiderList' path='/t/Talabat/workbooks/RiderStatus' revision='' site='Talabat' />
+      <style />
+      <size sizing-mode='automatic' />
+      <datasources>
+        <datasource caption='Custom SQL Query (data_platform_logistics)' name='federated.0xwjnbf1y7718x16hn8w01cka715' />
+      </datasources>
+      <datasource-dependencies datasource='federated.0xwjnbf1y7718x16hn8w01cka715'>
+        <column caption='Is Active' datatype='boolean' name='[active_flag]' role='dimension' type='nominal' />
+        <column datatype='integer' default-format='n#,##0;-#,##0' name='[active_months]' role='measure' type='quantitative' />
+        <column caption='Zone' datatype='string' name='[last_operating_zone_name]' role='dimension' type='nominal' />
+        <column caption='Months Since Last Contract Start' datatype='integer' default-format='n#,##0;-#,##0' name='[months_since_last_contract_start]' role='measure' type='quantitative' />
+        <column-instance column='[active_flag]' derivation='None' name='[none:active_flag:nk]' pivot='key' type='nominal' />
+        <column-instance column='[active_months]' derivation='None' name='[none:active_months:qk]' pivot='key' type='quantitative' />
+        <column-instance column='[last_operating_zone_name]' derivation='None' name='[none:last_operating_zone_name:nk]' pivot='key' type='nominal' />
+        <column-instance column='[months_since_last_contract_start]' derivation='None' name='[none:months_since_last_contract_start:qk]' pivot='key' type='quantitative' />
+        <column-instance column='[rider_id]' derivation='None' name='[none:rider_id:ok]' pivot='key' type='ordinal' />
+        <column caption='Rider ID' datatype='integer' name='[rider_id]' role='measure' type='quantitative' />
+      </datasource-dependencies>
+      <zones>
+        <zone h='100000' id='4' type-v2='layout-basic' w='100000' x='0' y='0'>
+          <zone h='98118' id='9' param='horz' type-v2='layout-flow' w='99034' x='483' y='941'>
+            <zone h='98118' id='7' type-v2='layout-basic' w='83524' x='483' y='941'>
+              <zone h='98118' id='3' name='Sheet 1' w='83524' x='483' y='941'>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+            </zone>
+            <zone fixed-size='257' h='98118' id='8' is-fixed='true' param='vert' type-v2='layout-flow' w='15510' x='84007' y='941'>
+              <zone h='7176' id='22' mode='checkdropdown' name='Sheet 1' param='[federated.0xwjnbf1y7718x16hn8w01cka715].[none:rider_id:ok]' type-v2='filter' values='database' w='15510' x='84007' y='941'>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+              <zone h='7176' id='10' mode='dropdown' name='Sheet 1' param='[federated.0xwjnbf1y7718x16hn8w01cka715].[none:active_flag:nk]' type-v2='filter' values='database' w='15510' x='84007' y='8117'>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+              <zone h='7176' id='11' mode='checkdropdown' name='Sheet 1' param='[federated.0xwjnbf1y7718x16hn8w01cka715].[none:last_operating_zone_name:nk]' type-v2='filter' values='database' w='15510' x='84007' y='15293'>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+              <zone h='8588' id='12' name='Sheet 1' param='[federated.0xwjnbf1y7718x16hn8w01cka715].[none:months_since_last_contract_start:qk]' type-v2='filter' values='database' w='15510' x='84007' y='22469'>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+              <zone h='8588' id='13' name='Sheet 1' param='[federated.0xwjnbf1y7718x16hn8w01cka715].[none:active_months:qk]' type-v2='filter' values='database' w='15510' x='84007' y='31057'>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+            </zone>
+          </zone>
+          <zone-style>
+            <format attr='border-color' value='#000000' />
+            <format attr='border-style' value='none' />
+            <format attr='border-width' value='0' />
+            <format attr='margin' value='8' />
+          </zone-style>
+        </zone>
+      </zones>
+      <devicelayouts>
+        <devicelayout auto-generated='true' name='Phone'>
+          <size maxheight='700' minheight='700' sizing-mode='vscroll' />
+          <zones>
+            <zone h='100000' id='36' type-v2='layout-basic' w='100000' x='0' y='0'>
+              <zone h='98118' id='35' param='vert' type-v2='layout-flow' w='99034' x='483' y='941'>
+                <zone h='7176' id='22' mode='checkdropdown' name='Sheet 1' param='[federated.0xwjnbf1y7718x16hn8w01cka715].[none:rider_id:ok]' type-v2='filter' values='database' w='15510' x='84007' y='941'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone h='7176' id='10' mode='dropdown' name='Sheet 1' param='[federated.0xwjnbf1y7718x16hn8w01cka715].[none:active_flag:nk]' type-v2='filter' values='database' w='15510' x='84007' y='8117'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone h='7176' id='11' mode='checkdropdown' name='Sheet 1' param='[federated.0xwjnbf1y7718x16hn8w01cka715].[none:last_operating_zone_name:nk]' type-v2='filter' values='database' w='15510' x='84007' y='15293'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone h='8588' id='12' name='Sheet 1' param='[federated.0xwjnbf1y7718x16hn8w01cka715].[none:months_since_last_contract_start:qk]' type-v2='filter' values='database' w='15510' x='84007' y='22469'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone h='8588' id='13' name='Sheet 1' param='[federated.0xwjnbf1y7718x16hn8w01cka715].[none:active_months:qk]' type-v2='filter' values='database' w='15510' x='84007' y='31057'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone fixed-size='280' h='98118' id='3' is-fixed='true' name='Sheet 1' w='83524' x='483' y='941'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+              </zone>
+              <zone-style>
+                <format attr='border-color' value='#000000' />
+                <format attr='border-style' value='none' />
+                <format attr='border-width' value='0' />
+                <format attr='margin' value='8' />
+              </zone-style>
+            </zone>
+          </zones>
+        </devicelayout>
+      </devicelayouts>
+      <simple-id uuid='{1E210DDA-B6AE-462D-881E-957C335626D2}' />
+    </dashboard>
+  </dashboards>
+  <windows source-height='37'>
+    <window class='dashboard' maximized='true' name='Rider List'>
+      <viewpoints>
+        <viewpoint name='Sheet 1'>
+          <zoom type='fit-width' />
+        </viewpoint>
+      </viewpoints>
+      <active id='3' />
+      <simple-id uuid='{F7A6A65A-7536-4A63-BEF6-DDAFE28BE26C}' />
+    </window>
+    <window class='worksheet' hidden='true' name='Sheet 1'>
+      <cards>
+        <edge name='left'>
+          <strip size='160'>
+            <card type='pages' />
+            <card type='filters' />
+            <card type='marks' />
+            <card type='measures' />
+          </strip>
+        </edge>
+        <edge name='top'>
+          <strip size='2147483647'>
+            <card type='columns' />
+          </strip>
+          <strip size='2147483647'>
+            <card type='rows' />
+          </strip>
+          <strip size='2147483647'>
+            <card type='title' />
+          </strip>
+        </edge>
+        <edge name='right'>
+          <strip size='160'>
+            <card mode='checkdropdown' param='[federated.0xwjnbf1y7718x16hn8w01cka715].[none:rider_id:ok]' type='filter' />
+            <card mode='dropdown' param='[federated.0xwjnbf1y7718x16hn8w01cka715].[none:active_flag:nk]' type='filter' />
+            <card mode='checkdropdown' param='[federated.0xwjnbf1y7718x16hn8w01cka715].[none:last_operating_zone_name:nk]' type='filter' />
+            <card param='[federated.0xwjnbf1y7718x16hn8w01cka715].[none:active_months:qk]' show-domain='false' show-null-ctrls='false' type='filter' />
+            <card param='[federated.0xwjnbf1y7718x16hn8w01cka715].[none:months_since_last_contract_start:qk]' show-domain='false' show-null-ctrls='false' type='filter' />
+          </strip>
+        </edge>
+      </cards>
+      <viewpoint>
+        <zoom type='fit-width' />
+        <highlight>
+          <color-one-way>
+            <field>[federated.0xwjnbf1y7718x16hn8w01cka715].[:Measure Names]</field>
+            <field>[federated.0xwjnbf1y7718x16hn8w01cka715].[none:active_flag:nk]</field>
+            <field>[federated.0xwjnbf1y7718x16hn8w01cka715].[none:active_months:qk]</field>
+            <field>[federated.0xwjnbf1y7718x16hn8w01cka715].[none:last_contract_name:nk]</field>
+            <field>[federated.0xwjnbf1y7718x16hn8w01cka715].[none:last_operating_zone_name:nk]</field>
+            <field>[federated.0xwjnbf1y7718x16hn8w01cka715].[none:months_since_last_contract_start:qk]</field>
+            <field>[federated.0xwjnbf1y7718x16hn8w01cka715].[none:rider_id:qk]</field>
+          </color-one-way>
+        </highlight>
+      </viewpoint>
+      <simple-id uuid='{FE68065E-291F-401C-892B-C63C63E2F87A}' />
+    </window>
+  </windows>
+</workbook>
