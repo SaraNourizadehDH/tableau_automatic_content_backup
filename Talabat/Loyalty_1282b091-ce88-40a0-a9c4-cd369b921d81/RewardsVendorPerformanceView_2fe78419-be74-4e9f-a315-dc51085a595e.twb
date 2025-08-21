@@ -1,0 +1,1940 @@
+<?xml version='1.0' encoding='utf-8' ?>
+
+<!-- build 20233.25.0106.1650                               -->
+<workbook original-version='18.1' source-build='2023.3.14 (20233.25.0106.1650)' version='18.1' xml:base='http://ip-172-31-0-77:8504' xmlns:user='http://www.tableausoftware.com/xml/user'>
+  <document-format-change-manifest>
+    <_.fcp.AccessibleZoneTabOrder.true...AccessibleZoneTabOrder />
+    <_.fcp.AnimationOnByDefault.true...AnimationOnByDefault />
+    <AutoCreateAndUpdateDSDPhoneLayouts />
+    <_.fcp.MarkAnimation.true...MarkAnimation />
+    <_.fcp.ObjectModelEncapsulateLegacy.true...ObjectModelEncapsulateLegacy />
+    <_.fcp.ObjectModelExtractV2.true...ObjectModelExtractV2 />
+    <_.fcp.ObjectModelTableType.true...ObjectModelTableType />
+    <_.fcp.SchemaViewerObjectModel.true...SchemaViewerObjectModel />
+    <SetMembershipControl />
+    <SheetIdentifierTracking />
+    <SortTagCleanup />
+    <_.fcp.VConnDownstreamExtractsWithWarnings.true...VConnDownstreamExtractsWithWarnings />
+    <WindowsPersistSimpleIdentifiers />
+    <ZoneBackgroundTransparency />
+  </document-format-change-manifest>
+  <repository-location derived-from='https://tableau.deliveryhero.net/t/Talabat/workbooks/RewardsVendorPerformanceView?rev=1.0' id='RewardsVendorPerformanceView' path='/t/Talabat/workbooks' revision='1.2' site='Talabat' />
+  <preferences />
+  <_.fcp.AnimationOnByDefault.false...style>
+    <_.fcp.AnimationOnByDefault.false..._.fcp.MarkAnimation.true...style-rule element='animation'>
+      <_.fcp.AnimationOnByDefault.false...format attr='animation-on' value='ao-on' />
+    </_.fcp.AnimationOnByDefault.false..._.fcp.MarkAnimation.true...style-rule>
+  </_.fcp.AnimationOnByDefault.false...style>
+  <datasources>
+    <datasource caption='Vendor Query' inline='true' name='federated.0yatahw1hpkjis1fnohbu1sd5usy' version='18.1'>
+      <connection class='federated'>
+        <named-connections>
+          <named-connection caption='BigQuery' name='bigquery.1fa6c5u1c78mrd10v1nrp1l5ouz6'>
+            <connection CATALOG='tlb-data-prod' EXECCATALOG='tlb-nondatateam-analysis-9264' authentication='oauth' bq-dataset-fetch-rows='' bq-fetch-rows='' bq-fetch-tasks='' bq-large-fetch-rows='' bq-project-fetch-rows='' bq-response-rows='' class='bigquery' connection-dialect='google-sql' project='tlb-data-prod' schema='data_platform' server-oauth='server-custom' username='chandrapu.reddy@talabat.com' workgroup-auth-mode='prompt' />
+          </named-connection>
+        </named-connections>
+        <_.fcp.ObjectModelEncapsulateLegacy.false...relation connection='bigquery.1fa6c5u1c78mrd10v1nrp1l5ouz6' name='Custom SQL Query' type='text'><![CDATA[with acquisition as
+(
+select   dc.chain_id,
+         dc.chain_name,
+         av.account_id,
+         fi.country_code,
+         first_order_id as order_id
+        ,date_trunc(date(first_order_time),month) as month
+from `tlb-data-prod.data_platform.agg_account_vendor` av
+inner join `tlb-data-prod.data_platform.dim_chain` dc 
+on av.chain_id = dc.chain_id 
+inner join `tlb-data-prod.data_platform.fct_order_info` fi 
+on fi.order_id = av.first_order_id
+and fi.is_successful 
+and av.is_chain_acquesition
+and fi.order_date>>='2025-06-01'
+where date_trunc(date(first_order_time),month) >>='2025-06-01'
+group by all
+)
+
+,winbacks as
+(
+select
+    distinct account_id,
+    country_code, 
+    chain_id,
+    chain_name,
+    DATE_TRUNC(order_date, MONTH) as month,
+    order_id
+FROM
+    (
+SELECT  account_id,
+        order_id,
+        order_date,
+        a.chain_id,
+        b.chain_name,
+        a.country_code,
+        COALESCE(date_diff(order_date, lag(order_date) over(partition by account_id, a.country_id, a.chain_id order by order_date), day), 0) day_d
+    FROM `tlb-data-prod.data_platform.fct_order_info` a
+    INNER JOIN `tlb-data-prod.data_platform.dim_chain` b
+    ON a.chain_id = b.chain_id
+    and a.order_date>>='2025-04-01'
+    where 
+        a.is_successful = True 
+        and a.account_id >> 0 
+    )
+where
+  day_d >> 30
+  and DATE_TRUNC(order_date, MONTH) >>='2025-06-01'
+)
+
+,platform as
+(
+SELECT 
+    e.country_code,
+    DATE_TRUNC(e.order_date, month) as month,
+    e.chain_id,
+    dc.chain_name,
+    dv.vertical,
+    e.account_id,
+    max(case when acq.order_id is not null then 1 else 0 end) as is_acq,
+    max(case when wb.order_id is not null then 1 else 0 end) as is_winback,
+    count(distinct e.order_id) as platform_orders,
+    sum(e.gmv_amount_lc) as platform_gmv_lc,
+    SUM(COALESCE(e.gmv_amount_lc, 0) - COALESCE(e.delivery_fee_amount_lc, 0) - COALESCE(e.service_fee_amount_lc, 0)) AS gfv
+FROM `tlb-data-prod.data_platform.fct_order_info` e 
+INNER JOIN `tlb-data-prod.data_platform.dim_chain` dc on e.chain_id = dc.chain_id
+INNER JOIN `tlb-data-prod.data_platform.dim_vertical` dv on e.vertical_id = dv.vertical_id
+LEFT JOIN acquisition acq 
+on e.country_code = acq.country_code 
+and DATE_TRUNC(e.order_date, month) = acq.month 
+and dc.chain_id = acq.chain_id 
+and dc.chain_name = acq.chain_name 
+and e.account_id = acq.account_id 
+and e.order_id = acq.order_id
+LEFT JOIN winbacks wb 
+on e.country_code = wb.country_code 
+and DATE_TRUNC(e.order_date, month) = wb.month 
+and dc.chain_id = wb.chain_id 
+and dc.chain_name = wb.chain_name 
+and e.account_id = wb.account_id 
+and e.order_id = wb.order_id
+WHERE
+    e.is_successful = True
+    and DATE_TRUNC(e.order_date, month) >>='2025-06-01'
+GROUP BY ALL
+)
+
+,rewards_cust as
+(SELECT 
+    distinct
+    e.country_code, 
+    DATE_TRUNC(e.order_date, month) as month,
+    dc.chain_id,
+    dc.chain_name,
+    e.account_id,
+    max(case when acq.order_id is not null then 1 else 0 end) as is_acq,
+    max(case when wb.order_id is not null then 1 else 0 end) as is_winback,
+    count(distinct e.order_id) as rewards_orders,
+    sum(e.gmv_amount_lc) as rewards_order_gmv_lc,
+    SUM(case 
+        when cc.discriminator = "TPRO" then (a.order_discount_lc - bd.calculatedtprocommission)
+        when cc.discriminator = "LOYALTY" then (a.order_discount_lc*cc.talabat_share_percentage)/100 end) as cost_to_platform,
+    SUM(case 
+        when cc.discriminator = "TPRO" then bd.calculatedtprocommission
+        when cc.discriminator = "LOYALTY" then (a.order_discount_lc*(100-cc.talabat_share_percentage))/100 end) as cost_to_partner,
+    SUM(case when pro.account_id is not null then
+        case
+          when cc.discriminator = "TPRO" then bd.calculatedtprocommission
+          when cc.discriminator = "LOYALTY" then (a.order_discount_lc*(100-cc.talabat_share_percentage))/100 end else 0 end) as cost_to_partner_pro_customer,
+    SUM(case when pro.account_id is null then
+        case
+          when cc.discriminator = "TPRO" then bd.calculatedtprocommission
+          when cc.discriminator = "LOYALTY" then (a.order_discount_lc*(100-cc.talabat_share_percentage))/100 end else 0 end) as cost_to_partner_non_pro_customer,
+from `tlb-data-prod.data_platform.dim_incentives_voucher_details` a
+INNER join `tlb-data-prod.data_platform.dim_incentives_voucher` b 
+on a.voucher_id = b.voucher_id
+INNER JOIN `tlb-data-prod.data_platform_loyalty.voucher_options` cc  
+on cc.id = a.voucher_option_id
+inner join `tlb-data-prod.data_platform_loyalty.voucher_option_categories` dd 
+on b.voucher_option_category_id = dd.id 
+inner join `tlb-data-prod.data_platform.fct_order_info` e 
+on a.order_id = cast(e.order_id as string) and e.is_successful = True
+inner join `tlb-data-prod.data_platform.dim_chain` dc on e.chain_id = dc.chain_id
+INNER JOIN `tlb-data-prod.data_platform.dim_country_info` AS z 
+ON b.country_id = z.country_id
+INNER JOIN `tlb-data-prod.data_platform_billing.billingdata` bd 
+on e.order_id = bd.orderid
+LEFT JOIN acquisition acq 
+on e.country_code = acq.country_code 
+and DATE_TRUNC(e.order_date, month) = acq.month 
+and dc.chain_id = acq.chain_id
+and dc.chain_name = acq.chain_name 
+and e.account_id = acq.account_id 
+and e.order_id = acq.order_id
+LEFT JOIN winbacks wb 
+on e.country_code = wb.country_code 
+and DATE_TRUNC(e.order_date, month) = wb.month 
+and dc.chain_id = wb.chain_id
+and dc.chain_name = wb.chain_name 
+and e.account_id = wb.account_id 
+and e.order_id = wb.order_id
+LEFT JOIN `tlb-data-prod.data_platform.fct_tpro_subscriber_daily` pro 
+on e.account_id = pro.account_id and e.country_code = pro.country and e.order_time between pro.start_date and pro.end_date and e.order_date = pro.iso_date and pro.subscription_state <<>> "BILLING RETRY"
+WHERE
+    cc.discriminator in ('LOYALTY', 'TPRO')
+    and is_deleted = FALSE
+    and a.is_used = True
+    and DATE_TRUNC(e.order_date, month) >>='2025-06-01'
+    and points_cost <<>> 0
+    and cc.voucher_option_category_id not in (1466, 1765)
+GROUP BY ALL)
+
+,vendor_list as
+(
+  (select 
+    distinct
+    date_trunc(a.date, month) as month,
+    a.country_code,
+    a.chain_id,
+    b.chain_name,
+    b.account_manager_email,
+    b.team_leader_email,
+    "" as entry_point
+  from `tlb-data-dev.data_playground.rewards_vendor_history` a
+  inner join `tlb-data-prod.data_platform.dim_chain` b on a.chain_id = b.chain_id
+  where date << "2024-09-01")
+UNION ALL
+  (SELECT *
+  FROM
+    (select 
+      date_trunc(a.date, month) as month,
+      a.country_code,
+      a.chain_id,
+      b.chain_name, 
+      b.account_manager_email,
+      b.team_leader_email,
+      CONCAT(COALESCE(CASE WHEN MAX(is_basket_enabled) then "Basket" end,""),
+      COALESCE(CASE WHEN MAX(is_menu_enabled) then "Menu" end,""),
+      COALESCE(CASE WHEN MAX(is_catalog_enabled) then "Catalog" end,"")) as entry_point
+    from `tlb-data-prod.data_platform.dim_rewards_vendor_history` a
+    inner join `tlb-data-prod.data_platform.dim_chain` b on a.chain_id = b.chain_id
+    where date >>= "2024-09-01"
+    group by all)
+  )
+)
+
+SELECT
+    vl.country_code,
+    vl.month as month,
+   -- vl.chain_id,
+    vl.chain_name,
+    --vl.account_manager_email,
+   -- vl.team_leader_email,
+    vl.entry_point as vertical,
+    COALESCE(count(distinct a.account_id),0) as chain_customers,
+    COALESCE(sum(a.platform_orders),0) as chain_orders,
+    COALESCE(sum(a.platform_gmv_lc),0) as chain_gmv_lc,
+    COALESCE(count(distinct case when b.account_id is not null then a.account_id end),0) as rewards_customers,
+    COALESCE(sum(case when b.account_id is not null then COALESCE(b.rewards_orders) end),0) as rewards_orders,
+    COALESCE(sum(case when b.account_id is not null then COALESCE(b.rewards_order_gmv_lc) end),0) as rewards_order_gmv_lc,
+    COALESCE(sum(case when b.account_id is not null then COALESCE(a.platform_orders) end),0) as rewards_customers_orders,
+    COALESCE(sum(case when b.account_id is not null then COALESCE(a.platform_gmv_lc) end),0) as rewards_customers_gmv,
+    COALESCE(count(distinct case when a.is_acq = 1 then a.account_id end),0) as chain_acq,
+    COALESCE(count(distinct case when a.is_winback = 1 then a.account_id end),0) as chain_wb,
+    COALESCE(count(distinct case when b.is_acq = 1 then b.account_id end),0) as rewards_chain_acq,
+    COALESCE(count(distinct case when b.is_winback = 1 then b.account_id end),0) as rewards_chain_wb,
+    COALESCE(sum(case when b.account_id is not null then COALESCE(b.cost_to_platform) end),0) as cost_to_platform,
+    COALESCE(sum(case when b.account_id is not null then COALESCE(b.cost_to_partner) end),0) as cost_to_partner,
+    COALESCE(sum(case when b.account_id is not null then COALESCE(b.cost_to_partner_pro_customer) end),0) as cost_to_partner_pro_customer,
+    COALESCE(sum(case when b.account_id is not null then COALESCE(b.cost_to_partner_non_pro_customer) end),0) as cost_to_partner_non_pro_customer,
+    COALESCE(sum(a.gfv),0) as chain_customer_spend,
+    COALESCE(sum(case when b.account_id is not null then COALESCE(a.gfv,0) end),0) as rewards_customers_spend
+FROM vendor_list vl
+LEFT JOIN platform a on vl.country_code = a.country_code and vl.month = a.month and vl.chain_id = a.chain_id and vl.chain_name = a.chain_name
+LEFT JOIN rewards_cust b on a.country_code = b.country_code and a.month = b.month 
+and a.chain_id = b.chain_id 
+and a.chain_name = b.chain_name 
+and a.account_id = b.account_id
+where vl.month>>='2025-06-01'
+GROUP BY ALL
+
+union all 
+select *
+from `tlb-data-dev.data_playground.rewards_vendor_performance_initial_load_chain`]]></_.fcp.ObjectModelEncapsulateLegacy.false...relation>
+        <_.fcp.ObjectModelEncapsulateLegacy.true...relation connection='bigquery.1fa6c5u1c78mrd10v1nrp1l5ouz6' name='Custom SQL Query' type='text'><![CDATA[with acquisition as
+(
+select   dc.chain_id,
+         dc.chain_name,
+         av.account_id,
+         fi.country_code,
+         first_order_id as order_id
+        ,date_trunc(date(first_order_time),month) as month
+from `tlb-data-prod.data_platform.agg_account_vendor` av
+inner join `tlb-data-prod.data_platform.dim_chain` dc 
+on av.chain_id = dc.chain_id 
+inner join `tlb-data-prod.data_platform.fct_order_info` fi 
+on fi.order_id = av.first_order_id
+and fi.is_successful 
+and av.is_chain_acquesition
+and fi.order_date>>='2025-06-01'
+where date_trunc(date(first_order_time),month) >>='2025-06-01'
+group by all
+)
+
+,winbacks as
+(
+select
+    distinct account_id,
+    country_code, 
+    chain_id,
+    chain_name,
+    DATE_TRUNC(order_date, MONTH) as month,
+    order_id
+FROM
+    (
+SELECT  account_id,
+        order_id,
+        order_date,
+        a.chain_id,
+        b.chain_name,
+        a.country_code,
+        COALESCE(date_diff(order_date, lag(order_date) over(partition by account_id, a.country_id, a.chain_id order by order_date), day), 0) day_d
+    FROM `tlb-data-prod.data_platform.fct_order_info` a
+    INNER JOIN `tlb-data-prod.data_platform.dim_chain` b
+    ON a.chain_id = b.chain_id
+    and a.order_date>>='2025-04-01'
+    where 
+        a.is_successful = True 
+        and a.account_id >> 0 
+    )
+where
+  day_d >> 30
+  and DATE_TRUNC(order_date, MONTH) >>='2025-06-01'
+)
+
+,platform as
+(
+SELECT 
+    e.country_code,
+    DATE_TRUNC(e.order_date, month) as month,
+    e.chain_id,
+    dc.chain_name,
+    dv.vertical,
+    e.account_id,
+    max(case when acq.order_id is not null then 1 else 0 end) as is_acq,
+    max(case when wb.order_id is not null then 1 else 0 end) as is_winback,
+    count(distinct e.order_id) as platform_orders,
+    sum(e.gmv_amount_lc) as platform_gmv_lc,
+    SUM(COALESCE(e.gmv_amount_lc, 0) - COALESCE(e.delivery_fee_amount_lc, 0) - COALESCE(e.service_fee_amount_lc, 0)) AS gfv
+FROM `tlb-data-prod.data_platform.fct_order_info` e 
+INNER JOIN `tlb-data-prod.data_platform.dim_chain` dc on e.chain_id = dc.chain_id
+INNER JOIN `tlb-data-prod.data_platform.dim_vertical` dv on e.vertical_id = dv.vertical_id
+LEFT JOIN acquisition acq 
+on e.country_code = acq.country_code 
+and DATE_TRUNC(e.order_date, month) = acq.month 
+and dc.chain_id = acq.chain_id 
+and dc.chain_name = acq.chain_name 
+and e.account_id = acq.account_id 
+and e.order_id = acq.order_id
+LEFT JOIN winbacks wb 
+on e.country_code = wb.country_code 
+and DATE_TRUNC(e.order_date, month) = wb.month 
+and dc.chain_id = wb.chain_id 
+and dc.chain_name = wb.chain_name 
+and e.account_id = wb.account_id 
+and e.order_id = wb.order_id
+WHERE
+    e.is_successful = True
+    and DATE_TRUNC(e.order_date, month) >>='2025-06-01'
+GROUP BY ALL
+)
+
+,rewards_cust as
+(SELECT 
+    distinct
+    e.country_code, 
+    DATE_TRUNC(e.order_date, month) as month,
+    dc.chain_id,
+    dc.chain_name,
+    e.account_id,
+    max(case when acq.order_id is not null then 1 else 0 end) as is_acq,
+    max(case when wb.order_id is not null then 1 else 0 end) as is_winback,
+    count(distinct e.order_id) as rewards_orders,
+    sum(e.gmv_amount_lc) as rewards_order_gmv_lc,
+    SUM(case 
+        when cc.discriminator = "TPRO" then (a.order_discount_lc - bd.calculatedtprocommission)
+        when cc.discriminator = "LOYALTY" then (a.order_discount_lc*cc.talabat_share_percentage)/100 end) as cost_to_platform,
+    SUM(case 
+        when cc.discriminator = "TPRO" then bd.calculatedtprocommission
+        when cc.discriminator = "LOYALTY" then (a.order_discount_lc*(100-cc.talabat_share_percentage))/100 end) as cost_to_partner,
+    SUM(case when pro.account_id is not null then
+        case
+          when cc.discriminator = "TPRO" then bd.calculatedtprocommission
+          when cc.discriminator = "LOYALTY" then (a.order_discount_lc*(100-cc.talabat_share_percentage))/100 end else 0 end) as cost_to_partner_pro_customer,
+    SUM(case when pro.account_id is null then
+        case
+          when cc.discriminator = "TPRO" then bd.calculatedtprocommission
+          when cc.discriminator = "LOYALTY" then (a.order_discount_lc*(100-cc.talabat_share_percentage))/100 end else 0 end) as cost_to_partner_non_pro_customer,
+from `tlb-data-prod.data_platform.dim_incentives_voucher_details` a
+INNER join `tlb-data-prod.data_platform.dim_incentives_voucher` b 
+on a.voucher_id = b.voucher_id
+INNER JOIN `tlb-data-prod.data_platform_loyalty.voucher_options` cc  
+on cc.id = a.voucher_option_id
+inner join `tlb-data-prod.data_platform_loyalty.voucher_option_categories` dd 
+on b.voucher_option_category_id = dd.id 
+inner join `tlb-data-prod.data_platform.fct_order_info` e 
+on a.order_id = cast(e.order_id as string) and e.is_successful = True
+inner join `tlb-data-prod.data_platform.dim_chain` dc on e.chain_id = dc.chain_id
+INNER JOIN `tlb-data-prod.data_platform.dim_country_info` AS z 
+ON b.country_id = z.country_id
+INNER JOIN `tlb-data-prod.data_platform_billing.billingdata` bd 
+on e.order_id = bd.orderid
+LEFT JOIN acquisition acq 
+on e.country_code = acq.country_code 
+and DATE_TRUNC(e.order_date, month) = acq.month 
+and dc.chain_id = acq.chain_id
+and dc.chain_name = acq.chain_name 
+and e.account_id = acq.account_id 
+and e.order_id = acq.order_id
+LEFT JOIN winbacks wb 
+on e.country_code = wb.country_code 
+and DATE_TRUNC(e.order_date, month) = wb.month 
+and dc.chain_id = wb.chain_id
+and dc.chain_name = wb.chain_name 
+and e.account_id = wb.account_id 
+and e.order_id = wb.order_id
+LEFT JOIN `tlb-data-prod.data_platform.fct_tpro_subscriber_daily` pro 
+on e.account_id = pro.account_id and e.country_code = pro.country and e.order_time between pro.start_date and pro.end_date and e.order_date = pro.iso_date and pro.subscription_state <<>> "BILLING RETRY"
+WHERE
+    cc.discriminator in ('LOYALTY', 'TPRO')
+    and is_deleted = FALSE
+    and a.is_used = True
+    and DATE_TRUNC(e.order_date, month) >>='2025-06-01'
+    and points_cost <<>> 0
+    and cc.voucher_option_category_id not in (1466, 1765)
+GROUP BY ALL)
+
+,vendor_list as
+(
+  (select 
+    distinct
+    date_trunc(a.date, month) as month,
+    a.country_code,
+    a.chain_id,
+    b.chain_name,
+    b.account_manager_email,
+    b.team_leader_email,
+    "" as entry_point
+  from `tlb-data-dev.data_playground.rewards_vendor_history` a
+  inner join `tlb-data-prod.data_platform.dim_chain` b on a.chain_id = b.chain_id
+  where date << "2024-09-01")
+UNION ALL
+  (SELECT *
+  FROM
+    (select 
+      date_trunc(a.date, month) as month,
+      a.country_code,
+      a.chain_id,
+      b.chain_name, 
+      b.account_manager_email,
+      b.team_leader_email,
+      CONCAT(COALESCE(CASE WHEN MAX(is_basket_enabled) then "Basket" end,""),
+      COALESCE(CASE WHEN MAX(is_menu_enabled) then "Menu" end,""),
+      COALESCE(CASE WHEN MAX(is_catalog_enabled) then "Catalog" end,"")) as entry_point
+    from `tlb-data-prod.data_platform.dim_rewards_vendor_history` a
+    inner join `tlb-data-prod.data_platform.dim_chain` b on a.chain_id = b.chain_id
+    where date >>= "2024-09-01"
+    group by all)
+  )
+)
+
+SELECT
+    vl.country_code,
+    vl.month as month,
+   -- vl.chain_id,
+    vl.chain_name,
+    --vl.account_manager_email,
+   -- vl.team_leader_email,
+    vl.entry_point as vertical,
+    COALESCE(count(distinct a.account_id),0) as chain_customers,
+    COALESCE(sum(a.platform_orders),0) as chain_orders,
+    COALESCE(sum(a.platform_gmv_lc),0) as chain_gmv_lc,
+    COALESCE(count(distinct case when b.account_id is not null then a.account_id end),0) as rewards_customers,
+    COALESCE(sum(case when b.account_id is not null then COALESCE(b.rewards_orders) end),0) as rewards_orders,
+    COALESCE(sum(case when b.account_id is not null then COALESCE(b.rewards_order_gmv_lc) end),0) as rewards_order_gmv_lc,
+    COALESCE(sum(case when b.account_id is not null then COALESCE(a.platform_orders) end),0) as rewards_customers_orders,
+    COALESCE(sum(case when b.account_id is not null then COALESCE(a.platform_gmv_lc) end),0) as rewards_customers_gmv,
+    COALESCE(count(distinct case when a.is_acq = 1 then a.account_id end),0) as chain_acq,
+    COALESCE(count(distinct case when a.is_winback = 1 then a.account_id end),0) as chain_wb,
+    COALESCE(count(distinct case when b.is_acq = 1 then b.account_id end),0) as rewards_chain_acq,
+    COALESCE(count(distinct case when b.is_winback = 1 then b.account_id end),0) as rewards_chain_wb,
+    COALESCE(sum(case when b.account_id is not null then COALESCE(b.cost_to_platform) end),0) as cost_to_platform,
+    COALESCE(sum(case when b.account_id is not null then COALESCE(b.cost_to_partner) end),0) as cost_to_partner,
+    COALESCE(sum(case when b.account_id is not null then COALESCE(b.cost_to_partner_pro_customer) end),0) as cost_to_partner_pro_customer,
+    COALESCE(sum(case when b.account_id is not null then COALESCE(b.cost_to_partner_non_pro_customer) end),0) as cost_to_partner_non_pro_customer,
+    COALESCE(sum(a.gfv),0) as chain_customer_spend,
+    COALESCE(sum(case when b.account_id is not null then COALESCE(a.gfv,0) end),0) as rewards_customers_spend
+FROM vendor_list vl
+LEFT JOIN platform a on vl.country_code = a.country_code and vl.month = a.month and vl.chain_id = a.chain_id and vl.chain_name = a.chain_name
+LEFT JOIN rewards_cust b on a.country_code = b.country_code and a.month = b.month 
+and a.chain_id = b.chain_id 
+and a.chain_name = b.chain_name 
+and a.account_id = b.account_id
+where vl.month>>='2025-06-01'
+GROUP BY ALL
+
+union all 
+select *
+from `tlb-data-dev.data_playground.rewards_vendor_performance_initial_load_chain`]]></_.fcp.ObjectModelEncapsulateLegacy.true...relation>
+        <metadata-records>
+          <metadata-record class='column'>
+            <remote-name>country_code</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[country_code]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>country_code</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_281E33B05DA744E5A3A23C95F968D2A8]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>month</remote-name>
+            <remote-type>7</remote-type>
+            <local-name>[month]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>month</remote-alias>
+            <local-type>date</local-type>
+            <aggregation>Year</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_281E33B05DA744E5A3A23C95F968D2A8]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>chain_name</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[chain_name]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>chain_name</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_281E33B05DA744E5A3A23C95F968D2A8]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>vertical</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[vertical]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>vertical</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_281E33B05DA744E5A3A23C95F968D2A8]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>chain_customers</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[chain_customers]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>chain_customers</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_281E33B05DA744E5A3A23C95F968D2A8]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>chain_orders</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[chain_orders]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>chain_orders</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_281E33B05DA744E5A3A23C95F968D2A8]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>chain_gmv_lc</remote-name>
+            <remote-type>5</remote-type>
+            <local-name>[chain_gmv_lc]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>chain_gmv_lc</remote-alias>
+            <local-type>real</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_281E33B05DA744E5A3A23C95F968D2A8]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>rewards_customers</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[rewards_customers]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>rewards_customers</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_281E33B05DA744E5A3A23C95F968D2A8]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>rewards_orders</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[rewards_orders]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>rewards_orders</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_281E33B05DA744E5A3A23C95F968D2A8]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>rewards_order_gmv_lc</remote-name>
+            <remote-type>5</remote-type>
+            <local-name>[rewards_order_gmv_lc]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>rewards_order_gmv_lc</remote-alias>
+            <local-type>real</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_281E33B05DA744E5A3A23C95F968D2A8]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>rewards_customers_orders</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[rewards_customers_orders]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>rewards_customers_orders</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_281E33B05DA744E5A3A23C95F968D2A8]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>rewards_customers_gmv</remote-name>
+            <remote-type>5</remote-type>
+            <local-name>[rewards_customers_gmv]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>rewards_customers_gmv</remote-alias>
+            <local-type>real</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_281E33B05DA744E5A3A23C95F968D2A8]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>chain_acq</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[chain_acq]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>chain_acq</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_281E33B05DA744E5A3A23C95F968D2A8]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>chain_wb</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[chain_wb]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>chain_wb</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_281E33B05DA744E5A3A23C95F968D2A8]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>rewards_chain_acq</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[rewards_chain_acq]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>rewards_chain_acq</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_281E33B05DA744E5A3A23C95F968D2A8]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>rewards_chain_wb</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[rewards_chain_wb]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>rewards_chain_wb</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_281E33B05DA744E5A3A23C95F968D2A8]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>cost_to_platform</remote-name>
+            <remote-type>5</remote-type>
+            <local-name>[cost_to_platform]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>cost_to_platform</remote-alias>
+            <local-type>real</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_281E33B05DA744E5A3A23C95F968D2A8]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>cost_to_partner</remote-name>
+            <remote-type>5</remote-type>
+            <local-name>[cost_to_partner]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>cost_to_partner</remote-alias>
+            <local-type>real</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_281E33B05DA744E5A3A23C95F968D2A8]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>cost_to_partner_pro_customer</remote-name>
+            <remote-type>5</remote-type>
+            <local-name>[cost_to_partner_pro_customer]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>cost_to_partner_pro_customer</remote-alias>
+            <local-type>real</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_281E33B05DA744E5A3A23C95F968D2A8]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>cost_to_partner_non_pro_customer</remote-name>
+            <remote-type>5</remote-type>
+            <local-name>[cost_to_partner_non_pro_customer]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>cost_to_partner_non_pro_customer</remote-alias>
+            <local-type>real</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_281E33B05DA744E5A3A23C95F968D2A8]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>chain_customer_spend</remote-name>
+            <remote-type>5</remote-type>
+            <local-name>[chain_customer_spend]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>chain_customer_spend</remote-alias>
+            <local-type>real</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_281E33B05DA744E5A3A23C95F968D2A8]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>rewards_customers_spend</remote-name>
+            <remote-type>5</remote-type>
+            <local-name>[rewards_customers_spend]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>rewards_customers_spend</remote-alias>
+            <local-type>real</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_281E33B05DA744E5A3A23C95F968D2A8]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+        </metadata-records>
+      </connection>
+      <aliases enabled='yes' />
+      <column datatype='string' name='[:Measure Names]' role='dimension' type='nominal'>
+        <aliases>
+          <alias key='&quot;[federated.0yatahw1hpkjis1fnohbu1sd5usy].[sum:Calculation_1821706094863794176:qk]&quot;' value='      Orders % (Rewards Orders)' />
+          <alias key='&quot;[federated.0yatahw1hpkjis1fnohbu1sd5usy].[sum:Calculation_1821706094863867905:qk]&quot;' value='      GMV % (Rewards Users)' />
+          <alias key='&quot;[federated.0yatahw1hpkjis1fnohbu1sd5usy].[sum:Calculation_1821706094863958018:qk]&quot;' value='      GMV % (Rewards Orders)' />
+          <alias key='&quot;[federated.0yatahw1hpkjis1fnohbu1sd5usy].[sum:Calculation_1821706094864232451:qk]&quot;' value='USERS' />
+          <alias key='&quot;[federated.0yatahw1hpkjis1fnohbu1sd5usy].[sum:Calculation_1821706094864347140:qk]&quot;' value='ACQUISITIONS &amp; WINBACKS' />
+          <alias key='&quot;[federated.0yatahw1hpkjis1fnohbu1sd5usy].[sum:Calculation_1821706094864515077:qk]&quot;' value='      Rewards Contribution Users%' />
+          <alias key='&quot;[federated.0yatahw1hpkjis1fnohbu1sd5usy].[sum:Calculation_1821706094864556038:qk]&quot;' value='PERFORMANCE' />
+          <alias key='&quot;[federated.0yatahw1hpkjis1fnohbu1sd5usy].[sum:Calculation_1821706094864678919:qk]&quot;' value='      Orders % (Rewards Users)' />
+          <alias key='&quot;[federated.0yatahw1hpkjis1fnohbu1sd5usy].[sum:Calculation_1821706094864842760:qk]&quot;' value='      ROI' />
+          <alias key='&quot;[federated.0yatahw1hpkjis1fnohbu1sd5usy].[sum:Calculation_1821706094864916489:qk]&quot;' value='      Winback through Rewards %' />
+          <alias key='&quot;[federated.0yatahw1hpkjis1fnohbu1sd5usy].[sum:Calculation_1821706094865076234:qk]&quot;' value='      Acquisitions through Rewards %' />
+          <alias key='&quot;[federated.0yatahw1hpkjis1fnohbu1sd5usy].[sum:Calculation_1821706094865186827:qk]&quot;' value='      Order Frequency (Rewards Users)' />
+          <alias key='&quot;[federated.0yatahw1hpkjis1fnohbu1sd5usy].[sum:Calculation_1821706094865264652:qk]&quot;' value='ORDERS &amp; GMV' />
+          <alias key='&quot;[federated.0yatahw1hpkjis1fnohbu1sd5usy].[sum:Calculation_1821706094865354765:qk]&quot;' value='      Order Frequency (Non Rewards Users)' />
+          <alias key='&quot;[federated.0yatahw1hpkjis1fnohbu1sd5usy].[sum:chain_acq:qk]&quot;' value='      New Acquisitions (Chain)' />
+          <alias key='&quot;[federated.0yatahw1hpkjis1fnohbu1sd5usy].[sum:chain_customers:qk]&quot;' value='      Customers (Chain)' />
+          <alias key='&quot;[federated.0yatahw1hpkjis1fnohbu1sd5usy].[sum:chain_gmv_lc:qk]&quot;' value='      GMV (Chain)' />
+          <alias key='&quot;[federated.0yatahw1hpkjis1fnohbu1sd5usy].[sum:chain_orders:qk]&quot;' value='      Orders (Chain)' />
+          <alias key='&quot;[federated.0yatahw1hpkjis1fnohbu1sd5usy].[sum:chain_wb:qk]&quot;' value='      Winbacks (Chain)' />
+          <alias key='&quot;[federated.0yatahw1hpkjis1fnohbu1sd5usy].[sum:cost_to_partner_non_pro_customer:qk]&quot;' value='         Cost To Partner (LC) (Non-Pro Customers)' />
+          <alias key='&quot;[federated.0yatahw1hpkjis1fnohbu1sd5usy].[sum:cost_to_partner_pro_customer:qk]&quot;' value='         Cost To Partner (LC) (Pro Customers)' />
+          <alias key='&quot;[federated.0yatahw1hpkjis1fnohbu1sd5usy].[sum:cost_to_partner:qk]&quot;' value='      Cost To Partner (LC)' />
+          <alias key='&quot;[federated.0yatahw1hpkjis1fnohbu1sd5usy].[sum:cost_to_platform:qk]&quot;' value='      Cost To Platform (LC)' />
+          <alias key='&quot;[federated.0yatahw1hpkjis1fnohbu1sd5usy].[sum:Order Frequency (Non Rewards Users) (copy)_4859947011218411522:qk]&quot;' value='      Spend (Non Rewards Users) - LC' />
+          <alias key='&quot;[federated.0yatahw1hpkjis1fnohbu1sd5usy].[sum:Order Frequency (Rewards Users) (copy)_4859947011218403329:qk]&quot;' value='      Spend (Rewards Users) - LC' />
+          <alias key='&quot;[federated.0yatahw1hpkjis1fnohbu1sd5usy].[sum:rewards_chain_acq:qk]&quot;' value='      New Acquisitions (Rewards Users)' />
+          <alias key='&quot;[federated.0yatahw1hpkjis1fnohbu1sd5usy].[sum:rewards_chain_wb:qk]&quot;' value='      Winbacks (Rewards User)' />
+          <alias key='&quot;[federated.0yatahw1hpkjis1fnohbu1sd5usy].[sum:rewards_customers_gmv:qk]&quot;' value='      GMV (Rewards Users)' />
+          <alias key='&quot;[federated.0yatahw1hpkjis1fnohbu1sd5usy].[sum:rewards_customers_orders:qk]&quot;' value='      Orders (Rewards Users)' />
+          <alias key='&quot;[federated.0yatahw1hpkjis1fnohbu1sd5usy].[sum:rewards_customers:qk]&quot;' value='      Customers (Rewards Users)' />
+          <alias key='&quot;[federated.0yatahw1hpkjis1fnohbu1sd5usy].[sum:rewards_order_gmv_lc:qk]&quot;' value='      GMV (Rewards Orders)' />
+          <alias key='&quot;[federated.0yatahw1hpkjis1fnohbu1sd5usy].[sum:rewards_orders:qk]&quot;' value='      Orders (Rewards Orders)' />
+        </aliases>
+      </column>
+      <column caption='Orders % (Rewards Orders)' datatype='real' default-format='p0.0%' name='[Calculation_1821706094863794176]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='[rewards_orders]/[chain_orders]' />
+      </column>
+      <column caption='GMV % (Rewards Users)' datatype='real' default-format='p0.0%' name='[Calculation_1821706094863867905]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='[rewards_customers_gmv]/[chain_gmv_lc]' />
+      </column>
+      <column caption='GMV % (Rewards Orders)' datatype='real' default-format='p0.0%' name='[Calculation_1821706094863958018]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='[rewards_order_gmv_lc]/[chain_gmv_lc]' />
+      </column>
+      <column caption='Empty (copy)' datatype='integer' name='[Calculation_1821706094864232451]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='INT(NULL)' />
+      </column>
+      <column caption='Empty (copy) (copy)' datatype='integer' name='[Calculation_1821706094864347140]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='INT(NULL)' />
+      </column>
+      <column caption='Rewards Contribution Users%' datatype='real' default-format='p0.0%' name='[Calculation_1821706094864515077]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='[rewards_customers]/[chain_customers]' />
+      </column>
+      <column caption='Empty (copy) (copy) (copy)' datatype='integer' name='[Calculation_1821706094864556038]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='INT(NULL)' />
+      </column>
+      <column caption='Orders % (Rewards Users)' datatype='real' default-format='p0.0%' name='[Calculation_1821706094864678919]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='[rewards_customers_orders]/[chain_orders]' />
+      </column>
+      <column caption='ROI' datatype='real' default-format='n#,##0.0;-#,##0.0' name='[Calculation_1821706094864842760]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='[rewards_customers_gmv]/[cost_to_partner]' />
+      </column>
+      <column caption='Winback through Rewards %' datatype='real' default-format='p0.0%' name='[Calculation_1821706094864916489]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='[rewards_chain_wb]/[chain_wb]' />
+      </column>
+      <column caption='Acquisitions through Rewards %' datatype='real' default-format='p0.0%' name='[Calculation_1821706094865076234]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='[rewards_chain_acq]/[chain_acq]' />
+      </column>
+      <column caption='Order Frequency (Rewards Users)' datatype='real' default-format='n#,##0.0;-#,##0.0' name='[Calculation_1821706094865186827]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='[rewards_customers_orders]/[rewards_customers]' />
+      </column>
+      <column caption='Empty' datatype='integer' name='[Calculation_1821706094865264652]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='INT(NULL)' />
+      </column>
+      <column caption='Order Frequency (Non Rewards Users)' datatype='real' default-format='n#,##0.0;-#,##0.0' name='[Calculation_1821706094865354765]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='([chain_orders]-[rewards_customers_orders])/([chain_customers]-[rewards_customers])' />
+      </column>
+      <column caption='Spend (Non Rewards Users)' datatype='real' default-format='n#,##0.0;-#,##0.0' name='[Order Frequency (Non Rewards Users) (copy)_4859947011218411522]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='([chain_customer_spend]-[rewards_customers_spend])/([chain_customers]-[rewards_customers])' />
+      </column>
+      <column caption='Spend (Rewards Users)' datatype='real' default-format='n#,##0.0;-#,##0.0' name='[Order Frequency (Rewards Users) (copy)_4859947011218403329]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='[rewards_customers_spend]/[rewards_customers]' />
+      </column>
+      <_.fcp.ObjectModelTableType.true...column caption='Vendor Query' datatype='table' name='[__tableau_internal_object_id__].[_281E33B05DA744E5A3A23C95F968D2A8]' role='measure' type='quantitative' />
+      <column caption='Chain Acquisitions' datatype='integer' name='[chain_acq]' role='measure' type='quantitative' />
+      <column caption='Chain Customer Spend' datatype='real' name='[chain_customer_spend]' role='measure' type='quantitative' />
+      <column caption='Chain Customers' datatype='integer' name='[chain_customers]' role='measure' type='quantitative' />
+      <column caption='Chain GMV (LC)' datatype='real' default-format='n#,##0.00;-#,##0.00' name='[chain_gmv_lc]' role='measure' type='quantitative' />
+      <column caption='Chain Name' datatype='string' name='[chain_name]' role='dimension' type='nominal' />
+      <column caption='Chain Orders' datatype='integer' name='[chain_orders]' role='measure' type='quantitative' />
+      <column caption='Chain Winbacks' datatype='integer' name='[chain_wb]' role='measure' type='quantitative' />
+      <column caption='Cost To Partner (LC)' datatype='real' default-format='n#,##0.00;-#,##0.00' name='[cost_to_partner]' role='measure' type='quantitative' />
+      <column datatype='real' name='[cost_to_partner_non_pro_customer]' role='measure' type='quantitative' />
+      <column datatype='real' name='[cost_to_partner_pro_customer]' role='measure' type='quantitative' />
+      <column caption='Cost To Platform (LC)' datatype='real' default-format='n#,##0.00;-#,##0.00' name='[cost_to_platform]' role='measure' type='quantitative' />
+      <column caption='Country Code' datatype='string' name='[country_code]' role='dimension' semantic-role='[Country].[ISO3166_2]' type='nominal' />
+      <column caption='Month' datatype='date' name='[month]' role='dimension' type='ordinal' />
+      <column caption='Rewards Chain Acquisition' datatype='integer' name='[rewards_chain_acq]' role='measure' type='quantitative' />
+      <column caption='Rewards Chain Winbacks' datatype='integer' name='[rewards_chain_wb]' role='measure' type='quantitative' />
+      <column caption='Rewards Customers' datatype='integer' name='[rewards_customers]' role='measure' type='quantitative' />
+      <column caption='Rewards Customers GMV (LC)' datatype='real' default-format='n#,##0.00;-#,##0.00' name='[rewards_customers_gmv]' role='measure' type='quantitative' />
+      <column caption='Rewards Customers Orders' datatype='integer' name='[rewards_customers_orders]' role='measure' type='quantitative' />
+      <column caption='Rewards Customer Spend' datatype='real' name='[rewards_customers_spend]' role='measure' type='quantitative' />
+      <column caption='Rewards Order GMV (LC)' datatype='real' default-format='n#,##0.00;-#,##0.00' name='[rewards_order_gmv_lc]' role='measure' type='quantitative' />
+      <column caption='Rewards Orders' datatype='integer' name='[rewards_orders]' role='measure' type='quantitative' />
+      <column caption='Entry Point' datatype='string' name='[vertical]' role='dimension' type='nominal' />
+      <column-instance column='[Calculation_1821706094863794176]' derivation='Sum' name='[sum:Calculation_1821706094863794176:qk]' pivot='key' type='quantitative' />
+      <column-instance column='[Calculation_1821706094863867905]' derivation='Sum' name='[sum:Calculation_1821706094863867905:qk]' pivot='key' type='quantitative' />
+      <column-instance column='[Calculation_1821706094863958018]' derivation='Sum' name='[sum:Calculation_1821706094863958018:qk]' pivot='key' type='quantitative' />
+      <column-instance column='[Calculation_1821706094864232451]' derivation='Sum' name='[sum:Calculation_1821706094864232451:qk]' pivot='key' type='quantitative' />
+      <column-instance column='[Calculation_1821706094864347140]' derivation='Sum' name='[sum:Calculation_1821706094864347140:qk]' pivot='key' type='quantitative' />
+      <column-instance column='[Calculation_1821706094864515077]' derivation='Sum' name='[sum:Calculation_1821706094864515077:qk]' pivot='key' type='quantitative' />
+      <column-instance column='[Calculation_1821706094864556038]' derivation='Sum' name='[sum:Calculation_1821706094864556038:qk]' pivot='key' type='quantitative' />
+      <column-instance column='[Calculation_1821706094864678919]' derivation='Sum' name='[sum:Calculation_1821706094864678919:qk]' pivot='key' type='quantitative' />
+      <column-instance column='[Calculation_1821706094864842760]' derivation='Sum' name='[sum:Calculation_1821706094864842760:qk]' pivot='key' type='quantitative' />
+      <column-instance column='[Calculation_1821706094864916489]' derivation='Sum' name='[sum:Calculation_1821706094864916489:qk]' pivot='key' type='quantitative' />
+      <column-instance column='[Calculation_1821706094865076234]' derivation='Sum' name='[sum:Calculation_1821706094865076234:qk]' pivot='key' type='quantitative' />
+      <column-instance column='[Calculation_1821706094865186827]' derivation='Sum' name='[sum:Calculation_1821706094865186827:qk]' pivot='key' type='quantitative' />
+      <column-instance column='[Calculation_1821706094865264652]' derivation='Sum' name='[sum:Calculation_1821706094865264652:qk]' pivot='key' type='quantitative' />
+      <column-instance column='[Calculation_1821706094865354765]' derivation='Sum' name='[sum:Calculation_1821706094865354765:qk]' pivot='key' type='quantitative' />
+      <column-instance column='[Order Frequency (Non Rewards Users) (copy)_4859947011218411522]' derivation='Sum' name='[sum:Order Frequency (Non Rewards Users) (copy)_4859947011218411522:qk]' pivot='key' type='quantitative' />
+      <column-instance column='[Order Frequency (Rewards Users) (copy)_4859947011218403329]' derivation='Sum' name='[sum:Order Frequency (Rewards Users) (copy)_4859947011218403329:qk]' pivot='key' type='quantitative' />
+      <column-instance column='[chain_acq]' derivation='Sum' name='[sum:chain_acq:qk]' pivot='key' type='quantitative' />
+      <column-instance column='[chain_customers]' derivation='Sum' name='[sum:chain_customers:qk]' pivot='key' type='quantitative' />
+      <column-instance column='[chain_gmv_lc]' derivation='Sum' name='[sum:chain_gmv_lc:qk]' pivot='key' type='quantitative' />
+      <column-instance column='[chain_orders]' derivation='Sum' name='[sum:chain_orders:qk]' pivot='key' type='quantitative' />
+      <column-instance column='[chain_wb]' derivation='Sum' name='[sum:chain_wb:qk]' pivot='key' type='quantitative' />
+      <column-instance column='[cost_to_partner]' derivation='Sum' name='[sum:cost_to_partner:qk]' pivot='key' type='quantitative' />
+      <column-instance column='[cost_to_partner_non_pro_customer]' derivation='Sum' name='[sum:cost_to_partner_non_pro_customer:qk]' pivot='key' type='quantitative' />
+      <column-instance column='[cost_to_partner_pro_customer]' derivation='Sum' name='[sum:cost_to_partner_pro_customer:qk]' pivot='key' type='quantitative' />
+      <column-instance column='[cost_to_platform]' derivation='Sum' name='[sum:cost_to_platform:qk]' pivot='key' type='quantitative' />
+      <column-instance column='[rewards_chain_acq]' derivation='Sum' name='[sum:rewards_chain_acq:qk]' pivot='key' type='quantitative' />
+      <column-instance column='[rewards_chain_wb]' derivation='Sum' name='[sum:rewards_chain_wb:qk]' pivot='key' type='quantitative' />
+      <column-instance column='[rewards_customers]' derivation='Sum' name='[sum:rewards_customers:qk]' pivot='key' type='quantitative' />
+      <column-instance column='[rewards_customers_gmv]' derivation='Sum' name='[sum:rewards_customers_gmv:qk]' pivot='key' type='quantitative' />
+      <column-instance column='[rewards_customers_orders]' derivation='Sum' name='[sum:rewards_customers_orders:qk]' pivot='key' type='quantitative' />
+      <column-instance column='[rewards_order_gmv_lc]' derivation='Sum' name='[sum:rewards_order_gmv_lc:qk]' pivot='key' type='quantitative' />
+      <column-instance column='[rewards_orders]' derivation='Sum' name='[sum:rewards_orders:qk]' pivot='key' type='quantitative' />
+      <extract _.fcp.ObjectModelExtractV2.true...object-id='' _.fcp.VConnDownstreamExtractsWithWarnings.true...user-specific='false' count='-1' enabled='true' units='records'>
+        <connection access_mode='readonly' author-locale='en_US' class='hyper' dbname='extract/e6/f3/{7C695B36-0A07-4BE8-A48B-FDD060A1A7A5}/federated_0yatahw1hpkjis1fnohbu1.hyper' extract-engine='true' schema='Extract' sslmode='' tablename='Extract' update-time='07/02/2025 05:07:42 AM'>
+          <_.fcp.ObjectModelEncapsulateLegacy.false...relation name='Extract' table='[Extract].[Extract]' type='table' />
+          <_.fcp.ObjectModelEncapsulateLegacy.true...relation name='Extract' table='[Extract].[Extract]' type='table' />
+          <metadata-records>
+            <metadata-record class='column'>
+              <remote-name>country_code</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[country_code]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>country_code</remote-alias>
+              <ordinal>0</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>8</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_281E33B05DA744E5A3A23C95F968D2A8]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>month</remote-name>
+              <remote-type>133</remote-type>
+              <local-name>[month]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>month</remote-alias>
+              <ordinal>1</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>date</local-type>
+              <aggregation>Year</aggregation>
+              <approx-count>40</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_281E33B05DA744E5A3A23C95F968D2A8]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>chain_name</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[chain_name]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>chain_name</remote-alias>
+              <ordinal>2</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>26639</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_281E33B05DA744E5A3A23C95F968D2A8]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>vertical</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[vertical]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>vertical</remote-alias>
+              <ordinal>3</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>6</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_281E33B05DA744E5A3A23C95F968D2A8]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>chain_customers</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[chain_customers]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>chain_customers</remote-alias>
+              <ordinal>4</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>6993</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_281E33B05DA744E5A3A23C95F968D2A8]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>chain_orders</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[chain_orders]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>chain_orders</remote-alias>
+              <ordinal>5</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>9379</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_281E33B05DA744E5A3A23C95F968D2A8]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>chain_gmv_lc</remote-name>
+              <remote-type>5</remote-type>
+              <local-name>[chain_gmv_lc]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>chain_gmv_lc</remote-alias>
+              <ordinal>6</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>real</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>104176</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_281E33B05DA744E5A3A23C95F968D2A8]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>rewards_customers</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[rewards_customers]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>rewards_customers</remote-alias>
+              <ordinal>7</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>1528</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_281E33B05DA744E5A3A23C95F968D2A8]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>rewards_orders</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[rewards_orders]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>rewards_orders</remote-alias>
+              <ordinal>8</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>1787</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_281E33B05DA744E5A3A23C95F968D2A8]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>rewards_order_gmv_lc</remote-name>
+              <remote-type>5</remote-type>
+              <local-name>[rewards_order_gmv_lc]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>rewards_order_gmv_lc</remote-alias>
+              <ordinal>9</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>real</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>99909</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_281E33B05DA744E5A3A23C95F968D2A8]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>rewards_customers_orders</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[rewards_customers_orders]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>rewards_customers_orders</remote-alias>
+              <ordinal>10</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>1998</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_281E33B05DA744E5A3A23C95F968D2A8]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>rewards_customers_gmv</remote-name>
+              <remote-type>5</remote-type>
+              <local-name>[rewards_customers_gmv]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>rewards_customers_gmv</remote-alias>
+              <ordinal>11</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>real</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>99909</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_281E33B05DA744E5A3A23C95F968D2A8]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>chain_acq</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[chain_acq]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>chain_acq</remote-alias>
+              <ordinal>12</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>3380</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_281E33B05DA744E5A3A23C95F968D2A8]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>chain_wb</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[chain_wb]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>chain_wb</remote-alias>
+              <ordinal>13</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>3503</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_281E33B05DA744E5A3A23C95F968D2A8]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>rewards_chain_acq</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[rewards_chain_acq]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>rewards_chain_acq</remote-alias>
+              <ordinal>14</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>669</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_281E33B05DA744E5A3A23C95F968D2A8]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>rewards_chain_wb</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[rewards_chain_wb]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>rewards_chain_wb</remote-alias>
+              <ordinal>15</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>879</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_281E33B05DA744E5A3A23C95F968D2A8]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>cost_to_platform</remote-name>
+              <remote-type>5</remote-type>
+              <local-name>[cost_to_platform]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>cost_to_platform</remote-alias>
+              <ordinal>16</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>real</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>4842</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_281E33B05DA744E5A3A23C95F968D2A8]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>cost_to_partner</remote-name>
+              <remote-type>5</remote-type>
+              <local-name>[cost_to_partner]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>cost_to_partner</remote-alias>
+              <ordinal>17</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>real</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>6359</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_281E33B05DA744E5A3A23C95F968D2A8]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>cost_to_partner_pro_customer</remote-name>
+              <remote-type>5</remote-type>
+              <local-name>[cost_to_partner_pro_customer]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>cost_to_partner_pro_customer</remote-alias>
+              <ordinal>18</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>real</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>1136</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_281E33B05DA744E5A3A23C95F968D2A8]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>cost_to_partner_non_pro_customer</remote-name>
+              <remote-type>5</remote-type>
+              <local-name>[cost_to_partner_non_pro_customer]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>cost_to_partner_non_pro_customer</remote-alias>
+              <ordinal>19</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>real</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>6357</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_281E33B05DA744E5A3A23C95F968D2A8]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>chain_customer_spend</remote-name>
+              <remote-type>5</remote-type>
+              <local-name>[chain_customer_spend]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>chain_customer_spend</remote-alias>
+              <ordinal>20</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>real</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>104176</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_281E33B05DA744E5A3A23C95F968D2A8]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>rewards_customers_spend</remote-name>
+              <remote-type>5</remote-type>
+              <local-name>[rewards_customers_spend]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>rewards_customers_spend</remote-alias>
+              <ordinal>21</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>real</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>90530</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_281E33B05DA744E5A3A23C95F968D2A8]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+          </metadata-records>
+        </connection>
+      </extract>
+      <layout _.fcp.SchemaViewerObjectModel.false...dim-percentage='0.5' _.fcp.SchemaViewerObjectModel.false...measure-percentage='0.4' dim-ordering='alphabetic' measure-ordering='alphabetic' show-structure='true' />
+      <semantic-values>
+        <semantic-value key='[Country].[Name]' value='&quot;United States&quot;' />
+      </semantic-values>
+      <date-options start-of-week='saturday' />
+      <field-sort-info field-sort-order-type='custom-order'>
+        <field-sort-custom-order field='country_code' />
+        <field-sort-custom-order field='month' />
+        <field-sort-custom-order field='chain_name' />
+        <field-sort-custom-order field='vertical' />
+        <field-sort-custom-order field='chain_customers' />
+        <field-sort-custom-order field='chain_orders' />
+        <field-sort-custom-order field='chain_gmv_lc' />
+        <field-sort-custom-order field='rewards_customers' />
+        <field-sort-custom-order field='rewards_orders' />
+        <field-sort-custom-order field='rewards_order_gmv_lc' />
+        <field-sort-custom-order field='rewards_customers_orders' />
+        <field-sort-custom-order field='rewards_customers_gmv' />
+        <field-sort-custom-order field='chain_acq' />
+        <field-sort-custom-order field='chain_wb' />
+        <field-sort-custom-order field='rewards_chain_acq' />
+        <field-sort-custom-order field='rewards_chain_wb' />
+        <field-sort-custom-order field='cost_to_platform' />
+        <field-sort-custom-order field='cost_to_partner' />
+        <field-sort-custom-order field='Calculation_1821706094863794176' />
+        <field-sort-custom-order field='Calculation_1821706094863867905' />
+        <field-sort-custom-order field='Calculation_1821706094863958018' />
+        <field-sort-custom-order field='Calculation_1821706094864232451' />
+        <field-sort-custom-order field='Calculation_1821706094864347140' />
+        <field-sort-custom-order field='Calculation_1821706094864515077' />
+        <field-sort-custom-order field='Calculation_1821706094864556038' />
+        <field-sort-custom-order field='Calculation_1821706094864678919' />
+        <field-sort-custom-order field='Calculation_1821706094864842760' />
+        <field-sort-custom-order field='Calculation_1821706094864916489' />
+        <field-sort-custom-order field='Calculation_1821706094865076234' />
+        <field-sort-custom-order field='Calculation_1821706094865186827' />
+        <field-sort-custom-order field='Order Frequency (Rewards Users) (copy)_4859947011218403329' />
+        <field-sort-custom-order field='Calculation_1821706094865264652' />
+        <field-sort-custom-order field='Calculation_1821706094865354765' />
+        <field-sort-custom-order field='Order Frequency (Non Rewards Users) (copy)_4859947011218411522' />
+        <field-sort-custom-order field='Geometry (generated)' />
+        <field-sort-custom-order field='Latitude (generated)' />
+        <field-sort-custom-order field='Longitude (generated)' />
+        <field-sort-custom-order field=':Measure Names' />
+        <field-sort-custom-order field='Multiple Values' />
+      </field-sort-info>
+      <_.fcp.ObjectModelEncapsulateLegacy.true...object-graph>
+        <objects>
+          <object caption='Vendor Query' id='_281E33B05DA744E5A3A23C95F968D2A8'>
+            <properties context=''>
+              <relation connection='bigquery.1fa6c5u1c78mrd10v1nrp1l5ouz6' name='Custom SQL Query' type='text'><![CDATA[with acquisition as
+(
+select   dc.chain_id,
+         dc.chain_name,
+         av.account_id,
+         fi.country_code,
+         first_order_id as order_id
+        ,date_trunc(date(first_order_time),month) as month
+from `tlb-data-prod.data_platform.agg_account_vendor` av
+inner join `tlb-data-prod.data_platform.dim_chain` dc 
+on av.chain_id = dc.chain_id 
+inner join `tlb-data-prod.data_platform.fct_order_info` fi 
+on fi.order_id = av.first_order_id
+and fi.is_successful 
+and av.is_chain_acquesition
+and fi.order_date>>='2025-06-01'
+where date_trunc(date(first_order_time),month) >>='2025-06-01'
+group by all
+)
+
+,winbacks as
+(
+select
+    distinct account_id,
+    country_code, 
+    chain_id,
+    chain_name,
+    DATE_TRUNC(order_date, MONTH) as month,
+    order_id
+FROM
+    (
+SELECT  account_id,
+        order_id,
+        order_date,
+        a.chain_id,
+        b.chain_name,
+        a.country_code,
+        COALESCE(date_diff(order_date, lag(order_date) over(partition by account_id, a.country_id, a.chain_id order by order_date), day), 0) day_d
+    FROM `tlb-data-prod.data_platform.fct_order_info` a
+    INNER JOIN `tlb-data-prod.data_platform.dim_chain` b
+    ON a.chain_id = b.chain_id
+    and a.order_date>>='2025-04-01'
+    where 
+        a.is_successful = True 
+        and a.account_id >> 0 
+    )
+where
+  day_d >> 30
+  and DATE_TRUNC(order_date, MONTH) >>='2025-06-01'
+)
+
+,platform as
+(
+SELECT 
+    e.country_code,
+    DATE_TRUNC(e.order_date, month) as month,
+    e.chain_id,
+    dc.chain_name,
+    dv.vertical,
+    e.account_id,
+    max(case when acq.order_id is not null then 1 else 0 end) as is_acq,
+    max(case when wb.order_id is not null then 1 else 0 end) as is_winback,
+    count(distinct e.order_id) as platform_orders,
+    sum(e.gmv_amount_lc) as platform_gmv_lc,
+    SUM(COALESCE(e.gmv_amount_lc, 0) - COALESCE(e.delivery_fee_amount_lc, 0) - COALESCE(e.service_fee_amount_lc, 0)) AS gfv
+FROM `tlb-data-prod.data_platform.fct_order_info` e 
+INNER JOIN `tlb-data-prod.data_platform.dim_chain` dc on e.chain_id = dc.chain_id
+INNER JOIN `tlb-data-prod.data_platform.dim_vertical` dv on e.vertical_id = dv.vertical_id
+LEFT JOIN acquisition acq 
+on e.country_code = acq.country_code 
+and DATE_TRUNC(e.order_date, month) = acq.month 
+and dc.chain_id = acq.chain_id 
+and dc.chain_name = acq.chain_name 
+and e.account_id = acq.account_id 
+and e.order_id = acq.order_id
+LEFT JOIN winbacks wb 
+on e.country_code = wb.country_code 
+and DATE_TRUNC(e.order_date, month) = wb.month 
+and dc.chain_id = wb.chain_id 
+and dc.chain_name = wb.chain_name 
+and e.account_id = wb.account_id 
+and e.order_id = wb.order_id
+WHERE
+    e.is_successful = True
+    and DATE_TRUNC(e.order_date, month) >>='2025-06-01'
+GROUP BY ALL
+)
+
+,rewards_cust as
+(SELECT 
+    distinct
+    e.country_code, 
+    DATE_TRUNC(e.order_date, month) as month,
+    dc.chain_id,
+    dc.chain_name,
+    e.account_id,
+    max(case when acq.order_id is not null then 1 else 0 end) as is_acq,
+    max(case when wb.order_id is not null then 1 else 0 end) as is_winback,
+    count(distinct e.order_id) as rewards_orders,
+    sum(e.gmv_amount_lc) as rewards_order_gmv_lc,
+    SUM(case 
+        when cc.discriminator = "TPRO" then (a.order_discount_lc - bd.calculatedtprocommission)
+        when cc.discriminator = "LOYALTY" then (a.order_discount_lc*cc.talabat_share_percentage)/100 end) as cost_to_platform,
+    SUM(case 
+        when cc.discriminator = "TPRO" then bd.calculatedtprocommission
+        when cc.discriminator = "LOYALTY" then (a.order_discount_lc*(100-cc.talabat_share_percentage))/100 end) as cost_to_partner,
+    SUM(case when pro.account_id is not null then
+        case
+          when cc.discriminator = "TPRO" then bd.calculatedtprocommission
+          when cc.discriminator = "LOYALTY" then (a.order_discount_lc*(100-cc.talabat_share_percentage))/100 end else 0 end) as cost_to_partner_pro_customer,
+    SUM(case when pro.account_id is null then
+        case
+          when cc.discriminator = "TPRO" then bd.calculatedtprocommission
+          when cc.discriminator = "LOYALTY" then (a.order_discount_lc*(100-cc.talabat_share_percentage))/100 end else 0 end) as cost_to_partner_non_pro_customer,
+from `tlb-data-prod.data_platform.dim_incentives_voucher_details` a
+INNER join `tlb-data-prod.data_platform.dim_incentives_voucher` b 
+on a.voucher_id = b.voucher_id
+INNER JOIN `tlb-data-prod.data_platform_loyalty.voucher_options` cc  
+on cc.id = a.voucher_option_id
+inner join `tlb-data-prod.data_platform_loyalty.voucher_option_categories` dd 
+on b.voucher_option_category_id = dd.id 
+inner join `tlb-data-prod.data_platform.fct_order_info` e 
+on a.order_id = cast(e.order_id as string) and e.is_successful = True
+inner join `tlb-data-prod.data_platform.dim_chain` dc on e.chain_id = dc.chain_id
+INNER JOIN `tlb-data-prod.data_platform.dim_country_info` AS z 
+ON b.country_id = z.country_id
+INNER JOIN `tlb-data-prod.data_platform_billing.billingdata` bd 
+on e.order_id = bd.orderid
+LEFT JOIN acquisition acq 
+on e.country_code = acq.country_code 
+and DATE_TRUNC(e.order_date, month) = acq.month 
+and dc.chain_id = acq.chain_id
+and dc.chain_name = acq.chain_name 
+and e.account_id = acq.account_id 
+and e.order_id = acq.order_id
+LEFT JOIN winbacks wb 
+on e.country_code = wb.country_code 
+and DATE_TRUNC(e.order_date, month) = wb.month 
+and dc.chain_id = wb.chain_id
+and dc.chain_name = wb.chain_name 
+and e.account_id = wb.account_id 
+and e.order_id = wb.order_id
+LEFT JOIN `tlb-data-prod.data_platform.fct_tpro_subscriber_daily` pro 
+on e.account_id = pro.account_id and e.country_code = pro.country and e.order_time between pro.start_date and pro.end_date and e.order_date = pro.iso_date and pro.subscription_state <<>> "BILLING RETRY"
+WHERE
+    cc.discriminator in ('LOYALTY', 'TPRO')
+    and is_deleted = FALSE
+    and a.is_used = True
+    and DATE_TRUNC(e.order_date, month) >>='2025-06-01'
+    and points_cost <<>> 0
+    and cc.voucher_option_category_id not in (1466, 1765)
+GROUP BY ALL)
+
+,vendor_list as
+(
+  (select 
+    distinct
+    date_trunc(a.date, month) as month,
+    a.country_code,
+    a.chain_id,
+    b.chain_name,
+    b.account_manager_email,
+    b.team_leader_email,
+    "" as entry_point
+  from `tlb-data-dev.data_playground.rewards_vendor_history` a
+  inner join `tlb-data-prod.data_platform.dim_chain` b on a.chain_id = b.chain_id
+  where date << "2024-09-01")
+UNION ALL
+  (SELECT *
+  FROM
+    (select 
+      date_trunc(a.date, month) as month,
+      a.country_code,
+      a.chain_id,
+      b.chain_name, 
+      b.account_manager_email,
+      b.team_leader_email,
+      CONCAT(COALESCE(CASE WHEN MAX(is_basket_enabled) then "Basket" end,""),
+      COALESCE(CASE WHEN MAX(is_menu_enabled) then "Menu" end,""),
+      COALESCE(CASE WHEN MAX(is_catalog_enabled) then "Catalog" end,"")) as entry_point
+    from `tlb-data-prod.data_platform.dim_rewards_vendor_history` a
+    inner join `tlb-data-prod.data_platform.dim_chain` b on a.chain_id = b.chain_id
+    where date >>= "2024-09-01"
+    group by all)
+  )
+)
+
+SELECT
+    vl.country_code,
+    vl.month as month,
+   -- vl.chain_id,
+    vl.chain_name,
+    --vl.account_manager_email,
+   -- vl.team_leader_email,
+    vl.entry_point as vertical,
+    COALESCE(count(distinct a.account_id),0) as chain_customers,
+    COALESCE(sum(a.platform_orders),0) as chain_orders,
+    COALESCE(sum(a.platform_gmv_lc),0) as chain_gmv_lc,
+    COALESCE(count(distinct case when b.account_id is not null then a.account_id end),0) as rewards_customers,
+    COALESCE(sum(case when b.account_id is not null then COALESCE(b.rewards_orders) end),0) as rewards_orders,
+    COALESCE(sum(case when b.account_id is not null then COALESCE(b.rewards_order_gmv_lc) end),0) as rewards_order_gmv_lc,
+    COALESCE(sum(case when b.account_id is not null then COALESCE(a.platform_orders) end),0) as rewards_customers_orders,
+    COALESCE(sum(case when b.account_id is not null then COALESCE(a.platform_gmv_lc) end),0) as rewards_customers_gmv,
+    COALESCE(count(distinct case when a.is_acq = 1 then a.account_id end),0) as chain_acq,
+    COALESCE(count(distinct case when a.is_winback = 1 then a.account_id end),0) as chain_wb,
+    COALESCE(count(distinct case when b.is_acq = 1 then b.account_id end),0) as rewards_chain_acq,
+    COALESCE(count(distinct case when b.is_winback = 1 then b.account_id end),0) as rewards_chain_wb,
+    COALESCE(sum(case when b.account_id is not null then COALESCE(b.cost_to_platform) end),0) as cost_to_platform,
+    COALESCE(sum(case when b.account_id is not null then COALESCE(b.cost_to_partner) end),0) as cost_to_partner,
+    COALESCE(sum(case when b.account_id is not null then COALESCE(b.cost_to_partner_pro_customer) end),0) as cost_to_partner_pro_customer,
+    COALESCE(sum(case when b.account_id is not null then COALESCE(b.cost_to_partner_non_pro_customer) end),0) as cost_to_partner_non_pro_customer,
+    COALESCE(sum(a.gfv),0) as chain_customer_spend,
+    COALESCE(sum(case when b.account_id is not null then COALESCE(a.gfv,0) end),0) as rewards_customers_spend
+FROM vendor_list vl
+LEFT JOIN platform a on vl.country_code = a.country_code and vl.month = a.month and vl.chain_id = a.chain_id and vl.chain_name = a.chain_name
+LEFT JOIN rewards_cust b on a.country_code = b.country_code and a.month = b.month 
+and a.chain_id = b.chain_id 
+and a.chain_name = b.chain_name 
+and a.account_id = b.account_id
+where vl.month>>='2025-06-01'
+GROUP BY ALL
+
+union all 
+select *
+from `tlb-data-dev.data_playground.rewards_vendor_performance_initial_load_chain`]]></relation>
+            </properties>
+            <properties context='extract'>
+              <relation name='Extract' table='[Extract].[Extract]' type='table' />
+            </properties>
+          </object>
+        </objects>
+      </_.fcp.ObjectModelEncapsulateLegacy.true...object-graph>
+    </datasource>
+  </datasources>
+  <worksheets>
+    <worksheet name='Vendor Summ'>
+      <repository-location id='VendorSumm' path='/t/Talabat/workbooks/RewardsVendorPerformanceView' revision='' site='Talabat' />
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='Vendor Query' name='federated.0yatahw1hpkjis1fnohbu1sd5usy' />
+          </datasources>
+          <datasource-dependencies datasource='federated.0yatahw1hpkjis1fnohbu1sd5usy'>
+            <column caption='Orders % (Rewards Orders)' datatype='real' default-format='p0.0%' name='[Calculation_1821706094863794176]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='[rewards_orders]/[chain_orders]' />
+            </column>
+            <column caption='GMV % (Rewards Users)' datatype='real' default-format='p0.0%' name='[Calculation_1821706094863867905]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='[rewards_customers_gmv]/[chain_gmv_lc]' />
+            </column>
+            <column caption='GMV % (Rewards Orders)' datatype='real' default-format='p0.0%' name='[Calculation_1821706094863958018]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='[rewards_order_gmv_lc]/[chain_gmv_lc]' />
+            </column>
+            <column caption='Rewards Contribution Users%' datatype='real' default-format='p0.0%' name='[Calculation_1821706094864515077]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='[rewards_customers]/[chain_customers]' />
+            </column>
+            <column caption='Orders % (Rewards Users)' datatype='real' default-format='p0.0%' name='[Calculation_1821706094864678919]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='[rewards_customers_orders]/[chain_orders]' />
+            </column>
+            <column caption='ROI' datatype='real' default-format='n#,##0.0;-#,##0.0' name='[Calculation_1821706094864842760]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='[rewards_customers_gmv]/[cost_to_partner]' />
+            </column>
+            <column caption='Winback through Rewards %' datatype='real' default-format='p0.0%' name='[Calculation_1821706094864916489]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='[rewards_chain_wb]/[chain_wb]' />
+            </column>
+            <column caption='Acquisitions through Rewards %' datatype='real' default-format='p0.0%' name='[Calculation_1821706094865076234]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='[rewards_chain_acq]/[chain_acq]' />
+            </column>
+            <column caption='Order Frequency (Rewards Users)' datatype='real' default-format='n#,##0.0;-#,##0.0' name='[Calculation_1821706094865186827]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='[rewards_customers_orders]/[rewards_customers]' />
+            </column>
+            <column caption='Order Frequency (Non Rewards Users)' datatype='real' default-format='n#,##0.0;-#,##0.0' name='[Calculation_1821706094865354765]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='([chain_orders]-[rewards_customers_orders])/([chain_customers]-[rewards_customers])' />
+            </column>
+            <column caption='Spend (Non Rewards Users)' datatype='real' default-format='n#,##0.0;-#,##0.0' name='[Order Frequency (Non Rewards Users) (copy)_4859947011218411522]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='([chain_customer_spend]-[rewards_customers_spend])/([chain_customers]-[rewards_customers])' />
+            </column>
+            <column caption='Spend (Rewards Users)' datatype='real' default-format='n#,##0.0;-#,##0.0' name='[Order Frequency (Rewards Users) (copy)_4859947011218403329]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='[rewards_customers_spend]/[rewards_customers]' />
+            </column>
+            <column caption='Chain Acquisitions' datatype='integer' name='[chain_acq]' role='measure' type='quantitative' />
+            <column caption='Chain Customer Spend' datatype='real' name='[chain_customer_spend]' role='measure' type='quantitative' />
+            <column caption='Chain Customers' datatype='integer' name='[chain_customers]' role='measure' type='quantitative' />
+            <column caption='Chain GMV (LC)' datatype='real' default-format='n#,##0.00;-#,##0.00' name='[chain_gmv_lc]' role='measure' type='quantitative' />
+            <column caption='Chain Name' datatype='string' name='[chain_name]' role='dimension' type='nominal' />
+            <column caption='Chain Orders' datatype='integer' name='[chain_orders]' role='measure' type='quantitative' />
+            <column caption='Chain Winbacks' datatype='integer' name='[chain_wb]' role='measure' type='quantitative' />
+            <column caption='Cost To Partner (LC)' datatype='real' default-format='n#,##0.00;-#,##0.00' name='[cost_to_partner]' role='measure' type='quantitative' />
+            <column datatype='real' name='[cost_to_partner_non_pro_customer]' role='measure' type='quantitative' />
+            <column datatype='real' name='[cost_to_partner_pro_customer]' role='measure' type='quantitative' />
+            <column caption='Cost To Platform (LC)' datatype='real' default-format='n#,##0.00;-#,##0.00' name='[cost_to_platform]' role='measure' type='quantitative' />
+            <column caption='Country Code' datatype='string' name='[country_code]' role='dimension' semantic-role='[Country].[ISO3166_2]' type='nominal' />
+            <column-instance column='[month]' derivation='Month' name='[mn:month:ok]' pivot='key' type='ordinal' />
+            <column caption='Month' datatype='date' name='[month]' role='dimension' type='ordinal' />
+            <column-instance column='[month]' derivation='MY' name='[my:month:ok]' pivot='key' type='ordinal' />
+            <column-instance column='[chain_name]' derivation='None' name='[none:chain_name:nk]' pivot='key' type='nominal' />
+            <column-instance column='[country_code]' derivation='None' name='[none:country_code:nk]' pivot='key' type='nominal' />
+            <column-instance column='[vertical]' derivation='None' name='[none:vertical:nk]' pivot='key' type='nominal' />
+            <column caption='Rewards Chain Acquisition' datatype='integer' name='[rewards_chain_acq]' role='measure' type='quantitative' />
+            <column caption='Rewards Chain Winbacks' datatype='integer' name='[rewards_chain_wb]' role='measure' type='quantitative' />
+            <column caption='Rewards Customers' datatype='integer' name='[rewards_customers]' role='measure' type='quantitative' />
+            <column caption='Rewards Customers GMV (LC)' datatype='real' default-format='n#,##0.00;-#,##0.00' name='[rewards_customers_gmv]' role='measure' type='quantitative' />
+            <column caption='Rewards Customers Orders' datatype='integer' name='[rewards_customers_orders]' role='measure' type='quantitative' />
+            <column caption='Rewards Customer Spend' datatype='real' name='[rewards_customers_spend]' role='measure' type='quantitative' />
+            <column caption='Rewards Order GMV (LC)' datatype='real' default-format='n#,##0.00;-#,##0.00' name='[rewards_order_gmv_lc]' role='measure' type='quantitative' />
+            <column caption='Rewards Orders' datatype='integer' name='[rewards_orders]' role='measure' type='quantitative' />
+            <column-instance column='[Calculation_1821706094863794176]' derivation='Sum' name='[sum:Calculation_1821706094863794176:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[Calculation_1821706094863867905]' derivation='Sum' name='[sum:Calculation_1821706094863867905:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[Calculation_1821706094863958018]' derivation='Sum' name='[sum:Calculation_1821706094863958018:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[Calculation_1821706094864515077]' derivation='Sum' name='[sum:Calculation_1821706094864515077:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[Calculation_1821706094864678919]' derivation='Sum' name='[sum:Calculation_1821706094864678919:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[Calculation_1821706094864842760]' derivation='Sum' name='[sum:Calculation_1821706094864842760:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[Calculation_1821706094864916489]' derivation='Sum' name='[sum:Calculation_1821706094864916489:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[Calculation_1821706094865076234]' derivation='Sum' name='[sum:Calculation_1821706094865076234:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[Calculation_1821706094865186827]' derivation='Sum' name='[sum:Calculation_1821706094865186827:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[Calculation_1821706094865354765]' derivation='Sum' name='[sum:Calculation_1821706094865354765:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[Order Frequency (Non Rewards Users) (copy)_4859947011218411522]' derivation='Sum' name='[sum:Order Frequency (Non Rewards Users) (copy)_4859947011218411522:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[Order Frequency (Rewards Users) (copy)_4859947011218403329]' derivation='Sum' name='[sum:Order Frequency (Rewards Users) (copy)_4859947011218403329:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[chain_acq]' derivation='Sum' name='[sum:chain_acq:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[chain_customers]' derivation='Sum' name='[sum:chain_customers:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[chain_gmv_lc]' derivation='Sum' name='[sum:chain_gmv_lc:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[chain_orders]' derivation='Sum' name='[sum:chain_orders:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[chain_wb]' derivation='Sum' name='[sum:chain_wb:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[cost_to_partner]' derivation='Sum' name='[sum:cost_to_partner:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[cost_to_partner_non_pro_customer]' derivation='Sum' name='[sum:cost_to_partner_non_pro_customer:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[cost_to_partner_pro_customer]' derivation='Sum' name='[sum:cost_to_partner_pro_customer:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[cost_to_platform]' derivation='Sum' name='[sum:cost_to_platform:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[rewards_chain_acq]' derivation='Sum' name='[sum:rewards_chain_acq:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[rewards_chain_wb]' derivation='Sum' name='[sum:rewards_chain_wb:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[rewards_customers]' derivation='Sum' name='[sum:rewards_customers:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[rewards_customers_gmv]' derivation='Sum' name='[sum:rewards_customers_gmv:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[rewards_customers_orders]' derivation='Sum' name='[sum:rewards_customers_orders:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[rewards_order_gmv_lc]' derivation='Sum' name='[sum:rewards_order_gmv_lc:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[rewards_orders]' derivation='Sum' name='[sum:rewards_orders:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[month]' derivation='Month-Trunc' name='[tmn:month:ok]' pivot='key' type='ordinal' />
+            <column caption='Entry Point' datatype='string' name='[vertical]' role='dimension' type='nominal' />
+          </datasource-dependencies>
+          <filter class='categorical' column='[federated.0yatahw1hpkjis1fnohbu1sd5usy].[:Measure Names]'>
+            <groupfilter function='union' user:op='manual'>
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.0yatahw1hpkjis1fnohbu1sd5usy].[sum:chain_orders:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.0yatahw1hpkjis1fnohbu1sd5usy].[sum:rewards_customers_orders:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.0yatahw1hpkjis1fnohbu1sd5usy].[sum:rewards_orders:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.0yatahw1hpkjis1fnohbu1sd5usy].[sum:Calculation_1821706094864678919:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.0yatahw1hpkjis1fnohbu1sd5usy].[sum:Calculation_1821706094863794176:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.0yatahw1hpkjis1fnohbu1sd5usy].[sum:chain_gmv_lc:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.0yatahw1hpkjis1fnohbu1sd5usy].[sum:rewards_customers_gmv:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.0yatahw1hpkjis1fnohbu1sd5usy].[sum:rewards_order_gmv_lc:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.0yatahw1hpkjis1fnohbu1sd5usy].[sum:Calculation_1821706094863867905:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.0yatahw1hpkjis1fnohbu1sd5usy].[sum:Calculation_1821706094863958018:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.0yatahw1hpkjis1fnohbu1sd5usy].[sum:chain_customers:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.0yatahw1hpkjis1fnohbu1sd5usy].[sum:rewards_customers:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.0yatahw1hpkjis1fnohbu1sd5usy].[sum:Calculation_1821706094864515077:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.0yatahw1hpkjis1fnohbu1sd5usy].[sum:Calculation_1821706094865186827:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.0yatahw1hpkjis1fnohbu1sd5usy].[sum:Calculation_1821706094865354765:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.0yatahw1hpkjis1fnohbu1sd5usy].[sum:Order Frequency (Rewards Users) (copy)_4859947011218403329:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.0yatahw1hpkjis1fnohbu1sd5usy].[sum:Order Frequency (Non Rewards Users) (copy)_4859947011218411522:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.0yatahw1hpkjis1fnohbu1sd5usy].[sum:chain_acq:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.0yatahw1hpkjis1fnohbu1sd5usy].[sum:rewards_chain_acq:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.0yatahw1hpkjis1fnohbu1sd5usy].[sum:Calculation_1821706094865076234:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.0yatahw1hpkjis1fnohbu1sd5usy].[sum:chain_wb:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.0yatahw1hpkjis1fnohbu1sd5usy].[sum:rewards_chain_wb:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.0yatahw1hpkjis1fnohbu1sd5usy].[sum:Calculation_1821706094864916489:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.0yatahw1hpkjis1fnohbu1sd5usy].[sum:cost_to_platform:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.0yatahw1hpkjis1fnohbu1sd5usy].[sum:cost_to_partner:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.0yatahw1hpkjis1fnohbu1sd5usy].[sum:cost_to_partner_non_pro_customer:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.0yatahw1hpkjis1fnohbu1sd5usy].[sum:cost_to_partner_pro_customer:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.0yatahw1hpkjis1fnohbu1sd5usy].[sum:Calculation_1821706094864842760:qk]&quot;' />
+            </groupfilter>
+          </filter>
+          <manual-sort column='[federated.0yatahw1hpkjis1fnohbu1sd5usy].[:Measure Names]' direction='ASC'>
+            <dictionary>
+              <bucket>&quot;[federated.0yatahw1hpkjis1fnohbu1sd5usy].[sum:chain_orders:qk]&quot;</bucket>
+              <bucket>&quot;[federated.0yatahw1hpkjis1fnohbu1sd5usy].[sum:rewards_customers_orders:qk]&quot;</bucket>
+              <bucket>&quot;[federated.0yatahw1hpkjis1fnohbu1sd5usy].[sum:rewards_orders:qk]&quot;</bucket>
+              <bucket>&quot;[federated.0yatahw1hpkjis1fnohbu1sd5usy].[sum:Calculation_1821706094864678919:qk]&quot;</bucket>
+              <bucket>&quot;[federated.0yatahw1hpkjis1fnohbu1sd5usy].[sum:Calculation_1821706094863794176:qk]&quot;</bucket>
+              <bucket>&quot;[federated.0yatahw1hpkjis1fnohbu1sd5usy].[sum:chain_gmv_lc:qk]&quot;</bucket>
+              <bucket>&quot;[federated.0yatahw1hpkjis1fnohbu1sd5usy].[sum:rewards_customers_gmv:qk]&quot;</bucket>
+              <bucket>&quot;[federated.0yatahw1hpkjis1fnohbu1sd5usy].[sum:rewards_order_gmv_lc:qk]&quot;</bucket>
+              <bucket>&quot;[federated.0yatahw1hpkjis1fnohbu1sd5usy].[sum:Calculation_1821706094863867905:qk]&quot;</bucket>
+              <bucket>&quot;[federated.0yatahw1hpkjis1fnohbu1sd5usy].[sum:Calculation_1821706094863958018:qk]&quot;</bucket>
+              <bucket>&quot;[federated.0yatahw1hpkjis1fnohbu1sd5usy].[sum:chain_customers:qk]&quot;</bucket>
+              <bucket>&quot;[federated.0yatahw1hpkjis1fnohbu1sd5usy].[sum:rewards_customers:qk]&quot;</bucket>
+              <bucket>&quot;[federated.0yatahw1hpkjis1fnohbu1sd5usy].[sum:Calculation_1821706094864515077:qk]&quot;</bucket>
+              <bucket>&quot;[federated.0yatahw1hpkjis1fnohbu1sd5usy].[sum:Calculation_1821706094865186827:qk]&quot;</bucket>
+              <bucket>&quot;[federated.0yatahw1hpkjis1fnohbu1sd5usy].[sum:Calculation_1821706094865354765:qk]&quot;</bucket>
+              <bucket>&quot;[federated.0yatahw1hpkjis1fnohbu1sd5usy].[sum:Order Frequency (Rewards Users) (copy)_4859947011218403329:qk]&quot;</bucket>
+              <bucket>&quot;[federated.0yatahw1hpkjis1fnohbu1sd5usy].[sum:Order Frequency (Non Rewards Users) (copy)_4859947011218411522:qk]&quot;</bucket>
+              <bucket>&quot;[federated.0yatahw1hpkjis1fnohbu1sd5usy].[sum:chain_acq:qk]&quot;</bucket>
+              <bucket>&quot;[federated.0yatahw1hpkjis1fnohbu1sd5usy].[sum:rewards_chain_acq:qk]&quot;</bucket>
+              <bucket>&quot;[federated.0yatahw1hpkjis1fnohbu1sd5usy].[sum:Calculation_1821706094865076234:qk]&quot;</bucket>
+              <bucket>&quot;[federated.0yatahw1hpkjis1fnohbu1sd5usy].[sum:chain_wb:qk]&quot;</bucket>
+              <bucket>&quot;[federated.0yatahw1hpkjis1fnohbu1sd5usy].[sum:rewards_chain_wb:qk]&quot;</bucket>
+              <bucket>&quot;[federated.0yatahw1hpkjis1fnohbu1sd5usy].[sum:Calculation_1821706094864916489:qk]&quot;</bucket>
+              <bucket>&quot;[federated.0yatahw1hpkjis1fnohbu1sd5usy].[sum:cost_to_platform:qk]&quot;</bucket>
+              <bucket>&quot;[federated.0yatahw1hpkjis1fnohbu1sd5usy].[sum:cost_to_partner:qk]&quot;</bucket>
+              <bucket>&quot;[federated.0yatahw1hpkjis1fnohbu1sd5usy].[sum:cost_to_partner_non_pro_customer:qk]&quot;</bucket>
+              <bucket>&quot;[federated.0yatahw1hpkjis1fnohbu1sd5usy].[sum:cost_to_partner_pro_customer:qk]&quot;</bucket>
+              <bucket>&quot;[federated.0yatahw1hpkjis1fnohbu1sd5usy].[sum:Calculation_1821706094864842760:qk]&quot;</bucket>
+            </dictionary>
+          </manual-sort>
+          <filter class='categorical' column='[federated.0yatahw1hpkjis1fnohbu1sd5usy].[my:month:ok]'>
+            <groupfilter function='member' level='[my:month:ok]' member='202505' user:ui-domain='database' user:ui-enumeration='inclusive' user:ui-marker='enumerate' />
+          </filter>
+          <filter class='categorical' column='[federated.0yatahw1hpkjis1fnohbu1sd5usy].[none:chain_name:nk]'>
+            <groupfilter function='level-members' level='[none:chain_name:nk]' user:ui-enumeration='all' user:ui-marker='enumerate' />
+          </filter>
+          <filter class='categorical' column='[federated.0yatahw1hpkjis1fnohbu1sd5usy].[none:country_code:nk]'>
+            <groupfilter function='member' level='[none:country_code:nk]' member='&quot;AE&quot;' user:ui-domain='database' user:ui-enumeration='inclusive' user:ui-marker='enumerate' />
+          </filter>
+          <slices>
+            <column>[federated.0yatahw1hpkjis1fnohbu1sd5usy].[:Measure Names]</column>
+            <column>[federated.0yatahw1hpkjis1fnohbu1sd5usy].[none:country_code:nk]</column>
+            <column>[federated.0yatahw1hpkjis1fnohbu1sd5usy].[none:chain_name:nk]</column>
+            <column>[federated.0yatahw1hpkjis1fnohbu1sd5usy].[my:month:ok]</column>
+          </slices>
+          <aggregation value='true' />
+        </view>
+        <style>
+          <style-rule element='cell'>
+            <format attr='width' field='[federated.0yatahw1hpkjis1fnohbu1sd5usy].[tmn:month:ok]' value='115' />
+            <format attr='width' field='[federated.0yatahw1hpkjis1fnohbu1sd5usy].[:Measure Names]' value='106' />
+            <format attr='font-style' field='[federated.0yatahw1hpkjis1fnohbu1sd5usy].[Multiple Values]' value='normal' />
+            <format attr='text-align' field='[federated.0yatahw1hpkjis1fnohbu1sd5usy].[Multiple Values]' value='center' />
+            <format attr='vertical-align' field='[federated.0yatahw1hpkjis1fnohbu1sd5usy].[Multiple Values]' value='center' />
+            <format attr='border-width' value='0' />
+            <format attr='border-style' value='none' />
+            <format attr='text-format' field='[federated.0yatahw1hpkjis1fnohbu1sd5usy].[sum:cost_to_partner_non_pro_customer:qk]' value='n#,##0.00;-#,##0.00' />
+            <format attr='text-format' field='[federated.0yatahw1hpkjis1fnohbu1sd5usy].[sum:cost_to_partner_pro_customer:qk]' value='n#,##0.00;-#,##0.00' />
+          </style-rule>
+          <style-rule element='header'>
+            <format attr='width' field='[federated.0yatahw1hpkjis1fnohbu1sd5usy].[:Measure Names]' value='240' />
+            <format attr='height' field='[federated.0yatahw1hpkjis1fnohbu1sd5usy].[:Measure Names]' value='84' />
+            <format attr='width' field='[federated.0yatahw1hpkjis1fnohbu1sd5usy].[none:chain_name:nk]' value='328' />
+            <format attr='width' field='[federated.0yatahw1hpkjis1fnohbu1sd5usy].[tmn:month:ok]' value='104' />
+            <format attr='width' field='[federated.0yatahw1hpkjis1fnohbu1sd5usy].[none:vertical:nk]' value='156' />
+            <format attr='width' field='[federated.0yatahw1hpkjis1fnohbu1sd5usy].[none:country_code:nk]' value='60' />
+            <format attr='band-color' scope='rows' value='#f9eee8' />
+            <format attr='border-style' value='solid' />
+          </style-rule>
+          <style-rule element='label'>
+            <format attr='font-weight' field='[federated.0yatahw1hpkjis1fnohbu1sd5usy].[:Measure Names]' value='bold' />
+            <format attr='font-style' field='[federated.0yatahw1hpkjis1fnohbu1sd5usy].[:Measure Names]' value='italic' />
+            <format attr='vertical-align' field='[federated.0yatahw1hpkjis1fnohbu1sd5usy].[:Measure Names]' value='bottom' />
+            <format attr='text-align' field='[federated.0yatahw1hpkjis1fnohbu1sd5usy].[:Measure Names]' value='center' />
+            <format attr='font-weight' field='[federated.0yatahw1hpkjis1fnohbu1sd5usy].[none:vertical:nk]' value='bold' />
+            <format attr='color' field='[federated.0yatahw1hpkjis1fnohbu1sd5usy].[none:vertical:nk]' value='#d93825' />
+            <format attr='text-format' field='[federated.0yatahw1hpkjis1fnohbu1sd5usy].[tmn:month:ok]' value='*mmm/yyyy' />
+          </style-rule>
+          <style-rule element='pane'>
+            <format attr='band-color' scope='rows' value='#f9eee8' />
+            <format attr='border-style' value='solid' />
+          </style-rule>
+          <style-rule element='table'>
+            <format attr='band-size' scope='rows' value='1' />
+          </style-rule>
+          <style-rule element='worksheet'>
+            <format attr='display-field-labels' scope='cols' value='false' />
+          </style-rule>
+          <style-rule element='table-div'>
+            <format attr='line-pattern-only' scope='cols' value='solid' />
+            <format attr='stroke-size' scope='cols' value='0' />
+            <format attr='line-visibility' scope='cols' value='off' />
+            <format attr='div-level' scope='rows' value='1' />
+          </style-rule>
+          <style-rule element='header-div'>
+            <format attr='line-pattern-only' scope='cols' value='solid' />
+            <format attr='stroke-size' scope='cols' value='0' />
+            <format attr='line-visibility' scope='cols' value='off' />
+          </style-rule>
+          <style-rule element='quick-filter'>
+            <format attr='title' field='[federated.0yatahw1hpkjis1fnohbu1sd5usy].[mn:month:ok]' value='Month' />
+            <format attr='title' field='[federated.0yatahw1hpkjis1fnohbu1sd5usy].[my:month:ok]' value='Month' />
+          </style-rule>
+        </style>
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Automatic' />
+            <encodings>
+              <text column='[federated.0yatahw1hpkjis1fnohbu1sd5usy].[Multiple Values]' />
+            </encodings>
+            <style>
+              <style-rule element='mark'>
+                <format attr='mark-labels-show' value='true' />
+              </style-rule>
+              <style-rule element='pane'>
+                <format attr='minwidth' value='-1' />
+                <format attr='maxwidth' value='-1' />
+              </style-rule>
+            </style>
+          </pane>
+        </panes>
+        <rows>([federated.0yatahw1hpkjis1fnohbu1sd5usy].[none:country_code:nk] / ([federated.0yatahw1hpkjis1fnohbu1sd5usy].[none:chain_name:nk] / ([federated.0yatahw1hpkjis1fnohbu1sd5usy].[tmn:month:ok] / [federated.0yatahw1hpkjis1fnohbu1sd5usy].[none:vertical:nk])))</rows>
+        <cols>[federated.0yatahw1hpkjis1fnohbu1sd5usy].[:Measure Names]</cols>
+      </table>
+      <simple-id uuid='{657CF538-2698-4D76-A998-7A48E3CB402D}' />
+    </worksheet>
+  </worksheets>
+  <dashboards>
+    <dashboard _.fcp.AccessibleZoneTabOrder.true...enable-sort-zone-taborder='true' name='Vendor Summary'>
+      <repository-location derived-from='https://tableau.deliveryhero.net/t/Talabat/workbooks/RewardsVendorPerformanceView/VendorSummary?rev=' id='VendorSummary' path='/t/Talabat/workbooks/RewardsVendorPerformanceView' revision='' site='Talabat' />
+      <style />
+      <size maxheight='1000' maxwidth='1600' minheight='1000' minwidth='1600' sizing-mode='fixed' />
+      <datasources>
+        <datasource caption='Vendor Query' name='federated.0yatahw1hpkjis1fnohbu1sd5usy' />
+      </datasources>
+      <datasource-dependencies datasource='federated.0yatahw1hpkjis1fnohbu1sd5usy'>
+        <column caption='Chain Name' datatype='string' name='[chain_name]' role='dimension' type='nominal' />
+        <column caption='Country Code' datatype='string' name='[country_code]' role='dimension' semantic-role='[Country].[ISO3166_2]' type='nominal' />
+        <column caption='Month' datatype='date' name='[month]' role='dimension' type='ordinal' />
+        <column-instance column='[month]' derivation='MY' name='[my:month:ok]' pivot='key' type='ordinal' />
+        <column-instance column='[chain_name]' derivation='None' name='[none:chain_name:nk]' pivot='key' type='nominal' />
+        <column-instance column='[country_code]' derivation='None' name='[none:country_code:nk]' pivot='key' type='nominal' />
+      </datasource-dependencies>
+      <zones>
+        <zone h='100000' id='4' type-v2='layout-basic' w='100000' x='0' y='0'>
+          <zone h='98400' id='113' param='horz' type-v2='layout-flow' w='99000' x='500' y='800'>
+            <zone h='98400' id='51' type-v2='layout-basic' w='99000' x='500' y='800'>
+              <zone h='98400' id='15' param='horz' type-v2='layout-flow' w='99000' x='500' y='800'>
+                <zone h='98400' id='13' type-v2='layout-basic' w='99000' x='500' y='800'>
+                  <zone h='92675' id='3' type-v2='empty' w='2220' x='500' y='6525'>
+                    <zone-style>
+                      <format attr='border-color' value='#000000' />
+                      <format attr='border-style' value='none' />
+                      <format attr='border-width' value='0' />
+                      <format attr='margin' value='4' />
+                    </zone-style>
+                  </zone>
+                  <zone h='92675' id='5' type-v2='empty' w='2000' x='97500' y='6525'>
+                    <zone-style>
+                      <format attr='border-color' value='#000000' />
+                      <format attr='border-style' value='none' />
+                      <format attr='border-width' value='0' />
+                      <format attr='margin' value='4' />
+                    </zone-style>
+                  </zone>
+                  <zone h='5725' id='11' type-v2='empty' w='21883' x='77617' y='800'>
+                    <zone-style>
+                      <format attr='border-color' value='#000000' />
+                      <format attr='border-style' value='none' />
+                      <format attr='border-width' value='0' />
+                      <format attr='margin' value='4' />
+                    </zone-style>
+                  </zone>
+                  <zone h='5725' id='17' mode='checkdropdown' name='Vendor Summ' param='[federated.0yatahw1hpkjis1fnohbu1sd5usy].[none:country_code:nk]' show-apply='true' type-v2='filter' values='database' w='16505' x='33495' y='800'>
+                    <zone-style>
+                      <format attr='border-color' value='#000000' />
+                      <format attr='border-style' value='none' />
+                      <format attr='border-width' value='0' />
+                      <format attr='margin' value='4' />
+                    </zone-style>
+                  </zone>
+                  <zone h='5725' id='19' type-v2='empty' w='32995' x='500' y='800'>
+                    <zone-style>
+                      <format attr='border-color' value='#000000' />
+                      <format attr='border-style' value='none' />
+                      <format attr='border-width' value='0' />
+                      <format attr='margin' value='4' />
+                    </zone-style>
+                  </zone>
+                  <zone h='92675' id='50' name='Vendor Summ' show-title='false' w='94780' x='2720' y='6525'>
+                    <zone-style>
+                      <format attr='border-color' value='#000000' />
+                      <format attr='border-style' value='none' />
+                      <format attr='border-width' value='0' />
+                      <format attr='margin' value='4' />
+                    </zone-style>
+                  </zone>
+                  <zone h='5725' id='57' mode='checkdropdown' name='Vendor Summ' param='[federated.0yatahw1hpkjis1fnohbu1sd5usy].[my:month:ok]' show-apply='true' type-v2='filter' values='database' w='16494' x='50000' y='800'>
+                    <zone-style>
+                      <format attr='border-color' value='#000000' />
+                      <format attr='border-style' value='none' />
+                      <format attr='border-width' value='0' />
+                      <format attr='margin' value='4' />
+                    </zone-style>
+                  </zone>
+                  <zone h='5725' id='114' mode='checkdropdown' name='Vendor Summ' param='[federated.0yatahw1hpkjis1fnohbu1sd5usy].[none:chain_name:nk]' type-v2='filter' values='relevant' w='11123' x='66494' y='800'>
+                    <zone-style>
+                      <format attr='border-color' value='#000000' />
+                      <format attr='border-style' value='none' />
+                      <format attr='border-width' value='0' />
+                      <format attr='margin' value='4' />
+                    </zone-style>
+                  </zone>
+                </zone>
+              </zone>
+            </zone>
+          </zone>
+          <zone-style>
+            <format attr='border-color' value='#000000' />
+            <format attr='border-style' value='none' />
+            <format attr='border-width' value='0' />
+            <format attr='margin' value='8' />
+          </zone-style>
+        </zone>
+      </zones>
+      <devicelayouts>
+        <devicelayout auto-generated='true' name='Phone'>
+          <size maxheight='700' minheight='700' sizing-mode='vscroll' />
+          <zones>
+            <zone h='100000' id='210' type-v2='layout-basic' w='100000' x='0' y='0'>
+              <zone h='98400' id='209' param='vert' type-v2='layout-flow' w='99000' x='500' y='800'>
+                <zone h='5725' id='17' mode='checkdropdown' name='Vendor Summ' param='[federated.0yatahw1hpkjis1fnohbu1sd5usy].[none:country_code:nk]' show-apply='true' type-v2='filter' values='database' w='16505' x='33495' y='800'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone h='5725' id='57' mode='checkdropdown' name='Vendor Summ' param='[federated.0yatahw1hpkjis1fnohbu1sd5usy].[my:month:ok]' show-apply='true' type-v2='filter' values='database' w='16494' x='50000' y='800'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone h='5725' id='114' mode='checkdropdown' name='Vendor Summ' param='[federated.0yatahw1hpkjis1fnohbu1sd5usy].[none:chain_name:nk]' type-v2='filter' values='relevant' w='11123' x='66494' y='800'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone fixed-size='280' h='92675' id='50' is-fixed='true' name='Vendor Summ' show-title='false' w='94780' x='2720' y='6525'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+              </zone>
+              <zone-style>
+                <format attr='border-color' value='#000000' />
+                <format attr='border-style' value='none' />
+                <format attr='border-width' value='0' />
+                <format attr='margin' value='8' />
+              </zone-style>
+            </zone>
+          </zones>
+        </devicelayout>
+      </devicelayouts>
+      <simple-id uuid='{98AE7AF4-BC22-4E3F-899E-A24207DC04EE}' />
+    </dashboard>
+  </dashboards>
+  <windows show-side-pane='false' source-height='30'>
+    <window class='dashboard' maximized='true' name='Vendor Summary'>
+      <viewpoints>
+        <viewpoint name='Vendor Summ' />
+      </viewpoints>
+      <active id='57' />
+      <simple-id uuid='{C17FABC7-0C87-4E9B-B1EF-9DCF225A2708}' />
+    </window>
+    <window class='worksheet' hidden='true' name='Vendor Summ'>
+      <cards>
+        <edge name='left'>
+          <strip size='296'>
+            <card size='31' type='pages' />
+            <card size='138' type='filters' />
+            <card size='96' type='marks' />
+            <card size='576' type='measures' />
+          </strip>
+        </edge>
+        <edge name='top'>
+          <strip size='2147483647'>
+            <card type='columns' />
+          </strip>
+          <strip size='2147483647'>
+            <card type='rows' />
+          </strip>
+          <strip size='31'>
+            <card type='title' />
+          </strip>
+        </edge>
+        <edge name='right'>
+          <strip size='160'>
+            <card param='[federated.0yatahw1hpkjis1fnohbu1sd5usy].[my:month:ok]' type='filter' />
+          </strip>
+        </edge>
+      </cards>
+      <viewpoint>
+        <highlight>
+          <color-one-way>
+            <field>[federated.0yatahw1hpkjis1fnohbu1sd5usy].[none:chain_name:nk]</field>
+            <field>[federated.0yatahw1hpkjis1fnohbu1sd5usy].[none:vertical:nk]</field>
+          </color-one-way>
+        </highlight>
+      </viewpoint>
+      <simple-id uuid='{AA4BD7BB-C2A4-4351-98F5-E64AE192F8B5}' />
+    </window>
+  </windows>
+</workbook>

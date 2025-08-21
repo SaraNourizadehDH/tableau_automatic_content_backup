@@ -1,0 +1,2302 @@
+<?xml version='1.0' encoding='utf-8' ?>
+
+<!-- build 20231.24.0118.1101                               -->
+<workbook original-version='18.1' source-build='2023.1.9 (20231.24.0118.1101)' version='18.1' xml:base='https://tableau.deliveryhero.net' xmlns:user='http://www.tableausoftware.com/xml/user'>
+  <document-format-change-manifest>
+    <_.fcp.AccessibleZoneTabOrder.true...AccessibleZoneTabOrder />
+    <_.fcp.AnimationOnByDefault.true...AnimationOnByDefault />
+    <AutoCreateAndUpdateDSDPhoneLayouts />
+    <_.fcp.ExternalImageContentForZones.true...ExternalImageContentForZones />
+    <IntuitiveSorting />
+    <IntuitiveSorting_SP2 />
+    <_.fcp.MarkAnimation.true...MarkAnimation />
+    <_.fcp.ObjectModelEncapsulateLegacy.true...ObjectModelEncapsulateLegacy />
+    <_.fcp.ObjectModelExtractV2.true...ObjectModelExtractV2 />
+    <_.fcp.ObjectModelTableType.true...ObjectModelTableType />
+    <_.fcp.SchemaViewerObjectModel.true...SchemaViewerObjectModel />
+    <SetMembershipControl />
+    <SheetIdentifierTracking />
+    <_.fcp.SingleValuePerNestSorting.true...SingleValuePerNestSorting />
+    <SortTagCleanup />
+    <_.fcp.VConnDownstreamExtractsWithWarnings.true...VConnDownstreamExtractsWithWarnings />
+    <WindowsPersistSimpleIdentifiers />
+    <WorksheetBackgroundTransparency />
+    <ZoneBackgroundTransparency />
+  </document-format-change-manifest>
+  <repository-location derived-from='https://tableau.deliveryhero.net/t/Talabat/workbooks/ManualTransactionTracker?rev=2.0' id='ManualTransactionTracker' path='/t/Talabat/workbooks' revision='2.1' site='Talabat' />
+  <preferences />
+  <style-theme name='modern' />
+  <_.fcp.AnimationOnByDefault.false...style>
+    <_.fcp.AnimationOnByDefault.false..._.fcp.MarkAnimation.true...style-rule element='animation'>
+      <_.fcp.AnimationOnByDefault.false...format attr='animation-on' value='ao-on' />
+    </_.fcp.AnimationOnByDefault.false..._.fcp.MarkAnimation.true...style-rule>
+  </_.fcp.AnimationOnByDefault.false...style>
+  <datasources>
+    <datasource caption='auto_manual' inline='true' name='federated.1udii2e0oyiz97196hfzj14wlu1e' version='18.1'>
+      <connection class='federated'>
+        <named-connections>
+          <named-connection caption='BigQuery' name='bigquery.11bqd5b0cya37h1h9d2vq0um9ksn'>
+            <connection CATALOG='tlb-data-dev' EXECCATALOG='tlb-datateam-analysis-6343' authentication='oauth' bq-dataset-fetch-rows='' bq-fetch-rows='' bq-fetch-tasks='' bq-large-fetch-rows='' bq-project-fetch-rows='' bq-response-rows='' class='bigquery' connection-dialect='google-sql' project='tlb-data-dev' schema='data_playground_finance' server-oauth='' username='manjunath.lonikar@talabat.com' workgroup-auth-mode='prompt' />
+          </named-connection>
+        </named-connections>
+        <_.fcp.ObjectModelEncapsulateLegacy.false...relation connection='bigquery.11bqd5b0cya37h1h9d2vq0um9ksn' name='Custom SQL Query' type='text'><![CDATA[with temp as (
+SELECT DISTINCT
+   REPLACE(DATAAREAID, 'FD', '') AS country_code,
+  INVOICETXT as invoice_text,
+  DESCRIPTION as description,
+  LEDGERDIMENSIONDISPLAYVALUE as ledger_account,
+  ma.name as ledger_name,
+  DATE(INVOICEDATE) AS invoice_date,
+  FREETEXTNUMBER AS invoice_id,
+  CASE WHEN CURRENCYCODE ='USD' THEN (AMOUNTCUR*3.67) ELSE (AMOUNTCUR*1.0) END AS amount_lc,
+  exc.exchange_rate_value,
+  (CASE WHEN CURRENCYCODE ='USD' THEN (AMOUNTCUR *3.67) ELSE (AMOUNTCUR*1.0) END )/exc.exchange_rate_value AS amount_eur,
+  CASE WHEN SUBSTR(FREETEXTNUMBER, 1, 2) = 'CN' THEN 'Credit Note' ELSE 'Invoice' END AS invoice_type
+FROM
+  ( SELECT * FROM `tlb-data-prod.data_platform_msdynamics.FreeTextInvoiceStaging` 
+  WHERE DATE(INVOICEDATE)>>= '2024-01-01' 
+  and DATAAREAID like 'FD%') as fti
+LEFT JOIN
+  `tlb-data-prod.data_platform.dim_exchange_rate` exc
+ON
+  DATE(fti.INVOICEDATE) = DATE(exc.exchange_rate_date)
+  AND UPPER(REPLACE(TRIM(DATAAREAID), 'FD', '')) =UPPER(CASE WHEN TRIM(exc.country_code)= 'IQ' THEN 'RQ' ELSE TRIM(exc.country_code) END)
+  AND exc.exchange_rate_base = 'EUR'
+  AND DATE(exc.exchange_rate_date)>>= '2024-01-01'
+  AND exc.country_code IS NOT NULL
+  AND exc.country_id IS NOT NULL
+LEFT JOIN `tlb-data-prod.data_platform_msdynamics.MainAccountStaging` ma on SAFE_CAST(ma.MAINACCOUNTID AS INTEGER) = SAFE_CAST(LEDGERDIMENSIONDISPLAYVALUE AS INTEGER)
+  group by ALL
+)
+,
+base as
+(SELECT
+     t1.country_code,
+        t1.invoice_text,
+        t1.description,
+        t1.ledger_account,
+        t1.ledger_name,
+        t1.invoice_date,
+        t1.invoice_id,
+        CASE 
+            WHEN t1.ledger_account = '750106022' AND t1.invoice_date >>= '2024-03-01' THEN 0 
+            ELSE t1.amount_lc 
+        END AS amount_lc,
+        t1.exchange_rate_value,
+        CASE 
+            WHEN t1.ledger_account = '750106022' AND t1.invoice_date >>= '2024-03-01' THEN 0 
+            ELSE t1.amount_eur 
+        END AS amount_eur,
+        t1.invoice_type,
+        t2.LEDGER_ACCOUNT_FLAG
+FROM
+  temp t1
+  LEFT join `tlb-data-prod.data_platform_google_sheet.dynamics_accounts_flagged_billingsystem` t2 on SAFE_CAST(t1.ledger_account as INT64) = SAFE_CAST(t2.ledger_account_number as INT64)
+GROUP BY
+  all
+),
+
+final_output as 
+(
+select  *  from  base  where DATE_TRUNC(invoice_date, month) << DATE_TRUNC(current_date(), month) 
+)
+
+SELECT
+    t.*,
+    SUM(amount_eur) over (partition by country_code, invoice_date) as country_amount_eur,
+    SUM(amount_eur) over (partition by invoice_date) as mena_amount_eur,
+FROM
+    final_output t]]></_.fcp.ObjectModelEncapsulateLegacy.false...relation>
+        <_.fcp.ObjectModelEncapsulateLegacy.true...relation connection='bigquery.11bqd5b0cya37h1h9d2vq0um9ksn' name='Custom SQL Query' type='text'><![CDATA[with temp as (
+SELECT DISTINCT
+   REPLACE(DATAAREAID, 'FD', '') AS country_code,
+  INVOICETXT as invoice_text,
+  DESCRIPTION as description,
+  LEDGERDIMENSIONDISPLAYVALUE as ledger_account,
+  ma.name as ledger_name,
+  DATE(INVOICEDATE) AS invoice_date,
+  FREETEXTNUMBER AS invoice_id,
+  CASE WHEN CURRENCYCODE ='USD' THEN (AMOUNTCUR*3.67) ELSE (AMOUNTCUR*1.0) END AS amount_lc,
+  exc.exchange_rate_value,
+  (CASE WHEN CURRENCYCODE ='USD' THEN (AMOUNTCUR *3.67) ELSE (AMOUNTCUR*1.0) END )/exc.exchange_rate_value AS amount_eur,
+  CASE WHEN SUBSTR(FREETEXTNUMBER, 1, 2) = 'CN' THEN 'Credit Note' ELSE 'Invoice' END AS invoice_type
+FROM
+  ( SELECT * FROM `tlb-data-prod.data_platform_msdynamics.FreeTextInvoiceStaging` 
+  WHERE DATE(INVOICEDATE)>>= '2024-01-01' 
+  and DATAAREAID like 'FD%') as fti
+LEFT JOIN
+  `tlb-data-prod.data_platform.dim_exchange_rate` exc
+ON
+  DATE(fti.INVOICEDATE) = DATE(exc.exchange_rate_date)
+  AND UPPER(REPLACE(TRIM(DATAAREAID), 'FD', '')) =UPPER(CASE WHEN TRIM(exc.country_code)= 'IQ' THEN 'RQ' ELSE TRIM(exc.country_code) END)
+  AND exc.exchange_rate_base = 'EUR'
+  AND DATE(exc.exchange_rate_date)>>= '2024-01-01'
+  AND exc.country_code IS NOT NULL
+  AND exc.country_id IS NOT NULL
+LEFT JOIN `tlb-data-prod.data_platform_msdynamics.MainAccountStaging` ma on SAFE_CAST(ma.MAINACCOUNTID AS INTEGER) = SAFE_CAST(LEDGERDIMENSIONDISPLAYVALUE AS INTEGER)
+  group by ALL
+)
+,
+base as
+(SELECT
+     t1.country_code,
+        t1.invoice_text,
+        t1.description,
+        t1.ledger_account,
+        t1.ledger_name,
+        t1.invoice_date,
+        t1.invoice_id,
+        CASE 
+            WHEN t1.ledger_account = '750106022' AND t1.invoice_date >>= '2024-03-01' THEN 0 
+            ELSE t1.amount_lc 
+        END AS amount_lc,
+        t1.exchange_rate_value,
+        CASE 
+            WHEN t1.ledger_account = '750106022' AND t1.invoice_date >>= '2024-03-01' THEN 0 
+            ELSE t1.amount_eur 
+        END AS amount_eur,
+        t1.invoice_type,
+        t2.LEDGER_ACCOUNT_FLAG
+FROM
+  temp t1
+  LEFT join `tlb-data-prod.data_platform_google_sheet.dynamics_accounts_flagged_billingsystem` t2 on SAFE_CAST(t1.ledger_account as INT64) = SAFE_CAST(t2.ledger_account_number as INT64)
+GROUP BY
+  all
+),
+
+final_output as 
+(
+select  *  from  base  where DATE_TRUNC(invoice_date, month) << DATE_TRUNC(current_date(), month) 
+)
+
+SELECT
+    t.*,
+    SUM(amount_eur) over (partition by country_code, invoice_date) as country_amount_eur,
+    SUM(amount_eur) over (partition by invoice_date) as mena_amount_eur,
+FROM
+    final_output t]]></_.fcp.ObjectModelEncapsulateLegacy.true...relation>
+        <metadata-records>
+          <metadata-record class='column'>
+            <remote-name>country_code</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[country_code]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>country_code</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[auto_manual_2024_6C193A2552CB4D89AC2447E4C7A7DC4C]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>invoice_text</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[invoice_text]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>invoice_text</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[auto_manual_2024_6C193A2552CB4D89AC2447E4C7A7DC4C]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>description</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[description]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>description</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[auto_manual_2024_6C193A2552CB4D89AC2447E4C7A7DC4C]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>ledger_account</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[ledger_account]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>ledger_account</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[auto_manual_2024_6C193A2552CB4D89AC2447E4C7A7DC4C]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>ledger_name</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[ledger_name]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>ledger_name</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[auto_manual_2024_6C193A2552CB4D89AC2447E4C7A7DC4C]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>invoice_date</remote-name>
+            <remote-type>7</remote-type>
+            <local-name>[invoice_date]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>invoice_date</remote-alias>
+            <local-type>date</local-type>
+            <aggregation>Year</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[auto_manual_2024_6C193A2552CB4D89AC2447E4C7A7DC4C]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>invoice_id</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[invoice_id]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>invoice_id</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[auto_manual_2024_6C193A2552CB4D89AC2447E4C7A7DC4C]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>amount_lc</remote-name>
+            <remote-type>5</remote-type>
+            <local-name>[amount_lc]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>amount_lc</remote-alias>
+            <local-type>real</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[auto_manual_2024_6C193A2552CB4D89AC2447E4C7A7DC4C]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>exchange_rate_value</remote-name>
+            <remote-type>5</remote-type>
+            <local-name>[exchange_rate_value]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>exchange_rate_value</remote-alias>
+            <local-type>real</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[auto_manual_2024_6C193A2552CB4D89AC2447E4C7A7DC4C]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>amount_eur</remote-name>
+            <remote-type>5</remote-type>
+            <local-name>[amount_eur]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>amount_eur</remote-alias>
+            <local-type>real</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[auto_manual_2024_6C193A2552CB4D89AC2447E4C7A7DC4C]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>invoice_type</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[invoice_type]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>invoice_type</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[auto_manual_2024_6C193A2552CB4D89AC2447E4C7A7DC4C]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>LEDGER_ACCOUNT_FLAG</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[LEDGER_ACCOUNT_FLAG]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>LEDGER_ACCOUNT_FLAG</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[auto_manual_2024_6C193A2552CB4D89AC2447E4C7A7DC4C]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>country_amount_eur</remote-name>
+            <remote-type>5</remote-type>
+            <local-name>[country_amount_eur]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>country_amount_eur</remote-alias>
+            <local-type>real</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[auto_manual_2024_6C193A2552CB4D89AC2447E4C7A7DC4C]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>mena_amount_eur</remote-name>
+            <remote-type>5</remote-type>
+            <local-name>[mena_amount_eur]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>mena_amount_eur</remote-alias>
+            <local-type>real</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[auto_manual_2024_6C193A2552CB4D89AC2447E4C7A7DC4C]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+        </metadata-records>
+      </connection>
+      <aliases enabled='yes' />
+      <column caption='share_on_country' datatype='real' name='[Calculation1 (copy)_3443494524234207235]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='sum([amount_eur])/sum([Calculation_5855453599297626113])' />
+      </column>
+      <column caption='country_date_euro' datatype='real' name='[Calculation_5855453599297626113]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='{ FIXED [country_code], [invoice_date] : SUM([amount_eur]) }' />
+      </column>
+      <column datatype='string' name='[LEDGER_ACCOUNT_FLAG]' role='dimension' type='nominal' />
+      <_.fcp.ObjectModelTableType.true...column caption='auto_manual_2024' datatype='table' name='[__tableau_internal_object_id__].[auto_manual_2024_6C193A2552CB4D89AC2447E4C7A7DC4C]' role='measure' type='quantitative' />
+      <column datatype='real' default-format='C1031%' name='[amount_eur]' role='measure' type='quantitative' />
+      <column caption='Country' datatype='string' name='[country_code]' role='dimension' semantic-role='[Country].[ISO3166_2]' type='nominal' />
+      <column caption='mena_date_euro' datatype='real' name='[country_date_euro (copy)_4378695140354269184]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='{ FIXED [invoice_date] : SUM([amount_eur]) }' />
+      </column>
+      <column caption='country_date_euro (copy)' datatype='real' name='[country_date_euro (copy)_4378695140413022210]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='max({ FIXED [country_code], [month] : SUM([amount_eur]) })' />
+      </column>
+      <column caption='Exchange Rate Value' datatype='real' name='[exchange_rate_value]' role='measure' type='quantitative' />
+      <column caption='Ledger Account' datatype='string' name='[ledger_account]' role='dimension' type='nominal' />
+      <column caption='Ledger Name' datatype='string' name='[ledger_name]' role='dimension' type='nominal' />
+      <column datatype='date' name='[month]' role='dimension' type='quantitative' user:agg-type='Month-Trunc' user:base-field='invoice_date' user:ui-builder='date-bin-builder'>
+        <calculation class='tableau' formula='DATE(DATETRUNC(&apos;month&apos;, [invoice_date]))' />
+      </column>
+      <column caption='share_on_mena' datatype='real' default-format='p0.0%' name='[share_on_country (copy)_4378695140354347009]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='sum([amount_eur])/sum([country_date_euro (copy)_4378695140354269184])' />
+      </column>
+      <column-instance column='[Forecast Indicator]' derivation='None' forecast-column-base='[Forecast Indicator]' forecast-column-type='forecast-indicator' name='[none:Forecast Indicator:nk]' pivot='key' type='nominal' />
+      <column-instance column='[LEDGER_ACCOUNT_FLAG]' derivation='None' name='[none:LEDGER_ACCOUNT_FLAG:nk]' pivot='key' type='nominal' />
+      <column-instance column='[country_code]' derivation='None' name='[none:country_code:nk]' pivot='key' type='nominal' />
+      <column-instance column='[ledger_account]' derivation='None' name='[none:ledger_account:nk]' pivot='key' type='nominal' />
+      <column-instance column='[ledger_name]' derivation='None' name='[none:ledger_name:nk]' pivot='key' type='nominal' />
+      <extract _.fcp.ObjectModelExtractV2.true...object-id='' _.fcp.VConnDownstreamExtractsWithWarnings.true...user-specific='false' count='-1' enabled='false' units='records'>
+        <connection access_mode='readonly' authentication='auth-none' author-locale='en_US' class='hyper' dbname='Data/Datasources/automanualnew.hyper' default-settings='yes' schema='Extract' sslmode='' update-time='06/13/2024 05:29:14 AM' username='tableau_internal_user'>
+          <_.fcp.ObjectModelEncapsulateLegacy.false...relation name='Extract' table='[Extract].[Extract]' type='table' />
+          <_.fcp.ObjectModelEncapsulateLegacy.true...relation name='Extract' table='[Extract].[Extract]' type='table' />
+          <refresh>
+            <refresh-event add-from-file-path='Custom SQL Query (data_playground_finance)' increment-value='%null%' refresh-type='create' rows-inserted='56513' timestamp-start='2024-06-13 05:29:05.348' />
+          </refresh>
+          <metadata-records>
+            <metadata-record class='column'>
+              <remote-name>country_code</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[country_code]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>country_code</remote-alias>
+              <ordinal>0</ordinal>
+              <family>auto_manual_2024</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>7</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[auto_manual_2024_6C193A2552CB4D89AC2447E4C7A7DC4C]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>CUSTOMERACCOUNT</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[CUSTOMERACCOUNT]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>CUSTOMERACCOUNT</remote-alias>
+              <ordinal>1</ordinal>
+              <family>auto_manual_2024</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>13215</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[auto_manual_2024_6C193A2552CB4D89AC2447E4C7A7DC4C]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>invoice_text</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[invoice_text]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>invoice_text</remote-alias>
+              <ordinal>2</ordinal>
+              <family>auto_manual_2024</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>9676</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[auto_manual_2024_6C193A2552CB4D89AC2447E4C7A7DC4C]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>description</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[description]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>description</remote-alias>
+              <ordinal>3</ordinal>
+              <family>auto_manual_2024</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>9676</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[auto_manual_2024_6C193A2552CB4D89AC2447E4C7A7DC4C]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>invoice_account</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[invoice_account]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>invoice_account</remote-alias>
+              <ordinal>4</ordinal>
+              <family>auto_manual_2024</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>13215</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[auto_manual_2024_6C193A2552CB4D89AC2447E4C7A7DC4C]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>ledger_account</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[ledger_account]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>ledger_account</remote-alias>
+              <ordinal>5</ordinal>
+              <family>auto_manual_2024</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>137</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[auto_manual_2024_6C193A2552CB4D89AC2447E4C7A7DC4C]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>ledger_name</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[ledger_name]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>ledger_name</remote-alias>
+              <ordinal>6</ordinal>
+              <family>auto_manual_2024</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>137</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[auto_manual_2024_6C193A2552CB4D89AC2447E4C7A7DC4C]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>is_billing_ns</remote-name>
+              <remote-type>11</remote-type>
+              <local-name>[is_billing_ns]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>is_billing_ns</remote-alias>
+              <ordinal>7</ordinal>
+              <family>auto_manual_2024</family>
+              <local-type>boolean</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>2</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[auto_manual_2024_6C193A2552CB4D89AC2447E4C7A7DC4C]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>invoice_date</remote-name>
+              <remote-type>133</remote-type>
+              <local-name>[invoice_date]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>invoice_date</remote-alias>
+              <ordinal>8</ordinal>
+              <family>auto_manual_2024</family>
+              <local-type>date</local-type>
+              <aggregation>Year</aggregation>
+              <approx-count>117</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[auto_manual_2024_6C193A2552CB4D89AC2447E4C7A7DC4C]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>invoice_id</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[invoice_id]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>invoice_id</remote-alias>
+              <ordinal>9</ordinal>
+              <family>auto_manual_2024</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>39322</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[auto_manual_2024_6C193A2552CB4D89AC2447E4C7A7DC4C]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>amount_lc</remote-name>
+              <remote-type>5</remote-type>
+              <local-name>[amount_lc]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>amount_lc</remote-alias>
+              <ordinal>10</ordinal>
+              <family>auto_manual_2024</family>
+              <local-type>real</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>6772</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[auto_manual_2024_6C193A2552CB4D89AC2447E4C7A7DC4C]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>exchange_rate_value</remote-name>
+              <remote-type>5</remote-type>
+              <local-name>[exchange_rate_value]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>exchange_rate_value</remote-alias>
+              <ordinal>11</ordinal>
+              <family>auto_manual_2024</family>
+              <local-type>real</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>241</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[auto_manual_2024_6C193A2552CB4D89AC2447E4C7A7DC4C]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>amount_eur</remote-name>
+              <remote-type>5</remote-type>
+              <local-name>[amount_eur]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>amount_eur</remote-alias>
+              <ordinal>12</ordinal>
+              <family>auto_manual_2024</family>
+              <local-type>real</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>7556</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[auto_manual_2024_6C193A2552CB4D89AC2447E4C7A7DC4C]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+          </metadata-records>
+        </connection>
+      </extract>
+      <layout _.fcp.SchemaViewerObjectModel.false...dim-percentage='0.5' _.fcp.SchemaViewerObjectModel.false...measure-percentage='0.4' dim-ordering='alphabetic' measure-ordering='alphabetic' show-structure='true' />
+      <style>
+        <style-rule element='mark'>
+          <encoding attr='color' field='[none:ledger_name:nk]' type='palette'>
+            <map to='#4e79a7'>
+              <bucket>&quot;Revenue / Banner Display Ad - Impression&quot;</bucket>
+            </map>
+            <map to='#59a14f'>
+              <bucket>&quot;Revenue /Advertisements/Adv. Revenue from Platform banner&quot;</bucket>
+            </map>
+            <map to='#76b7b2'>
+              <bucket>&quot;Revenue / Vendor Funded Free Delivery Manual Input / Food&quot;</bucket>
+            </map>
+            <map to='#e15759'>
+              <bucket>&quot;Revenue / Subscription Fee / manual input&quot;</bucket>
+            </map>
+            <map to='#f28e2b'>
+              <bucket>&quot;Revenue / Other / Super saver fixed fees&quot;</bucket>
+            </map>
+          </encoding>
+          <encoding attr='color' field='[none:ledger_account:nk]' type='palette'>
+            <map to='#1f77b4'>
+              <bucket>&quot;750106022&quot;</bucket>
+            </map>
+            <map to='#2ca02c'>
+              <bucket>&quot;750101007&quot;</bucket>
+            </map>
+            <map to='#ff7f0e'>
+              <bucket>&quot;750101028&quot;</bucket>
+            </map>
+          </encoding>
+          <encoding attr='color' field='[none:country_code:nk]' palette='tableau20_10_0' type='palette'>
+            <map to='#4e79a7'>
+              <bucket>&quot;AE&quot;</bucket>
+            </map>
+            <map to='#59a14f'>
+              <bucket>&quot;KW&quot;</bucket>
+            </map>
+            <map to='#8cd17d'>
+              <bucket>&quot;OM&quot;</bucket>
+            </map>
+            <map to='#a0cbe8'>
+              <bucket>&quot;BH&quot;</bucket>
+            </map>
+            <map to='#b6992d'>
+              <bucket>&quot;RQ&quot;</bucket>
+            </map>
+            <map to='#f1ce63'>
+              <bucket>&quot;QA&quot;</bucket>
+            </map>
+            <map to='#f28e2b'>
+              <bucket>&quot;EG&quot;</bucket>
+            </map>
+            <map to='#ffbe7d'>
+              <bucket>&quot;JO&quot;</bucket>
+            </map>
+          </encoding>
+          <encoding attr='color' field='[none:LEDGER_ACCOUNT_FLAG:nk]' type='palette'>
+            <map to='#1f77b4'>
+              <bucket>%null%</bucket>
+            </map>
+            <map to='#b3b7b8'>
+              <bucket>&quot;No&quot;</bucket>
+            </map>
+            <map to='#ff7f0e'>
+              <bucket>&quot;Yes&quot;</bucket>
+            </map>
+          </encoding>
+        </style-rule>
+      </style>
+      <semantic-values>
+        <semantic-value key='[Country].[Name]' value='&quot;United States&quot;' />
+      </semantic-values>
+      <date-options start-of-week='saturday' />
+      <default-sorts>
+        <manual-sort column='[none:Forecast Indicator:nk]' direction='ASC'>
+          <dictionary>
+            <bucket>&quot;Actual&quot;</bucket>
+            <bucket>&quot;Estimate&quot;</bucket>
+          </dictionary>
+        </manual-sort>
+      </default-sorts>
+      <_.fcp.ObjectModelEncapsulateLegacy.true...object-graph>
+        <objects>
+          <object caption='auto_manual_2024' id='auto_manual_2024_6C193A2552CB4D89AC2447E4C7A7DC4C'>
+            <properties context=''>
+              <relation connection='bigquery.11bqd5b0cya37h1h9d2vq0um9ksn' name='Custom SQL Query' type='text'><![CDATA[with temp as (
+SELECT DISTINCT
+   REPLACE(DATAAREAID, 'FD', '') AS country_code,
+  INVOICETXT as invoice_text,
+  DESCRIPTION as description,
+  LEDGERDIMENSIONDISPLAYVALUE as ledger_account,
+  ma.name as ledger_name,
+  DATE(INVOICEDATE) AS invoice_date,
+  FREETEXTNUMBER AS invoice_id,
+  CASE WHEN CURRENCYCODE ='USD' THEN (AMOUNTCUR*3.67) ELSE (AMOUNTCUR*1.0) END AS amount_lc,
+  exc.exchange_rate_value,
+  (CASE WHEN CURRENCYCODE ='USD' THEN (AMOUNTCUR *3.67) ELSE (AMOUNTCUR*1.0) END )/exc.exchange_rate_value AS amount_eur,
+  CASE WHEN SUBSTR(FREETEXTNUMBER, 1, 2) = 'CN' THEN 'Credit Note' ELSE 'Invoice' END AS invoice_type
+FROM
+  ( SELECT * FROM `tlb-data-prod.data_platform_msdynamics.FreeTextInvoiceStaging` 
+  WHERE DATE(INVOICEDATE)>>= '2024-01-01' 
+  and DATAAREAID like 'FD%') as fti
+LEFT JOIN
+  `tlb-data-prod.data_platform.dim_exchange_rate` exc
+ON
+  DATE(fti.INVOICEDATE) = DATE(exc.exchange_rate_date)
+  AND UPPER(REPLACE(TRIM(DATAAREAID), 'FD', '')) =UPPER(CASE WHEN TRIM(exc.country_code)= 'IQ' THEN 'RQ' ELSE TRIM(exc.country_code) END)
+  AND exc.exchange_rate_base = 'EUR'
+  AND DATE(exc.exchange_rate_date)>>= '2024-01-01'
+  AND exc.country_code IS NOT NULL
+  AND exc.country_id IS NOT NULL
+LEFT JOIN `tlb-data-prod.data_platform_msdynamics.MainAccountStaging` ma on SAFE_CAST(ma.MAINACCOUNTID AS INTEGER) = SAFE_CAST(LEDGERDIMENSIONDISPLAYVALUE AS INTEGER)
+  group by ALL
+)
+,
+base as
+(SELECT
+     t1.country_code,
+        t1.invoice_text,
+        t1.description,
+        t1.ledger_account,
+        t1.ledger_name,
+        t1.invoice_date,
+        t1.invoice_id,
+        CASE 
+            WHEN t1.ledger_account = '750106022' AND t1.invoice_date >>= '2024-03-01' THEN 0 
+            ELSE t1.amount_lc 
+        END AS amount_lc,
+        t1.exchange_rate_value,
+        CASE 
+            WHEN t1.ledger_account = '750106022' AND t1.invoice_date >>= '2024-03-01' THEN 0 
+            ELSE t1.amount_eur 
+        END AS amount_eur,
+        t1.invoice_type,
+        t2.LEDGER_ACCOUNT_FLAG
+FROM
+  temp t1
+  LEFT join `tlb-data-prod.data_platform_google_sheet.dynamics_accounts_flagged_billingsystem` t2 on SAFE_CAST(t1.ledger_account as INT64) = SAFE_CAST(t2.ledger_account_number as INT64)
+GROUP BY
+  all
+),
+
+final_output as 
+(
+select  *  from  base  where DATE_TRUNC(invoice_date, month) << DATE_TRUNC(current_date(), month) 
+)
+
+SELECT
+    t.*,
+    SUM(amount_eur) over (partition by country_code, invoice_date) as country_amount_eur,
+    SUM(amount_eur) over (partition by invoice_date) as mena_amount_eur,
+FROM
+    final_output t]]></relation>
+            </properties>
+            <properties context='extract'>
+              <relation name='Extract' table='[Extract].[Extract]' type='table' />
+            </properties>
+          </object>
+        </objects>
+      </_.fcp.ObjectModelEncapsulateLegacy.true...object-graph>
+    </datasource>
+    <datasource caption='flexi_gem' inline='true' name='federated.1v6cpn017jjcy71e2dmf01e208ve' version='18.1'>
+      <connection class='federated'>
+        <named-connections>
+          <named-connection caption='BigQuery' name='bigquery.1yhm8qw1urtj1216qybb50u8uckb'>
+            <connection CATALOG='tlb-data-prod' EXECCATALOG='tlb-datateam-analysis-6343' authentication='oauth' bq-dataset-fetch-rows='' bq-fetch-rows='' bq-fetch-tasks='' bq-large-fetch-rows='' bq-project-fetch-rows='' bq-response-rows='' class='bigquery' connection-dialect='google-sql' project='tlb-data-prod' schema='data_platform_billing' server-oauth='' username='manjunath.lonikar@talabat.com' workgroup-auth-mode='prompt' />
+          </named-connection>
+        </named-connections>
+        <_.fcp.ObjectModelEncapsulateLegacy.false...relation connection='bigquery.1yhm8qw1urtj1216qybb50u8uckb' name='Custom SQL Query' type='text'><![CDATA[SELECT
+  foi.country_code AS global_entity_id,
+  jo.vendor_id,
+  DATE(order_placed_at) order_date,
+  jo.order_id,
+  joker_type,
+  order_status,
+  joker_fee AS joker_fee_lc,
+  SAFE_DIVIDE(joker_fee,foi.exchange_rate_to_eur) joker_fee
+FROM
+  `tlb-data-prod.data_platform_billing.joker_orders` jo
+JOIN
+  `tlb-data-prod.data_platform.fct_order_info` foi
+ON
+  jo.order_id = foi.order_id
+WHERE
+  joker_fee_type = 0
+  AND joker_fee >> 0
+  AND DATE(jo.order_placed_at) << DATE_TRUNC(current_date,month)
+  AND DATE(foi.order_date) >>= '2024-04-01'
+  AND DATE(foi.order_date) << DATE_TRUNC(current_date,month)
+GROUP BY
+  ALL]]></_.fcp.ObjectModelEncapsulateLegacy.false...relation>
+        <_.fcp.ObjectModelEncapsulateLegacy.true...relation connection='bigquery.1yhm8qw1urtj1216qybb50u8uckb' name='Custom SQL Query' type='text'><![CDATA[SELECT
+  foi.country_code AS global_entity_id,
+  jo.vendor_id,
+  DATE(order_placed_at) order_date,
+  jo.order_id,
+  joker_type,
+  order_status,
+  joker_fee AS joker_fee_lc,
+  SAFE_DIVIDE(joker_fee,foi.exchange_rate_to_eur) joker_fee
+FROM
+  `tlb-data-prod.data_platform_billing.joker_orders` jo
+JOIN
+  `tlb-data-prod.data_platform.fct_order_info` foi
+ON
+  jo.order_id = foi.order_id
+WHERE
+  joker_fee_type = 0
+  AND joker_fee >> 0
+  AND DATE(jo.order_placed_at) << DATE_TRUNC(current_date,month)
+  AND DATE(foi.order_date) >>= '2024-04-01'
+  AND DATE(foi.order_date) << DATE_TRUNC(current_date,month)
+GROUP BY
+  ALL]]></_.fcp.ObjectModelEncapsulateLegacy.true...relation>
+        <metadata-records>
+          <metadata-record class='column'>
+            <remote-name>global_entity_id</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[global_entity_id]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>global_entity_id</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_74203FC5696F4901BCBA7AE3E4BA7023]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>vendor_id</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[vendor_id]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>vendor_id</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_74203FC5696F4901BCBA7AE3E4BA7023]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>order_date</remote-name>
+            <remote-type>7</remote-type>
+            <local-name>[order_date]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>order_date</remote-alias>
+            <local-type>date</local-type>
+            <aggregation>Year</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_74203FC5696F4901BCBA7AE3E4BA7023]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>order_id</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[order_id]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>order_id</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_74203FC5696F4901BCBA7AE3E4BA7023]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>joker_type</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[joker_type]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>joker_type</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_74203FC5696F4901BCBA7AE3E4BA7023]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>order_status</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[order_status]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>order_status</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_74203FC5696F4901BCBA7AE3E4BA7023]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>joker_fee_lc</remote-name>
+            <remote-type>5</remote-type>
+            <local-name>[joker_fee_lc]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>joker_fee_lc</remote-alias>
+            <local-type>real</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_74203FC5696F4901BCBA7AE3E4BA7023]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>joker_fee</remote-name>
+            <remote-type>5</remote-type>
+            <local-name>[joker_fee]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>joker_fee</remote-alias>
+            <local-type>real</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_74203FC5696F4901BCBA7AE3E4BA7023]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+        </metadata-records>
+      </connection>
+      <aliases enabled='yes' />
+      <_.fcp.ObjectModelTableType.true...column caption='flexi_gem_revenue' datatype='table' name='[__tableau_internal_object_id__].[_74203FC5696F4901BCBA7AE3E4BA7023]' role='measure' type='quantitative' />
+      <column caption='Country Code' datatype='string' name='[global_entity_id]' role='dimension' type='nominal' />
+      <column datatype='real' default-format='c#,##0.0&quot; €&quot;' name='[joker_fee]' role='measure' type='quantitative' />
+      <column aggregation='Sum' caption='order_date(MY)' datatype='integer' name='[order_date (Month / Year)]' role='dimension' type='ordinal' user:agg-type='MY' user:base-field='order_date' user:ui-builder='date-bin-builder'>
+        <calculation class='tableau' formula='(DATEPART(&apos;year&apos;, [order_date])*100 + DATEPART(&apos;month&apos;, [order_date]))' />
+      </column>
+      <extract _.fcp.ObjectModelExtractV2.true...object-id='' _.fcp.VConnDownstreamExtractsWithWarnings.true...user-specific='false' count='-1' enabled='true' units='records'>
+        <connection access_mode='readonly' author-locale='en_US' class='hyper' dbname='extract/8e/0a/{93A5A57C-2935-4BCA-B70F-BC30339E24A6}/federated_1v6cpn017jjcy71e2dmf01.hyper' extract-engine='true' schema='Extract' sslmode='' tablename='Extract' update-time='08/22/2024 08:01:16 AM'>
+          <_.fcp.ObjectModelEncapsulateLegacy.false...relation name='Extract' table='[Extract].[Extract]' type='table' />
+          <_.fcp.ObjectModelEncapsulateLegacy.true...relation name='Extract' table='[Extract].[Extract]' type='table' />
+          <metadata-records>
+            <metadata-record class='column'>
+              <remote-name>global_entity_id</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[global_entity_id]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>global_entity_id</remote-alias>
+              <ordinal>0</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>1</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_74203FC5696F4901BCBA7AE3E4BA7023]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>vendor_id</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[vendor_id]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>vendor_id</remote-alias>
+              <ordinal>1</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>246</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_74203FC5696F4901BCBA7AE3E4BA7023]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>order_date</remote-name>
+              <remote-type>133</remote-type>
+              <local-name>[order_date]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>order_date</remote-alias>
+              <ordinal>2</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>date</local-type>
+              <aggregation>Year</aggregation>
+              <approx-count>110</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_74203FC5696F4901BCBA7AE3E4BA7023]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>order_id</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[order_id]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>order_id</remote-alias>
+              <ordinal>3</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>38685</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_74203FC5696F4901BCBA7AE3E4BA7023]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>joker_type</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[joker_type]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>joker_type</remote-alias>
+              <ordinal>4</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>1</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_74203FC5696F4901BCBA7AE3E4BA7023]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>order_status</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[order_status]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>order_status</remote-alias>
+              <ordinal>5</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>3</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_74203FC5696F4901BCBA7AE3E4BA7023]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>joker_fee_lc</remote-name>
+              <remote-type>5</remote-type>
+              <local-name>[joker_fee_lc]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>joker_fee_lc</remote-alias>
+              <ordinal>6</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>real</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>8</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_74203FC5696F4901BCBA7AE3E4BA7023]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>joker_fee</remote-name>
+              <remote-type>5</remote-type>
+              <local-name>[joker_fee]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>joker_fee</remote-alias>
+              <ordinal>7</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>real</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>213</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_74203FC5696F4901BCBA7AE3E4BA7023]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+          </metadata-records>
+        </connection>
+      </extract>
+      <layout _.fcp.SchemaViewerObjectModel.false...dim-percentage='0.5' _.fcp.SchemaViewerObjectModel.false...measure-percentage='0.4' dim-ordering='alphabetic' measure-ordering='alphabetic' show-structure='true' />
+      <semantic-values>
+        <semantic-value key='[Country].[Name]' value='&quot;United States&quot;' />
+      </semantic-values>
+      <date-options start-of-week='saturday' />
+      <_.fcp.ObjectModelEncapsulateLegacy.true...object-graph>
+        <objects>
+          <object caption='flexi_gem_revenue' id='_74203FC5696F4901BCBA7AE3E4BA7023'>
+            <properties context=''>
+              <relation connection='bigquery.1yhm8qw1urtj1216qybb50u8uckb' name='Custom SQL Query' type='text'><![CDATA[SELECT
+  foi.country_code AS global_entity_id,
+  jo.vendor_id,
+  DATE(order_placed_at) order_date,
+  jo.order_id,
+  joker_type,
+  order_status,
+  joker_fee AS joker_fee_lc,
+  SAFE_DIVIDE(joker_fee,foi.exchange_rate_to_eur) joker_fee
+FROM
+  `tlb-data-prod.data_platform_billing.joker_orders` jo
+JOIN
+  `tlb-data-prod.data_platform.fct_order_info` foi
+ON
+  jo.order_id = foi.order_id
+WHERE
+  joker_fee_type = 0
+  AND joker_fee >> 0
+  AND DATE(jo.order_placed_at) << DATE_TRUNC(current_date,month)
+  AND DATE(foi.order_date) >>= '2024-04-01'
+  AND DATE(foi.order_date) << DATE_TRUNC(current_date,month)
+GROUP BY
+  ALL]]></relation>
+            </properties>
+            <properties context='extract'>
+              <relation name='Extract' table='[Extract].[Extract]' type='table' />
+            </properties>
+          </object>
+        </objects>
+      </_.fcp.ObjectModelEncapsulateLegacy.true...object-graph>
+    </datasource>
+  </datasources>
+  <shared-views>
+    <shared-view name='federated.1udii2e0oyiz97196hfzj14wlu1e'>
+      <datasources>
+        <datasource caption='auto_manual' name='federated.1udii2e0oyiz97196hfzj14wlu1e' />
+      </datasources>
+      <datasource-dependencies datasource='federated.1udii2e0oyiz97196hfzj14wlu1e'>
+        <column datatype='string' name='[LEDGER_ACCOUNT_FLAG]' role='dimension' type='nominal' />
+        <column-instance column='[LEDGER_ACCOUNT_FLAG]' derivation='None' name='[none:LEDGER_ACCOUNT_FLAG:nk]' pivot='key' type='nominal' />
+      </datasource-dependencies>
+      <filter class='categorical' column='[federated.1udii2e0oyiz97196hfzj14wlu1e].[none:LEDGER_ACCOUNT_FLAG:nk]'>
+        <groupfilter function='level-members' level='[none:LEDGER_ACCOUNT_FLAG:nk]' user:ui-enumeration='all' user:ui-marker='enumerate' />
+        <target field='[federated.1udii2e0oyiz97196hfzj14wlu1e].[none:LEDGER_ACCOUNT_FLAG:nk]' />
+      </filter>
+    </shared-view>
+  </shared-views>
+  <worksheets>
+    <worksheet name='Billing NS Tracking Accounts'>
+      <layout-options>
+        <title>
+          <formatted-text>
+            <run fontname='Tableau Bold' fontsize='12'>&lt;Sheet Name&gt;</run>
+            <run>Æ&#10;</run>
+            <run fontname='Tableau Bold' fontsize='12'>Æ </run>
+          </formatted-text>
+        </title>
+      </layout-options>
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='auto_manual' name='federated.1udii2e0oyiz97196hfzj14wlu1e' />
+          </datasources>
+          <datasource-dependencies datasource='federated.1udii2e0oyiz97196hfzj14wlu1e'>
+            <column datatype='string' name='[LEDGER_ACCOUNT_FLAG]' role='dimension' type='nominal' />
+            <column datatype='real' default-format='C1031%' name='[amount_eur]' role='measure' type='quantitative' />
+            <column caption='mena_date_euro' datatype='real' name='[country_date_euro (copy)_4378695140354269184]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='{ FIXED [invoice_date] : SUM([amount_eur]) }' />
+            </column>
+            <column datatype='date' name='[invoice_date]' role='dimension' type='ordinal' />
+            <column caption='Ledger Account' datatype='string' name='[ledger_account]' role='dimension' type='nominal' />
+            <column caption='Ledger Name' datatype='string' name='[ledger_name]' role='dimension' type='nominal' />
+            <column-instance column='[LEDGER_ACCOUNT_FLAG]' derivation='None' name='[none:LEDGER_ACCOUNT_FLAG:nk]' pivot='key' type='nominal' />
+            <column-instance column='[ledger_account]' derivation='None' name='[none:ledger_account:nk]' pivot='key' type='nominal' />
+            <column-instance column='[ledger_name]' derivation='None' name='[none:ledger_name:nk]' pivot='key' type='nominal' />
+            <column caption='share_on_mena' datatype='real' default-format='p0.0%' name='[share_on_country (copy)_4378695140354347009]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='sum([amount_eur])/sum([country_date_euro (copy)_4378695140354269184])' />
+            </column>
+            <column-instance column='[amount_eur]' derivation='Sum' name='[sum:amount_eur:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[invoice_date]' derivation='Month-Trunc' name='[tmn:invoice_date:ok]' pivot='key' type='ordinal' />
+            <column-instance column='[share_on_country (copy)_4378695140354347009]' derivation='User' name='[usr:share_on_country (copy)_4378695140354347009:qk]' pivot='key' type='quantitative' />
+          </datasource-dependencies>
+          <filter class='categorical' column='[federated.1udii2e0oyiz97196hfzj14wlu1e].[none:ledger_name:nk]' filter-group='3'>
+            <groupfilter function='union' user:ui-domain='database' user:ui-enumeration='inclusive' user:ui-marker='enumerate'>
+              <groupfilter function='member' level='[none:ledger_name:nk]' member='&quot;Revenue / Banner Display Ad - Impression&quot;' />
+              <groupfilter function='member' level='[none:ledger_name:nk]' member='&quot;Revenue / Other / Super saver fixed fees&quot;' />
+              <groupfilter function='member' level='[none:ledger_name:nk]' member='&quot;Revenue / Subscription Fee / manual input&quot;' />
+              <groupfilter function='member' level='[none:ledger_name:nk]' member='&quot;Revenue /Advertisements/Adv. Revenue from Platform banner&quot;' />
+            </groupfilter>
+          </filter>
+          <manual-sort column='[federated.1udii2e0oyiz97196hfzj14wlu1e].[none:ledger_name:nk]' direction='ASC'>
+            <dictionary>
+              <bucket>&quot;Revenue / Other / Super saver fixed fees&quot;</bucket>
+              <bucket>&quot;Revenue /Advertisements/Adv. Revenue from Platform banner&quot;</bucket>
+              <bucket>&quot;Revenue / Banner Display Ad - Impression&quot;</bucket>
+              <bucket>&quot;Revenue / Subscription Fee / manual input&quot;</bucket>
+            </dictionary>
+          </manual-sort>
+          <_.fcp.SingleValuePerNestSorting.true...single-value-per-nest-shelf-sorts>
+            <single-value-per-nest-shelf-sort dimension-to-sort='[federated.1udii2e0oyiz97196hfzj14wlu1e].[none:ledger_account:nk]' direction='ASC' measure-to-sort-by='[federated.1udii2e0oyiz97196hfzj14wlu1e].[none:ledger_account:nk]' shelf='rows' />
+          </_.fcp.SingleValuePerNestSorting.true...single-value-per-nest-shelf-sorts>
+          <slices>
+            <column>[federated.1udii2e0oyiz97196hfzj14wlu1e].[none:ledger_name:nk]</column>
+            <column>[federated.1udii2e0oyiz97196hfzj14wlu1e].[none:LEDGER_ACCOUNT_FLAG:nk]</column>
+          </slices>
+          <aggregation value='true' />
+        </view>
+        <style>
+          <style-rule element='cell'>
+            <format attr='text-format' field='[federated.1udii2e0oyiz97196hfzj14wlu1e].[sum:amount_eur:qk]' value='c#,##0&quot; €&quot;;-#,##0&quot; €&quot;' />
+          </style-rule>
+          <style-rule element='header'>
+            <format attr='width' field='[federated.1udii2e0oyiz97196hfzj14wlu1e].[none:ledger_name:nk]' value='172' />
+          </style-rule>
+          <style-rule element='label'>
+            <format attr='font-family' field='[federated.1udii2e0oyiz97196hfzj14wlu1e].[none:ledger_name:nk]' value='Tableau Book' />
+          </style-rule>
+          <style-rule element='worksheet'>
+            <format attr='display-field-labels' scope='cols' value='false' />
+            <format attr='font-family' value='Tableau Book' />
+          </style-rule>
+          <style-rule element='title'>
+            <format attr='font-family' value='Tableau Book' />
+          </style-rule>
+          <style-rule element='quick-filter'>
+            <format attr='title' field='[federated.1udii2e0oyiz97196hfzj14wlu1e].[none:ledger_name:nk]' value='Ledger Name'>
+              <formatted-text>
+                <run>Ledger Name</run>
+              </formatted-text>
+            </format>
+          </style-rule>
+        </style>
+        <panes>
+          <pane id='1' selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Line' />
+            <mark-sizing mark-sizing-setting='marks-scaling-off' />
+            <encodings>
+              <size column='[federated.1udii2e0oyiz97196hfzj14wlu1e].[usr:share_on_country (copy)_4378695140354347009:qk]' />
+              <text column='[federated.1udii2e0oyiz97196hfzj14wlu1e].[sum:amount_eur:qk]' />
+              <text column='[federated.1udii2e0oyiz97196hfzj14wlu1e].[usr:share_on_country (copy)_4378695140354347009:qk]' />
+            </encodings>
+            <customized-tooltip>
+              <formatted-text>
+                <run fontcolor='#787878'>ledger_account:&#9;</run>
+                <run bold='true'><![CDATA[<[federated.1udii2e0oyiz97196hfzj14wlu1e].[none:ledger_account:nk]>]]></run>
+                <run>Æ&#10;</run>
+                <run fontcolor='#787878'>ledger_name:&#9;</run>
+                <run bold='true'><![CDATA[<[federated.1udii2e0oyiz97196hfzj14wlu1e].[none:ledger_name:nk]>]]></run>
+                <run>Æ&#10;</run>
+                <run fontcolor='#787878'>Month :&#9;</run>
+                <run bold='true'><![CDATA[<[federated.1udii2e0oyiz97196hfzj14wlu1e].[tmn:invoice_date:ok]>]]></run>
+                <run>Æ&#10;</run>
+                <run fontcolor='#787878'>%Of Txn on Overall:&#9;</run>
+                <run bold='true'><![CDATA[<[federated.1udii2e0oyiz97196hfzj14wlu1e].[usr:Calculation_5855453599298211842:qk]>]]></run>
+                <run>Æ&#10;&#10;</run>
+              </formatted-text>
+            </customized-tooltip>
+            <customized-label>
+              <formatted-text>
+                <run bold='true' fontcolor='#555555' fontname='Tableau Book' fontsize='10'><![CDATA[<[federated.1udii2e0oyiz97196hfzj14wlu1e].[usr:share_on_country (copy)_4378695140354347009:qk]>]]></run>
+                <run>Æ&#10;</run>
+                <run bold='true' fontcolor='#4e79a7' fontname='Tableau Book' fontsize='10'><![CDATA[<[federated.1udii2e0oyiz97196hfzj14wlu1e].[sum:amount_eur:qk]>]]></run>
+              </formatted-text>
+            </customized-label>
+            <style>
+              <style-rule element='mark'>
+                <format attr='mark-labels-show' value='true' />
+                <format attr='mark-labels-cull' value='true' />
+                <format attr='size' value='0.82359117269515991' />
+                <format attr='mark-color' value='#ff5a00' />
+                <format attr='mark-transparency' value='155' />
+                <format attr='mark-markers-mode' value='all' />
+              </style-rule>
+            </style>
+          </pane>
+        </panes>
+        <rows>([federated.1udii2e0oyiz97196hfzj14wlu1e].[none:ledger_account:nk] / [federated.1udii2e0oyiz97196hfzj14wlu1e].[none:ledger_name:nk])</rows>
+        <cols>[federated.1udii2e0oyiz97196hfzj14wlu1e].[tmn:invoice_date:ok]</cols>
+      </table>
+      <simple-id uuid='{068BF70D-A07D-4102-8FF9-282B4E64387B}' />
+    </worksheet>
+    <worksheet name='Billing NS Tracking Overall'>
+      <layout-options>
+        <title>
+          <formatted-text>
+            <run fontcolor='#f5f5f5' fontname='Tableau Bold' fontsize='12'>Æ </run>
+            <run>Æ&#10;</run>
+            <run fontcolor='#f5f5f5' fontname='Tableau Bold' fontsize='12'>Æ </run>
+          </formatted-text>
+        </title>
+      </layout-options>
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='auto_manual' name='federated.1udii2e0oyiz97196hfzj14wlu1e' />
+          </datasources>
+          <datasource-dependencies datasource='federated.1udii2e0oyiz97196hfzj14wlu1e'>
+            <column datatype='string' name='[LEDGER_ACCOUNT_FLAG]' role='dimension' type='nominal' />
+            <column datatype='real' default-format='C1031%' name='[amount_eur]' role='measure' type='quantitative' />
+            <column caption='mena_date_euro' datatype='real' name='[country_date_euro (copy)_4378695140354269184]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='{ FIXED [invoice_date] : SUM([amount_eur]) }' />
+            </column>
+            <column datatype='date' name='[invoice_date]' role='dimension' type='ordinal' />
+            <column caption='Ledger Name' datatype='string' name='[ledger_name]' role='dimension' type='nominal' />
+            <column-instance column='[LEDGER_ACCOUNT_FLAG]' derivation='None' name='[none:LEDGER_ACCOUNT_FLAG:nk]' pivot='key' type='nominal' />
+            <column-instance column='[ledger_name]' derivation='None' name='[none:ledger_name:nk]' pivot='key' type='nominal' />
+            <column caption='share_on_mena' datatype='real' default-format='p0.0%' name='[share_on_country (copy)_4378695140354347009]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='sum([amount_eur])/sum([country_date_euro (copy)_4378695140354269184])' />
+            </column>
+            <column-instance column='[invoice_date]' derivation='Month-Trunc' name='[tmn:invoice_date:ok]' pivot='key' type='ordinal' />
+            <column-instance column='[share_on_country (copy)_4378695140354347009]' derivation='User' name='[usr:share_on_country (copy)_4378695140354347009:qk]' pivot='key' type='quantitative' />
+          </datasource-dependencies>
+          <filter class='categorical' column='[federated.1udii2e0oyiz97196hfzj14wlu1e].[none:ledger_name:nk]' filter-group='3'>
+            <groupfilter function='union' user:ui-domain='database' user:ui-enumeration='inclusive' user:ui-marker='enumerate'>
+              <groupfilter function='member' level='[none:ledger_name:nk]' member='&quot;Revenue / Banner Display Ad - Impression&quot;' />
+              <groupfilter function='member' level='[none:ledger_name:nk]' member='&quot;Revenue / Other / Super saver fixed fees&quot;' />
+              <groupfilter function='member' level='[none:ledger_name:nk]' member='&quot;Revenue / Subscription Fee / manual input&quot;' />
+              <groupfilter function='member' level='[none:ledger_name:nk]' member='&quot;Revenue /Advertisements/Adv. Revenue from Platform banner&quot;' />
+            </groupfilter>
+          </filter>
+          <slices>
+            <column>[federated.1udii2e0oyiz97196hfzj14wlu1e].[none:ledger_name:nk]</column>
+            <column>[federated.1udii2e0oyiz97196hfzj14wlu1e].[none:LEDGER_ACCOUNT_FLAG:nk]</column>
+          </slices>
+          <aggregation value='true' />
+        </view>
+        <style>
+          <style-rule element='axis'>
+            <format attr='title' class='0' field='[federated.1udii2e0oyiz97196hfzj14wlu1e].[usr:share_on_country (copy)_4378695140354347009:qk]' scope='rows' value='' />
+            <encoding attr='space' class='0' domain-expand='false' field='[federated.1udii2e0oyiz97196hfzj14wlu1e].[usr:share_on_country (copy)_4378695140354347009:qk]' field-type='quantitative' scope='rows' type='space' />
+          </style-rule>
+          <style-rule element='label'>
+            <format attr='font-family' field='[federated.1udii2e0oyiz97196hfzj14wlu1e].[none:ledger_name:nk]' value='Tableau Book' />
+          </style-rule>
+          <style-rule element='worksheet'>
+            <format attr='display-field-labels' scope='cols' value='false' />
+            <format attr='font-family' value='Tableau Book' />
+          </style-rule>
+          <style-rule element='title'>
+            <format attr='font-family' value='Tableau Book' />
+          </style-rule>
+          <style-rule element='quick-filter'>
+            <format attr='title' field='[federated.1udii2e0oyiz97196hfzj14wlu1e].[none:ledger_name:nk]' value='Ledger Name'>
+              <formatted-text>
+                <run>Ledger Name</run>
+              </formatted-text>
+            </format>
+          </style-rule>
+        </style>
+        <panes>
+          <pane id='2' selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Automatic' />
+            <style>
+              <style-rule element='mark'>
+                <format attr='mark-color' value='#f28e2b' />
+                <format attr='mark-labels-show' value='true' />
+                <format attr='mark-labels-cull' value='true' />
+              </style-rule>
+            </style>
+          </pane>
+        </panes>
+        <rows>[federated.1udii2e0oyiz97196hfzj14wlu1e].[usr:share_on_country (copy)_4378695140354347009:qk]</rows>
+        <cols>[federated.1udii2e0oyiz97196hfzj14wlu1e].[tmn:invoice_date:ok]</cols>
+      </table>
+      <simple-id uuid='{94B9E76B-5F9A-4C2C-BEEF-E6A2B31A9593}' />
+    </worksheet>
+    <worksheet name='Flexi Gem'>
+      <layout-options>
+        <title>
+          <formatted-text>
+            <run bold='true' fontsize='12'>&lt;Sheet Name&gt;</run>
+          </formatted-text>
+        </title>
+      </layout-options>
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='flexi_gem' name='federated.1v6cpn017jjcy71e2dmf01e208ve' />
+          </datasources>
+          <datasource-dependencies datasource='federated.1v6cpn017jjcy71e2dmf01e208ve'>
+            <column caption='Country Code' datatype='string' name='[global_entity_id]' role='dimension' type='nominal' />
+            <column datatype='real' default-format='c#,##0.0&quot; €&quot;' name='[joker_fee]' role='measure' type='quantitative' />
+            <column-instance column='[global_entity_id]' derivation='None' name='[none:global_entity_id:nk]' pivot='key' type='nominal' />
+            <column-instance column='[order_date (Month / Year)]' derivation='None' name='[none:order_date (Month / Year):ok]' pivot='key' type='ordinal' />
+            <column aggregation='Sum' caption='order_date(MY)' datatype='integer' name='[order_date (Month / Year)]' role='dimension' type='ordinal' user:agg-type='MY' user:base-field='order_date' user:ui-builder='date-bin-builder'>
+              <calculation class='tableau' formula='(DATEPART(&apos;year&apos;, [order_date])*100 + DATEPART(&apos;month&apos;, [order_date]))' />
+            </column>
+            <column datatype='date' name='[order_date]' role='dimension' type='ordinal' />
+            <column-instance column='[joker_fee]' derivation='Sum' name='[sum:joker_fee:qk]' pivot='key' type='quantitative' />
+          </datasource-dependencies>
+          <filter class='categorical' column='[federated.1v6cpn017jjcy71e2dmf01e208ve].[none:order_date (Month / Year):ok]'>
+            <groupfilter function='level-members' level='[none:order_date (Month / Year):ok]' />
+          </filter>
+          <slices>
+            <column>[federated.1v6cpn017jjcy71e2dmf01e208ve].[none:order_date (Month / Year):ok]</column>
+          </slices>
+          <aggregation value='true' />
+        </view>
+        <style>
+          <style-rule element='axis'>
+            <format attr='title' class='0' field='[federated.1v6cpn017jjcy71e2dmf01e208ve].[sum:joker_fee:qk]' scope='rows' value='' />
+          </style-rule>
+          <style-rule element='label'>
+            <format attr='text-format' field='[federated.1v6cpn017jjcy71e2dmf01e208ve].[sum:joker_fee:qk]' value='c#,##0,K&quot; €&quot;' />
+          </style-rule>
+          <style-rule element='quick-filter'>
+            <format attr='title' field='[federated.1v6cpn017jjcy71e2dmf01e208ve].[none:order_date (Month / Year):ok]' value='Month' />
+          </style-rule>
+        </style>
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Automatic' />
+            <mark-sizing mark-sizing-setting='marks-scaling-off' />
+            <style>
+              <style-rule element='mark'>
+                <format attr='mark-labels-show' value='true' />
+                <format attr='mark-labels-cull' value='true' />
+                <format attr='size' value='0.29585635662078857' />
+                <format attr='mark-color' value='#ff5a00' />
+                <format attr='mark-transparency' value='155' />
+              </style-rule>
+            </style>
+          </pane>
+        </panes>
+        <rows>([federated.1v6cpn017jjcy71e2dmf01e208ve].[none:global_entity_id:nk] * [federated.1v6cpn017jjcy71e2dmf01e208ve].[sum:joker_fee:qk])</rows>
+        <cols>[federated.1v6cpn017jjcy71e2dmf01e208ve].[none:order_date (Month / Year):ok]</cols>
+      </table>
+      <simple-id uuid='{FC258D81-ACAB-4200-BB82-13D95F1E2CED}' />
+    </worksheet>
+    <worksheet name='Monthly Trend of Manual Transaction'>
+      <layout-options>
+        <title>
+          <formatted-text>
+            <run fontname='Tableau Bold' fontsize='12'>&lt;Sheet Name&gt;</run>
+            <run>Æ&#10;</run>
+            <run fontname='Tableau Bold' fontsize='12'>Æ </run>
+          </formatted-text>
+        </title>
+      </layout-options>
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='auto_manual' name='federated.1udii2e0oyiz97196hfzj14wlu1e' />
+          </datasources>
+          <datasource-dependencies datasource='federated.1udii2e0oyiz97196hfzj14wlu1e'>
+            <column datatype='string' name='[LEDGER_ACCOUNT_FLAG]' role='dimension' type='nominal' />
+            <column datatype='real' default-format='C1031%' name='[amount_eur]' role='measure' type='quantitative' />
+            <column caption='Country' datatype='string' name='[country_code]' role='dimension' semantic-role='[Country].[ISO3166_2]' type='nominal' />
+            <column datatype='date' name='[invoice_date]' role='dimension' type='ordinal' />
+            <column-instance column='[invoice_date]' derivation='MY' name='[my:invoice_date:ok]' pivot='key' type='ordinal' />
+            <column-instance column='[LEDGER_ACCOUNT_FLAG]' derivation='None' name='[none:LEDGER_ACCOUNT_FLAG:nk]' pivot='key' type='nominal' />
+            <column-instance column='[country_code]' derivation='None' name='[none:country_code:nk]' pivot='key' type='nominal' />
+            <column-instance column='[amount_eur]' derivation='Sum' name='[pcto:sum:amount_eur:qk:4]' pivot='key' type='quantitative'>
+              <table-calc ordering-field='[federated.1udii2e0oyiz97196hfzj14wlu1e].[country_code]' ordering-type='Field' type='PctTotal' />
+            </column-instance>
+            <column-instance column='[invoice_date]' derivation='Month-Trunc' name='[tmn:invoice_date:ok]' pivot='key' type='ordinal' />
+          </datasource-dependencies>
+          <filter class='categorical' column='[federated.1udii2e0oyiz97196hfzj14wlu1e].[my:invoice_date:ok]'>
+            <groupfilter function='except' user:ui-domain='database' user:ui-enumeration='exclusive' user:ui-marker='enumerate'>
+              <groupfilter function='level-members' level='[my:invoice_date:ok]' />
+              <groupfilter function='member' level='[my:invoice_date:ok]' member='202406' />
+            </groupfilter>
+          </filter>
+          <slices>
+            <column>[federated.1udii2e0oyiz97196hfzj14wlu1e].[my:invoice_date:ok]</column>
+            <column>[federated.1udii2e0oyiz97196hfzj14wlu1e].[none:LEDGER_ACCOUNT_FLAG:nk]</column>
+          </slices>
+          <aggregation value='true' />
+        </view>
+        <style>
+          <style-rule element='axis'>
+            <format attr='title' class='0' field='[federated.1udii2e0oyiz97196hfzj14wlu1e].[pcto:sum:amount_eur:qk:4]' scope='rows' value='' />
+          </style-rule>
+          <style-rule element='cell'>
+            <format attr='font-family' field='[federated.1udii2e0oyiz97196hfzj14wlu1e].[pcto:sum:amount_eur:qk:4]' value='Tableau Book' />
+            <format attr='text-format' field='[federated.1udii2e0oyiz97196hfzj14wlu1e].[pcto:sum:amount_eur:qk:4]' value='p0%' />
+          </style-rule>
+          <style-rule element='label'>
+            <format attr='font-family' field='[federated.1udii2e0oyiz97196hfzj14wlu1e].[pcto:sum:amount_eur:qk:4]' value='Tableau Book' />
+          </style-rule>
+          <style-rule element='table'>
+            <format attr='omit-on-special' field='[federated.1udii2e0oyiz97196hfzj14wlu1e].[pcto:sum:amount_eur:qk:4]' value='false' />
+            <format attr='break-on-special' field='[federated.1udii2e0oyiz97196hfzj14wlu1e].[pcto:sum:amount_eur:qk:4]' value='false' />
+            <format attr='show-null-value-warning' field='[federated.1udii2e0oyiz97196hfzj14wlu1e].[pcto:sum:amount_eur:qk:4]' value='false' />
+          </style-rule>
+          <style-rule element='worksheet'>
+            <format attr='display-field-labels' scope='cols' value='false' />
+            <format attr='font-family' value='Tableau Book' />
+          </style-rule>
+        </style>
+        <panes>
+          <pane id='1' selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Automatic' />
+            <mark-sizing mark-sizing-setting='marks-scaling-off' />
+            <encodings>
+              <color column='[federated.1udii2e0oyiz97196hfzj14wlu1e].[none:country_code:nk]' />
+            </encodings>
+            <style>
+              <style-rule element='mark'>
+                <format attr='mark-labels-show' value='true' />
+                <format attr='mark-labels-cull' value='true' />
+                <format attr='size' value='0.44977900385856628' />
+              </style-rule>
+            </style>
+          </pane>
+        </panes>
+        <rows>[federated.1udii2e0oyiz97196hfzj14wlu1e].[pcto:sum:amount_eur:qk:4]</rows>
+        <cols>[federated.1udii2e0oyiz97196hfzj14wlu1e].[tmn:invoice_date:ok]</cols>
+      </table>
+      <simple-id uuid='{BA026712-C927-4FB1-8208-875966BB7C35}' />
+    </worksheet>
+    <worksheet name='Overall Manual Transaction'>
+      <layout-options>
+        <title>
+          <formatted-text>
+            <run fontalignment='0' fontname='Tableau Bold' fontsize='12'>&lt;Sheet Name&gt;</run>
+            <run fontalignment='0'>Æ&#10;</run>
+            <run fontalignment='0' fontname='Tableau Bold' fontsize='12'>Æ </run>
+          </formatted-text>
+        </title>
+      </layout-options>
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='auto_manual' name='federated.1udii2e0oyiz97196hfzj14wlu1e' />
+          </datasources>
+          <datasource-dependencies datasource='federated.1udii2e0oyiz97196hfzj14wlu1e'>
+            <column datatype='string' name='[LEDGER_ACCOUNT_FLAG]' role='dimension' type='nominal' />
+            <column datatype='real' default-format='C1031%' name='[amount_eur]' role='measure' type='quantitative' />
+            <column caption='Country' datatype='string' name='[country_code]' role='dimension' semantic-role='[Country].[ISO3166_2]' type='nominal' />
+            <column datatype='date' name='[invoice_date]' role='dimension' type='ordinal' />
+            <column-instance column='[LEDGER_ACCOUNT_FLAG]' derivation='None' name='[none:LEDGER_ACCOUNT_FLAG:nk]' pivot='key' type='nominal' />
+            <column-instance column='[country_code]' derivation='None' name='[none:country_code:nk]' pivot='key' type='nominal' />
+            <column-instance column='[amount_eur]' derivation='Sum' name='[sum:amount_eur:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[invoice_date]' derivation='Month-Trunc' name='[tmn:invoice_date:ok]' pivot='key' type='ordinal' />
+          </datasource-dependencies>
+          <slices>
+            <column>[federated.1udii2e0oyiz97196hfzj14wlu1e].[none:LEDGER_ACCOUNT_FLAG:nk]</column>
+          </slices>
+          <aggregation value='true' />
+        </view>
+        <style>
+          <style-rule element='cell'>
+            <format attr='text-format' field='[federated.1udii2e0oyiz97196hfzj14wlu1e].[sum:amount_eur:qk]' value='c#,##0,.0K&quot; €&quot;;-#,##0,.0K&quot; €&quot;' />
+          </style-rule>
+          <style-rule element='mark'>
+            <encoding attr='size-bar' field='[federated.1udii2e0oyiz97196hfzj14wlu1e].[sum:amount_eur:qk]' field-type='quantitative' max-size='1' min-size='0.005' type='centersize' />
+            <encoding attr='color' field='[federated.1udii2e0oyiz97196hfzj14wlu1e].[sum:amount_eur:qk]' palette='red_green_diverging_10_0' reverse='true' symmetric='false' type='interpolated' />
+          </style-rule>
+          <style-rule element='worksheet'>
+            <format attr='display-field-labels' scope='cols' value='false' />
+            <format attr='font-family' value='Tableau Book' />
+          </style-rule>
+          <style-rule element='title'>
+            <format attr='font-family' value='Tableau Book' />
+          </style-rule>
+        </style>
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Square' />
+            <encodings>
+              <color column='[federated.1udii2e0oyiz97196hfzj14wlu1e].[sum:amount_eur:qk]' />
+              <text column='[federated.1udii2e0oyiz97196hfzj14wlu1e].[sum:amount_eur:qk]' />
+            </encodings>
+            <customized-label>
+              <formatted-text>
+                <run fontname='Tableau Book'>&lt;</run>
+                <run fontname='Tableau Book'>[federated.1udii2e0oyiz97196hfzj14wlu1e].[sum:amount_eur:qk]</run>
+                <run fontname='Tableau Book'>&gt;</run>
+              </formatted-text>
+            </customized-label>
+            <style>
+              <style-rule element='mark'>
+                <format attr='mark-labels-show' value='true' />
+                <format attr='mark-labels-cull' value='true' />
+                <format attr='mark-labels-line-first' value='true' />
+                <format attr='mark-labels-line-last' value='true' />
+                <format attr='mark-labels-range-min' value='true' />
+                <format attr='mark-labels-range-max' value='true' />
+                <format attr='mark-labels-mode' value='all' />
+                <format attr='mark-labels-range-scope' value='pane' />
+                <format attr='mark-labels-range-field' value='' />
+                <format attr='mark-transparency' value='155' />
+              </style-rule>
+            </style>
+          </pane>
+        </panes>
+        <rows>[federated.1udii2e0oyiz97196hfzj14wlu1e].[none:country_code:nk]</rows>
+        <cols>[federated.1udii2e0oyiz97196hfzj14wlu1e].[tmn:invoice_date:ok]</cols>
+      </table>
+      <simple-id uuid='{0052719A-13FA-40E0-B562-B304331E8B70}' />
+    </worksheet>
+    <worksheet name='Overall Manual Transaction MENA'>
+      <layout-options>
+        <title>
+          <formatted-text>
+            <run fontname='Tableau Bold' fontsize='12'>&lt;Sheet Name&gt;</run>
+            <run>Æ&#10; </run>
+          </formatted-text>
+        </title>
+      </layout-options>
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='auto_manual' name='federated.1udii2e0oyiz97196hfzj14wlu1e' />
+          </datasources>
+          <datasource-dependencies datasource='federated.1udii2e0oyiz97196hfzj14wlu1e'>
+            <column datatype='string' name='[LEDGER_ACCOUNT_FLAG]' role='dimension' type='nominal' />
+            <column datatype='real' default-format='C1031%' name='[amount_eur]' role='measure' type='quantitative' />
+            <column datatype='date' name='[invoice_date]' role='dimension' type='ordinal' />
+            <column-instance column='[LEDGER_ACCOUNT_FLAG]' derivation='None' name='[none:LEDGER_ACCOUNT_FLAG:nk]' pivot='key' type='nominal' />
+            <column-instance column='[amount_eur]' derivation='Sum' name='[pcto:sum:amount_eur:qk:2]' pivot='key' type='quantitative'>
+              <table-calc ordering-type='Columns' type='PctTotal' />
+            </column-instance>
+            <column-instance column='[amount_eur]' derivation='Sum' name='[sum:amount_eur:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[invoice_date]' derivation='Month-Trunc' name='[tmn:invoice_date:ok]' pivot='key' type='ordinal' />
+          </datasource-dependencies>
+          <slices>
+            <column>[federated.1udii2e0oyiz97196hfzj14wlu1e].[none:LEDGER_ACCOUNT_FLAG:nk]</column>
+          </slices>
+          <aggregation value='true' />
+        </view>
+        <style>
+          <style-rule element='axis'>
+            <format attr='title' class='0' field='[federated.1udii2e0oyiz97196hfzj14wlu1e].[pcto:sum:amount_eur:qk:2]' scope='rows' value='% of total' />
+          </style-rule>
+          <style-rule element='cell'>
+            <format attr='text-format' field='[federated.1udii2e0oyiz97196hfzj14wlu1e].[sum:amount_eur:qk]' value='c#,##0,.0K;(#,##0,.0K)' />
+            <format attr='text-format' field='[federated.1udii2e0oyiz97196hfzj14wlu1e].[pcto:sum:amount_eur:qk:2]' value='p0.0%' />
+            <format attr='font-family' field='[federated.1udii2e0oyiz97196hfzj14wlu1e].[pcto:sum:amount_eur:qk:2]' value='Tableau Book' />
+            <format attr='font-family' field='[federated.1udii2e0oyiz97196hfzj14wlu1e].[sum:amount_eur:qk]' value='Tableau Book' />
+          </style-rule>
+          <style-rule element='label'>
+            <format attr='font-family' field='[federated.1udii2e0oyiz97196hfzj14wlu1e].[pcto:sum:amount_eur:qk:2]' value='Tableau Book' />
+            <format attr='font-family' field='[federated.1udii2e0oyiz97196hfzj14wlu1e].[sum:amount_eur:qk]' value='Tableau Book' />
+          </style-rule>
+          <style-rule element='mark'>
+            <encoding attr='size-bar' field='[federated.1udii2e0oyiz97196hfzj14wlu1e].[sum:amount_eur:qk]' field-type='quantitative' max-size='1' min-size='0.005' type='centersize' />
+            <encoding attr='color' field='[federated.1udii2e0oyiz97196hfzj14wlu1e].[sum:amount_eur:qk]' num-steps='8' palette='orange_blue_white_diverging_10_0' reverse='true' symmetric='false' type='interpolated' />
+            <encoding attr='size-bar' field='[federated.1udii2e0oyiz97196hfzj14wlu1e].[pcto:sum:amount_eur:qk:2]' field-type='quantitative' max-size='1' min-size='0.005' type='centersize' />
+            <encoding attr='color' field='[federated.1udii2e0oyiz97196hfzj14wlu1e].[pcto:sum:amount_eur:qk:2]' num-steps='8' palette='orange_blue_white_diverging_10_0' reverse='true' symmetric='false' type='interpolated' />
+          </style-rule>
+          <style-rule element='worksheet'>
+            <format attr='display-field-labels' scope='cols' value='false' />
+            <format attr='font-family' value='Tableau Book' />
+          </style-rule>
+          <style-rule element='title'>
+            <format attr='font-family' value='Tableau Bold' />
+          </style-rule>
+          <style-rule element='quick-filter'>
+            <format attr='title' field='[federated.1udii2e0oyiz97196hfzj14wlu1e].[none:LEDGER_ACCOUNT_FLAG:nk]' value='Ledger Flag'>
+              <formatted-text>
+                <run>Ledger Flag</run>
+              </formatted-text>
+            </format>
+          </style-rule>
+        </style>
+        <panes>
+          <pane id='1' selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Bar' />
+            <mark-sizing mark-sizing-setting='marks-scaling-off' />
+            <encodings>
+              <color column='[federated.1udii2e0oyiz97196hfzj14wlu1e].[none:LEDGER_ACCOUNT_FLAG:nk]' />
+              <text column='[federated.1udii2e0oyiz97196hfzj14wlu1e].[pcto:sum:amount_eur:qk:2]' />
+              <text column='[federated.1udii2e0oyiz97196hfzj14wlu1e].[sum:amount_eur:qk]' />
+            </encodings>
+            <style>
+              <style-rule element='mark'>
+                <format attr='mark-labels-show' value='true' />
+                <format attr='mark-labels-cull' value='true' />
+                <format attr='mark-transparency' value='155' />
+                <format attr='size' value='1.3513259887695312' />
+              </style-rule>
+            </style>
+          </pane>
+        </panes>
+        <rows total='true'>[federated.1udii2e0oyiz97196hfzj14wlu1e].[pcto:sum:amount_eur:qk:2]</rows>
+        <cols>[federated.1udii2e0oyiz97196hfzj14wlu1e].[tmn:invoice_date:ok]</cols>
+      </table>
+      <simple-id uuid='{630A03A8-635C-4003-9E75-B088F85F39A6}' />
+    </worksheet>
+  </worksheets>
+  <dashboards>
+    <dashboard _.fcp.AccessibleZoneTabOrder.true...enable-sort-zone-taborder='true' name='Incremental GMV'>
+      <repository-location derived-from='https://tableau.deliveryhero.net/t/Talabat/workbooks/ManualTransactionTracker/IncrementalGMV?rev=' id='IncrementalGMV' path='/t/Talabat/workbooks/ManualTransactionTracker' revision='' site='Talabat' />
+      <style>
+        <style-rule element='table'>
+          <format attr='background-color' value='#00000000' />
+        </style-rule>
+        <style-rule element='dash-title'>
+          <format attr='font-family' value='Tableau Book' />
+        </style-rule>
+        <style-rule element='dash-subtitle'>
+          <format attr='font-family' value='Tableau Book' />
+        </style-rule>
+        <style-rule element='dash-text'>
+          <format attr='font-family' value='Tableau Book' />
+        </style-rule>
+      </style>
+      <size maxheight='800' maxwidth='1000' minheight='800' minwidth='1000' />
+      <datasources>
+        <datasource caption='flexi_gem' name='federated.1v6cpn017jjcy71e2dmf01e208ve' />
+      </datasources>
+      <datasource-dependencies datasource='federated.1v6cpn017jjcy71e2dmf01e208ve'>
+        <column-instance column='[order_date (Month / Year)]' derivation='None' name='[none:order_date (Month / Year):ok]' pivot='key' type='ordinal' />
+        <column aggregation='Sum' caption='order_date(MY)' datatype='integer' name='[order_date (Month / Year)]' role='dimension' type='ordinal' user:agg-type='MY' user:base-field='order_date' user:ui-builder='date-bin-builder'>
+          <calculation class='tableau' formula='(DATEPART(&apos;year&apos;, [order_date])*100 + DATEPART(&apos;month&apos;, [order_date]))' />
+        </column>
+      </datasource-dependencies>
+      <zones>
+        <zone h='100000' id='4' type-v2='layout-basic' w='100000' x='0' y='0'>
+          <zone h='90750' id='3' name='Flexi Gem' w='98400' x='800' y='8250'>
+            <zone-style>
+              <format attr='border-color' value='#000000' />
+              <format attr='border-style' value='none' />
+              <format attr='border-width' value='0' />
+              <format attr='margin' value='4' />
+            </zone-style>
+          </zone>
+          <zone h='7250' id='8' param='horz' type-v2='layout-flow' w='98400' x='800' y='1000'>
+            <zone-style>
+              <format attr='border-color' value='#000000' />
+              <format attr='border-style' value='none' />
+              <format attr='border-width' value='0' />
+              <format attr='margin' value='4' />
+              <format attr='background-color' value='#ff9300' />
+            </zone-style>
+          </zone>
+          <zone-style>
+            <format attr='border-color' value='#000000' />
+            <format attr='border-style' value='none' />
+            <format attr='border-width' value='0' />
+            <format attr='margin' value='8' />
+          </zone-style>
+        </zone>
+        <zone forceUpdate='true' h='5000' id='5' type-v2='text' w='14600' x='84100' y='7500'>
+          <formatted-text>
+            <run bold='true' fontcolor='#ff2600'>All Currencies are in EUR</run>
+          </formatted-text>
+          <zone-style>
+            <format attr='border-color' value='#000000' />
+            <format attr='border-style' value='dotted' />
+            <format attr='border-width' value='1' />
+            <format attr='background-color' value='#efebe8' />
+          </zone-style>
+        </zone>
+        <zone _.fcp.ExternalImageContentForZones.true...image-file-url='https://www.talabat.com/assets/images/logo.svg' h='5875' id='9' is-scaled='1' type-v2='bitmap' w='15200' x='1800' y='1625' />
+        <zone forceUpdate='true' h='5375' id='10' type-v2='text' w='41600' x='56800' y='1875'>
+          <formatted-text>
+            <run fontcolor='#ffffff' fontname='Tableau Bold' fontsize='21'>Incremental Revenue Tracker</run>
+          </formatted-text>
+        </zone>
+        <zone h='5125' id='17' mode='checkdropdown' name='Flexi Gem' param='[federated.1v6cpn017jjcy71e2dmf01e208ve].[none:order_date (Month / Year):ok]' show-apply='true' type-v2='filter' values='database' w='16400' x='67500' y='7875' />
+      </zones>
+      <devicelayouts>
+        <devicelayout auto-generated='true' name='Phone'>
+          <size maxheight='700' minheight='700' sizing-mode='vscroll' />
+          <zones>
+            <zone h='100000' id='35' type-v2='layout-basic' w='100000' x='0' y='0'>
+              <zone h='98000' id='34' param='vert' type-v2='layout-flow' w='98400' x='800' y='1000'>
+                <zone _.fcp.ExternalImageContentForZones.true...image-file-url='https://www.talabat.com/assets/images/logo.svg' fixed-size='47' h='5875' id='9' is-fixed='true' is-scaled='1' type-v2='bitmap' w='15200' x='1800' y='1625'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone forceUpdate='true' h='5375' id='10' type-v2='text' w='41600' x='56800' y='1875'>
+                  <formatted-text>
+                    <run fontcolor='#ffffff' fontname='Tableau Bold' fontsize='21'>Incremental Revenue Tracker</run>
+                  </formatted-text>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone forceUpdate='true' h='5000' id='5' type-v2='text' w='14600' x='84100' y='7500'>
+                  <formatted-text>
+                    <run bold='true' fontcolor='#ff2600'>All Currencies are in EUR</run>
+                  </formatted-text>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='dotted' />
+                    <format attr='border-width' value='1' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                    <format attr='background-color' value='#efebe8' />
+                  </zone-style>
+                </zone>
+                <zone h='5125' id='17' mode='checkdropdown' name='Flexi Gem' param='[federated.1v6cpn017jjcy71e2dmf01e208ve].[none:order_date (Month / Year):ok]' show-apply='true' type-v2='filter' values='database' w='16400' x='67500' y='7875'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone fixed-size='280' h='90750' id='3' is-fixed='true' name='Flexi Gem' w='98400' x='800' y='8250'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+              </zone>
+              <zone-style>
+                <format attr='border-color' value='#000000' />
+                <format attr='border-style' value='none' />
+                <format attr='border-width' value='0' />
+                <format attr='margin' value='8' />
+              </zone-style>
+            </zone>
+          </zones>
+        </devicelayout>
+      </devicelayouts>
+      <simple-id uuid='{367340B2-3C1B-403F-BE0E-FD68042D35C5}' />
+    </dashboard>
+    <dashboard _.fcp.AccessibleZoneTabOrder.true...enable-sort-zone-taborder='true' name='Summary'>
+      <repository-location derived-from='https://tableau.deliveryhero.net/t/Talabat/workbooks/ManualTransactionTracker/Summary?rev=' id='Summary' path='/t/Talabat/workbooks/ManualTransactionTracker' revision='' site='Talabat' />
+      <style>
+        <style-rule element='table'>
+          <format attr='background-color' value='#00000000' />
+        </style-rule>
+        <style-rule element='dash-title'>
+          <format attr='font-family' value='Tableau Book' />
+        </style-rule>
+        <style-rule element='dash-subtitle'>
+          <format attr='font-family' value='Tableau Book' />
+        </style-rule>
+        <style-rule element='dash-text'>
+          <format attr='font-family' value='Tableau Book' />
+        </style-rule>
+      </style>
+      <size maxheight='1700' maxwidth='1300' minheight='1700' minwidth='1300' sizing-mode='fixed' />
+      <datasources>
+        <datasource caption='auto_manual' name='federated.1udii2e0oyiz97196hfzj14wlu1e' />
+      </datasources>
+      <datasource-dependencies datasource='federated.1udii2e0oyiz97196hfzj14wlu1e'>
+        <column datatype='string' name='[LEDGER_ACCOUNT_FLAG]' role='dimension' type='nominal' />
+        <column caption='Ledger Name' datatype='string' name='[ledger_name]' role='dimension' type='nominal' />
+        <column-instance column='[LEDGER_ACCOUNT_FLAG]' derivation='None' name='[none:LEDGER_ACCOUNT_FLAG:nk]' pivot='key' type='nominal' />
+        <column-instance column='[ledger_name]' derivation='None' name='[none:ledger_name:nk]' pivot='key' type='nominal' />
+      </datasource-dependencies>
+      <zones>
+        <zone h='100000' id='4' type-v2='layout-basic' w='100000' x='0' y='0'>
+          <zone h='46705' id='42' param='horz' type-v2='layout-flow' w='84539' x='615' y='52824'>
+            <zone h='46705' id='40' type-v2='layout-basic' w='84539' x='615' y='52824'>
+              <zone h='46705' id='28' param='horz' type-v2='layout-flow' w='84539' x='615' y='52824'>
+                <zone h='46705' id='26' type-v2='layout-basic' w='84539' x='615' y='52824'>
+                  <zone h='22923' id='5' name='Overall Manual Transaction' w='84539' x='615' y='76606'>
+                    <layout-cache cell-count-w='6' fixed-size-h='244' non-cell-size-w='65' type-h='fixed' type-w='cell' />
+                    <zone-style>
+                      <format attr='border-color' value='#000000' />
+                      <format attr='border-style' value='none' />
+                      <format attr='border-width' value='0' />
+                      <format attr='margin' value='4' />
+                      <format attr='background-color' value='#f7f7f0' />
+                    </zone-style>
+                  </zone>
+                  <zone fixed-size='559' h='23782' id='3' is-fixed='true' layout-strategy-id='distribute-evenly' param='horz' type-v2='layout-flow' w='42270' x='615' y='52824'>
+                    <zone h='23764' id='38' name='Overall Manual Transaction MENA' w='42308' x='615' y='52824'>
+                      <layout-cache cell-count-w='5' non-cell-size-w='57' type-h='fixed' type-w='cell' />
+                      <zone-style>
+                        <format attr='border-color' value='#000000' />
+                        <format attr='border-style' value='none' />
+                        <format attr='border-width' value='0' />
+                        <format attr='margin' value='4' />
+                      </zone-style>
+                    </zone>
+                  </zone>
+                  <zone h='23782' id='9' name='Monthly Trend of Manual Transaction' w='42269' x='42885' y='52824'>
+                    <layout-cache type-h='fixed' type-w='cell' />
+                    <zone-style>
+                      <format attr='border-color' value='#000000' />
+                      <format attr='border-style' value='none' />
+                      <format attr='border-width' value='0' />
+                      <format attr='margin' value='4' />
+                      <format attr='background-color' value='#f7f7f0' />
+                    </zone-style>
+                  </zone>
+                </zone>
+              </zone>
+            </zone>
+          </zone>
+          <zone h='3882' id='56' param='horz' type-v2='layout-flow' w='84539' x='615' y='471'>
+            <zone-style>
+              <format attr='border-color' value='#000000' />
+              <format attr='border-style' value='none' />
+              <format attr='border-width' value='0' />
+              <format attr='background-color' value='#ff9300' />
+            </zone-style>
+          </zone>
+          <zone forceUpdate='true' h='4823' id='83' type-v2='text' w='84539' x='615' y='4353'>
+            <formatted-text>
+              <run bold='true' fontalignment='0' fontname='Tableau Bold' fontsize='10'>Disclaimer: </run>
+              <run fontalignment='0' fontsize='10'>The data presented in this Tableau dashboard is sourced from the Microsoft Dynamics system after the financial month has closed. Updates occur once a month, typically following the completion of the month-end financial closing process in MSD. Please note that the flagging of ledger accounts is conducted manually to determine which accounts can be considered for automation for billing system.</run>
+            </formatted-text>
+            <zone-style>
+              <format attr='border-color' value='#000000' />
+              <format attr='border-style' value='none' />
+              <format attr='border-width' value='0' />
+              <format attr='margin' value='4' />
+              <format attr='background-color' value='#e9f3f2db' />
+            </zone-style>
+          </zone>
+          <zone h='20059' id='94' name='Billing NS Tracking Overall' w='84539' x='615' y='9176'>
+            <zone-style>
+              <format attr='border-color' value='#000000' />
+              <format attr='border-style' value='none' />
+              <format attr='border-width' value='0' />
+              <format attr='margin' value='4' />
+            </zone-style>
+          </zone>
+          <zone h='23589' id='39' name='Billing NS Tracking Accounts' w='84539' x='615' y='29235'>
+            <zone-style>
+              <format attr='border-color' value='#000000' />
+              <format attr='border-style' value='none' />
+              <format attr='border-width' value='0' />
+              <format attr='margin' value='4' />
+            </zone-style>
+          </zone>
+          <zone h='99058' id='55' param='vert' type-v2='layout-flow' w='14231' x='85154' y='471'>
+            <zone h='9883' id='10' name='Monthly Trend of Manual Transaction' pane-specification-id='1' param='[federated.1udii2e0oyiz97196hfzj14wlu1e].[none:country_code:nk]' show-title='false' type-v2='color' w='14231' x='85154' y='471'>
+              <zone-style>
+                <format attr='border-color' value='#000000' />
+                <format attr='border-style' value='none' />
+                <format attr='border-width' value='0' />
+                <format attr='margin' value='4' />
+              </zone-style>
+            </zone>
+            <zone h='2942' id='46' mode='checkdropdown' name='Billing NS Tracking Accounts' param='[federated.1udii2e0oyiz97196hfzj14wlu1e].[none:ledger_name:nk]' show-apply='true' type-v2='filter' w='14231' x='85154' y='10354'>
+              <zone-style>
+                <format attr='border-color' value='#000000' />
+                <format attr='border-style' value='none' />
+                <format attr='border-width' value='0' />
+                <format attr='margin' value='4' />
+              </zone-style>
+            </zone>
+            <zone h='2942' id='54' mode='checkdropdown' name='Overall Manual Transaction MENA' param='[federated.1udii2e0oyiz97196hfzj14wlu1e].[none:LEDGER_ACCOUNT_FLAG:nk]' show-apply='true' type-v2='filter' values='database' w='14231' x='85154' y='13296'>
+              <zone-style>
+                <format attr='border-color' value='#000000' />
+                <format attr='border-style' value='none' />
+                <format attr='border-width' value='0' />
+                <format attr='margin' value='4' />
+              </zone-style>
+            </zone>
+            <zone-style>
+              <format attr='border-color' value='#000000' />
+              <format attr='border-style' value='none' />
+              <format attr='border-width' value='0' />
+              <format attr='background-color' value='#f5f5f5' />
+            </zone-style>
+          </zone>
+          <zone-style>
+            <format attr='border-color' value='#000000' />
+            <format attr='border-style' value='none' />
+            <format attr='border-width' value='0' />
+            <format attr='margin' value='8' />
+          </zone-style>
+        </zone>
+        <zone _.fcp.ExternalImageContentForZones.true...image-file-url='https://www.talabat.com/assets/images/logo.svg' h='3353' id='50' is-scaled='1' type-v2='bitmap' w='14385' x='1077' y='647' />
+        <zone forceUpdate='true' h='3471' id='51' type-v2='text' w='28769' x='56308' y='471'>
+          <formatted-text>
+            <run fontcolor='#ffffff' fontname='Tableau Bold' fontsize='21'>REVENUE AT RISK</run>
+          </formatted-text>
+        </zone>
+      </zones>
+      <devicelayouts>
+        <devicelayout auto-generated='true' name='Phone'>
+          <size maxheight='1850' minheight='1850' sizing-mode='vscroll' />
+          <zones>
+            <zone h='100000' id='132' type-v2='layout-basic' w='100000' x='0' y='0'>
+              <zone h='99058' id='131' param='vert' type-v2='layout-flow' w='98770' x='615' y='471'>
+                <zone forceUpdate='true' h='3471' id='51' type-v2='text' w='28769' x='56308' y='471'>
+                  <formatted-text>
+                    <run fontcolor='#ffffff' fontname='Tableau Bold' fontsize='21'>REVENUE AT RISK</run>
+                  </formatted-text>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone _.fcp.ExternalImageContentForZones.true...image-file-url='https://www.talabat.com/assets/images/logo.svg' fixed-size='57' h='3353' id='50' is-fixed='true' is-scaled='1' type-v2='bitmap' w='14385' x='1077' y='647'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone forceUpdate='true' h='4823' id='83' type-v2='text' w='84539' x='615' y='4353'>
+                  <formatted-text>
+                    <run bold='true' fontalignment='0' fontname='Tableau Bold' fontsize='10'>Disclaimer: </run>
+                    <run fontalignment='0' fontsize='10'>The data presented in this Tableau dashboard is sourced from the Microsoft Dynamics system after the financial month has closed. Updates occur once a month, typically following the completion of the month-end financial closing process in MSD. Please note that the flagging of ledger accounts is conducted manually to determine which accounts can be considered for automation for billing system.</run>
+                  </formatted-text>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                    <format attr='background-color' value='#e9f3f2db' />
+                  </zone-style>
+                </zone>
+                <zone fixed-size='280' h='20059' id='94' is-fixed='true' name='Billing NS Tracking Overall' w='84539' x='615' y='9176'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone h='2942' id='46' mode='checkdropdown' name='Billing NS Tracking Accounts' param='[federated.1udii2e0oyiz97196hfzj14wlu1e].[none:ledger_name:nk]' show-apply='true' type-v2='filter' w='14231' x='85154' y='10354'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone fixed-size='280' h='23589' id='39' is-fixed='true' name='Billing NS Tracking Accounts' w='84539' x='615' y='29235'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone h='2942' id='54' mode='checkdropdown' name='Overall Manual Transaction MENA' param='[federated.1udii2e0oyiz97196hfzj14wlu1e].[none:LEDGER_ACCOUNT_FLAG:nk]' show-apply='true' type-v2='filter' values='database' w='14231' x='85154' y='13296'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone fixed-size='280' h='23764' id='38' is-fixed='true' name='Overall Manual Transaction MENA' w='42308' x='615' y='52824'>
+                  <layout-cache cell-count-w='5' non-cell-size-w='57' type-h='fixed' type-w='cell' />
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone fixed-size='280' h='23782' id='9' is-fixed='true' name='Monthly Trend of Manual Transaction' w='42269' x='42885' y='52824'>
+                  <layout-cache type-h='fixed' type-w='cell' />
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                    <format attr='background-color' value='#f7f7f0' />
+                  </zone-style>
+                </zone>
+                <zone h='9883' id='10' name='Monthly Trend of Manual Transaction' pane-specification-id='1' param='[federated.1udii2e0oyiz97196hfzj14wlu1e].[none:country_code:nk]' show-title='false' type-v2='color' w='14231' x='85154' y='471'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone fixed-size='280' h='22923' id='5' is-fixed='true' name='Overall Manual Transaction' w='84539' x='615' y='76606'>
+                  <layout-cache cell-count-w='6' fixed-size-h='244' non-cell-size-w='65' type-h='fixed' type-w='cell' />
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                    <format attr='background-color' value='#f7f7f0' />
+                  </zone-style>
+                </zone>
+              </zone>
+              <zone-style>
+                <format attr='border-color' value='#000000' />
+                <format attr='border-style' value='none' />
+                <format attr='border-width' value='0' />
+                <format attr='margin' value='8' />
+              </zone-style>
+            </zone>
+          </zones>
+        </devicelayout>
+      </devicelayouts>
+      <simple-id uuid='{74BF5FEB-038B-46F9-9065-E3ABCB13A4B1}' />
+    </dashboard>
+  </dashboards>
+  <windows source-height='51'>
+    <window class='dashboard' maximized='true' name='Summary'>
+      <viewpoints>
+        <viewpoint name='Billing NS Tracking Accounts'>
+          <zoom type='entire-view' />
+        </viewpoint>
+        <viewpoint name='Billing NS Tracking Overall'>
+          <zoom type='entire-view' />
+        </viewpoint>
+        <viewpoint name='Monthly Trend of Manual Transaction'>
+          <zoom type='entire-view' />
+          <highlight>
+            <color-one-way>
+              <field>[federated.1udii2e0oyiz97196hfzj14wlu1e].[none:country_code:nk]</field>
+            </color-one-way>
+          </highlight>
+        </viewpoint>
+        <viewpoint name='Overall Manual Transaction'>
+          <zoom type='entire-view' />
+        </viewpoint>
+        <viewpoint name='Overall Manual Transaction MENA'>
+          <zoom type='entire-view' />
+        </viewpoint>
+      </viewpoints>
+      <active id='56' />
+      <simple-id uuid='{05F531D0-48EC-4641-BEB6-B1CB818289A6}' />
+    </window>
+    <window class='dashboard' name='Incremental GMV'>
+      <viewpoints>
+        <viewpoint name='Flexi Gem'>
+          <zoom type='entire-view' />
+        </viewpoint>
+      </viewpoints>
+      <active id='-1' />
+      <simple-id uuid='{DE449C16-05CB-46C6-93E0-095744DE4CB8}' />
+    </window>
+    <window class='worksheet' hidden='true' name='Billing NS Tracking Accounts'>
+      <cards>
+        <edge name='left'>
+          <strip size='160'>
+            <card type='pages' />
+            <card type='filters' />
+            <card type='marks' />
+          </strip>
+        </edge>
+        <edge name='top'>
+          <strip size='2147483647'>
+            <card type='columns' />
+          </strip>
+          <strip size='2147483647'>
+            <card type='rows' />
+          </strip>
+          <strip size='31'>
+            <card type='title' />
+          </strip>
+        </edge>
+        <edge name='right'>
+          <strip size='300'>
+            <card param='[federated.1udii2e0oyiz97196hfzj14wlu1e].[none:ledger_name:nk]' type='filter' />
+            <card pane-specification-id='1' param='[federated.1udii2e0oyiz97196hfzj14wlu1e].[usr:share_on_country (copy)_4378695140354347009:qk]' type='size' />
+          </strip>
+        </edge>
+      </cards>
+      <viewpoint>
+        <zoom type='entire-view' />
+        <highlight>
+          <color-one-way>
+            <field>[federated.1udii2e0oyiz97196hfzj14wlu1e].[none:country_code:nk]</field>
+            <field>[federated.1udii2e0oyiz97196hfzj14wlu1e].[none:is_billing_ns:nk]</field>
+            <field>[federated.1udii2e0oyiz97196hfzj14wlu1e].[none:ledger_account:nk]</field>
+            <field>[federated.1udii2e0oyiz97196hfzj14wlu1e].[none:ledger_account:ok]</field>
+            <field>[federated.1udii2e0oyiz97196hfzj14wlu1e].[none:ledger_name:nk]</field>
+            <field>[federated.1udii2e0oyiz97196hfzj14wlu1e].[yr:invoice_date:ok]</field>
+          </color-one-way>
+        </highlight>
+      </viewpoint>
+      <simple-id uuid='{FAB51740-A385-490F-AC4C-5EC3B384C174}' />
+    </window>
+    <window class='worksheet' hidden='true' name='Billing NS Tracking Overall'>
+      <cards>
+        <edge name='left'>
+          <strip size='160'>
+            <card type='pages' />
+            <card type='filters' />
+            <card type='marks' />
+          </strip>
+        </edge>
+        <edge name='top'>
+          <strip size='2147483647'>
+            <card type='columns' />
+          </strip>
+          <strip size='2147483647'>
+            <card type='rows' />
+          </strip>
+          <strip size='31'>
+            <card type='title' />
+          </strip>
+        </edge>
+        <edge name='right'>
+          <strip size='300'>
+            <card param='[federated.1udii2e0oyiz97196hfzj14wlu1e].[none:ledger_name:nk]' type='filter' />
+          </strip>
+        </edge>
+      </cards>
+      <viewpoint>
+        <highlight>
+          <color-one-way>
+            <field>[federated.1udii2e0oyiz97196hfzj14wlu1e].[none:country_code:nk]</field>
+            <field>[federated.1udii2e0oyiz97196hfzj14wlu1e].[none:is_billing_ns:nk]</field>
+            <field>[federated.1udii2e0oyiz97196hfzj14wlu1e].[none:is_credit_note:nk]</field>
+            <field>[federated.1udii2e0oyiz97196hfzj14wlu1e].[none:ledger_account:ok]</field>
+            <field>[federated.1udii2e0oyiz97196hfzj14wlu1e].[none:ledger_name:nk]</field>
+            <field>[federated.1udii2e0oyiz97196hfzj14wlu1e].[yr:invoice_date:ok]</field>
+          </color-one-way>
+        </highlight>
+      </viewpoint>
+      <simple-id uuid='{3F793CCC-26EE-46B5-8A54-2F9C47F61965}' />
+    </window>
+    <window class='worksheet' hidden='true' name='Flexi Gem'>
+      <cards>
+        <edge name='left'>
+          <strip size='160'>
+            <card type='pages' />
+            <card type='filters' />
+            <card type='marks' />
+          </strip>
+        </edge>
+        <edge name='top'>
+          <strip size='2147483647'>
+            <card type='columns' />
+          </strip>
+          <strip size='2147483647'>
+            <card type='rows' />
+          </strip>
+          <strip size='31'>
+            <card type='title' />
+          </strip>
+        </edge>
+        <edge name='right'>
+          <strip size='160'>
+            <card param='[federated.1v6cpn017jjcy71e2dmf01e208ve].[none:order_date (Month / Year):ok]' type='filter' />
+          </strip>
+        </edge>
+      </cards>
+      <viewpoint>
+        <highlight>
+          <color-one-way>
+            <field>[federated.1v6cpn017jjcy71e2dmf01e208ve].[none:global_entity_id:nk]</field>
+            <field>[federated.1v6cpn017jjcy71e2dmf01e208ve].[none:order_date (Month / Year):ok]</field>
+          </color-one-way>
+        </highlight>
+      </viewpoint>
+      <simple-id uuid='{E4B46F5B-FA39-4775-AA81-76B96F8FD4BA}' />
+    </window>
+    <window class='worksheet' hidden='true' name='Monthly Trend of Manual Transaction'>
+      <cards>
+        <edge name='left'>
+          <strip size='160'>
+            <card type='pages' />
+            <card type='filters' />
+            <card type='marks' />
+          </strip>
+        </edge>
+        <edge name='top'>
+          <strip size='2147483647'>
+            <card type='columns' />
+          </strip>
+          <strip size='2147483647'>
+            <card type='rows' />
+          </strip>
+          <strip size='31'>
+            <card type='title' />
+          </strip>
+        </edge>
+        <edge name='right'>
+          <strip size='160'>
+            <card pane-specification-id='1' param='[federated.1udii2e0oyiz97196hfzj14wlu1e].[none:country_code:nk]' type='color' />
+          </strip>
+        </edge>
+      </cards>
+      <viewpoint>
+        <zoom type='entire-view' />
+        <highlight>
+          <color-one-way>
+            <field>[federated.1udii2e0oyiz97196hfzj14wlu1e].[my:invoice_date:ok]</field>
+            <field>[federated.1udii2e0oyiz97196hfzj14wlu1e].[none:country_code:nk]</field>
+            <field>[federated.1udii2e0oyiz97196hfzj14wlu1e].[yr:invoice_date:ok]</field>
+          </color-one-way>
+        </highlight>
+      </viewpoint>
+      <simple-id uuid='{E69BA98C-8A8A-4ECA-B8A1-731CF260B5BF}' />
+    </window>
+    <window class='worksheet' hidden='true' name='Overall Manual Transaction'>
+      <cards>
+        <edge name='left'>
+          <strip size='160'>
+            <card type='pages' />
+            <card type='filters' />
+            <card type='marks' />
+          </strip>
+        </edge>
+        <edge name='top'>
+          <strip size='2147483647'>
+            <card type='columns' />
+          </strip>
+          <strip size='2147483647'>
+            <card type='rows' />
+          </strip>
+          <strip size='31'>
+            <card type='title' />
+          </strip>
+        </edge>
+        <edge name='right'>
+          <strip size='160'>
+            <card pane-specification-id='0' param='[federated.1udii2e0oyiz97196hfzj14wlu1e].[sum:amount_eur:qk]' type='color' />
+          </strip>
+        </edge>
+      </cards>
+      <viewpoint>
+        <highlight>
+          <color-one-way>
+            <field>[federated.1udii2e0oyiz97196hfzj14wlu1e].[sum:amount_eur:qk]</field>
+            <field>[federated.1udii2e0oyiz97196hfzj14wlu1e].[yr:invoice_date:ok]</field>
+          </color-one-way>
+        </highlight>
+      </viewpoint>
+      <simple-id uuid='{05545529-F162-480F-8CE8-CC03DE5B1800}' />
+    </window>
+    <window class='worksheet' hidden='true' name='Overall Manual Transaction MENA'>
+      <cards>
+        <edge name='left'>
+          <strip size='160'>
+            <card type='pages' />
+            <card type='filters' />
+            <card type='marks' />
+          </strip>
+        </edge>
+        <edge name='top'>
+          <strip size='2147483647'>
+            <card type='columns' />
+          </strip>
+          <strip size='2147483647'>
+            <card type='rows' />
+          </strip>
+          <strip size='31'>
+            <card type='title' />
+          </strip>
+        </edge>
+        <edge name='right'>
+          <strip size='285'>
+            <card param='[federated.1udii2e0oyiz97196hfzj14wlu1e].[none:LEDGER_ACCOUNT_FLAG:nk]' type='filter' />
+            <card pane-specification-id='1' param='[federated.1udii2e0oyiz97196hfzj14wlu1e].[none:LEDGER_ACCOUNT_FLAG:nk]' type='color' />
+          </strip>
+        </edge>
+      </cards>
+      <viewpoint>
+        <highlight>
+          <color-one-way>
+            <field>[federated.1udii2e0oyiz97196hfzj14wlu1e].[none:LEDGER_ACCOUNT_FLAG:nk]</field>
+            <field>[federated.1udii2e0oyiz97196hfzj14wlu1e].[sum:amount_eur:qk]</field>
+            <field>[federated.1udii2e0oyiz97196hfzj14wlu1e].[tmn:invoice_date:ok]</field>
+            <field>[federated.1udii2e0oyiz97196hfzj14wlu1e].[yr:invoice_date:ok]</field>
+          </color-one-way>
+        </highlight>
+      </viewpoint>
+      <simple-id uuid='{6B627483-76B1-4000-8C5E-D0F9BA01B38E}' />
+    </window>
+  </windows>
+</workbook>

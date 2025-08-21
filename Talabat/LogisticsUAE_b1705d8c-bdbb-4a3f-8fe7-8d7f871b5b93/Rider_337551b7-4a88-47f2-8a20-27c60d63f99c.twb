@@ -1,0 +1,472 @@
+<?xml version='1.0' encoding='utf-8' ?>
+
+<!-- build 20221.22.1108.1355                               -->
+<workbook original-version='18.1' source-build='2022.2.1 (20222.22.0812.0353)' source-platform='win' version='18.1' xml:base='https://tableau.deliveryhero.net' xmlns:user='http://www.tableausoftware.com/xml/user'>
+  <document-format-change-manifest>
+    <_.fcp.AccessibleZoneTabOrder.true...AccessibleZoneTabOrder />
+    <_.fcp.AnimationOnByDefault.true...AnimationOnByDefault />
+    <AutoCreateAndUpdateDSDPhoneLayouts />
+    <_.fcp.MarkAnimation.true...MarkAnimation />
+    <_.fcp.ObjectModelEncapsulateLegacy.true...ObjectModelEncapsulateLegacy />
+    <_.fcp.ObjectModelTableType.true...ObjectModelTableType />
+    <_.fcp.SchemaViewerObjectModel.true...SchemaViewerObjectModel />
+    <SetMembershipControl />
+    <SheetIdentifierTracking />
+    <WindowsPersistSimpleIdentifiers />
+  </document-format-change-manifest>
+  <repository-location id='Rider' path='/t/Talabat/workbooks' revision='1.0' site='Talabat' />
+  <preferences>
+    <preference name='ui.encoding.shelf.height' value='24' />
+    <preference name='ui.shelf.height' value='26' />
+  </preferences>
+  <_.fcp.AnimationOnByDefault.false...style>
+    <_.fcp.AnimationOnByDefault.false..._.fcp.MarkAnimation.true...style-rule element='animation'>
+      <_.fcp.AnimationOnByDefault.false...format attr='animation-on' value='ao-on' />
+    </_.fcp.AnimationOnByDefault.false..._.fcp.MarkAnimation.true...style-rule>
+  </_.fcp.AnimationOnByDefault.false...style>
+  <datasources>
+    <datasource caption='Custom SQL Query (data_platform_logistics)' inline='true' name='federated.0jzmpyl17xl192174o4pn0umsutx' version='18.1'>
+      <connection class='federated'>
+        <named-connections>
+          <named-connection caption='BigQuery' name='bigquery.03ljo9713gk16h17oja7s0gme7s5'>
+            <connection CATALOG='tlb-data-dev' EXECCATALOG='tlb-data-dev' authentication='oauth' class='bigquery' connection-dialect='google-sql' project='tlb-data-dev' schema='data_platform_logistics' server-oauth='server-custom' username='muhammad.sarmad@talabat.com' workgroup-auth-mode='prompt' />
+          </named-connection>
+        </named-connections>
+        <_.fcp.ObjectModelEncapsulateLegacy.false...relation connection='bigquery.03ljo9713gk16h17oja7s0gme7s5' name='Custom SQL Query' type='text'><![CDATA[select distinct Month, Country_code, city_name, contract_name,issue_name,is_active,rideR_id,rideR_name, 
+case when ((issue_name='Courier GPS off for X minutes' and sum(case_count)  >>=5) 
+or (issue_name='Courier Fake GPS Usage Detected' and sum(case_count)  >>=1)
+or (issue_name='Dropoff - no gps and delayed' and sum(case_count)  >>=2)
+or (issue_name='Order clicked through' and sum(case_count)  >>=2)
+or (issue_name="Order marked as delivered but didn't receive" and sum(case_count)  >>=2)
+or (issue_name="Missing item" and sum(case_count)  >>=3)
+)
+then sum(case_count) 
+end as case_count
+from
+(select
+  extract(month from i.created_date) as Month,
+  i.country_code,
+  city_name,
+  r.last_contract_name as contract_name,
+  issue_name,
+  r.is_active,
+  rider_id,
+  rider_name,
+  count(distinct issue_id) case_count,
+
+  from `fulfillment-dwh-production.curated_data_shared.issues` i
+  left join `tlb-data-prod.data_platform.dim_logistics_rider` r using (country_code, rider_id)
+  left join `tlb-data-prod.data_platform.dim_logistics_city` ci on ci.country_code = r.country_code and ci.city_id = r.last_city_id and ci.is_Active
+
+  where extract(year from i.created_date)=extract(year from current_date())
+  and extract(month from i.created_date)>>=extract(month from current_date())-6
+    and i.created_date <<= current_date()-2
+    and issue_name in ('Courier Fake GPS Usage Detected','Courier GPS off for X minutes','Dropoff - no gps and delayed','Order clicked through')
+    and i.rider_id is not null
+    and i.country_code = 'ae'
+  group by 1,2,3,4,5,6,7,8
+
+  union all
+
+  select
+  extract(month from cs.created_date) as Month,
+  o.country_code,
+  city_name,
+  r.last_contract_name as contract_name,
+  contact_reason_l3 as issue_name,
+  r.is_active,
+  primary_rider_id as rider_id,
+  rider_name,
+  count(distinct case_id) case_count,
+  from `tlb-data-prod.data_platform.fct_logistics_order` o
+  left join `tlb-data-prod.data_platform.dim_logistics_city` c on o.country_code = c.country_code and o.city_id =c.city_id and c.is_Active
+  left join `tlb-data-prod.data_platform.dim_logistics_rider` r on o.country_code = r.country_code and o.primary_rider_id =r.rider_id
+  left join (select * from `fulfillment-dwh-production.curated_data_shared_gcc_service.salesforce_cases` where extract(year from created_date)=extract(year from current_date())
+  and extract(month from created_date)>>=extract(month from current_date())-6
+    and created_date <<= current_date()-2) cs
+  on o.order_code = cs.order_id and contact_reason_l3 in ("Order marked as delivered but didn't receive","Missing item")
+
+  where
+    extract(year from o.created_date)=extract(year from current_date())
+  and extract(month from o.created_date)>>=extract(month from current_date())-6
+    and o.created_date <<= current_date()-2
+    and contact_reason_l3 is not null
+    and primary_rider_id is not null
+    and o.country_code = 'ae'
+
+group by 1,2,3,4,5,6,7,8
+order by 1,2,3,7
+  )
+group by 1,2,3,4,5,6,7,8
+having  case_count >>0]]></_.fcp.ObjectModelEncapsulateLegacy.false...relation>
+        <_.fcp.ObjectModelEncapsulateLegacy.true...relation connection='bigquery.03ljo9713gk16h17oja7s0gme7s5' name='Custom SQL Query' type='text'><![CDATA[select distinct Month, Country_code, city_name, contract_name,issue_name,is_active,rideR_id,rideR_name, 
+case when ((issue_name='Courier GPS off for X minutes' and sum(case_count)  >>=5) 
+or (issue_name='Courier Fake GPS Usage Detected' and sum(case_count)  >>=1)
+or (issue_name='Dropoff - no gps and delayed' and sum(case_count)  >>=2)
+or (issue_name='Order clicked through' and sum(case_count)  >>=2)
+or (issue_name="Order marked as delivered but didn't receive" and sum(case_count)  >>=2)
+or (issue_name="Missing item" and sum(case_count)  >>=3)
+)
+then sum(case_count) 
+end as case_count
+from
+(select
+  extract(month from i.created_date) as Month,
+  i.country_code,
+  city_name,
+  r.last_contract_name as contract_name,
+  issue_name,
+  r.is_active,
+  rider_id,
+  rider_name,
+  count(distinct issue_id) case_count,
+
+  from `fulfillment-dwh-production.curated_data_shared.issues` i
+  left join `tlb-data-prod.data_platform.dim_logistics_rider` r using (country_code, rider_id)
+  left join `tlb-data-prod.data_platform.dim_logistics_city` ci on ci.country_code = r.country_code and ci.city_id = r.last_city_id and ci.is_Active
+
+  where extract(year from i.created_date)=extract(year from current_date())
+  and extract(month from i.created_date)>>=extract(month from current_date())-6
+    and i.created_date <<= current_date()-2
+    and issue_name in ('Courier Fake GPS Usage Detected','Courier GPS off for X minutes','Dropoff - no gps and delayed','Order clicked through')
+    and i.rider_id is not null
+    and i.country_code = 'ae'
+  group by 1,2,3,4,5,6,7,8
+
+  union all
+
+  select
+  extract(month from cs.created_date) as Month,
+  o.country_code,
+  city_name,
+  r.last_contract_name as contract_name,
+  contact_reason_l3 as issue_name,
+  r.is_active,
+  primary_rider_id as rider_id,
+  rider_name,
+  count(distinct case_id) case_count,
+  from `tlb-data-prod.data_platform.fct_logistics_order` o
+  left join `tlb-data-prod.data_platform.dim_logistics_city` c on o.country_code = c.country_code and o.city_id =c.city_id and c.is_Active
+  left join `tlb-data-prod.data_platform.dim_logistics_rider` r on o.country_code = r.country_code and o.primary_rider_id =r.rider_id
+  left join (select * from `fulfillment-dwh-production.curated_data_shared_gcc_service.salesforce_cases` where extract(year from created_date)=extract(year from current_date())
+  and extract(month from created_date)>>=extract(month from current_date())-6
+    and created_date <<= current_date()-2) cs
+  on o.order_code = cs.order_id and contact_reason_l3 in ("Order marked as delivered but didn't receive","Missing item")
+
+  where
+    extract(year from o.created_date)=extract(year from current_date())
+  and extract(month from o.created_date)>>=extract(month from current_date())-6
+    and o.created_date <<= current_date()-2
+    and contact_reason_l3 is not null
+    and primary_rider_id is not null
+    and o.country_code = 'ae'
+
+group by 1,2,3,4,5,6,7,8
+order by 1,2,3,7
+  )
+group by 1,2,3,4,5,6,7,8
+having  case_count >>0]]></_.fcp.ObjectModelEncapsulateLegacy.true...relation>
+        <metadata-records>
+          <metadata-record class='column'>
+            <remote-name>Month</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[Month]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>Month</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_F983528F37E64DF89C8D36F46647E510]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>Country_code</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[Country_code]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>Country_code</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_F983528F37E64DF89C8D36F46647E510]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>city_name</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[city_name]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>city_name</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_F983528F37E64DF89C8D36F46647E510]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>contract_name</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[contract_name]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>contract_name</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_F983528F37E64DF89C8D36F46647E510]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>issue_name</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[issue_name]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>issue_name</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_F983528F37E64DF89C8D36F46647E510]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>is_active</remote-name>
+            <remote-type>11</remote-type>
+            <local-name>[is_active]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>is_active</remote-alias>
+            <local-type>boolean</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_F983528F37E64DF89C8D36F46647E510]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>rideR_id</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[rideR_id]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>rideR_id</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_F983528F37E64DF89C8D36F46647E510]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>rideR_name</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[rideR_name]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>rideR_name</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_F983528F37E64DF89C8D36F46647E510]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>case_count</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[case_count]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>case_count</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_F983528F37E64DF89C8D36F46647E510]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+        </metadata-records>
+      </connection>
+      <aliases enabled='yes' />
+      <column datatype='string' name='[Country_code]' role='dimension' semantic-role='[Country].[ISO3166_2]' type='nominal' />
+      <_.fcp.ObjectModelTableType.true...column caption='Custom SQL Query' datatype='table' name='[__tableau_internal_object_id__].[_F983528F37E64DF89C8D36F46647E510]' role='measure' type='quantitative' />
+      <column datatype='string' name='[city_name]' role='dimension' semantic-role='[City].[Name]' type='nominal' />
+      <drill-paths>
+        <drill-path name='Country_code, city_name'>
+          <field>[Country_code]</field>
+          <field>[city_name]</field>
+        </drill-path>
+      </drill-paths>
+      <layout _.fcp.SchemaViewerObjectModel.false...dim-percentage='0.5' _.fcp.SchemaViewerObjectModel.false...measure-percentage='0.4' dim-ordering='alphabetic' measure-ordering='alphabetic' show-structure='true' />
+      <semantic-values>
+        <semantic-value key='[Country].[Name]' value='&quot;United States&quot;' />
+      </semantic-values>
+      <_.fcp.ObjectModelEncapsulateLegacy.true...object-graph>
+        <objects>
+          <object caption='Custom SQL Query' id='_F983528F37E64DF89C8D36F46647E510'>
+            <properties context=''>
+              <relation connection='bigquery.03ljo9713gk16h17oja7s0gme7s5' name='Custom SQL Query' type='text'><![CDATA[select distinct Month, Country_code, city_name, contract_name,issue_name,is_active,rideR_id,rideR_name, 
+case when ((issue_name='Courier GPS off for X minutes' and sum(case_count)  >>=5) 
+or (issue_name='Courier Fake GPS Usage Detected' and sum(case_count)  >>=1)
+or (issue_name='Dropoff - no gps and delayed' and sum(case_count)  >>=2)
+or (issue_name='Order clicked through' and sum(case_count)  >>=2)
+or (issue_name="Order marked as delivered but didn't receive" and sum(case_count)  >>=2)
+or (issue_name="Missing item" and sum(case_count)  >>=3)
+)
+then sum(case_count) 
+end as case_count
+from
+(select
+  extract(month from i.created_date) as Month,
+  i.country_code,
+  city_name,
+  r.last_contract_name as contract_name,
+  issue_name,
+  r.is_active,
+  rider_id,
+  rider_name,
+  count(distinct issue_id) case_count,
+
+  from `fulfillment-dwh-production.curated_data_shared.issues` i
+  left join `tlb-data-prod.data_platform.dim_logistics_rider` r using (country_code, rider_id)
+  left join `tlb-data-prod.data_platform.dim_logistics_city` ci on ci.country_code = r.country_code and ci.city_id = r.last_city_id and ci.is_Active
+
+  where extract(year from i.created_date)=extract(year from current_date())
+  and extract(month from i.created_date)>>=extract(month from current_date())-6
+    and i.created_date <<= current_date()-2
+    and issue_name in ('Courier Fake GPS Usage Detected','Courier GPS off for X minutes','Dropoff - no gps and delayed','Order clicked through')
+    and i.rider_id is not null
+    and i.country_code = 'ae'
+  group by 1,2,3,4,5,6,7,8
+
+  union all
+
+  select
+  extract(month from cs.created_date) as Month,
+  o.country_code,
+  city_name,
+  r.last_contract_name as contract_name,
+  contact_reason_l3 as issue_name,
+  r.is_active,
+  primary_rider_id as rider_id,
+  rider_name,
+  count(distinct case_id) case_count,
+  from `tlb-data-prod.data_platform.fct_logistics_order` o
+  left join `tlb-data-prod.data_platform.dim_logistics_city` c on o.country_code = c.country_code and o.city_id =c.city_id and c.is_Active
+  left join `tlb-data-prod.data_platform.dim_logistics_rider` r on o.country_code = r.country_code and o.primary_rider_id =r.rider_id
+  left join (select * from `fulfillment-dwh-production.curated_data_shared_gcc_service.salesforce_cases` where extract(year from created_date)=extract(year from current_date())
+  and extract(month from created_date)>>=extract(month from current_date())-6
+    and created_date <<= current_date()-2) cs
+  on o.order_code = cs.order_id and contact_reason_l3 in ("Order marked as delivered but didn't receive","Missing item")
+
+  where
+    extract(year from o.created_date)=extract(year from current_date())
+  and extract(month from o.created_date)>>=extract(month from current_date())-6
+    and o.created_date <<= current_date()-2
+    and contact_reason_l3 is not null
+    and primary_rider_id is not null
+    and o.country_code = 'ae'
+
+group by 1,2,3,4,5,6,7,8
+order by 1,2,3,7
+  )
+group by 1,2,3,4,5,6,7,8
+having  case_count >>0]]></relation>
+            </properties>
+          </object>
+        </objects>
+      </_.fcp.ObjectModelEncapsulateLegacy.true...object-graph>
+    </datasource>
+  </datasources>
+  <worksheets>
+    <worksheet name='Sheet 1'>
+      <repository-location id='Sheet1' path='/t/Talabat/workbooks/Rider' revision='' site='Talabat' />
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='Custom SQL Query (data_platform_logistics)' name='federated.0jzmpyl17xl192174o4pn0umsutx' />
+          </datasources>
+          <datasource-dependencies datasource='federated.0jzmpyl17xl192174o4pn0umsutx'>
+            <column datatype='string' name='[issue_name]' role='dimension' type='nominal' />
+            <column-instance column='[issue_name]' derivation='None' name='[none:issue_name:nk]' pivot='key' type='nominal' />
+            <column-instance column='[rideR_id]' derivation='CountD' name='[pcto:ctd:rideR_id:qk]' pivot='key' type='quantitative'>
+              <table-calc ordering-type='Rows' type='PctTotal' />
+            </column-instance>
+            <column datatype='integer' name='[rideR_id]' role='measure' type='quantitative' />
+          </datasource-dependencies>
+          <aggregation value='true' />
+        </view>
+        <style />
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Pie' />
+            <encodings>
+              <color column='[federated.0jzmpyl17xl192174o4pn0umsutx].[none:issue_name:nk]' />
+              <text column='[federated.0jzmpyl17xl192174o4pn0umsutx].[pcto:ctd:rideR_id:qk]' />
+            </encodings>
+            <style>
+              <style-rule element='mark'>
+                <format attr='mark-labels-show' value='true' />
+                <format attr='mark-labels-cull' value='true' />
+              </style-rule>
+            </style>
+          </pane>
+        </panes>
+        <rows />
+        <cols />
+      </table>
+      <simple-id uuid='{B5A55570-150B-46EC-9431-711FA87B6A42}' />
+    </worksheet>
+  </worksheets>
+  <dashboards>
+    <dashboard _.fcp.AccessibleZoneTabOrder.true...enable-sort-zone-taborder='true' name='Dashboard 1'>
+      <repository-location id='Dashboard1' path='/t/Talabat/workbooks/Rider' revision='' site='Talabat' />
+      <style />
+      <size maxheight='800' maxwidth='1000' minheight='800' minwidth='1000' />
+      <zones />
+      <devicelayouts>
+        <devicelayout auto-generated='true' name='Phone'>
+          <size maxheight='700' minheight='700' sizing-mode='vscroll' />
+          <zones>
+            <zone h='100000' id='6' type-v2='layout-basic' w='100000' x='0' y='0'>
+              <zone h='98000' id='5' param='vert' type-v2='layout-flow' w='98400' x='800' y='1000' />
+              <zone-style>
+                <format attr='border-color' value='#000000' />
+                <format attr='border-style' value='none' />
+                <format attr='border-width' value='0' />
+                <format attr='margin' value='8' />
+              </zone-style>
+            </zone>
+          </zones>
+        </devicelayout>
+      </devicelayouts>
+      <simple-id uuid='{FD2CEFF5-2FF3-4956-B731-DAC4692EA5D2}' />
+    </dashboard>
+  </dashboards>
+  <windows source-height='30'>
+    <window class='worksheet' maximized='true' name='Sheet 1'>
+      <cards>
+        <edge name='left'>
+          <strip size='160'>
+            <card type='pages' />
+            <card type='filters' />
+            <card type='marks' />
+          </strip>
+        </edge>
+        <edge name='top'>
+          <strip size='2147483647'>
+            <card type='columns' />
+          </strip>
+          <strip size='2147483647'>
+            <card type='rows' />
+          </strip>
+          <strip size='31'>
+            <card type='title' />
+          </strip>
+        </edge>
+        <edge name='right'>
+          <strip size='160'>
+            <card pane-specification-id='0' param='[federated.0jzmpyl17xl192174o4pn0umsutx].[none:issue_name:nk]' type='color' />
+          </strip>
+        </edge>
+      </cards>
+      <viewpoint>
+        <highlight>
+          <color-one-way>
+            <field>[federated.0jzmpyl17xl192174o4pn0umsutx].[none:issue_name:nk]</field>
+          </color-one-way>
+        </highlight>
+      </viewpoint>
+      <simple-id uuid='{8F8EFCAF-CBF0-4611-A1EB-897F8882D596}' />
+    </window>
+    <window class='dashboard' name='Dashboard 1'>
+      <viewpoints />
+      <active id='-1' />
+      <simple-id uuid='{C9389A51-B520-4AF8-A951-AAA37A0E87B2}' />
+    </window>
+  </windows>
+</workbook>

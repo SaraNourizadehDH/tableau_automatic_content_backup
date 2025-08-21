@@ -1,0 +1,3050 @@
+<?xml version='1.0' encoding='utf-8' ?>
+
+<!-- build 20221.22.1108.1355                               -->
+<workbook original-version='18.1' source-build='2022.1.9 (20221.22.1108.1355)' version='18.1' xml:base='http://ip-172-31-0-83:8513' xmlns:user='http://www.tableausoftware.com/xml/user'>
+  <document-format-change-manifest>
+    <_.fcp.AccessibleZoneTabOrder.true...AccessibleZoneTabOrder />
+    <_.fcp.AnimationOnByDefault.true...AnimationOnByDefault />
+    <AutoCreateAndUpdateDSDPhoneLayouts />
+    <CascadingFilters />
+    <CascadingFiltersHamburgerUI />
+    <IntuitiveSorting />
+    <IntuitiveSorting_SP2 />
+    <_.fcp.MarkAnimation.true...MarkAnimation />
+    <_.fcp.ObjectModelEncapsulateLegacy.true...ObjectModelEncapsulateLegacy />
+    <_.fcp.ObjectModelExtractV2.true...ObjectModelExtractV2 />
+    <_.fcp.ObjectModelTableType.true...ObjectModelTableType />
+    <_.fcp.SchemaViewerObjectModel.true...SchemaViewerObjectModel />
+    <SetMembershipControl />
+    <SheetIdentifierTracking />
+    <SortTagCleanup />
+    <WindowsPersistSimpleIdentifiers />
+    <WorksheetBackgroundTransparency />
+    <ZoneBackgroundTransparency />
+  </document-format-change-manifest>
+  <repository-location derived-from='http://ip-172-31-0-74:8901/t/Talabat/workbooks/Logistics?rev=1.0' id='Logistics' path='/t/Talabat/workbooks' revision='1.1' site='Talabat' />
+  <preferences />
+  <_.fcp.AnimationOnByDefault.false...style>
+    <_.fcp.AnimationOnByDefault.false..._.fcp.MarkAnimation.true...style-rule element='animation'>
+      <_.fcp.AnimationOnByDefault.false...format attr='animation-on' value='ao-on' />
+    </_.fcp.AnimationOnByDefault.false..._.fcp.MarkAnimation.true...style-rule>
+  </_.fcp.AnimationOnByDefault.false...style>
+  <datasources>
+    <datasource caption='Custom SQL Query (data_platform_logistics)' inline='true' name='federated.1q384ho133agad14ntnza0mnomj4' version='18.1'>
+      <connection class='federated'>
+        <named-connections>
+          <named-connection caption='BigQuery' name='bigquery.01c6edw0e8fsyz1asbnpn021glnv'>
+            <connection CATALOG='tlb-data-dev' EXECCATALOG='tlb-data-dev' authentication='oauth' bq-dataset-fetch-rows='' bq-fetch-rows='' bq-fetch-tasks='' bq-large-fetch-rows='' bq-project-fetch-rows='' bq-response-rows='' class='bigquery' connection-dialect='google-sql' project='tlb-data-dev' schema='data_platform_logistics' server-oauth='' username='moaazsalah@talabat.com' workgroup-auth-mode='prompt' />
+          </named-connection>
+        </named-connections>
+        <_.fcp.ObjectModelEncapsulateLegacy.false...relation connection='bigquery.01c6edw0e8fsyz1asbnpn021glnv' name='Custom SQL Query' type='text'><![CDATA[WITH Raw AS (
+SELECT  
+    o.created_date,
+    rider.country_code,
+    o.order_code,
+    l.city_name,
+    zone_name,
+    l.area_name,
+    timings.to_customer_time / 60 as to_customer,
+    timings.actual_delivery_time / 60 as DT,
+    d.dropoff_distance_manhattan  as dropoff_distance, 
+    d.is_stacked_intravendor as is_stacked,
+    rider.vendor.vertical_type, 
+    Min (ST_DISTANCE(rider.customer.location, geo_point))  as stack_distance
+
+FROM
+    `fulfillment-dwh-production.curated_data_shared.orders_v2` o
+join unnest (rider.deliveries) d
+Join unnest (transitions) t
+
+left join `tlb-data-prod.data_platform.fct_logistics_delivery_payment_mapping` f
+ on  CAST(f.order_id AS STRING) = CAST(O.order_code AS STRING) and LOWER(f.country_Code) = LOWER(o.rider.country_code)
+
+LEFT JOIN
+    `tlb-data-prod.data_platform.dim_location_info` l
+ON
+    LOWER(l.country_code) = LOWER(o.rider.country_code)  and l.location_id = f.delivery_location_id 
+
+ 
+ 
+ WHERE  o.created_date >>= DATE_TRUNC(DATE_ADD(DATE_TRUNC(CURRENT_DATE(), MONTH), INTERVAL -3 MONTH), MONTH) 
+AND f.created_date >>= DATE_TRUNC(DATE_ADD(DATE_TRUNC(CURRENT_DATE(), MONTH), INTERVAL -3 MONTH), MONTH) 
+AND rider.vendor.vertical_type <<>> 'courier_business'
+AND rider.country_code IN ('qa', 'om', 'jo', 'eg', 'ae', 'kw', 'bh', 'iq')
+AND (rider.country_code <<>> 'ae' OR o.entity_id LIKE 'TB%' OR o.entity_id LIKE 'ODR%')
+AND not o.is_preorder
+AND not d.is_returning
+AND timings.actual_delivery_time is not null
+AND rider.vendor.vertical_type is not null
+AND zone_name is not null
+AND l.city_name is not null
+AND d.is_stacked_intravendor is not null
+
+group by 1,2,3,4,5,6,7,8,9,10,11
+)
+ 
+SELECT 
+    country_code,
+    DATE_TRUNC(created_date, WEEK) Date,
+    city_name,
+    Zone_name,
+    raw.Area_name,
+    raw.vertical_type,
+    is_stacked,
+    case when is_stacked is true then 3 else 12 end as Threshold,
+    Avg(
+    CASE
+    WHEN Raw.is_stacked = True THEN raw.stack_distance
+    ELSE raw.dropoff_distance 
+    END) / 1000 AS dropoff_distance,
+    count (distinct order_code) as total_orders,
+    count (distinct 
+    case when raw.dropoff_distance >> 12000 and is_stacked is FALSE  then order_code 
+         when raw.stack_distance >> 3000 and is_stacked is TRUE  then order_code 
+    end) as orders_above_threshold,
+    round (AVG (dt)) as DT,
+   Round(AVG(to_customer)) as To_Customer_Time,
+
+  
+FROM Raw
+
+where dropoff_distance <<= 100000 or stack_distance <<= 100000
+
+GROUP BY 1, 2, 3, 4, 5, 6,7,8
+ORDER BY 1, 2, 3, 4, 5, 6, 7,8,9]]></_.fcp.ObjectModelEncapsulateLegacy.false...relation>
+        <_.fcp.ObjectModelEncapsulateLegacy.true...relation connection='bigquery.01c6edw0e8fsyz1asbnpn021glnv' name='Custom SQL Query' type='text'><![CDATA[WITH Raw AS (
+SELECT  
+    o.created_date,
+    rider.country_code,
+    o.order_code,
+    l.city_name,
+    zone_name,
+    l.area_name,
+    timings.to_customer_time / 60 as to_customer,
+    timings.actual_delivery_time / 60 as DT,
+    d.dropoff_distance_manhattan  as dropoff_distance, 
+    d.is_stacked_intravendor as is_stacked,
+    rider.vendor.vertical_type, 
+    Min (ST_DISTANCE(rider.customer.location, geo_point))  as stack_distance
+
+FROM
+    `fulfillment-dwh-production.curated_data_shared.orders_v2` o
+join unnest (rider.deliveries) d
+Join unnest (transitions) t
+
+left join `tlb-data-prod.data_platform.fct_logistics_delivery_payment_mapping` f
+ on  CAST(f.order_id AS STRING) = CAST(O.order_code AS STRING) and LOWER(f.country_Code) = LOWER(o.rider.country_code)
+
+LEFT JOIN
+    `tlb-data-prod.data_platform.dim_location_info` l
+ON
+    LOWER(l.country_code) = LOWER(o.rider.country_code)  and l.location_id = f.delivery_location_id 
+
+ 
+ 
+ WHERE  o.created_date >>= DATE_TRUNC(DATE_ADD(DATE_TRUNC(CURRENT_DATE(), MONTH), INTERVAL -3 MONTH), MONTH) 
+AND f.created_date >>= DATE_TRUNC(DATE_ADD(DATE_TRUNC(CURRENT_DATE(), MONTH), INTERVAL -3 MONTH), MONTH) 
+AND rider.vendor.vertical_type <<>> 'courier_business'
+AND rider.country_code IN ('qa', 'om', 'jo', 'eg', 'ae', 'kw', 'bh', 'iq')
+AND (rider.country_code <<>> 'ae' OR o.entity_id LIKE 'TB%' OR o.entity_id LIKE 'ODR%')
+AND not o.is_preorder
+AND not d.is_returning
+AND timings.actual_delivery_time is not null
+AND rider.vendor.vertical_type is not null
+AND zone_name is not null
+AND l.city_name is not null
+AND d.is_stacked_intravendor is not null
+
+group by 1,2,3,4,5,6,7,8,9,10,11
+)
+ 
+SELECT 
+    country_code,
+    DATE_TRUNC(created_date, WEEK) Date,
+    city_name,
+    Zone_name,
+    raw.Area_name,
+    raw.vertical_type,
+    is_stacked,
+    case when is_stacked is true then 3 else 12 end as Threshold,
+    Avg(
+    CASE
+    WHEN Raw.is_stacked = True THEN raw.stack_distance
+    ELSE raw.dropoff_distance 
+    END) / 1000 AS dropoff_distance,
+    count (distinct order_code) as total_orders,
+    count (distinct 
+    case when raw.dropoff_distance >> 12000 and is_stacked is FALSE  then order_code 
+         when raw.stack_distance >> 3000 and is_stacked is TRUE  then order_code 
+    end) as orders_above_threshold,
+    round (AVG (dt)) as DT,
+   Round(AVG(to_customer)) as To_Customer_Time,
+
+  
+FROM Raw
+
+where dropoff_distance <<= 100000 or stack_distance <<= 100000
+
+GROUP BY 1, 2, 3, 4, 5, 6,7,8
+ORDER BY 1, 2, 3, 4, 5, 6, 7,8,9]]></_.fcp.ObjectModelEncapsulateLegacy.true...relation>
+        <metadata-records>
+          <metadata-record class='column'>
+            <remote-name>country_code</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[country_code]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>country_code</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_3A272B313DE843F6942EB4AEADEA82A9]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>Date</remote-name>
+            <remote-type>7</remote-type>
+            <local-name>[Date]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>Date</remote-alias>
+            <local-type>date</local-type>
+            <aggregation>Year</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_3A272B313DE843F6942EB4AEADEA82A9]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>city_name</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[city_name]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>city_name</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_3A272B313DE843F6942EB4AEADEA82A9]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>Zone_name</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[Zone_name]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>Zone_name</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_3A272B313DE843F6942EB4AEADEA82A9]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>Area_name</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[Area_name]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>Area_name</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_3A272B313DE843F6942EB4AEADEA82A9]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>vertical_type</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[vertical_type]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>vertical_type</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_3A272B313DE843F6942EB4AEADEA82A9]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>is_stacked</remote-name>
+            <remote-type>11</remote-type>
+            <local-name>[is_stacked]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>is_stacked</remote-alias>
+            <local-type>boolean</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_3A272B313DE843F6942EB4AEADEA82A9]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>Threshold</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[Threshold]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>Threshold</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_3A272B313DE843F6942EB4AEADEA82A9]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>dropoff_distance</remote-name>
+            <remote-type>5</remote-type>
+            <local-name>[dropoff_distance]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>dropoff_distance</remote-alias>
+            <local-type>real</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_3A272B313DE843F6942EB4AEADEA82A9]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>total_orders</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[total_orders]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>total_orders</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_3A272B313DE843F6942EB4AEADEA82A9]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>orders_above_threshold</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[orders_above_threshold]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>orders_above_threshold</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_3A272B313DE843F6942EB4AEADEA82A9]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>DT</remote-name>
+            <remote-type>5</remote-type>
+            <local-name>[DT]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>DT</remote-alias>
+            <local-type>real</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_3A272B313DE843F6942EB4AEADEA82A9]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>To_Customer_Time</remote-name>
+            <remote-type>5</remote-type>
+            <local-name>[To_Customer_Time]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>To_Customer_Time</remote-alias>
+            <local-type>real</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_3A272B313DE843F6942EB4AEADEA82A9]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+        </metadata-records>
+      </connection>
+      <aliases enabled='yes' />
+      <column datatype='string' name='[:Measure Names]' role='dimension' type='nominal'>
+        <aliases>
+          <alias key='&quot;[federated.1q384ho133agad14ntnza0mnomj4].[avg:Calculation_535928364238417921:qk]&quot;' value='Above Threshold %' />
+          <alias key='&quot;[federated.1q384ho133agad14ntnza0mnomj4].[avg:dropoff_distance:qk]&quot;' value='Dropoff Distance' />
+          <alias key='&quot;[federated.1q384ho133agad14ntnza0mnomj4].[avg:dt:qk]&quot;' value='DT' />
+          <alias key='&quot;[federated.1q384ho133agad14ntnza0mnomj4].[avg:DT:qk]&quot;' value='Delivery Time' />
+          <alias key='&quot;[federated.1q384ho133agad14ntnza0mnomj4].[avg:threshold:qk]&quot;' value='Threshold' />
+          <alias key='&quot;[federated.1q384ho133agad14ntnza0mnomj4].[avg:Threshold:qk]&quot;' value='Distance Threshold' />
+          <alias key='&quot;[federated.1q384ho133agad14ntnza0mnomj4].[avg:To_Customer_Time:qk]&quot;' value='To Customer_Time' />
+          <alias key='&quot;[federated.1q384ho133agad14ntnza0mnomj4].[avg:to_customer:qk]&quot;' value='To Customer' />
+          <alias key='&quot;[federated.1q384ho133agad14ntnza0mnomj4].[sum:orders_above_threshold:qk]&quot;' value='Orders Above Threshold' />
+          <alias key='&quot;[federated.1q384ho133agad14ntnza0mnomj4].[sum:To_Customer_Time:qk]&quot;' value='To Customer Time' />
+          <alias key='&quot;[federated.1q384ho133agad14ntnza0mnomj4].[usr:Calculation_535928364238417921:qk]&quot;' value='Above Threshold' />
+        </aliases>
+      </column>
+      <column caption='Area Name' datatype='string' name='[Area_name]' role='dimension' type='nominal' />
+      <column caption='percentage_above_threshold' datatype='real' name='[Calculation_535928364238417921]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='SUM([orders_above_threshold]) / SUM([total_orders])' />
+      </column>
+      <column caption='Distance Bucket' datatype='integer' name='[Calculation_535928364321206278]' role='measure' type='ordinal'>
+        <calculation class='tableau' formula='INT([dropoff_distance] / 1) * 1' />
+      </column>
+      <column datatype='real' name='[DT]' role='measure' type='quantitative' />
+      <column datatype='integer' name='[Threshold]' role='measure' type='quantitative' />
+      <column datatype='real' name='[To_Customer_Time]' role='measure' type='quantitative' />
+      <column aggregate-role-from='[city_name]' caption='Zone Name' datatype='string' name='[Zone_name]' role='dimension' type='nominal' />
+      <_.fcp.ObjectModelTableType.true...column caption='Custom SQL Query' datatype='table' name='[__tableau_internal_object_id__].[_3A272B313DE843F6942EB4AEADEA82A9]' role='measure' type='quantitative' />
+      <column caption='City Name' datatype='string' name='[city_name]' role='dimension' semantic-role='[City].[Name]' type='nominal' />
+      <column caption='Country Code' datatype='string' name='[country_code]' role='dimension' semantic-role='[Country].[ISO3166_2]' type='nominal' />
+      <column aggregation='Sum' datatype='real' name='[dropoff_distance]' role='dimension' type='ordinal' />
+      <column datatype='integer' name='[orders_above_threshold]' role='measure' type='quantitative' />
+      <column caption='Total Order' datatype='integer' name='[total_orders]' role='measure' type='quantitative' />
+      <column-instance column='[Calculation_535928364238417921]' derivation='Avg' name='[avg:Calculation_535928364238417921:qk]' pivot='key' type='quantitative' />
+      <column-instance column='[DT]' derivation='Avg' name='[avg:DT:qk]' pivot='key' type='quantitative' />
+      <column-instance column='[Threshold]' derivation='Avg' name='[avg:Threshold:qk]' pivot='key' type='quantitative' />
+      <column-instance column='[To_Customer_Time]' derivation='Avg' name='[avg:To_Customer_Time:qk]' pivot='key' type='quantitative' />
+      <column-instance column='[dropoff_distance]' derivation='Avg' name='[avg:dropoff_distance:qk]' pivot='key' type='quantitative' />
+      <column-instance column='[Calculation_535928364321206278]' derivation='None' name='[none:Calculation_535928364321206278:qk]' pivot='key' type='quantitative' />
+      <column-instance column='[city_name]' derivation='None' name='[none:city_name:nk]' pivot='key' type='nominal' />
+      <column-instance column='[Calculation_535928364238417921]' derivation='Avg' name='[pcto:avg:Calculation_535928364238417921:qk]' pivot='key' type='quantitative'>
+        <table-calc ordering-type='Rows' type='PctTotal' />
+      </column-instance>
+      <column-instance column='[Calculation_535928364238417921]' derivation='Count' name='[pcto:cnt:Calculation_535928364238417921:qk]' pivot='key' type='quantitative'>
+        <table-calc ordering-type='Rows' type='PctTotal' />
+      </column-instance>
+      <column-instance column='[Calculation_535928364238417921]' derivation='Sum' name='[pcto:sum:Calculation_535928364238417921:qk]' pivot='key' type='quantitative'>
+        <table-calc ordering-type='Rows' type='PctTotal' />
+      </column-instance>
+      <column-instance column='[total_orders]' derivation='Sum' name='[pcto:sum:total_orders:qk:2]' pivot='key' type='quantitative'>
+        <table-calc ordering-field='[federated.1q384ho133agad14ntnza0mnomj4].[none:Calculation_535928364321206278:qk]' ordering-type='Field' type='PctTotal' />
+      </column-instance>
+      <column-instance column='[To_Customer_Time]' derivation='Sum' name='[sum:To_Customer_Time:qk]' pivot='key' type='quantitative' />
+      <column-instance column='[orders_above_threshold]' derivation='Sum' name='[sum:orders_above_threshold:qk]' pivot='key' type='quantitative' />
+      <column-instance column='[Calculation_535928364238417921]' derivation='User' name='[usr:Calculation_535928364238417921:qk]' pivot='key' type='quantitative' />
+      <drill-paths>
+        <drill-path name='country_code, city_name'>
+          <field>[country_code]</field>
+          <field>[city_name]</field>
+          <field>[Zone_name]</field>
+          <field>[Area_name]</field>
+        </drill-path>
+      </drill-paths>
+      <extract _.fcp.ObjectModelExtractV2.true...object-id='' count='-1' enabled='true' units='records'>
+        <connection access_mode='readonly' author-locale='en_US' class='hyper' dbname='extract/84/de/{A76C041F-5E50-4494-A578-FFFA894C29DF}/federated_1q384ho133agad14ntnza0.hyper' extract-engine='true' schema='Extract' site-luid='a177d8a4-b32b-4d5c-9046-bb136680e5b0' sslmode='' tablename='Extract' update-time='01/01/2024 03:02:16 AM' username=''>
+          <_.fcp.ObjectModelEncapsulateLegacy.false...relation name='Extract' table='[Extract].[Extract]' type='table' />
+          <_.fcp.ObjectModelEncapsulateLegacy.true...relation name='Extract' table='[Extract].[Extract]' type='table' />
+          <metadata-records>
+            <metadata-record class='column'>
+              <remote-name>country_code</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[country_code]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>country_code</remote-alias>
+              <ordinal>0</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>8</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_3A272B313DE843F6942EB4AEADEA82A9]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>Date</remote-name>
+              <remote-type>133</remote-type>
+              <local-name>[Date]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>Date</remote-alias>
+              <ordinal>1</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>date</local-type>
+              <aggregation>Year</aggregation>
+              <approx-count>13</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_3A272B313DE843F6942EB4AEADEA82A9]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>city_name</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[city_name]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>city_name</remote-alias>
+              <ordinal>2</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>147</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_3A272B313DE843F6942EB4AEADEA82A9]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>Zone_name</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[Zone_name]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>Zone_name</remote-alias>
+              <ordinal>3</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>947</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_3A272B313DE843F6942EB4AEADEA82A9]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>Area_name</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[Area_name]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>Area_name</remote-alias>
+              <ordinal>4</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>16454</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_3A272B313DE843F6942EB4AEADEA82A9]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>vertical_type</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[vertical_type]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>vertical_type</remote-alias>
+              <ordinal>5</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>15</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_3A272B313DE843F6942EB4AEADEA82A9]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>is_stacked</remote-name>
+              <remote-type>11</remote-type>
+              <local-name>[is_stacked]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>is_stacked</remote-alias>
+              <ordinal>6</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>boolean</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>2</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_3A272B313DE843F6942EB4AEADEA82A9]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>Threshold</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[Threshold]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>Threshold</remote-alias>
+              <ordinal>7</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>2</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_3A272B313DE843F6942EB4AEADEA82A9]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>dropoff_distance</remote-name>
+              <remote-type>5</remote-type>
+              <local-name>[dropoff_distance]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>dropoff_distance</remote-alias>
+              <ordinal>8</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>real</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>256536</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_3A272B313DE843F6942EB4AEADEA82A9]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>total_orders</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[total_orders]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>total_orders</remote-alias>
+              <ordinal>9</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>4540</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_3A272B313DE843F6942EB4AEADEA82A9]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>orders_above_threshold</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[orders_above_threshold]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>orders_above_threshold</remote-alias>
+              <ordinal>10</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>1554</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_3A272B313DE843F6942EB4AEADEA82A9]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>DT</remote-name>
+              <remote-type>5</remote-type>
+              <local-name>[DT]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>DT</remote-alias>
+              <ordinal>11</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>real</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>228</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_3A272B313DE843F6942EB4AEADEA82A9]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>To_Customer_Time</remote-name>
+              <remote-type>5</remote-type>
+              <local-name>[To_Customer_Time]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>To_Customer_Time</remote-alias>
+              <ordinal>12</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>real</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>142</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_3A272B313DE843F6942EB4AEADEA82A9]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+          </metadata-records>
+        </connection>
+      </extract>
+      <layout _.fcp.SchemaViewerObjectModel.false...dim-percentage='0.5' _.fcp.SchemaViewerObjectModel.false...measure-percentage='0.4' dim-ordering='alphabetic' measure-ordering='alphabetic' show-structure='true' />
+      <style>
+        <style-rule element='mark'>
+          <encoding attr='color' field='[none:city_name:nk]' type='palette'>
+            <map to='#499894'>
+              <bucket>&quot;Al Mahallah Al Kubra&quot;</bucket>
+            </map>
+            <map to='#499894'>
+              <bucket>&quot;Duqm&quot;</bucket>
+            </map>
+            <map to='#499894'>
+              <bucket>&quot;Muttrah&quot;</bucket>
+            </map>
+            <map to='#499894'>
+              <bucket>&quot;Zagazig&quot;</bucket>
+            </map>
+            <map to='#4e79a7'>
+              <bucket>&quot;Buraimi&quot;</bucket>
+            </map>
+            <map to='#4e79a7'>
+              <bucket>&quot;Karak&quot;</bucket>
+            </map>
+            <map to='#4e79a7'>
+              <bucket>&quot;Sinaw&quot;</bucket>
+            </map>
+            <map to='#4e79a7'>
+              <bucket>&quot;Tanta&quot;</bucket>
+            </map>
+            <map to='#59a14f'>
+              <bucket>&quot;Ajman&quot;</bucket>
+            </map>
+            <map to='#59a14f'>
+              <bucket>&quot;Damietta New&quot;</bucket>
+            </map>
+            <map to='#59a14f'>
+              <bucket>&quot;Mafraq&quot;</bucket>
+            </map>
+            <map to='#59a14f'>
+              <bucket>&quot;Sur&quot;</bucket>
+            </map>
+            <map to='#79706e'>
+              <bucket>&quot;Amman&quot;</bucket>
+            </map>
+            <map to='#79706e'>
+              <bucket>&quot;Hawally&quot;</bucket>
+            </map>
+            <map to='#79706e'>
+              <bucket>&quot;Ras Al Khaima&quot;</bucket>
+            </map>
+            <map to='#86bcb6'>
+              <bucket>&quot;Al Suwayq&quot;</bucket>
+            </map>
+            <map to='#86bcb6'>
+              <bucket>&quot;Erbil&quot;</bucket>
+            </map>
+            <map to='#86bcb6'>
+              <bucket>&quot;Nizwa&quot;</bucket>
+            </map>
+            <map to='#86bcb6'>
+              <bucket>&quot;Zarqa&quot;</bucket>
+            </map>
+            <map to='#8cd17d'>
+              <bucket>&quot;Al Ain&quot;</bucket>
+            </map>
+            <map to='#8cd17d'>
+              <bucket>&quot;Doha&quot;</bucket>
+            </map>
+            <map to='#8cd17d'>
+              <bucket>&quot;Mansoura&quot;</bucket>
+            </map>
+            <map to='#8cd17d'>
+              <bucket>&quot;Talkha&quot;</bucket>
+            </map>
+            <map to='#9d7660'>
+              <bucket>&quot;Banha&quot;</bucket>
+            </map>
+            <map to='#9d7660'>
+              <bucket>&quot;Jalan&quot;</bucket>
+            </map>
+            <map to='#9d7660'>
+              <bucket>&quot;Sharjah&quot;</bucket>
+            </map>
+            <map to='#a0cbe8'>
+              <bucket>&quot;Abu Dhabi&quot;</bucket>
+            </map>
+            <map to='#a0cbe8'>
+              <bucket>&quot;Cairo&quot;</bucket>
+            </map>
+            <map to='#a0cbe8'>
+              <bucket>&quot;Kuwait City (Capital)&quot;</bucket>
+            </map>
+            <map to='#a0cbe8'>
+              <bucket>&quot;Sohar&quot;</bucket>
+            </map>
+            <map to='#b07aa1'>
+              <bucket>&quot;Bahla&quot;</bucket>
+            </map>
+            <map to='#b07aa1'>
+              <bucket>&quot;Irbid&quot;</bucket>
+            </map>
+            <map to='#b07aa1'>
+              <bucket>&quot;Salt&quot;</bucket>
+            </map>
+            <map to='#b6992d'>
+              <bucket>&quot;Al Jahra&quot;</bucket>
+            </map>
+            <map to='#b6992d'>
+              <bucket>&quot;Dubai&quot;</bucket>
+            </map>
+            <map to='#b6992d'>
+              <bucket>&quot;Mubarak Al-kabir&quot;</bucket>
+            </map>
+            <map to='#bab0ac'>
+              <bucket>&quot;Aqaba&quot;</bucket>
+            </map>
+            <map to='#bab0ac'>
+              <bucket>&quot;Hurghada&quot;</bucket>
+            </map>
+            <map to='#bab0ac'>
+              <bucket>&quot;Ras El Bar &quot;</bucket>
+            </map>
+            <map to='#d37295'>
+              <bucket>&quot;Assiut&quot;</bucket>
+            </map>
+            <map to='#d37295'>
+              <bucket>&quot;Ibra &quot;</bucket>
+            </map>
+            <map to='#d37295'>
+              <bucket>&quot;Rustaq&quot;</bucket>
+            </map>
+            <map to='#d4a6c8'>
+              <bucket>&quot;Bahrain&quot;</bucket>
+            </map>
+            <map to='#d4a6c8'>
+              <bucket>&quot;Ismailia&quot;</bucket>
+            </map>
+            <map to='#d4a6c8'>
+              <bucket>&quot;Seeb&quot;</bucket>
+            </map>
+            <map to='#d7b5a6'>
+              <bucket>&quot;Barka&quot;</bucket>
+            </map>
+            <map to='#d7b5a6'>
+              <bucket>&quot;Bosher&quot;</bucket>
+            </map>
+            <map to='#d7b5a6'>
+              <bucket>&quot;Jerash&quot;</bucket>
+            </map>
+            <map to='#d7b5a6'>
+              <bucket>&quot;Shebeen El Koom&quot;</bucket>
+            </map>
+            <map to='#e15759'>
+              <bucket>&quot;Alexandria&quot;</bucket>
+            </map>
+            <map to='#e15759'>
+              <bucket>&quot;Farwaniya&quot;</bucket>
+            </map>
+            <map to='#e15759'>
+              <bucket>&quot;Port Said&quot;</bucket>
+            </map>
+            <map to='#f1ce63'>
+              <bucket>&quot;Al Khabourah&quot;</bucket>
+            </map>
+            <map to='#f1ce63'>
+              <bucket>&quot;Duhok&quot;</bucket>
+            </map>
+            <map to='#f1ce63'>
+              <bucket>&quot;Muscat&quot;</bucket>
+            </map>
+            <map to='#f1ce63'>
+              <bucket>&quot;Umm Al-Quwain&quot;</bucket>
+            </map>
+            <map to='#f28e2b'>
+              <bucket>&quot;Ahmadi&quot;</bucket>
+            </map>
+            <map to='#f28e2b'>
+              <bucket>&quot;Damanhour&quot;</bucket>
+            </map>
+            <map to='#f28e2b'>
+              <bucket>&quot;Ma&apos;an&quot;</bucket>
+            </map>
+            <map to='#f28e2b'>
+              <bucket>&quot;Suez&quot;</bucket>
+            </map>
+            <map to='#fabfd2'>
+              <bucket>&quot;Baghdad&quot;</bucket>
+            </map>
+            <map to='#fabfd2'>
+              <bucket>&quot;Ibri&quot;</bucket>
+            </map>
+            <map to='#fabfd2'>
+              <bucket>&quot;Salalah&quot;</bucket>
+            </map>
+            <map to='#ff9d9a'>
+              <bucket>&quot;Amerat&quot;</bucket>
+            </map>
+            <map to='#ff9d9a'>
+              <bucket>&quot;Fujairah&quot;</bucket>
+            </map>
+            <map to='#ff9d9a'>
+              <bucket>&quot;Ramtha&quot;</bucket>
+            </map>
+            <map to='#ffbe7d'>
+              <bucket>&quot;Ajloun&quot;</bucket>
+            </map>
+            <map to='#ffbe7d'>
+              <bucket>&quot;Damietta&quot;</bucket>
+            </map>
+            <map to='#ffbe7d'>
+              <bucket>&quot;Madaba&quot;</bucket>
+            </map>
+            <map to='#ffbe7d'>
+              <bucket>&quot;Sulaymaniyah&quot;</bucket>
+            </map>
+          </encoding>
+          <encoding attr='color' field='[:Measure Names]' palette='blue_10_0' type='palette'>
+            <map to='#2a5783'>
+              <bucket>&quot;[federated.1q384ho133agad14ntnza0mnomj4].[usr:Calculation_3296071987340877825:qk]&quot;</bucket>
+            </map>
+            <map to='#2a5783'>
+              <bucket>&quot;[federated.1q384ho133agad14ntnza0mnomj4].[usr:Calculation_535928364238417921:qk]&quot;</bucket>
+            </map>
+            <map to='#4e79a7'>
+              <bucket>&quot;[federated.1q384ho133agad14ntnza0mnomj4].[pcto:avg:Calculation_535928364238417921:qk]&quot;</bucket>
+            </map>
+            <map to='#4e79a7'>
+              <bucket>&quot;[federated.1q384ho133agad14ntnza0mnomj4].[pcto:cnt:Calculation_535928364238417921:qk]&quot;</bucket>
+            </map>
+            <map to='#4e79a7'>
+              <bucket>&quot;[federated.1q384ho133agad14ntnza0mnomj4].[pcto:sum:Calculation_535928364238417921:qk]&quot;</bucket>
+            </map>
+            <map to='#6798c1'>
+              <bucket>&quot;[federated.1q384ho133agad14ntnza0mnomj4].[pcto:sum:total_orders:qk:2]&quot;</bucket>
+            </map>
+          </encoding>
+        </style-rule>
+      </style>
+      <semantic-values>
+        <semantic-value key='[Country].[Name]' value='&quot;United States&quot;' />
+      </semantic-values>
+      <date-options start-of-week='saturday' />
+      <_.fcp.ObjectModelEncapsulateLegacy.true...object-graph>
+        <objects>
+          <object caption='Custom SQL Query' id='_3A272B313DE843F6942EB4AEADEA82A9'>
+            <properties context=''>
+              <relation connection='bigquery.01c6edw0e8fsyz1asbnpn021glnv' name='Custom SQL Query' type='text'><![CDATA[WITH Raw AS (
+SELECT  
+    o.created_date,
+    rider.country_code,
+    o.order_code,
+    l.city_name,
+    zone_name,
+    l.area_name,
+    timings.to_customer_time / 60 as to_customer,
+    timings.actual_delivery_time / 60 as DT,
+    d.dropoff_distance_manhattan  as dropoff_distance, 
+    d.is_stacked_intravendor as is_stacked,
+    rider.vendor.vertical_type, 
+    Min (ST_DISTANCE(rider.customer.location, geo_point))  as stack_distance
+
+FROM
+    `fulfillment-dwh-production.curated_data_shared.orders_v2` o
+join unnest (rider.deliveries) d
+Join unnest (transitions) t
+
+left join `tlb-data-prod.data_platform.fct_logistics_delivery_payment_mapping` f
+ on  CAST(f.order_id AS STRING) = CAST(O.order_code AS STRING) and LOWER(f.country_Code) = LOWER(o.rider.country_code)
+
+LEFT JOIN
+    `tlb-data-prod.data_platform.dim_location_info` l
+ON
+    LOWER(l.country_code) = LOWER(o.rider.country_code)  and l.location_id = f.delivery_location_id 
+
+ 
+ 
+ WHERE  o.created_date >>= DATE_TRUNC(DATE_ADD(DATE_TRUNC(CURRENT_DATE(), MONTH), INTERVAL -3 MONTH), MONTH) 
+AND f.created_date >>= DATE_TRUNC(DATE_ADD(DATE_TRUNC(CURRENT_DATE(), MONTH), INTERVAL -3 MONTH), MONTH) 
+AND rider.vendor.vertical_type <<>> 'courier_business'
+AND rider.country_code IN ('qa', 'om', 'jo', 'eg', 'ae', 'kw', 'bh', 'iq')
+AND (rider.country_code <<>> 'ae' OR o.entity_id LIKE 'TB%' OR o.entity_id LIKE 'ODR%')
+AND not o.is_preorder
+AND not d.is_returning
+AND timings.actual_delivery_time is not null
+AND rider.vendor.vertical_type is not null
+AND zone_name is not null
+AND l.city_name is not null
+AND d.is_stacked_intravendor is not null
+
+group by 1,2,3,4,5,6,7,8,9,10,11
+)
+ 
+SELECT 
+    country_code,
+    DATE_TRUNC(created_date, WEEK) Date,
+    city_name,
+    Zone_name,
+    raw.Area_name,
+    raw.vertical_type,
+    is_stacked,
+    case when is_stacked is true then 3 else 12 end as Threshold,
+    Avg(
+    CASE
+    WHEN Raw.is_stacked = True THEN raw.stack_distance
+    ELSE raw.dropoff_distance 
+    END) / 1000 AS dropoff_distance,
+    count (distinct order_code) as total_orders,
+    count (distinct 
+    case when raw.dropoff_distance >> 12000 and is_stacked is FALSE  then order_code 
+         when raw.stack_distance >> 3000 and is_stacked is TRUE  then order_code 
+    end) as orders_above_threshold,
+    round (AVG (dt)) as DT,
+   Round(AVG(to_customer)) as To_Customer_Time,
+
+  
+FROM Raw
+
+where dropoff_distance <<= 100000 or stack_distance <<= 100000
+
+GROUP BY 1, 2, 3, 4, 5, 6,7,8
+ORDER BY 1, 2, 3, 4, 5, 6, 7,8,9]]></relation>
+            </properties>
+            <properties context='extract'>
+              <relation name='Extract' table='[Extract].[Extract]' type='table' />
+            </properties>
+          </object>
+        </objects>
+      </_.fcp.ObjectModelEncapsulateLegacy.true...object-graph>
+    </datasource>
+  </datasources>
+  <shared-views>
+    <shared-view name='federated.1q384ho133agad14ntnza0mnomj4'>
+      <datasources>
+        <datasource caption='Custom SQL Query (data_platform_logistics)' name='federated.1q384ho133agad14ntnza0mnomj4' />
+      </datasources>
+      <datasource-dependencies datasource='federated.1q384ho133agad14ntnza0mnomj4'>
+        <column caption='Area Name' datatype='string' name='[Area_name]' role='dimension' type='nominal' />
+        <column datatype='date' name='[Date]' role='dimension' type='ordinal' />
+        <column aggregate-role-from='[city_name]' caption='Zone Name' datatype='string' name='[Zone_name]' role='dimension' type='nominal' />
+        <column caption='City Name' datatype='string' name='[city_name]' role='dimension' semantic-role='[City].[Name]' type='nominal' />
+        <column caption='Country Code' datatype='string' name='[country_code]' role='dimension' semantic-role='[Country].[ISO3166_2]' type='nominal' />
+        <column datatype='boolean' name='[is_stacked]' role='dimension' type='nominal' />
+        <column-instance column='[Date]' derivation='Month' name='[mn:Date:ok]' pivot='key' type='ordinal' />
+        <column-instance column='[Area_name]' derivation='None' name='[none:Area_name:nk]' pivot='key' type='nominal' />
+        <column-instance column='[Zone_name]' derivation='None' name='[none:Zone_name:nk]' pivot='key' type='nominal' />
+        <column-instance column='[city_name]' derivation='None' name='[none:city_name:nk]' pivot='key' type='nominal' />
+        <column-instance column='[country_code]' derivation='None' name='[none:country_code:nk]' pivot='key' type='nominal' />
+        <column-instance column='[is_stacked]' derivation='None' name='[none:is_stacked:nk]' pivot='key' type='nominal' />
+        <column-instance column='[vertical_type]' derivation='None' name='[none:vertical_type:nk]' pivot='key' type='nominal' />
+        <column datatype='string' name='[vertical_type]' role='dimension' type='nominal' />
+        <column-instance column='[Date]' derivation='Week' name='[wk:Date:ok]' pivot='key' type='ordinal' />
+      </datasource-dependencies>
+      <filter class='categorical' column='[federated.1q384ho133agad14ntnza0mnomj4].[mn:Date:ok]'>
+        <groupfilter function='level-members' level='[mn:Date:ok]' user:ui-enumeration='all' user:ui-marker='enumerate' />
+        <target field='[federated.1q384ho133agad14ntnza0mnomj4].[mn:Date:ok]' />
+      </filter>
+      <filter class='categorical' column='[federated.1q384ho133agad14ntnza0mnomj4].[none:Area_name:nk]'>
+        <groupfilter function='level-members' level='[none:Area_name:nk]' user:ui-enumeration='all' user:ui-marker='enumerate' />
+        <target field='[federated.1q384ho133agad14ntnza0mnomj4].[none:Area_name:nk]' />
+      </filter>
+      <filter class='categorical' column='[federated.1q384ho133agad14ntnza0mnomj4].[none:Zone_name:nk]'>
+        <groupfilter function='level-members' level='[none:Zone_name:nk]' />
+        <target field='[federated.1q384ho133agad14ntnza0mnomj4].[none:Zone_name:nk]' />
+      </filter>
+      <filter class='categorical' column='[federated.1q384ho133agad14ntnza0mnomj4].[none:city_name:nk]'>
+        <groupfilter function='level-members' level='[none:city_name:nk]' />
+        <target field='[federated.1q384ho133agad14ntnza0mnomj4].[none:city_name:nk]' />
+      </filter>
+      <filter class='categorical' column='[federated.1q384ho133agad14ntnza0mnomj4].[none:country_code:nk]'>
+        <groupfilter function='member' level='[none:country_code:nk]' member='&quot;bh&quot;' user:ui-domain='cascading' user:ui-enumeration='inclusive' user:ui-marker='enumerate' />
+        <target field='[federated.1q384ho133agad14ntnza0mnomj4].[none:country_code:nk]' />
+      </filter>
+      <filter class='categorical' column='[federated.1q384ho133agad14ntnza0mnomj4].[none:is_stacked:nk]'>
+        <groupfilter function='member' level='[none:is_stacked:nk]' member='false' user:ui-domain='database' user:ui-enumeration='inclusive' user:ui-marker='enumerate' />
+        <target field='[federated.1q384ho133agad14ntnza0mnomj4].[none:is_stacked:nk]' />
+      </filter>
+      <filter class='categorical' column='[federated.1q384ho133agad14ntnza0mnomj4].[none:vertical_type:nk]'>
+        <groupfilter function='level-members' level='[none:vertical_type:nk]' />
+        <target field='[federated.1q384ho133agad14ntnza0mnomj4].[none:vertical_type:nk]' />
+      </filter>
+      <filter class='categorical' column='[federated.1q384ho133agad14ntnza0mnomj4].[wk:Date:ok]'>
+        <groupfilter from='26' function='range' level='[wk:Date:ok]' to='41' user:ui-domain='database' user:ui-enumeration='inclusive' user:ui-marker='enumerate' />
+        <target field='[federated.1q384ho133agad14ntnza0mnomj4].[wk:Date:ok]' />
+      </filter>
+    </shared-view>
+  </shared-views>
+  <worksheets>
+    <worksheet name='% of target'>
+      <layout-options>
+        <title>
+          <formatted-text>
+            <run bold='true' fontalignment='1' fontcolor='#f28e2b' fontsize='12'> Persntage Order Above Threshold</run>
+          </formatted-text>
+        </title>
+      </layout-options>
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='Custom SQL Query (data_platform_logistics)' name='federated.1q384ho133agad14ntnza0mnomj4' />
+          </datasources>
+          <datasource-dependencies datasource='federated.1q384ho133agad14ntnza0mnomj4'>
+            <column caption='Area Name' datatype='string' name='[Area_name]' role='dimension' type='nominal' />
+            <column caption='percentage_above_threshold' datatype='real' name='[Calculation_535928364238417921]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='SUM([orders_above_threshold]) / SUM([total_orders])' />
+            </column>
+            <column datatype='date' name='[Date]' role='dimension' type='ordinal' />
+            <column aggregate-role-from='[city_name]' caption='Zone Name' datatype='string' name='[Zone_name]' role='dimension' type='nominal' />
+            <column caption='City Name' datatype='string' name='[city_name]' role='dimension' semantic-role='[City].[Name]' type='nominal' />
+            <column caption='Country Code' datatype='string' name='[country_code]' role='dimension' semantic-role='[Country].[ISO3166_2]' type='nominal' />
+            <column datatype='boolean' name='[is_stacked]' role='dimension' type='nominal' />
+            <column-instance column='[Date]' derivation='Month' name='[mn:Date:ok]' pivot='key' type='ordinal' />
+            <column-instance column='[Area_name]' derivation='None' name='[none:Area_name:nk]' pivot='key' type='nominal' />
+            <column-instance column='[Zone_name]' derivation='None' name='[none:Zone_name:nk]' pivot='key' type='nominal' />
+            <column-instance column='[city_name]' derivation='None' name='[none:city_name:nk]' pivot='key' type='nominal' />
+            <column-instance column='[country_code]' derivation='None' name='[none:country_code:nk]' pivot='key' type='nominal' />
+            <column-instance column='[is_stacked]' derivation='None' name='[none:is_stacked:nk]' pivot='key' type='nominal' />
+            <column-instance column='[vertical_type]' derivation='None' name='[none:vertical_type:nk]' pivot='key' type='nominal' />
+            <column datatype='integer' name='[orders_above_threshold]' role='measure' type='quantitative' />
+            <column caption='Total Order' datatype='integer' name='[total_orders]' role='measure' type='quantitative' />
+            <column-instance column='[Calculation_535928364238417921]' derivation='User' name='[usr:Calculation_535928364238417921:qk]' pivot='key' type='quantitative' />
+            <column datatype='string' name='[vertical_type]' role='dimension' type='nominal' />
+            <column-instance column='[Date]' derivation='Week' name='[wk:Date:ok]' pivot='key' type='ordinal' />
+          </datasource-dependencies>
+          <slices>
+            <column>[federated.1q384ho133agad14ntnza0mnomj4].[none:vertical_type:nk]</column>
+            <column>[federated.1q384ho133agad14ntnza0mnomj4].[none:country_code:nk]</column>
+            <column>[federated.1q384ho133agad14ntnza0mnomj4].[none:city_name:nk]</column>
+            <column>[federated.1q384ho133agad14ntnza0mnomj4].[none:Zone_name:nk]</column>
+            <column>[federated.1q384ho133agad14ntnza0mnomj4].[none:is_stacked:nk]</column>
+            <column>[federated.1q384ho133agad14ntnza0mnomj4].[mn:Date:ok]</column>
+            <column>[federated.1q384ho133agad14ntnza0mnomj4].[wk:Date:ok]</column>
+            <column>[federated.1q384ho133agad14ntnza0mnomj4].[none:Area_name:nk]</column>
+          </slices>
+          <aggregation value='true' />
+        </view>
+        <style>
+          <style-rule element='axis'>
+            <format attr='line-visibility' value='on' />
+            <format attr='line-pattern-only' value='solid' />
+            <format attr='tick-color' value='#000000' />
+            <format attr='stroke-color' value='#000000' />
+            <format attr='tick-color' field='[federated.1q384ho133agad14ntnza0mnomj4].[usr:Calculation_535928364238417921:qk]' value='#00000000' />
+          </style-rule>
+          <style-rule element='cell'>
+            <format attr='height' value='132' />
+            <format attr='width' value='185' />
+            <format attr='text-format' field='[federated.1q384ho133agad14ntnza0mnomj4].[usr:Calculation_535928364238417921:qk]' value='p0.00%' />
+            <format attr='text-align' value='center' />
+            <format attr='vertical-align' value='center' />
+            <format attr='border-color' value='#000000' />
+            <format attr='font-weight' data-class='subtotal' scope='cols' value='normal' />
+            <format attr='font-size' value='14' />
+            <format attr='border-width' value='0' />
+            <format attr='border-style' value='none' />
+          </style-rule>
+          <style-rule element='header'>
+            <format attr='width' field='[federated.1q384ho133agad14ntnza0mnomj4].[none:country_code:nk]' value='104' />
+            <format attr='width' field='[federated.1q384ho133agad14ntnza0mnomj4].[none:Area_name:nk]' value='116' />
+            <format attr='border-color' value='#000000' />
+            <format attr='border-width' value='0' />
+            <format attr='border-style' value='none' />
+            <format attr='border-style' data-class='subtotal' value='none' />
+          </style-rule>
+          <style-rule element='field-labels'>
+            <format attr='color' value='#f28e2b' />
+            <format attr='font-weight' value='bold' />
+            <format attr='font-size' value='10' />
+          </style-rule>
+          <style-rule element='field-labels-decoration'>
+            <format attr='text-align' value='center' />
+            <format attr='vertical-align' value='center' />
+          </style-rule>
+          <style-rule element='label'>
+            <format attr='text-align' field='[federated.1q384ho133agad14ntnza0mnomj4].[none:country_code:nk]' value='center' />
+            <format attr='vertical-align' field='[federated.1q384ho133agad14ntnza0mnomj4].[none:Area_name:nk]' value='center' />
+            <format attr='font-weight' scope='cols' value='bold' />
+            <format attr='color' scope='cols' value='#000000' />
+            <format attr='color' field='[federated.1q384ho133agad14ntnza0mnomj4].[none:Area_name:nk]' value='#000000' />
+            <format attr='font-weight' field='[federated.1q384ho133agad14ntnza0mnomj4].[none:Area_name:nk]' value='bold' />
+            <format attr='font-size' field='[federated.1q384ho133agad14ntnza0mnomj4].[none:Area_name:nk]' value='10' />
+            <format attr='text-align' field='[federated.1q384ho133agad14ntnza0mnomj4].[none:Area_name:nk]' value='left' />
+            <format attr='font-size' scope='cols' value='14' />
+            <format attr='font-size' scope='rows' value='14' />
+          </style-rule>
+          <style-rule element='pane'>
+            <format attr='border-color' value='#000000' />
+            <format attr='border-width' value='0' />
+            <format attr='border-style' value='none' />
+            <format attr='border-style' data-class='subtotal' value='none' />
+            <format attr='background-color' value='#00000000' />
+          </style-rule>
+          <style-rule element='gridline'>
+            <format attr='line-visibility' value='on' />
+            <format attr='line-pattern-only' value='solid' />
+            <format attr='stroke-color' value='#000000' />
+          </style-rule>
+          <style-rule element='zeroline'>
+            <format attr='line-visibility' value='on' />
+            <format attr='line-pattern-only' value='solid' />
+            <format attr='stroke-color' value='#000000' />
+          </style-rule>
+          <style-rule element='table-div'>
+            <format attr='stroke-color' scope='cols' value='#000000' />
+            <format attr='stroke-color' scope='rows' value='#000000' />
+            <format attr='line-pattern-only' scope='rows' value='solid' />
+            <format attr='line-pattern-only' scope='cols' value='solid' />
+            <format attr='stroke-size' scope='rows' value='0' />
+            <format attr='line-visibility' scope='rows' value='off' />
+            <format attr='stroke-size' scope='cols' value='0' />
+            <format attr='line-visibility' scope='cols' value='off' />
+          </style-rule>
+          <style-rule element='header-div'>
+            <format attr='stroke-color' scope='rows' value='#000000' />
+          </style-rule>
+          <style-rule element='title'>
+            <format attr='background-color' value='#00000000' />
+            <format attr='border-width' value='0' />
+            <format attr='border-style' value='none' />
+          </style-rule>
+          <style-rule element='quick-filter'>
+            <format attr='title' field='[federated.1q384ho133agad14ntnza0mnomj4].[mn:Date:ok]' value='Month' />
+            <format attr='title' field='[federated.1q384ho133agad14ntnza0mnomj4].[wk:Date:ok]' value='Week' />
+          </style-rule>
+        </style>
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Text' />
+            <encodings>
+              <text column='[federated.1q384ho133agad14ntnza0mnomj4].[usr:Calculation_535928364238417921:qk]' />
+            </encodings>
+            <style>
+              <style-rule element='mark'>
+                <format attr='mark-labels-show' value='true' />
+              </style-rule>
+              <style-rule element='pane'>
+                <format attr='minwidth' value='-1' />
+                <format attr='maxwidth' value='-1' />
+                <format attr='minheight' value='-1' />
+                <format attr='maxheight' value='-1' />
+              </style-rule>
+            </style>
+          </pane>
+        </panes>
+        <rows />
+        <cols />
+      </table>
+      <simple-id uuid='{67162C53-B2DC-4051-B89F-366C99A676BC}' />
+    </worksheet>
+    <worksheet name='Detailed View'>
+      <layout-options>
+        <title>
+          <formatted-text>
+            <run bold='true' fontalignment='1' fontcolor='#4e79a7'>Distance Detalied View</run>
+          </formatted-text>
+        </title>
+      </layout-options>
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='Custom SQL Query (data_platform_logistics)' name='federated.1q384ho133agad14ntnza0mnomj4' />
+          </datasources>
+          <datasource-dependencies datasource='federated.1q384ho133agad14ntnza0mnomj4'>
+            <column caption='Area Name' datatype='string' name='[Area_name]' role='dimension' type='nominal' />
+            <column caption='percentage_above_threshold' datatype='real' name='[Calculation_535928364238417921]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='SUM([orders_above_threshold]) / SUM([total_orders])' />
+            </column>
+            <column datatype='real' name='[DT]' role='measure' type='quantitative' />
+            <column datatype='date' name='[Date]' role='dimension' type='ordinal' />
+            <column datatype='integer' name='[Threshold]' role='measure' type='quantitative' />
+            <column datatype='real' name='[To_Customer_Time]' role='measure' type='quantitative' />
+            <column aggregate-role-from='[city_name]' caption='Zone Name' datatype='string' name='[Zone_name]' role='dimension' type='nominal' />
+            <column-instance column='[DT]' derivation='Avg' name='[avg:DT:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[Threshold]' derivation='Avg' name='[avg:Threshold:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[To_Customer_Time]' derivation='Avg' name='[avg:To_Customer_Time:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[dropoff_distance]' derivation='Avg' name='[avg:dropoff_distance:qk]' pivot='key' type='quantitative' />
+            <column caption='City Name' datatype='string' name='[city_name]' role='dimension' semantic-role='[City].[Name]' type='nominal' />
+            <column caption='Country Code' datatype='string' name='[country_code]' role='dimension' semantic-role='[Country].[ISO3166_2]' type='nominal' />
+            <column aggregation='Sum' datatype='real' name='[dropoff_distance]' role='dimension' type='ordinal' />
+            <column datatype='boolean' name='[is_stacked]' role='dimension' type='nominal' />
+            <column-instance column='[Date]' derivation='Month' name='[mn:Date:ok]' pivot='key' type='ordinal' />
+            <column-instance column='[Area_name]' derivation='None' name='[none:Area_name:nk]' pivot='key' type='nominal' />
+            <column-instance column='[Zone_name]' derivation='None' name='[none:Zone_name:nk]' pivot='key' type='nominal' />
+            <column-instance column='[city_name]' derivation='None' name='[none:city_name:nk]' pivot='key' type='nominal' />
+            <column-instance column='[country_code]' derivation='None' name='[none:country_code:nk]' pivot='key' type='nominal' />
+            <column-instance column='[is_stacked]' derivation='None' name='[none:is_stacked:nk]' pivot='key' type='nominal' />
+            <column-instance column='[vertical_type]' derivation='None' name='[none:vertical_type:nk]' pivot='key' type='nominal' />
+            <column datatype='integer' name='[orders_above_threshold]' role='measure' type='quantitative' />
+            <column-instance column='[orders_above_threshold]' derivation='Sum' name='[sum:orders_above_threshold:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[total_orders]' derivation='Sum' name='[sum:total_orders:qk]' pivot='key' type='quantitative' />
+            <column caption='Total Order' datatype='integer' name='[total_orders]' role='measure' type='quantitative' />
+            <column-instance column='[Calculation_535928364238417921]' derivation='User' name='[usr:Calculation_535928364238417921:qk]' pivot='key' type='quantitative' />
+            <column datatype='string' name='[vertical_type]' role='dimension' type='nominal' />
+            <column-instance column='[Date]' derivation='Week' name='[wk:Date:ok]' pivot='key' type='ordinal' />
+          </datasource-dependencies>
+          <filter class='categorical' column='[federated.1q384ho133agad14ntnza0mnomj4].[:Measure Names]'>
+            <groupfilter function='union' user:op='manual'>
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.1q384ho133agad14ntnza0mnomj4].[sum:total_orders:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.1q384ho133agad14ntnza0mnomj4].[avg:DT:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.1q384ho133agad14ntnza0mnomj4].[avg:To_Customer_Time:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.1q384ho133agad14ntnza0mnomj4].[avg:dropoff_distance:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.1q384ho133agad14ntnza0mnomj4].[avg:Threshold:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.1q384ho133agad14ntnza0mnomj4].[sum:orders_above_threshold:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.1q384ho133agad14ntnza0mnomj4].[usr:Calculation_535928364238417921:qk]&quot;' />
+            </groupfilter>
+          </filter>
+          <manual-sort column='[federated.1q384ho133agad14ntnza0mnomj4].[:Measure Names]' direction='ASC'>
+            <dictionary>
+              <bucket>&quot;[federated.1q384ho133agad14ntnza0mnomj4].[sum:total_orders:qk]&quot;</bucket>
+              <bucket>&quot;[federated.1q384ho133agad14ntnza0mnomj4].[avg:DT:qk]&quot;</bucket>
+              <bucket>&quot;[federated.1q384ho133agad14ntnza0mnomj4].[avg:To_Customer_Time:qk]&quot;</bucket>
+              <bucket>&quot;[federated.1q384ho133agad14ntnza0mnomj4].[avg:dropoff_distance:qk]&quot;</bucket>
+              <bucket>&quot;[federated.1q384ho133agad14ntnza0mnomj4].[avg:Threshold:qk]&quot;</bucket>
+              <bucket>&quot;[federated.1q384ho133agad14ntnza0mnomj4].[sum:orders_above_threshold:qk]&quot;</bucket>
+              <bucket>&quot;[federated.1q384ho133agad14ntnza0mnomj4].[usr:Calculation_535928364238417921:qk]&quot;</bucket>
+            </dictionary>
+          </manual-sort>
+          <shelf-sorts>
+            <shelf-sort-v2 dimension-to-sort='[federated.1q384ho133agad14ntnza0mnomj4].[none:Area_name:nk]' direction='DESC' is-on-innermost-dimension='true' measure-to-sort-by='[federated.1q384ho133agad14ntnza0mnomj4].[sum:total_orders:qk]' shelf='rows' />
+          </shelf-sorts>
+          <slices>
+            <column>[federated.1q384ho133agad14ntnza0mnomj4].[none:vertical_type:nk]</column>
+            <column>[federated.1q384ho133agad14ntnza0mnomj4].[none:country_code:nk]</column>
+            <column>[federated.1q384ho133agad14ntnza0mnomj4].[none:city_name:nk]</column>
+            <column>[federated.1q384ho133agad14ntnza0mnomj4].[none:Zone_name:nk]</column>
+            <column>[federated.1q384ho133agad14ntnza0mnomj4].[none:is_stacked:nk]</column>
+            <column>[federated.1q384ho133agad14ntnza0mnomj4].[:Measure Names]</column>
+            <column>[federated.1q384ho133agad14ntnza0mnomj4].[mn:Date:ok]</column>
+            <column>[federated.1q384ho133agad14ntnza0mnomj4].[wk:Date:ok]</column>
+            <column>[federated.1q384ho133agad14ntnza0mnomj4].[none:Area_name:nk]</column>
+          </slices>
+          <aggregation value='true' />
+        </view>
+        <style>
+          <style-rule element='axis'>
+            <format attr='line-visibility' value='on' />
+            <format attr='line-pattern-only' value='solid' />
+            <format attr='stroke-color' value='#000000' />
+          </style-rule>
+          <style-rule element='cell'>
+            <format attr='width' field='[federated.1q384ho133agad14ntnza0mnomj4].[:Measure Names]' value='150' />
+            <format attr='text-format' field='[federated.1q384ho133agad14ntnza0mnomj4].[usr:Calculation_535928364238417921:qk]' value='p0.00%' />
+            <format attr='text-align' value='center' />
+            <format attr='vertical-align' value='center' />
+            <format attr='border-color' value='#000000' />
+            <format attr='font-size' data-class='subtotal' scope='cols' value='10' />
+            <format attr='font-weight' data-class='subtotal' scope='cols' value='normal' />
+            <format attr='border-width' value='1' />
+            <format attr='border-style' value='solid' />
+          </style-rule>
+          <style-rule element='header'>
+            <format attr='width' field='[federated.1q384ho133agad14ntnza0mnomj4].[none:country_code:nk]' value='104' />
+            <format attr='width' field='[federated.1q384ho133agad14ntnza0mnomj4].[none:Area_name:nk]' value='116' />
+            <format attr='border-color' value='#000000' />
+            <format attr='border-width' value='1' />
+            <format attr='border-style' value='solid' />
+          </style-rule>
+          <style-rule element='field-labels'>
+            <format attr='color' value='#f28e2b' />
+            <format attr='font-weight' value='bold' />
+            <format attr='font-size' value='10' />
+          </style-rule>
+          <style-rule element='field-labels-decoration'>
+            <format attr='text-align' value='center' />
+            <format attr='vertical-align' value='center' />
+          </style-rule>
+          <style-rule element='label'>
+            <format attr='color' field='[federated.1q384ho133agad14ntnza0mnomj4].[:Measure Names]' value='#f28e2b' />
+            <format attr='font-weight' field='[federated.1q384ho133agad14ntnza0mnomj4].[:Measure Names]' value='bold' />
+            <format attr='font-size' field='[federated.1q384ho133agad14ntnza0mnomj4].[:Measure Names]' value='10' />
+            <format attr='text-align' field='[federated.1q384ho133agad14ntnza0mnomj4].[:Measure Names]' value='center' />
+            <format attr='vertical-align' field='[federated.1q384ho133agad14ntnza0mnomj4].[:Measure Names]' value='center' />
+            <format attr='text-align' field='[federated.1q384ho133agad14ntnza0mnomj4].[none:country_code:nk]' value='center' />
+            <format attr='vertical-align' field='[federated.1q384ho133agad14ntnza0mnomj4].[none:Area_name:nk]' value='center' />
+            <format attr='font-size' scope='cols' value='10' />
+            <format attr='font-weight' scope='cols' value='bold' />
+            <format attr='color' scope='cols' value='#000000' />
+            <format attr='color' field='[federated.1q384ho133agad14ntnza0mnomj4].[none:Area_name:nk]' value='#000000' />
+            <format attr='font-weight' field='[federated.1q384ho133agad14ntnza0mnomj4].[none:Area_name:nk]' value='bold' />
+            <format attr='font-size' field='[federated.1q384ho133agad14ntnza0mnomj4].[none:Area_name:nk]' value='10' />
+            <format attr='text-align' field='[federated.1q384ho133agad14ntnza0mnomj4].[none:Area_name:nk]' value='left' />
+          </style-rule>
+          <style-rule element='pane'>
+            <format attr='border-color' value='#000000' />
+            <format attr='border-width' value='1' />
+            <format attr='border-style' value='solid' />
+          </style-rule>
+          <style-rule element='gridline'>
+            <format attr='line-visibility' value='on' />
+            <format attr='line-pattern-only' value='solid' />
+            <format attr='stroke-color' value='#000000' />
+          </style-rule>
+          <style-rule element='zeroline'>
+            <format attr='line-visibility' value='on' />
+            <format attr='line-pattern-only' value='solid' />
+            <format attr='stroke-color' value='#000000' />
+          </style-rule>
+          <style-rule element='table-div'>
+            <format attr='stroke-color' scope='cols' value='#000000' />
+            <format attr='stroke-color' scope='rows' value='#000000' />
+            <format attr='line-pattern-only' scope='cols' value='solid' />
+            <format attr='stroke-size' scope='cols' value='0' />
+            <format attr='line-visibility' scope='cols' value='off' />
+            <format attr='stroke-size' scope='rows' value='1' />
+            <format attr='line-visibility' scope='rows' value='on' />
+            <format attr='line-pattern-only' scope='rows' value='solid' />
+          </style-rule>
+          <style-rule element='header-div'>
+            <format attr='stroke-color' scope='rows' value='#000000' />
+          </style-rule>
+          <style-rule element='quick-filter'>
+            <format attr='title' field='[federated.1q384ho133agad14ntnza0mnomj4].[mn:Date:ok]' value='Month' />
+            <format attr='title' field='[federated.1q384ho133agad14ntnza0mnomj4].[wk:Date:ok]' value='Week' />
+            <format attr='title' field='[federated.1q384ho133agad14ntnza0mnomj4].[none:country_code:nk]' value='Country Code'>
+              <formatted-text>
+                <run bold='true' fontalignment='1' fontcolor='#4e79a7' fontsize='10'>Country Code</run>
+              </formatted-text>
+            </format>
+          </style-rule>
+        </style>
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Text' />
+            <encodings>
+              <text column='[federated.1q384ho133agad14ntnza0mnomj4].[Multiple Values]' />
+            </encodings>
+            <style>
+              <style-rule element='mark'>
+                <format attr='mark-labels-show' value='true' />
+              </style-rule>
+              <style-rule element='pane'>
+                <format attr='minwidth' value='-1' />
+                <format attr='maxwidth' value='-1' />
+              </style-rule>
+            </style>
+          </pane>
+        </panes>
+        <rows>([federated.1q384ho133agad14ntnza0mnomj4].[none:country_code:nk] / [federated.1q384ho133agad14ntnza0mnomj4].[none:Area_name:nk])</rows>
+        <cols>[federated.1q384ho133agad14ntnza0mnomj4].[:Measure Names]</cols>
+      </table>
+      <simple-id uuid='{6D39F5AA-A2D0-495E-A4BB-4049C05EDCD6}' />
+    </worksheet>
+    <worksheet name='Weekly View'>
+      <layout-options>
+        <title>
+          <formatted-text>
+            <run bold='true' fontalignment='1' fontcolor='#f28e2b' fontsize='18'>WOW Table</run>
+          </formatted-text>
+        </title>
+      </layout-options>
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='Custom SQL Query (data_platform_logistics)' name='federated.1q384ho133agad14ntnza0mnomj4' />
+          </datasources>
+          <datasource-dependencies datasource='federated.1q384ho133agad14ntnza0mnomj4'>
+            <column caption='Area Name' datatype='string' name='[Area_name]' role='dimension' type='nominal' />
+            <column caption='percentage_above_threshold' datatype='real' name='[Calculation_535928364238417921]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='SUM([orders_above_threshold]) / SUM([total_orders])' />
+            </column>
+            <column datatype='date' name='[Date]' role='dimension' type='ordinal' />
+            <column aggregate-role-from='[city_name]' caption='Zone Name' datatype='string' name='[Zone_name]' role='dimension' type='nominal' />
+            <column caption='City Name' datatype='string' name='[city_name]' role='dimension' semantic-role='[City].[Name]' type='nominal' />
+            <column caption='Country Code' datatype='string' name='[country_code]' role='dimension' semantic-role='[Country].[ISO3166_2]' type='nominal' />
+            <column datatype='boolean' name='[is_stacked]' role='dimension' type='nominal' />
+            <column-instance column='[Date]' derivation='Month' name='[mn:Date:ok]' pivot='key' type='ordinal' />
+            <column-instance column='[Area_name]' derivation='None' name='[none:Area_name:nk]' pivot='key' type='nominal' />
+            <column-instance column='[Zone_name]' derivation='None' name='[none:Zone_name:nk]' pivot='key' type='nominal' />
+            <column-instance column='[city_name]' derivation='None' name='[none:city_name:nk]' pivot='key' type='nominal' />
+            <column-instance column='[country_code]' derivation='None' name='[none:country_code:nk]' pivot='key' type='nominal' />
+            <column-instance column='[is_stacked]' derivation='None' name='[none:is_stacked:nk]' pivot='key' type='nominal' />
+            <column-instance column='[vertical_type]' derivation='None' name='[none:vertical_type:nk]' pivot='key' type='nominal' />
+            <column datatype='integer' name='[orders_above_threshold]' role='measure' type='quantitative' />
+            <column caption='Total Order' datatype='integer' name='[total_orders]' role='measure' type='quantitative' />
+            <column-instance column='[Calculation_535928364238417921]' derivation='User' name='[usr:Calculation_535928364238417921:qk]' pivot='key' type='quantitative' />
+            <column datatype='string' name='[vertical_type]' role='dimension' type='nominal' />
+            <column-instance column='[Date]' derivation='Week' name='[wk:Date:ok]' pivot='key' type='ordinal' />
+          </datasource-dependencies>
+          <slices>
+            <column>[federated.1q384ho133agad14ntnza0mnomj4].[none:vertical_type:nk]</column>
+            <column>[federated.1q384ho133agad14ntnza0mnomj4].[none:country_code:nk]</column>
+            <column>[federated.1q384ho133agad14ntnza0mnomj4].[none:city_name:nk]</column>
+            <column>[federated.1q384ho133agad14ntnza0mnomj4].[none:Zone_name:nk]</column>
+            <column>[federated.1q384ho133agad14ntnza0mnomj4].[none:is_stacked:nk]</column>
+            <column>[federated.1q384ho133agad14ntnza0mnomj4].[mn:Date:ok]</column>
+            <column>[federated.1q384ho133agad14ntnza0mnomj4].[wk:Date:ok]</column>
+            <column>[federated.1q384ho133agad14ntnza0mnomj4].[none:Area_name:nk]</column>
+          </slices>
+          <aggregation value='true' />
+        </view>
+        <style>
+          <style-rule element='axis'>
+            <format attr='line-visibility' value='on' />
+            <format attr='line-pattern-only' value='solid' />
+            <format attr='stroke-color' value='#000000' />
+          </style-rule>
+          <style-rule element='cell'>
+            <format attr='text-format' field='[federated.1q384ho133agad14ntnza0mnomj4].[usr:Calculation_535928364238417921:qk]' value='p0.00%' />
+            <format attr='text-align' value='center' />
+            <format attr='vertical-align' value='center' />
+            <format attr='border-color' value='#000000' />
+            <format attr='font-size' data-class='subtotal' scope='cols' value='10' />
+            <format attr='font-weight' data-class='subtotal' scope='cols' value='normal' />
+            <format attr='border-width' value='1' />
+            <format attr='border-style' value='solid' />
+          </style-rule>
+          <style-rule element='header'>
+            <format attr='width' field='[federated.1q384ho133agad14ntnza0mnomj4].[none:country_code:nk]' value='100' />
+            <format attr='border-color' value='#000000' />
+            <format attr='border-width' value='1' />
+            <format attr='border-style' value='solid' />
+          </style-rule>
+          <style-rule element='field-labels'>
+            <format attr='color' value='#f28e2b' />
+            <format attr='font-weight' value='bold' />
+            <format attr='font-size' value='10' />
+          </style-rule>
+          <style-rule element='field-labels-decoration'>
+            <format attr='text-align' value='center' />
+            <format attr='vertical-align' value='center' />
+          </style-rule>
+          <style-rule element='label'>
+            <format attr='text-align' field='[federated.1q384ho133agad14ntnza0mnomj4].[none:country_code:nk]' value='center' />
+            <format attr='vertical-align' field='[federated.1q384ho133agad14ntnza0mnomj4].[none:Area_name:nk]' value='center' />
+            <format attr='font-size' scope='cols' value='10' />
+            <format attr='font-weight' scope='cols' value='bold' />
+            <format attr='color' scope='cols' value='#000000' />
+            <format attr='color' field='[federated.1q384ho133agad14ntnza0mnomj4].[none:Area_name:nk]' value='#000000' />
+            <format attr='font-weight' field='[federated.1q384ho133agad14ntnza0mnomj4].[none:Area_name:nk]' value='bold' />
+            <format attr='font-size' field='[federated.1q384ho133agad14ntnza0mnomj4].[none:Area_name:nk]' value='10' />
+            <format attr='text-align' field='[federated.1q384ho133agad14ntnza0mnomj4].[none:Area_name:nk]' value='left' />
+          </style-rule>
+          <style-rule element='mark'>
+            <encoding attr='size-bar' field='[federated.1q384ho133agad14ntnza0mnomj4].[usr:Calculation_535928364238417921:qk]' field-type='quantitative' max-size='1' min-size='0.005' type='centersize' />
+            <encoding attr='color' field='[federated.1q384ho133agad14ntnza0mnomj4].[usr:Calculation_535928364238417921:qk]' palette='tableau-map-temperatur' type='interpolated' />
+          </style-rule>
+          <style-rule element='pane'>
+            <format attr='border-color' value='#000000' />
+            <format attr='border-width' value='1' />
+            <format attr='border-style' value='solid' />
+          </style-rule>
+          <style-rule element='worksheet'>
+            <format attr='display-field-labels' scope='cols' value='false' />
+          </style-rule>
+          <style-rule element='gridline'>
+            <format attr='line-visibility' value='on' />
+            <format attr='line-pattern-only' value='solid' />
+            <format attr='stroke-color' value='#000000' />
+          </style-rule>
+          <style-rule element='zeroline'>
+            <format attr='line-visibility' value='on' />
+            <format attr='line-pattern-only' value='solid' />
+            <format attr='stroke-color' value='#000000' />
+          </style-rule>
+          <style-rule element='table-div'>
+            <format attr='stroke-color' scope='cols' value='#000000' />
+            <format attr='stroke-color' scope='rows' value='#000000' />
+            <format attr='line-pattern-only' scope='cols' value='solid' />
+            <format attr='stroke-size' scope='cols' value='0' />
+            <format attr='line-visibility' scope='cols' value='off' />
+            <format attr='stroke-size' scope='rows' value='1' />
+            <format attr='line-visibility' scope='rows' value='on' />
+            <format attr='line-pattern-only' scope='rows' value='solid' />
+          </style-rule>
+          <style-rule element='header-div'>
+            <format attr='stroke-color' scope='rows' value='#000000' />
+          </style-rule>
+          <style-rule element='title'>
+            <format attr='background-color' value='#e6e6e6' />
+            <format attr='border-style' value='solid' />
+          </style-rule>
+          <style-rule element='quick-filter'>
+            <format attr='title' field='[federated.1q384ho133agad14ntnza0mnomj4].[mn:Date:ok]' value='Month'>
+              <formatted-text>
+                <run bold='true' fontalignment='1' fontcolor='#4e79a7' fontsize='10'>Month</run>
+              </formatted-text>
+            </format>
+            <format attr='title' field='[federated.1q384ho133agad14ntnza0mnomj4].[wk:Date:ok]' value='Week'>
+              <formatted-text>
+                <run bold='true' fontalignment='1' fontcolor='#4e79a7' fontsize='10'>Week</run>
+              </formatted-text>
+            </format>
+            <format attr='title' field='[federated.1q384ho133agad14ntnza0mnomj4].[none:country_code:nk]' value='Country Code'>
+              <formatted-text>
+                <run bold='true' fontalignment='1' fontcolor='#4e79a7' fontsize='10'>Country Code</run>
+              </formatted-text>
+            </format>
+            <format attr='title' field='[federated.1q384ho133agad14ntnza0mnomj4].[none:vertical_type:nk]' value='Vertical Type'>
+              <formatted-text>
+                <run bold='true' fontalignment='1' fontcolor='#4e79a7' fontsize='10'>Vertical Type</run>
+              </formatted-text>
+            </format>
+            <format attr='title' field='[federated.1q384ho133agad14ntnza0mnomj4].[none:is_stacked:nk]' value='Is Stacked'>
+              <formatted-text>
+                <run bold='true' fontalignment='1' fontcolor='#4e79a7'>Is Stacked</run>
+              </formatted-text>
+            </format>
+            <format attr='title' field='[federated.1q384ho133agad14ntnza0mnomj4].[none:city_name:nk]' value='City Name'>
+              <formatted-text>
+                <run bold='true' fontalignment='1' fontcolor='#4e79a7' fontsize='10'>City Name</run>
+              </formatted-text>
+            </format>
+            <format attr='title' field='[federated.1q384ho133agad14ntnza0mnomj4].[none:Zone_name:nk]' value='Zone Name'>
+              <formatted-text>
+                <run bold='true' fontalignment='1' fontcolor='#4e79a7' fontsize='10'>Zone Name</run>
+              </formatted-text>
+            </format>
+            <format attr='title' field='[federated.1q384ho133agad14ntnza0mnomj4].[none:Area_name:nk]' value='Area Name'>
+              <formatted-text>
+                <run bold='true' fontalignment='1' fontcolor='#4e79a7'>Area Name</run>
+              </formatted-text>
+            </format>
+          </style-rule>
+        </style>
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Square' />
+            <encodings>
+              <color column='[federated.1q384ho133agad14ntnza0mnomj4].[usr:Calculation_535928364238417921:qk]' />
+              <text column='[federated.1q384ho133agad14ntnza0mnomj4].[usr:Calculation_535928364238417921:qk]' />
+            </encodings>
+            <style>
+              <style-rule element='mark'>
+                <format attr='mark-labels-show' value='true' />
+                <format attr='mark-labels-cull' value='true' />
+                <format attr='mark-labels-line-first' value='true' />
+                <format attr='mark-labels-line-last' value='true' />
+                <format attr='mark-labels-range-min' value='true' />
+                <format attr='mark-labels-range-max' value='true' />
+                <format attr='mark-labels-mode' value='all' />
+                <format attr='mark-labels-range-scope' value='pane' />
+                <format attr='mark-labels-range-field' value='' />
+              </style-rule>
+            </style>
+          </pane>
+        </panes>
+        <rows>[federated.1q384ho133agad14ntnza0mnomj4].[none:country_code:nk]</rows>
+        <cols>[federated.1q384ho133agad14ntnza0mnomj4].[wk:Date:ok]</cols>
+      </table>
+      <simple-id uuid='{E368BF9C-66B6-4F9F-89CF-3A843945F191}' />
+    </worksheet>
+    <worksheet name='above thereshold'>
+      <layout-options>
+        <title>
+          <formatted-text>
+            <run bold='true' fontalignment='1' fontcolor='#f28e2b'>Therhold Chart</run>
+          </formatted-text>
+        </title>
+      </layout-options>
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='Custom SQL Query (data_platform_logistics)' name='federated.1q384ho133agad14ntnza0mnomj4' />
+          </datasources>
+          <datasource-dependencies datasource='federated.1q384ho133agad14ntnza0mnomj4'>
+            <column caption='Area Name' datatype='string' name='[Area_name]' role='dimension' type='nominal' />
+            <column caption='Distance Bucket' datatype='integer' name='[Calculation_535928364321206278]' role='measure' type='ordinal'>
+              <calculation class='tableau' formula='INT([dropoff_distance] / 1) * 1' />
+            </column>
+            <column datatype='date' name='[Date]' role='dimension' type='ordinal' />
+            <column datatype='integer' name='[Threshold]' role='measure' type='quantitative' />
+            <column aggregate-role-from='[city_name]' caption='Zone Name' datatype='string' name='[Zone_name]' role='dimension' type='nominal' />
+            <column-instance column='[Threshold]' derivation='Avg' name='[avg:Threshold:qk]' pivot='key' type='quantitative' />
+            <column caption='City Name' datatype='string' name='[city_name]' role='dimension' semantic-role='[City].[Name]' type='nominal' />
+            <column caption='Country Code' datatype='string' name='[country_code]' role='dimension' semantic-role='[Country].[ISO3166_2]' type='nominal' />
+            <column aggregation='Sum' datatype='real' name='[dropoff_distance]' role='dimension' type='ordinal' />
+            <column datatype='boolean' name='[is_stacked]' role='dimension' type='nominal' />
+            <column-instance column='[Date]' derivation='Month' name='[mn:Date:ok]' pivot='key' type='ordinal' />
+            <column-instance column='[Area_name]' derivation='None' name='[none:Area_name:nk]' pivot='key' type='nominal' />
+            <column-instance column='[Calculation_535928364321206278]' derivation='None' name='[none:Calculation_535928364321206278:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[Zone_name]' derivation='None' name='[none:Zone_name:nk]' pivot='key' type='nominal' />
+            <column-instance column='[city_name]' derivation='None' name='[none:city_name:nk]' pivot='key' type='nominal' />
+            <column-instance column='[country_code]' derivation='None' name='[none:country_code:nk]' pivot='key' type='nominal' />
+            <column-instance column='[is_stacked]' derivation='None' name='[none:is_stacked:nk]' pivot='key' type='nominal' />
+            <column-instance column='[vertical_type]' derivation='None' name='[none:vertical_type:nk]' pivot='key' type='nominal' />
+            <column-instance column='[total_orders]' derivation='Sum' name='[pcto:sum:total_orders:qk:2]' pivot='key' type='quantitative'>
+              <table-calc ordering-field='[federated.1q384ho133agad14ntnza0mnomj4].[none:Calculation_535928364321206278:qk]' ordering-type='Field' type='PctTotal' />
+            </column-instance>
+            <column-instance column='[total_orders]' derivation='Sum' name='[sum:total_orders:qk]' pivot='key' type='quantitative' />
+            <column caption='Total Order' datatype='integer' name='[total_orders]' role='measure' type='quantitative' />
+            <column datatype='string' name='[vertical_type]' role='dimension' type='nominal' />
+            <column-instance column='[Date]' derivation='Week' name='[wk:Date:ok]' pivot='key' type='ordinal' />
+          </datasource-dependencies>
+          <slices>
+            <column>[federated.1q384ho133agad14ntnza0mnomj4].[none:vertical_type:nk]</column>
+            <column>[federated.1q384ho133agad14ntnza0mnomj4].[none:country_code:nk]</column>
+            <column>[federated.1q384ho133agad14ntnza0mnomj4].[none:city_name:nk]</column>
+            <column>[federated.1q384ho133agad14ntnza0mnomj4].[none:Zone_name:nk]</column>
+            <column>[federated.1q384ho133agad14ntnza0mnomj4].[none:is_stacked:nk]</column>
+            <column>[federated.1q384ho133agad14ntnza0mnomj4].[mn:Date:ok]</column>
+            <column>[federated.1q384ho133agad14ntnza0mnomj4].[wk:Date:ok]</column>
+            <column>[federated.1q384ho133agad14ntnza0mnomj4].[none:Area_name:nk]</column>
+          </slices>
+          <aggregation value='true' />
+        </view>
+        <style>
+          <style-rule element='axis'>
+            <format attr='auto-subtitle' class='0' field='[federated.1q384ho133agad14ntnza0mnomj4].[none:Calculation_535928364321206278:qk]' scope='cols' value='true' />
+            <encoding attr='space' class='0' field='[federated.1q384ho133agad14ntnza0mnomj4].[none:Calculation_535928364321206278:qk]' field-type='quantitative' max='44' min='-1' range-type='fixed' scope='cols' type='space' />
+            <format attr='line-visibility' value='on' />
+            <format attr='line-pattern-only' value='solid' />
+            <format attr='stroke-color' value='#000000' />
+          </style-rule>
+          <style-rule element='cell'>
+            <format attr='text-align' value='center' />
+            <format attr='vertical-align' value='center' />
+            <format attr='border-color' value='#000000' />
+            <format attr='border-width' value='0' />
+            <format attr='border-style' value='none' />
+            <format attr='font-weight' value='bold' />
+            <format attr='font-size' value='10' />
+          </style-rule>
+          <style-rule element='header'>
+            <format attr='border-color' value='#000000' />
+            <format attr='border-width' value='0' />
+            <format attr='border-style' value='none' />
+          </style-rule>
+          <style-rule element='field-labels'>
+            <format attr='color' value='#f28e2b' />
+            <format attr='font-weight' value='bold' />
+            <format attr='font-size' value='10' />
+          </style-rule>
+          <style-rule element='field-labels-decoration'>
+            <format attr='text-align' value='center' />
+            <format attr='vertical-align' value='center' />
+          </style-rule>
+          <style-rule element='label'>
+            <format attr='color' field='[federated.1q384ho133agad14ntnza0mnomj4].[:Measure Names]' value='#f28e2b' />
+            <format attr='font-weight' field='[federated.1q384ho133agad14ntnza0mnomj4].[:Measure Names]' value='bold' />
+            <format attr='font-size' field='[federated.1q384ho133agad14ntnza0mnomj4].[:Measure Names]' value='10' />
+            <format attr='text-align' field='[federated.1q384ho133agad14ntnza0mnomj4].[:Measure Names]' value='center' />
+            <format attr='vertical-align' field='[federated.1q384ho133agad14ntnza0mnomj4].[:Measure Names]' value='center' />
+            <format attr='text-align' field='[federated.1q384ho133agad14ntnza0mnomj4].[none:country_code:nk]' value='center' />
+            <format attr='vertical-align' field='[federated.1q384ho133agad14ntnza0mnomj4].[none:Area_name:nk]' value='center' />
+            <format attr='font-size' scope='cols' value='10' />
+            <format attr='font-weight' scope='cols' value='bold' />
+            <format attr='color' scope='cols' value='#000000' />
+            <format attr='color' field='[federated.1q384ho133agad14ntnza0mnomj4].[none:Area_name:nk]' value='#000000' />
+            <format attr='font-weight' field='[federated.1q384ho133agad14ntnza0mnomj4].[none:Area_name:nk]' value='bold' />
+            <format attr='font-size' field='[federated.1q384ho133agad14ntnza0mnomj4].[none:Area_name:nk]' value='10' />
+            <format attr='text-align' field='[federated.1q384ho133agad14ntnza0mnomj4].[none:Area_name:nk]' value='left' />
+          </style-rule>
+          <style-rule element='pane'>
+            <format attr='border-color' value='#000000' />
+            <format attr='border-width' value='0' />
+            <format attr='border-style' value='none' />
+          </style-rule>
+          <style-rule element='table'>
+            <format attr='background-color' value='#00000000' />
+          </style-rule>
+          <style-rule element='refline'>
+            <format attr='fill-above' id='refline0' value='#00000000' />
+            <format attr='fill-below' id='refline0' value='#00000000' />
+            <format attr='stroke-size' id='refline0' value='4' />
+            <format attr='line-visibility' id='refline0' value='on' />
+            <format attr='line-pattern-only' id='refline0' value='dashed' />
+            <format attr='stroke-color' id='refline0' value='#f28e2b81' />
+            <format attr='text-align' id='refline0' value='center' />
+            <format attr='vertical-align' id='refline0' value='top' />
+          </style-rule>
+          <style-rule element='gridline'>
+            <format attr='stroke-color' value='#000000' />
+            <format attr='line-pattern-only' value='solid' />
+            <format attr='stroke-size' value='0' />
+            <format attr='line-visibility' value='off' />
+          </style-rule>
+          <style-rule element='zeroline'>
+            <format attr='line-visibility' value='on' />
+            <format attr='line-pattern-only' value='solid' />
+            <format attr='stroke-color' value='#000000' />
+          </style-rule>
+          <style-rule element='table-div'>
+            <format attr='stroke-color' scope='cols' value='#000000' />
+            <format attr='stroke-color' scope='rows' value='#000000' />
+            <format attr='line-pattern-only' scope='cols' value='solid' />
+            <format attr='stroke-size' scope='cols' value='0' />
+            <format attr='line-visibility' scope='cols' value='off' />
+            <format attr='line-pattern-only' scope='rows' value='solid' />
+            <format attr='stroke-size' scope='rows' value='0' />
+            <format attr='line-visibility' scope='rows' value='off' />
+          </style-rule>
+          <style-rule element='header-div'>
+            <format attr='stroke-color' scope='rows' value='#000000' />
+          </style-rule>
+          <style-rule element='title'>
+            <format attr='background-color' value='#e6e6e6' />
+            <format attr='border-style' value='solid' />
+          </style-rule>
+          <style-rule element='quick-filter'>
+            <format attr='title' field='[federated.1q384ho133agad14ntnza0mnomj4].[mn:Date:ok]' value='Month'>
+              <formatted-text>
+                <run bold='true' fontalignment='1' fontcolor='#499894'>Month</run>
+              </formatted-text>
+            </format>
+            <format attr='title' field='[federated.1q384ho133agad14ntnza0mnomj4].[wk:Date:ok]' value='Week'>
+              <formatted-text>
+                <run bold='true' fontalignment='1' fontcolor='#4e79a7' fontsize='10'>Week</run>
+              </formatted-text>
+            </format>
+            <format attr='title' field='[federated.1q384ho133agad14ntnza0mnomj4].[none:country_code:nk]' value='Country Code'>
+              <formatted-text>
+                <run fontalignment='1' fontcolor='#4e79a7' fontsize='10'>Country Code</run>
+              </formatted-text>
+            </format>
+            <format attr='title' field='[federated.1q384ho133agad14ntnza0mnomj4].[none:vertical_type:nk]' value='Vertical Type'>
+              <formatted-text>
+                <run bold='true' fontalignment='1' fontcolor='#4e79a7' fontsize='10'>Vertical Type</run>
+              </formatted-text>
+            </format>
+            <format attr='title' field='[federated.1q384ho133agad14ntnza0mnomj4].[none:is_stacked:nk]' value='Is Stacked'>
+              <formatted-text>
+                <run bold='true' fontalignment='1' fontcolor='#4e79a7' fontsize='10'>Is Stacked</run>
+              </formatted-text>
+            </format>
+            <format attr='title' field='[federated.1q384ho133agad14ntnza0mnomj4].[none:city_name:nk]' value='City Name'>
+              <formatted-text>
+                <run bold='true' fontalignment='1' fontcolor='#4e79a7' fontsize='10'>City Name</run>
+              </formatted-text>
+            </format>
+            <format attr='title' field='[federated.1q384ho133agad14ntnza0mnomj4].[none:Zone_name:nk]' value='Zone Name'>
+              <formatted-text>
+                <run bold='true' fontalignment='1' fontcolor='#4e79a7' fontsize='10'>Zone Name</run>
+              </formatted-text>
+            </format>
+            <format attr='title' field='[federated.1q384ho133agad14ntnza0mnomj4].[none:Area_name:nk]' value='Area Name'>
+              <formatted-text>
+                <run bold='true' fontalignment='1' fontcolor='#4e79a7'>Area Name</run>
+              </formatted-text>
+            </format>
+          </style-rule>
+        </style>
+        <panes>
+          <pane id='1' selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Line' />
+            <mark-sizing mark-sizing-setting='marks-scaling-off' />
+            <encodings>
+              <lod column='[federated.1q384ho133agad14ntnza0mnomj4].[sum:total_orders:qk]' />
+              <lod column='[federated.1q384ho133agad14ntnza0mnomj4].[avg:Threshold:qk]' />
+              <color column='[federated.1q384ho133agad14ntnza0mnomj4].[:Measure Names]' />
+            </encodings>
+            <reference-line axis-column='[federated.1q384ho133agad14ntnza0mnomj4].[none:Calculation_535928364321206278:qk]' enable-instant-analytics='true' formula='average' id='refline0' label='Therhold' label-type='custom' probability='95' scope='per-pane' value-column='[federated.1q384ho133agad14ntnza0mnomj4].[avg:Threshold:qk]' z-order='1' />
+            <customized-tooltip>
+              <formatted-text>
+                <run fontcolor='#787878'>Distance Bucket:&#9;</run>
+                <run bold='true'><![CDATA[<[federated.1q384ho133agad14ntnza0mnomj4].[none:Calculation_535928364321206278:qk]>]]></run>
+                <run>Æ&#10;</run>
+                <run fontcolor='#787878'>Distance Threshold:&#9;</run>
+                <run bold='true'><![CDATA[<[federated.1q384ho133agad14ntnza0mnomj4].[avg:Threshold:qk]>]]></run>
+                <run>Æ&#10;</run>
+                <run fontcolor='#787878'>% of Total  Order:&#9;</run>
+                <run bold='true'><![CDATA[<[federated.1q384ho133agad14ntnza0mnomj4].[pcto:sum:total_orders:qk:2]>]]></run>
+                <run>Æ&#10;</run>
+                <run fontcolor='#787878'>Sum Orders:&#9;</run>
+                <run bold='true'><![CDATA[<[federated.1q384ho133agad14ntnza0mnomj4].[sum:total_orders:qk]>]]></run>
+              </formatted-text>
+            </customized-tooltip>
+            <style>
+              <style-rule element='mark'>
+                <format attr='size' value='3.2154695987701416' />
+                <format attr='mark-labels-cull' value='true' />
+                <format attr='mark-labels-show' value='false' />
+              </style-rule>
+            </style>
+          </pane>
+        </panes>
+        <rows>[federated.1q384ho133agad14ntnza0mnomj4].[pcto:sum:total_orders:qk:2]</rows>
+        <cols>[federated.1q384ho133agad14ntnza0mnomj4].[none:Calculation_535928364321206278:qk]</cols>
+      </table>
+      <simple-id uuid='{1D99E4F3-5D7F-4582-A920-278555AA1228}' />
+    </worksheet>
+    <worksheet name='weekly trend'>
+      <layout-options>
+        <title>
+          <formatted-text>
+            <run bold='true' fontalignment='1' fontcolor='#f28e2b' fontsize='18'>Weekly Trend</run>
+          </formatted-text>
+        </title>
+      </layout-options>
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='Custom SQL Query (data_platform_logistics)' name='federated.1q384ho133agad14ntnza0mnomj4' />
+          </datasources>
+          <datasource-dependencies datasource='federated.1q384ho133agad14ntnza0mnomj4'>
+            <column caption='Area Name' datatype='string' name='[Area_name]' role='dimension' type='nominal' />
+            <column caption='percentage_above_threshold' datatype='real' name='[Calculation_535928364238417921]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='SUM([orders_above_threshold]) / SUM([total_orders])' />
+            </column>
+            <column datatype='date' name='[Date]' role='dimension' type='ordinal' />
+            <column aggregate-role-from='[city_name]' caption='Zone Name' datatype='string' name='[Zone_name]' role='dimension' type='nominal' />
+            <column caption='City Name' datatype='string' name='[city_name]' role='dimension' semantic-role='[City].[Name]' type='nominal' />
+            <column caption='Country Code' datatype='string' name='[country_code]' role='dimension' semantic-role='[Country].[ISO3166_2]' type='nominal' />
+            <column datatype='boolean' name='[is_stacked]' role='dimension' type='nominal' />
+            <column-instance column='[Date]' derivation='Month' name='[mn:Date:ok]' pivot='key' type='ordinal' />
+            <column-instance column='[Area_name]' derivation='None' name='[none:Area_name:nk]' pivot='key' type='nominal' />
+            <column-instance column='[Zone_name]' derivation='None' name='[none:Zone_name:nk]' pivot='key' type='nominal' />
+            <column-instance column='[city_name]' derivation='None' name='[none:city_name:nk]' pivot='key' type='nominal' />
+            <column-instance column='[country_code]' derivation='None' name='[none:country_code:nk]' pivot='key' type='nominal' />
+            <column-instance column='[is_stacked]' derivation='None' name='[none:is_stacked:nk]' pivot='key' type='nominal' />
+            <column-instance column='[vertical_type]' derivation='None' name='[none:vertical_type:nk]' pivot='key' type='nominal' />
+            <column datatype='integer' name='[orders_above_threshold]' role='measure' type='quantitative' />
+            <column-instance column='[orders_above_threshold]' derivation='Sum' name='[sum:orders_above_threshold:qk]' pivot='key' type='quantitative' />
+            <column caption='Total Order' datatype='integer' name='[total_orders]' role='measure' type='quantitative' />
+            <column-instance column='[Calculation_535928364238417921]' derivation='User' name='[usr:Calculation_535928364238417921:qk]' pivot='key' type='quantitative' />
+            <column datatype='string' name='[vertical_type]' role='dimension' type='nominal' />
+            <column-instance column='[Date]' derivation='Week' name='[wk:Date:ok]' pivot='key' type='ordinal' />
+            <column-instance column='[Date]' derivation='Week' name='[wk:Date:qk]' pivot='key' type='quantitative' />
+          </datasource-dependencies>
+          <slices>
+            <column>[federated.1q384ho133agad14ntnza0mnomj4].[none:vertical_type:nk]</column>
+            <column>[federated.1q384ho133agad14ntnza0mnomj4].[none:country_code:nk]</column>
+            <column>[federated.1q384ho133agad14ntnza0mnomj4].[none:city_name:nk]</column>
+            <column>[federated.1q384ho133agad14ntnza0mnomj4].[none:Zone_name:nk]</column>
+            <column>[federated.1q384ho133agad14ntnza0mnomj4].[none:is_stacked:nk]</column>
+            <column>[federated.1q384ho133agad14ntnza0mnomj4].[mn:Date:ok]</column>
+            <column>[federated.1q384ho133agad14ntnza0mnomj4].[wk:Date:ok]</column>
+            <column>[federated.1q384ho133agad14ntnza0mnomj4].[none:Area_name:nk]</column>
+          </slices>
+          <aggregation value='true' />
+        </view>
+        <style>
+          <style-rule element='axis'>
+            <format attr='title' class='0' field='[federated.1q384ho133agad14ntnza0mnomj4].[usr:Calculation_535928364238417921:qk]' scope='rows' value='Order % Above The Threshhld ' />
+            <format attr='title' class='0' field='[federated.1q384ho133agad14ntnza0mnomj4].[wk:Date:qk]' scope='cols' value='Week Number' />
+            <format attr='stroke-color' value='#000000' />
+            <format attr='stroke-size' value='1' />
+            <format attr='line-visibility' value='on' />
+            <format attr='line-pattern-only' value='solid' />
+            <format attr='tick-color' value='#e6e6e6' />
+          </style-rule>
+          <style-rule element='cell'>
+            <format attr='text-format' field='[federated.1q384ho133agad14ntnza0mnomj4].[usr:Calculation_535928364238417921:qk]' value='p0.00%' />
+            <format attr='text-align' value='center' />
+            <format attr='vertical-align' value='center' />
+            <format attr='border-color' value='#000000' />
+            <format attr='font-size' data-class='subtotal' scope='cols' value='10' />
+            <format attr='font-weight' data-class='subtotal' scope='cols' value='normal' />
+            <format attr='border-width' value='0' />
+            <format attr='border-style' value='none' />
+          </style-rule>
+          <style-rule element='header'>
+            <format attr='border-color' value='#000000' />
+            <format attr='border-width' value='0' />
+            <format attr='border-style' value='none' />
+          </style-rule>
+          <style-rule element='field-labels'>
+            <format attr='color' value='#f28e2b' />
+            <format attr='font-weight' value='bold' />
+            <format attr='font-size' value='10' />
+          </style-rule>
+          <style-rule element='field-labels-decoration'>
+            <format attr='text-align' value='center' />
+            <format attr='vertical-align' value='center' />
+          </style-rule>
+          <style-rule element='label'>
+            <format attr='text-align' field='[federated.1q384ho133agad14ntnza0mnomj4].[none:country_code:nk]' value='center' />
+            <format attr='vertical-align' field='[federated.1q384ho133agad14ntnza0mnomj4].[none:Area_name:nk]' value='center' />
+            <format attr='font-size' scope='cols' value='10' />
+            <format attr='font-weight' scope='cols' value='bold' />
+            <format attr='color' scope='cols' value='#000000' />
+            <format attr='color' field='[federated.1q384ho133agad14ntnza0mnomj4].[none:Area_name:nk]' value='#000000' />
+            <format attr='font-weight' field='[federated.1q384ho133agad14ntnza0mnomj4].[none:Area_name:nk]' value='bold' />
+            <format attr='font-size' field='[federated.1q384ho133agad14ntnza0mnomj4].[none:Area_name:nk]' value='10' />
+            <format attr='text-align' field='[federated.1q384ho133agad14ntnza0mnomj4].[none:Area_name:nk]' value='left' />
+            <format attr='text-format' field='[federated.1q384ho133agad14ntnza0mnomj4].[usr:Calculation_535928364238417921:qk]' value='p0.00%' />
+          </style-rule>
+          <style-rule element='mark'>
+            <encoding attr='size-bar' field='[federated.1q384ho133agad14ntnza0mnomj4].[usr:Calculation_535928364238417921:qk]' field-type='quantitative' max-size='1' min-size='0.005' type='centersize' />
+            <encoding attr='color' field='[federated.1q384ho133agad14ntnza0mnomj4].[usr:Calculation_535928364238417921:qk]' num-steps='4' palette='tableau-map-temperatur' type='interpolated' />
+          </style-rule>
+          <style-rule element='pane'>
+            <format attr='border-color' value='#000000' />
+            <format attr='border-width' value='0' />
+            <format attr='border-style' value='none' />
+          </style-rule>
+          <style-rule element='dropline'>
+            <format attr='stroke-size' value='1' />
+            <format attr='line-visibility' value='on' />
+            <format attr='line-pattern-only' value='solid' />
+          </style-rule>
+          <style-rule element='refline'>
+            <format attr='stroke-size' value='1' />
+            <format attr='line-visibility' value='on' />
+            <format attr='line-pattern-only' value='solid' />
+            <format attr='fill-above' id='refline0' value='#00000000' />
+            <format attr='fill-below' id='refline0' value='#00000000' />
+          </style-rule>
+          <style-rule element='gridline'>
+            <format attr='line-pattern-only' value='solid' />
+            <format attr='stroke-color' value='#000000' />
+            <format attr='stroke-size' value='0' />
+            <format attr='line-visibility' value='off' />
+          </style-rule>
+          <style-rule element='zeroline'>
+            <format attr='stroke-color' value='#000000' />
+            <format attr='stroke-size' value='1' />
+            <format attr='line-visibility' value='on' />
+            <format attr='line-pattern-only' value='solid' />
+          </style-rule>
+          <style-rule element='table-div'>
+            <format attr='stroke-color' scope='cols' value='#000000' />
+            <format attr='stroke-color' scope='rows' value='#000000' />
+            <format attr='stroke-size' scope='rows' value='1' />
+            <format attr='line-visibility' scope='rows' value='on' />
+            <format attr='line-pattern-only' scope='rows' value='solid' />
+            <format attr='stroke-size' scope='cols' value='1' />
+            <format attr='line-visibility' scope='cols' value='on' />
+            <format attr='line-pattern-only' scope='cols' value='solid' />
+          </style-rule>
+          <style-rule element='header-div'>
+            <format attr='stroke-color' scope='rows' value='#000000' />
+          </style-rule>
+          <style-rule element='title'>
+            <format attr='border-style' value='solid' />
+            <format attr='background-color' value='#d4d4d4' />
+          </style-rule>
+          <style-rule element='quick-filter'>
+            <format attr='title' field='[federated.1q384ho133agad14ntnza0mnomj4].[mn:Date:ok]' value='Month' />
+            <format attr='title' field='[federated.1q384ho133agad14ntnza0mnomj4].[wk:Date:ok]' value='Week' />
+          </style-rule>
+        </style>
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Automatic' />
+            <mark-sizing mark-sizing-setting='marks-scaling-off' />
+            <encodings>
+              <color column='[federated.1q384ho133agad14ntnza0mnomj4].[usr:Calculation_535928364238417921:qk]' />
+              <lod column='[federated.1q384ho133agad14ntnza0mnomj4].[sum:orders_above_threshold:qk]' />
+            </encodings>
+            <reference-line axis-column='[federated.1q384ho133agad14ntnza0mnomj4].[usr:Calculation_535928364238417921:qk]' enable-instant-analytics='true' formula='min' id='refline0' label-type='automatic' scope='per-pane' value-column='[federated.1q384ho133agad14ntnza0mnomj4].[usr:Calculation_535928364238417921:qk]' z-order='1' />
+            <style>
+              <style-rule element='mark'>
+                <format attr='size' value='3.1270718574523926' />
+              </style-rule>
+              <style-rule element='trendline'>
+                <format attr='stroke-size' value='1' />
+                <format attr='line-visibility' value='on' />
+                <format attr='line-pattern-only' value='solid' />
+              </style-rule>
+            </style>
+          </pane>
+        </panes>
+        <rows>[federated.1q384ho133agad14ntnza0mnomj4].[usr:Calculation_535928364238417921:qk]</rows>
+        <cols>[federated.1q384ho133agad14ntnza0mnomj4].[wk:Date:qk]</cols>
+      </table>
+      <simple-id uuid='{632CF66E-2461-4E20-954F-B6DA47ABD3C3}' />
+    </worksheet>
+  </worksheets>
+  <dashboards>
+    <dashboard _.fcp.AccessibleZoneTabOrder.true...enable-sort-zone-taborder='true' name='Detalied Table'>
+      <repository-location derived-from='http://ip-172-31-0-74:8901/t/Talabat/workbooks/Logistics/DetaliedTable?rev=' id='DetaliedTable' path='/t/Talabat/workbooks/Logistics' revision='' site='Talabat' />
+      <style>
+        <style-rule element='dash-text'>
+          <format attr='text-align' id='dash-text_27' value='center' />
+          <format attr='vertical-align' id='dash-text_27' value='center' />
+        </style-rule>
+      </style>
+      <size sizing-mode='automatic' />
+      <datasources>
+        <datasource caption='Custom SQL Query (data_platform_logistics)' name='federated.1q384ho133agad14ntnza0mnomj4' />
+      </datasources>
+      <datasource-dependencies datasource='federated.1q384ho133agad14ntnza0mnomj4'>
+        <column caption='Area Name' datatype='string' name='[Area_name]' role='dimension' type='nominal' />
+        <column datatype='date' name='[Date]' role='dimension' type='ordinal' />
+        <column aggregate-role-from='[city_name]' caption='Zone Name' datatype='string' name='[Zone_name]' role='dimension' type='nominal' />
+        <column caption='City Name' datatype='string' name='[city_name]' role='dimension' semantic-role='[City].[Name]' type='nominal' />
+        <column caption='Country Code' datatype='string' name='[country_code]' role='dimension' semantic-role='[Country].[ISO3166_2]' type='nominal' />
+        <column datatype='boolean' name='[is_stacked]' role='dimension' type='nominal' />
+        <column-instance column='[Date]' derivation='Month' name='[mn:Date:ok]' pivot='key' type='ordinal' />
+        <column-instance column='[Area_name]' derivation='None' name='[none:Area_name:nk]' pivot='key' type='nominal' />
+        <column-instance column='[Zone_name]' derivation='None' name='[none:Zone_name:nk]' pivot='key' type='nominal' />
+        <column-instance column='[city_name]' derivation='None' name='[none:city_name:nk]' pivot='key' type='nominal' />
+        <column-instance column='[country_code]' derivation='None' name='[none:country_code:nk]' pivot='key' type='nominal' />
+        <column-instance column='[is_stacked]' derivation='None' name='[none:is_stacked:nk]' pivot='key' type='nominal' />
+        <column-instance column='[vertical_type]' derivation='None' name='[none:vertical_type:nk]' pivot='key' type='nominal' />
+        <column datatype='string' name='[vertical_type]' role='dimension' type='nominal' />
+        <column-instance column='[Date]' derivation='Week' name='[wk:Date:ok]' pivot='key' type='ordinal' />
+      </datasource-dependencies>
+      <zones>
+        <zone h='100000' id='4' type-v2='layout-basic' w='100000' x='0' y='0'>
+          <zone h='98358' id='31' param='horz' type-v2='layout-flow' w='98984' x='508' y='821'>
+            <zone h='98358' id='7' param='horz' type-v2='layout-flow' w='88832' x='508' y='821'>
+              <zone h='98358' id='5' type-v2='layout-basic' w='88832' x='508' y='821'>
+                <zone forceUpdate='true' h='11485' id='28' type-v2='text' w='88832' x='508' y='821'>
+                  <formatted-text>
+                    <run bold='true' fontalignment='1' fontcolor='#4e79a7' fontsize='24'>Detailed View</run>
+                  </formatted-text>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='background-color' value='#f5f5f5' />
+                  </zone-style>
+                </zone>
+                <zone h='86873' id='29' name='Detailed View' show-title='false' w='88832' x='508' y='12306'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                  </zone-style>
+                </zone>
+              </zone>
+            </zone>
+            <zone fixed-size='160' h='98358' id='30' is-fixed='true' param='vert' type-v2='layout-flow' w='10152' x='89340' y='821'>
+              <zone fixed-size='84' forceUpdate='true' h='9436' id='27' is-fixed='true' type-v2='text' w='10152' x='89340' y='821'>
+                <formatted-text>
+                  <run bold='true' fontcolor='#000000' fontsize='20'>Filters</run>
+                </formatted-text>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='solid' />
+                  <format attr='border-width' value='2' />
+                  <format attr='margin' value='4' />
+                  <format attr='background-color' value='#f6eee3' />
+                </zone-style>
+              </zone>
+              <zone fixed-size='220' h='23385' id='32' is-fixed='true' mode='radiolist' name='Detailed View' param='[federated.1q384ho133agad14ntnza0mnomj4].[none:country_code:nk]' show-apply='true' type-v2='filter' values='cascading' w='10152' x='89340' y='10257'>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+              <zone h='14975' id='33' name='Detailed View' param='[federated.1q384ho133agad14ntnza0mnomj4].[mn:Date:ok]' type-v2='filter' w='10152' x='89340' y='33642'>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+              <zone h='5334' id='34' mode='checkdropdown' name='Detailed View' param='[federated.1q384ho133agad14ntnza0mnomj4].[wk:Date:ok]' type-v2='filter' w='10152' x='89340' y='48617'>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+              <zone h='5334' id='35' mode='checkdropdown' name='Detailed View' param='[federated.1q384ho133agad14ntnza0mnomj4].[none:vertical_type:nk]' show-apply='true' type-v2='filter' w='10152' x='89340' y='53951'>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+              <zone h='9129' id='36' mode='radiolist' name='Detailed View' param='[federated.1q384ho133agad14ntnza0mnomj4].[none:is_stacked:nk]' type-v2='filter' w='10152' x='89340' y='59285'>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+              <zone h='5334' id='37' mode='checkdropdown' name='Detailed View' param='[federated.1q384ho133agad14ntnza0mnomj4].[none:city_name:nk]' show-apply='true' type-v2='filter' values='cascading' w='10152' x='89340' y='68414'>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+              <zone h='5334' id='38' mode='checkdropdown' name='Detailed View' param='[federated.1q384ho133agad14ntnza0mnomj4].[none:Zone_name:nk]' show-apply='true' type-v2='filter' values='cascading' w='10152' x='89340' y='73748'>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+              <zone h='5334' id='39' mode='checkdropdown' name='Detailed View' param='[federated.1q384ho133agad14ntnza0mnomj4].[none:Area_name:nk]' show-apply='true' type-v2='filter' values='cascading' w='10152' x='89340' y='79082'>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+            </zone>
+          </zone>
+          <zone-style>
+            <format attr='border-color' value='#000000' />
+            <format attr='border-style' value='none' />
+            <format attr='border-width' value='0' />
+            <format attr='margin' value='8' />
+          </zone-style>
+        </zone>
+        <zone h='9128' id='26' is-scaled='1' param='Image/Talabat_logo.svg.png' type-v2='bitmap' w='28871' x='381' y='1333' />
+      </zones>
+      <devicelayouts>
+        <devicelayout auto-generated='true' name='Phone'>
+          <size maxheight='1000' minheight='1000' sizing-mode='vscroll' />
+          <zones>
+            <zone h='100000' id='47' type-v2='layout-basic' w='100000' x='0' y='0'>
+              <zone h='84000' id='46' param='vert' type-v2='layout-flow' w='84000' x='8000' y='8000'>
+                <zone forceUpdate='true' h='11485' id='28' type-v2='text' w='88832' x='508' y='821'>
+                  <formatted-text>
+                    <run bold='true' fontalignment='1' fontcolor='#4e79a7' fontsize='24'>Detailed View</run>
+                  </formatted-text>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                    <format attr='background-color' value='#f5f5f5' />
+                  </zone-style>
+                </zone>
+                <zone fixed-size='84' forceUpdate='true' h='9436' id='27' type-v2='text' w='10152' x='89340' y='821'>
+                  <formatted-text>
+                    <run bold='true' fontcolor='#000000' fontsize='20'>Filters</run>
+                  </formatted-text>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='solid' />
+                    <format attr='border-width' value='2' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                    <format attr='background-color' value='#f6eee3' />
+                  </zone-style>
+                </zone>
+                <zone fixed-size='73' h='9128' id='26' is-fixed='true' is-scaled='1' param='Image/Talabat_logo.svg.png' type-v2='bitmap' w='28871' x='381' y='1333'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone fixed-size='220' h='23385' id='32' mode='dropdown' name='Detailed View' param='[federated.1q384ho133agad14ntnza0mnomj4].[none:country_code:nk]' show-apply='true' type-v2='filter' values='cascading' w='10152' x='89340' y='10257'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone h='14975' id='33' mode='checkdropdown' name='Detailed View' param='[federated.1q384ho133agad14ntnza0mnomj4].[mn:Date:ok]' type-v2='filter' w='10152' x='89340' y='33642'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone h='5334' id='34' mode='checkdropdown' name='Detailed View' param='[federated.1q384ho133agad14ntnza0mnomj4].[wk:Date:ok]' type-v2='filter' w='10152' x='89340' y='48617'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone h='5334' id='35' mode='checkdropdown' name='Detailed View' param='[federated.1q384ho133agad14ntnza0mnomj4].[none:vertical_type:nk]' show-apply='true' type-v2='filter' w='10152' x='89340' y='53951'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone h='9129' id='36' mode='dropdown' name='Detailed View' param='[federated.1q384ho133agad14ntnza0mnomj4].[none:is_stacked:nk]' type-v2='filter' w='10152' x='89340' y='59285'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone h='5334' id='37' mode='checkdropdown' name='Detailed View' param='[federated.1q384ho133agad14ntnza0mnomj4].[none:city_name:nk]' show-apply='true' type-v2='filter' values='cascading' w='10152' x='89340' y='68414'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone h='5334' id='38' mode='checkdropdown' name='Detailed View' param='[federated.1q384ho133agad14ntnza0mnomj4].[none:Zone_name:nk]' show-apply='true' type-v2='filter' values='cascading' w='10152' x='89340' y='73748'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone h='5334' id='39' mode='checkdropdown' name='Detailed View' param='[federated.1q384ho133agad14ntnza0mnomj4].[none:Area_name:nk]' show-apply='true' type-v2='filter' values='cascading' w='10152' x='89340' y='79082'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone fixed-size='280' h='86873' id='29' is-fixed='true' name='Detailed View' show-title='false' w='88832' x='508' y='12306'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+              </zone>
+              <zone-style>
+                <format attr='border-color' value='#000000' />
+                <format attr='border-style' value='none' />
+                <format attr='border-width' value='0' />
+                <format attr='margin' value='8' />
+              </zone-style>
+            </zone>
+          </zones>
+        </devicelayout>
+      </devicelayouts>
+      <simple-id uuid='{9EE666C1-3678-42F3-A077-21C489FC79D0}' />
+    </dashboard>
+    <dashboard _.fcp.AccessibleZoneTabOrder.true...enable-sort-zone-taborder='true' name='Orders Above The Theshhold'>
+      <repository-location derived-from='http://ip-172-31-0-74:8901/t/Talabat/workbooks/Logistics/OrdersAboveTheTheshhold?rev=' id='OrdersAboveTheTheshhold' path='/t/Talabat/workbooks/Logistics' revision='' site='Talabat' />
+      <style>
+        <style-rule element='dash-text'>
+          <format attr='text-align' id='dash-text_27' value='center' />
+          <format attr='vertical-align' id='dash-text_27' value='center' />
+        </style-rule>
+      </style>
+      <size sizing-mode='automatic' />
+      <datasources>
+        <datasource caption='Custom SQL Query (data_platform_logistics)' name='federated.1q384ho133agad14ntnza0mnomj4' />
+      </datasources>
+      <datasource-dependencies datasource='federated.1q384ho133agad14ntnza0mnomj4'>
+        <column caption='Area Name' datatype='string' name='[Area_name]' role='dimension' type='nominal' />
+        <column datatype='date' name='[Date]' role='dimension' type='ordinal' />
+        <column aggregate-role-from='[city_name]' caption='Zone Name' datatype='string' name='[Zone_name]' role='dimension' type='nominal' />
+        <column caption='City Name' datatype='string' name='[city_name]' role='dimension' semantic-role='[City].[Name]' type='nominal' />
+        <column caption='Country Code' datatype='string' name='[country_code]' role='dimension' semantic-role='[Country].[ISO3166_2]' type='nominal' />
+        <column datatype='boolean' name='[is_stacked]' role='dimension' type='nominal' />
+        <column-instance column='[Date]' derivation='Month' name='[mn:Date:ok]' pivot='key' type='ordinal' />
+        <column-instance column='[Area_name]' derivation='None' name='[none:Area_name:nk]' pivot='key' type='nominal' />
+        <column-instance column='[Zone_name]' derivation='None' name='[none:Zone_name:nk]' pivot='key' type='nominal' />
+        <column-instance column='[city_name]' derivation='None' name='[none:city_name:nk]' pivot='key' type='nominal' />
+        <column-instance column='[country_code]' derivation='None' name='[none:country_code:nk]' pivot='key' type='nominal' />
+        <column-instance column='[is_stacked]' derivation='None' name='[none:is_stacked:nk]' pivot='key' type='nominal' />
+        <column-instance column='[vertical_type]' derivation='None' name='[none:vertical_type:nk]' pivot='key' type='nominal' />
+        <column datatype='string' name='[vertical_type]' role='dimension' type='nominal' />
+        <column-instance column='[Date]' derivation='Week' name='[wk:Date:ok]' pivot='key' type='ordinal' />
+      </datasource-dependencies>
+      <zones>
+        <zone h='100000' id='4' type-v2='layout-basic' w='100000' x='0' y='0'>
+          <zone h='98240' id='7' param='horz' type-v2='layout-flow' w='99162' x='419' y='880'>
+            <zone h='98240' id='5' type-v2='layout-basic' w='90785' x='419' y='880'>
+              <zone h='87497' id='3' name='above thereshold' w='90785' x='419' y='11623'>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+              <zone forceUpdate='true' h='10743' id='28' type-v2='text' w='90785' x='419' y='880'>
+                <formatted-text>
+                  <run bold='true' fontalignment='1' fontcolor='#4e79a7' fontsize='24'>Orders Above The Theshhold</run>
+                </formatted-text>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                  <format attr='background-color' value='#f5f5f5' />
+                </zone-style>
+              </zone>
+            </zone>
+            <zone fixed-size='160' h='98240' id='6' is-fixed='true' param='vert' type-v2='layout-flow' w='8377' x='91204' y='880'>
+              <zone forceUpdate='true' h='5060' id='27' type-v2='text' w='8377' x='91204' y='880'>
+                <formatted-text>
+                  <run bold='true' fontcolor='#000000' fontsize='20'>Filters</run>
+                </formatted-text>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='solid' />
+                  <format attr='border-width' value='2' />
+                  <format attr='margin' value='4' />
+                  <format attr='background-color' value='#f6eee3' />
+                </zone-style>
+              </zone>
+              <zone h='23542' id='8' mode='radiolist' name='above thereshold' param='[federated.1q384ho133agad14ntnza0mnomj4].[none:country_code:nk]' show-apply='true' type-v2='filter' values='cascading' w='8377' x='91204' y='5940'>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+              <zone h='12431' id='9' name='above thereshold' param='[federated.1q384ho133agad14ntnza0mnomj4].[mn:Date:ok]' type-v2='filter' w='8377' x='91204' y='29482'>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+              <zone h='6271' id='10' mode='checkdropdown' name='above thereshold' param='[federated.1q384ho133agad14ntnza0mnomj4].[wk:Date:ok]' type-v2='filter' w='8377' x='91204' y='41913'>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+              <zone h='6271' id='11' mode='checkdropdown' name='above thereshold' param='[federated.1q384ho133agad14ntnza0mnomj4].[none:vertical_type:nk]' show-apply='true' type-v2='filter' w='8377' x='91204' y='48184'>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+              <zone h='10341' id='12' mode='radiolist' name='above thereshold' param='[federated.1q384ho133agad14ntnza0mnomj4].[none:is_stacked:nk]' type-v2='filter' w='8377' x='91204' y='54455'>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+              <zone h='6271' id='13' mode='checkdropdown' name='above thereshold' param='[federated.1q384ho133agad14ntnza0mnomj4].[none:city_name:nk]' show-apply='true' type-v2='filter' values='cascading' w='8377' x='91204' y='64796'>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+              <zone h='6271' id='14' mode='checkdropdown' name='above thereshold' param='[federated.1q384ho133agad14ntnza0mnomj4].[none:Zone_name:nk]' show-apply='true' type-v2='filter' values='cascading' w='8377' x='91204' y='71067'>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+              <zone h='6161' id='15' mode='checkdropdown' name='above thereshold' param='[federated.1q384ho133agad14ntnza0mnomj4].[none:Area_name:nk]' show-apply='true' type-v2='filter' values='cascading' w='8377' x='91204' y='77338'>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+              <zone-style>
+                <format attr='border-color' value='#000000' />
+                <format attr='border-style' value='none' />
+                <format attr='border-width' value='0' />
+                <format attr='background-color' value='#f5f5f5' />
+              </zone-style>
+            </zone>
+          </zone>
+          <zone-style>
+            <format attr='border-color' value='#000000' />
+            <format attr='border-style' value='none' />
+            <format attr='border-width' value='0' />
+            <format attr='margin' value='8' />
+          </zone-style>
+        </zone>
+        <zone h='9846' id='17' name='% of target' w='13579' x='74619' y='1231'>
+          <zone-style>
+            <format attr='border-color' value='#000000' />
+            <format attr='border-style' value='solid' />
+            <format attr='border-width' value='1' />
+            <format attr='background-color' value='#e6e6e6' />
+          </zone-style>
+        </zone>
+        <zone h='9128' id='26' is-scaled='1' param='Image/Talabat_logo.svg.png' type-v2='bitmap' w='28871' x='381' y='1333' />
+      </zones>
+      <devicelayouts>
+        <devicelayout auto-generated='true' name='Phone'>
+          <size maxheight='1100' minheight='1100' sizing-mode='vscroll' />
+          <zones>
+            <zone h='100000' id='47' type-v2='layout-basic' w='100000' x='0' y='0'>
+              <zone h='98240' id='46' param='vert' type-v2='layout-flow' w='99162' x='419' y='880'>
+                <zone forceUpdate='true' h='10743' id='28' type-v2='text' w='90785' x='419' y='880'>
+                  <formatted-text>
+                    <run bold='true' fontalignment='1' fontcolor='#4e79a7' fontsize='24'>Orders Above The Theshhold</run>
+                  </formatted-text>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                    <format attr='background-color' value='#f5f5f5' />
+                  </zone-style>
+                </zone>
+                <zone forceUpdate='true' h='5060' id='27' type-v2='text' w='8377' x='91204' y='880'>
+                  <formatted-text>
+                    <run bold='true' fontcolor='#000000' fontsize='20'>Filters</run>
+                  </formatted-text>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='solid' />
+                    <format attr='border-width' value='2' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                    <format attr='background-color' value='#f6eee3' />
+                  </zone-style>
+                </zone>
+                <zone fixed-size='77' h='9846' id='17' is-fixed='true' name='% of target' w='13579' x='74619' y='1231'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='solid' />
+                    <format attr='border-width' value='1' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                    <format attr='background-color' value='#e6e6e6' />
+                  </zone-style>
+                </zone>
+                <zone fixed-size='73' h='9128' id='26' is-fixed='true' is-scaled='1' param='Image/Talabat_logo.svg.png' type-v2='bitmap' w='28871' x='381' y='1333'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone h='23542' id='8' mode='dropdown' name='above thereshold' param='[federated.1q384ho133agad14ntnza0mnomj4].[none:country_code:nk]' show-apply='true' type-v2='filter' values='cascading' w='8377' x='91204' y='5940'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone h='12431' id='9' mode='checkdropdown' name='above thereshold' param='[federated.1q384ho133agad14ntnza0mnomj4].[mn:Date:ok]' type-v2='filter' w='8377' x='91204' y='29482'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone h='6271' id='10' mode='checkdropdown' name='above thereshold' param='[federated.1q384ho133agad14ntnza0mnomj4].[wk:Date:ok]' type-v2='filter' w='8377' x='91204' y='41913'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone h='6271' id='11' mode='checkdropdown' name='above thereshold' param='[federated.1q384ho133agad14ntnza0mnomj4].[none:vertical_type:nk]' show-apply='true' type-v2='filter' w='8377' x='91204' y='48184'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone h='10341' id='12' mode='dropdown' name='above thereshold' param='[federated.1q384ho133agad14ntnza0mnomj4].[none:is_stacked:nk]' type-v2='filter' w='8377' x='91204' y='54455'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone h='6271' id='13' mode='checkdropdown' name='above thereshold' param='[federated.1q384ho133agad14ntnza0mnomj4].[none:city_name:nk]' show-apply='true' type-v2='filter' values='cascading' w='8377' x='91204' y='64796'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone h='6271' id='14' mode='checkdropdown' name='above thereshold' param='[federated.1q384ho133agad14ntnza0mnomj4].[none:Zone_name:nk]' show-apply='true' type-v2='filter' values='cascading' w='8377' x='91204' y='71067'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone h='6161' id='15' mode='checkdropdown' name='above thereshold' param='[federated.1q384ho133agad14ntnza0mnomj4].[none:Area_name:nk]' show-apply='true' type-v2='filter' values='cascading' w='8377' x='91204' y='77338'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone fixed-size='280' h='87497' id='3' is-fixed='true' name='above thereshold' w='90785' x='419' y='11623'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+              </zone>
+              <zone-style>
+                <format attr='border-color' value='#000000' />
+                <format attr='border-style' value='none' />
+                <format attr='border-width' value='0' />
+                <format attr='margin' value='8' />
+              </zone-style>
+            </zone>
+          </zones>
+        </devicelayout>
+      </devicelayouts>
+      <simple-id uuid='{3F1DE725-F2DE-4377-A38A-A2A4B76383C8}' />
+    </dashboard>
+    <dashboard _.fcp.AccessibleZoneTabOrder.true...enable-sort-zone-taborder='true' name='WOW View'>
+      <repository-location derived-from='http://ip-172-31-0-74:8901/t/Talabat/workbooks/Logistics/WOWView?rev=' id='WOWView' path='/t/Talabat/workbooks/Logistics' revision='' site='Talabat' />
+      <style>
+        <style-rule element='dash-text'>
+          <format attr='text-align' id='dash-text_27' value='center' />
+          <format attr='vertical-align' id='dash-text_27' value='center' />
+        </style-rule>
+      </style>
+      <size sizing-mode='automatic' />
+      <datasources>
+        <datasource caption='Custom SQL Query (data_platform_logistics)' name='federated.1q384ho133agad14ntnza0mnomj4' />
+      </datasources>
+      <datasource-dependencies datasource='federated.1q384ho133agad14ntnza0mnomj4'>
+        <column caption='Area Name' datatype='string' name='[Area_name]' role='dimension' type='nominal' />
+        <column datatype='date' name='[Date]' role='dimension' type='ordinal' />
+        <column aggregate-role-from='[city_name]' caption='Zone Name' datatype='string' name='[Zone_name]' role='dimension' type='nominal' />
+        <column caption='City Name' datatype='string' name='[city_name]' role='dimension' semantic-role='[City].[Name]' type='nominal' />
+        <column caption='Country Code' datatype='string' name='[country_code]' role='dimension' semantic-role='[Country].[ISO3166_2]' type='nominal' />
+        <column datatype='boolean' name='[is_stacked]' role='dimension' type='nominal' />
+        <column-instance column='[Date]' derivation='Month' name='[mn:Date:ok]' pivot='key' type='ordinal' />
+        <column-instance column='[Area_name]' derivation='None' name='[none:Area_name:nk]' pivot='key' type='nominal' />
+        <column-instance column='[Zone_name]' derivation='None' name='[none:Zone_name:nk]' pivot='key' type='nominal' />
+        <column-instance column='[city_name]' derivation='None' name='[none:city_name:nk]' pivot='key' type='nominal' />
+        <column-instance column='[country_code]' derivation='None' name='[none:country_code:nk]' pivot='key' type='nominal' />
+        <column-instance column='[is_stacked]' derivation='None' name='[none:is_stacked:nk]' pivot='key' type='nominal' />
+        <column-instance column='[vertical_type]' derivation='None' name='[none:vertical_type:nk]' pivot='key' type='nominal' />
+        <column datatype='string' name='[vertical_type]' role='dimension' type='nominal' />
+        <column-instance column='[Date]' derivation='Week' name='[wk:Date:ok]' pivot='key' type='ordinal' />
+      </datasource-dependencies>
+      <zones>
+        <zone h='100000' id='4' type-v2='layout-basic' w='100000' x='0' y='0'>
+          <zone h='98358' id='7' param='horz' type-v2='layout-flow' w='98984' x='508' y='821'>
+            <zone h='98358' id='5' type-v2='layout-basic' w='88832' x='508' y='821'>
+              <zone forceUpdate='true' h='10753' id='28' type-v2='text' w='88832' x='508' y='821'>
+                <formatted-text>
+                  <run bold='true' fontalignment='1' fontcolor='#4e79a7' fontsize='24'>Weekly View</run>
+                </formatted-text>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                  <format attr='background-color' value='#f5f5f5' />
+                </zone-style>
+              </zone>
+              <zone h='23295' id='29' name='Weekly View' w='88832' x='508' y='11574'>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+              <zone h='64310' id='30' name='weekly trend' w='88832' x='508' y='34869'>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+            </zone>
+            <zone fixed-size='160' h='98358' id='6' is-fixed='true' param='vert' type-v2='layout-flow' w='10152' x='89340' y='821'>
+              <zone forceUpdate='true' h='4616' id='27' type-v2='text' w='10152' x='89340' y='821'>
+                <formatted-text>
+                  <run bold='true' fontcolor='#000000' fontsize='20'>Filters</run>
+                </formatted-text>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='solid' />
+                  <format attr='border-width' value='2' />
+                  <format attr='margin' value='4' />
+                  <format attr='background-color' value='#f6eee3' />
+                </zone-style>
+              </zone>
+              <zone h='20924' id='8' mode='radiolist' name='Weekly View' param='[federated.1q384ho133agad14ntnza0mnomj4].[none:country_code:nk]' show-apply='true' type-v2='filter' values='cascading' w='10152' x='89340' y='5437'>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+              <zone h='15077' id='9' name='Weekly View' param='[federated.1q384ho133agad14ntnza0mnomj4].[mn:Date:ok]' type-v2='filter' w='10152' x='89340' y='26361'>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+              <zone h='5436' id='10' mode='checkdropdown' name='Weekly View' param='[federated.1q384ho133agad14ntnza0mnomj4].[wk:Date:ok]' type-v2='filter' w='10152' x='89340' y='41438'>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+              <zone h='5436' id='11' mode='checkdropdown' name='Weekly View' param='[federated.1q384ho133agad14ntnza0mnomj4].[none:vertical_type:nk]' show-apply='true' type-v2='filter' w='10152' x='89340' y='46874'>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+              <zone h='9129' id='12' mode='radiolist' name='Weekly View' param='[federated.1q384ho133agad14ntnza0mnomj4].[none:is_stacked:nk]' type-v2='filter' w='10152' x='89340' y='52310'>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+              <zone h='5436' id='13' mode='checkdropdown' name='Weekly View' param='[federated.1q384ho133agad14ntnza0mnomj4].[none:city_name:nk]' show-apply='true' type-v2='filter' values='cascading' w='10152' x='89340' y='61439'>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+              <zone h='5436' id='14' mode='checkdropdown' name='Weekly View' param='[federated.1q384ho133agad14ntnza0mnomj4].[none:Zone_name:nk]' show-apply='true' type-v2='filter' values='cascading' w='10152' x='89340' y='66875'>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+              <zone h='5334' id='15' mode='checkdropdown' name='Weekly View' param='[federated.1q384ho133agad14ntnza0mnomj4].[none:Area_name:nk]' show-apply='true' type-v2='filter' values='cascading' w='10152' x='89340' y='72311'>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+              <zone-style>
+                <format attr='border-color' value='#000000' />
+                <format attr='border-style' value='none' />
+                <format attr='border-width' value='0' />
+                <format attr='background-color' value='#f5f5f5' />
+              </zone-style>
+            </zone>
+          </zone>
+          <zone-style>
+            <format attr='border-color' value='#000000' />
+            <format attr='border-style' value='none' />
+            <format attr='border-width' value='0' />
+            <format attr='margin' value='8' />
+          </zone-style>
+        </zone>
+        <zone h='9128' id='26' is-scaled='1' param='Image/Talabat_logo.svg.png' type-v2='bitmap' w='28871' x='381' y='1333' />
+      </zones>
+      <devicelayouts>
+        <devicelayout auto-generated='true' name='Phone'>
+          <size maxheight='1200' minheight='1200' sizing-mode='vscroll' />
+          <zones>
+            <zone h='100000' id='38' type-v2='layout-basic' w='100000' x='0' y='0'>
+              <zone h='84000' id='37' param='vert' type-v2='layout-flow' w='84000' x='8000' y='8000'>
+                <zone forceUpdate='true' h='10753' id='28' type-v2='text' w='88832' x='508' y='821'>
+                  <formatted-text>
+                    <run bold='true' fontalignment='1' fontcolor='#4e79a7' fontsize='24'>Weekly View</run>
+                  </formatted-text>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                    <format attr='background-color' value='#f5f5f5' />
+                  </zone-style>
+                </zone>
+                <zone forceUpdate='true' h='4616' id='27' type-v2='text' w='10152' x='89340' y='821'>
+                  <formatted-text>
+                    <run bold='true' fontcolor='#000000' fontsize='20'>Filters</run>
+                  </formatted-text>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='solid' />
+                    <format attr='border-width' value='2' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                    <format attr='background-color' value='#f6eee3' />
+                  </zone-style>
+                </zone>
+                <zone fixed-size='73' h='9128' id='26' is-fixed='true' is-scaled='1' param='Image/Talabat_logo.svg.png' type-v2='bitmap' w='28871' x='381' y='1333'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone h='20924' id='8' mode='dropdown' name='Weekly View' param='[federated.1q384ho133agad14ntnza0mnomj4].[none:country_code:nk]' show-apply='true' type-v2='filter' values='cascading' w='10152' x='89340' y='5437'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone h='15077' id='9' mode='checkdropdown' name='Weekly View' param='[federated.1q384ho133agad14ntnza0mnomj4].[mn:Date:ok]' type-v2='filter' w='10152' x='89340' y='26361'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone h='5436' id='10' mode='checkdropdown' name='Weekly View' param='[federated.1q384ho133agad14ntnza0mnomj4].[wk:Date:ok]' type-v2='filter' w='10152' x='89340' y='41438'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone h='5436' id='11' mode='checkdropdown' name='Weekly View' param='[federated.1q384ho133agad14ntnza0mnomj4].[none:vertical_type:nk]' show-apply='true' type-v2='filter' w='10152' x='89340' y='46874'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone h='9129' id='12' mode='dropdown' name='Weekly View' param='[federated.1q384ho133agad14ntnza0mnomj4].[none:is_stacked:nk]' type-v2='filter' w='10152' x='89340' y='52310'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone h='5436' id='13' mode='checkdropdown' name='Weekly View' param='[federated.1q384ho133agad14ntnza0mnomj4].[none:city_name:nk]' show-apply='true' type-v2='filter' values='cascading' w='10152' x='89340' y='61439'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone h='5436' id='14' mode='checkdropdown' name='Weekly View' param='[federated.1q384ho133agad14ntnza0mnomj4].[none:Zone_name:nk]' show-apply='true' type-v2='filter' values='cascading' w='10152' x='89340' y='66875'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone h='5334' id='15' mode='checkdropdown' name='Weekly View' param='[federated.1q384ho133agad14ntnza0mnomj4].[none:Area_name:nk]' show-apply='true' type-v2='filter' values='cascading' w='10152' x='89340' y='72311'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone fixed-size='178' h='23295' id='29' is-fixed='true' name='Weekly View' w='88832' x='508' y='11574'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone fixed-size='280' h='64310' id='30' is-fixed='true' name='weekly trend' w='88832' x='508' y='34869'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+              </zone>
+              <zone-style>
+                <format attr='border-color' value='#000000' />
+                <format attr='border-style' value='none' />
+                <format attr='border-width' value='0' />
+                <format attr='margin' value='8' />
+              </zone-style>
+            </zone>
+          </zones>
+        </devicelayout>
+      </devicelayouts>
+      <simple-id uuid='{1FCF0C91-717A-4429-8EB1-AEF2FA54ECA6}' />
+    </dashboard>
+  </dashboards>
+  <windows source-height='30'>
+    <window class='worksheet' name='Detailed View'>
+      <cards>
+        <edge name='left'>
+          <strip size='160'>
+            <card type='pages' />
+            <card type='filters' />
+            <card type='marks' />
+            <card type='measures' />
+          </strip>
+        </edge>
+        <edge name='top'>
+          <strip size='2147483647'>
+            <card type='columns' />
+          </strip>
+          <strip size='2147483647'>
+            <card type='rows' />
+          </strip>
+          <strip size='2147483647'>
+            <card type='title' />
+          </strip>
+        </edge>
+        <edge name='right'>
+          <strip size='160'>
+            <card param='[federated.1q384ho133agad14ntnza0mnomj4].[none:country_code:nk]' show-apply='true' type='filter' values='cascading' />
+            <card param='[federated.1q384ho133agad14ntnza0mnomj4].[mn:Date:ok]' type='filter' />
+            <card mode='checkdropdown' param='[federated.1q384ho133agad14ntnza0mnomj4].[wk:Date:ok]' type='filter' />
+            <card mode='checkdropdown' param='[federated.1q384ho133agad14ntnza0mnomj4].[none:vertical_type:nk]' show-apply='true' type='filter' />
+            <card mode='radiolist' param='[federated.1q384ho133agad14ntnza0mnomj4].[none:is_stacked:nk]' type='filter' />
+            <card mode='checkdropdown' param='[federated.1q384ho133agad14ntnza0mnomj4].[none:city_name:nk]' show-apply='true' type='filter' values='cascading' />
+            <card mode='checkdropdown' param='[federated.1q384ho133agad14ntnza0mnomj4].[none:Zone_name:nk]' show-apply='true' type='filter' values='cascading' />
+            <card mode='checkdropdown' param='[federated.1q384ho133agad14ntnza0mnomj4].[none:Area_name:nk]' show-apply='true' type='filter' values='cascading' />
+          </strip>
+        </edge>
+      </cards>
+      <simple-id uuid='{AB92D205-69A9-4C35-B4F5-EF0F53C9FA9F}' />
+    </window>
+    <window class='worksheet' name='% of target'>
+      <cards>
+        <edge name='left'>
+          <strip size='160'>
+            <card type='pages' />
+            <card type='filters' />
+            <card type='marks' />
+          </strip>
+        </edge>
+        <edge name='top'>
+          <strip size='2147483647'>
+            <card type='columns' />
+          </strip>
+          <strip size='2147483647'>
+            <card type='rows' />
+          </strip>
+          <strip size='2147483647'>
+            <card type='title' />
+          </strip>
+        </edge>
+        <edge name='right'>
+          <strip size='160'>
+            <card param='[federated.1q384ho133agad14ntnza0mnomj4].[none:country_code:nk]' show-apply='true' type='filter' values='cascading' />
+            <card param='[federated.1q384ho133agad14ntnza0mnomj4].[mn:Date:ok]' type='filter' />
+            <card mode='checkdropdown' param='[federated.1q384ho133agad14ntnza0mnomj4].[wk:Date:ok]' type='filter' />
+            <card mode='checkdropdown' param='[federated.1q384ho133agad14ntnza0mnomj4].[none:vertical_type:nk]' show-apply='true' type='filter' />
+            <card mode='radiolist' param='[federated.1q384ho133agad14ntnza0mnomj4].[none:is_stacked:nk]' type='filter' />
+            <card mode='checkdropdown' param='[federated.1q384ho133agad14ntnza0mnomj4].[none:city_name:nk]' show-apply='true' type='filter' values='cascading' />
+            <card mode='checkdropdown' param='[federated.1q384ho133agad14ntnza0mnomj4].[none:Zone_name:nk]' show-apply='true' type='filter' values='cascading' />
+            <card mode='checkdropdown' param='[federated.1q384ho133agad14ntnza0mnomj4].[none:Area_name:nk]' show-apply='true' type='filter' values='cascading' />
+          </strip>
+        </edge>
+      </cards>
+      <simple-id uuid='{59CD1C89-93A0-41CF-BE9B-7EFA577EFFE4}' />
+    </window>
+    <window class='worksheet' name='Weekly View'>
+      <cards>
+        <edge name='left'>
+          <strip size='160'>
+            <card type='pages' />
+            <card type='filters' />
+            <card type='marks' />
+          </strip>
+        </edge>
+        <edge name='top'>
+          <strip size='2147483647'>
+            <card type='columns' />
+          </strip>
+          <strip size='2147483647'>
+            <card type='rows' />
+          </strip>
+          <strip size='2147483647'>
+            <card type='title' />
+          </strip>
+        </edge>
+        <edge name='right'>
+          <strip size='160'>
+            <card param='[federated.1q384ho133agad14ntnza0mnomj4].[none:country_code:nk]' show-apply='true' type='filter' values='cascading' />
+            <card param='[federated.1q384ho133agad14ntnza0mnomj4].[mn:Date:ok]' type='filter' />
+            <card mode='checkdropdown' param='[federated.1q384ho133agad14ntnza0mnomj4].[wk:Date:ok]' type='filter' />
+            <card mode='checkdropdown' param='[federated.1q384ho133agad14ntnza0mnomj4].[none:vertical_type:nk]' show-apply='true' type='filter' />
+            <card mode='radiolist' param='[federated.1q384ho133agad14ntnza0mnomj4].[none:is_stacked:nk]' type='filter' />
+            <card mode='checkdropdown' param='[federated.1q384ho133agad14ntnza0mnomj4].[none:city_name:nk]' show-apply='true' type='filter' values='cascading' />
+            <card mode='checkdropdown' param='[federated.1q384ho133agad14ntnza0mnomj4].[none:Zone_name:nk]' show-apply='true' type='filter' values='cascading' />
+            <card mode='checkdropdown' param='[federated.1q384ho133agad14ntnza0mnomj4].[none:Area_name:nk]' show-apply='true' type='filter' values='cascading' />
+          </strip>
+        </edge>
+      </cards>
+      <simple-id uuid='{001F6585-247E-48F0-804A-4F1DD8697851}' />
+    </window>
+    <window class='worksheet' name='weekly trend'>
+      <cards>
+        <edge name='left'>
+          <strip size='160'>
+            <card type='pages' />
+            <card type='filters' />
+            <card type='marks' />
+          </strip>
+        </edge>
+        <edge name='top'>
+          <strip size='2147483647'>
+            <card type='columns' />
+          </strip>
+          <strip size='2147483647'>
+            <card type='rows' />
+          </strip>
+          <strip size='2147483647'>
+            <card type='title' />
+          </strip>
+        </edge>
+        <edge name='right'>
+          <strip size='160'>
+            <card mode='radiolist' param='[federated.1q384ho133agad14ntnza0mnomj4].[none:country_code:nk]' show-apply='true' type='filter' values='cascading' />
+            <card param='[federated.1q384ho133agad14ntnza0mnomj4].[mn:Date:ok]' type='filter' />
+            <card mode='checkdropdown' param='[federated.1q384ho133agad14ntnza0mnomj4].[wk:Date:ok]' type='filter' />
+            <card mode='checkdropdown' param='[federated.1q384ho133agad14ntnza0mnomj4].[none:vertical_type:nk]' show-apply='true' type='filter' />
+            <card mode='radiolist' param='[federated.1q384ho133agad14ntnza0mnomj4].[none:is_stacked:nk]' type='filter' />
+            <card mode='checkdropdown' param='[federated.1q384ho133agad14ntnza0mnomj4].[none:city_name:nk]' show-apply='true' type='filter' values='cascading' />
+            <card mode='checkdropdown' param='[federated.1q384ho133agad14ntnza0mnomj4].[none:Zone_name:nk]' show-apply='true' type='filter' values='cascading' />
+            <card mode='checkdropdown' param='[federated.1q384ho133agad14ntnza0mnomj4].[none:Area_name:nk]' show-apply='true' type='filter' values='cascading' />
+          </strip>
+        </edge>
+      </cards>
+      <simple-id uuid='{DBC90B7D-A96C-466A-868B-8B3AB1B9BF69}' />
+    </window>
+    <window class='worksheet' name='above thereshold'>
+      <cards>
+        <edge name='left'>
+          <strip size='160'>
+            <card type='pages' />
+            <card type='filters' />
+            <card type='marks' />
+          </strip>
+        </edge>
+        <edge name='top'>
+          <strip size='2147483647'>
+            <card type='columns' />
+          </strip>
+          <strip size='2147483647'>
+            <card type='rows' />
+          </strip>
+          <strip size='2147483647'>
+            <card type='title' />
+          </strip>
+        </edge>
+        <edge name='right'>
+          <strip size='160'>
+            <card param='[federated.1q384ho133agad14ntnza0mnomj4].[none:country_code:nk]' show-apply='true' type='filter' values='cascading' />
+            <card param='[federated.1q384ho133agad14ntnza0mnomj4].[mn:Date:ok]' type='filter' />
+            <card mode='checkdropdown' param='[federated.1q384ho133agad14ntnza0mnomj4].[wk:Date:ok]' type='filter' />
+            <card mode='checkdropdown' param='[federated.1q384ho133agad14ntnza0mnomj4].[none:vertical_type:nk]' show-apply='true' type='filter' />
+            <card mode='radiolist' param='[federated.1q384ho133agad14ntnza0mnomj4].[none:is_stacked:nk]' type='filter' />
+            <card mode='checkdropdown' param='[federated.1q384ho133agad14ntnza0mnomj4].[none:city_name:nk]' show-apply='true' type='filter' values='cascading' />
+            <card mode='checkdropdown' param='[federated.1q384ho133agad14ntnza0mnomj4].[none:Zone_name:nk]' show-apply='true' type='filter' values='cascading' />
+            <card mode='checkdropdown' param='[federated.1q384ho133agad14ntnza0mnomj4].[none:Area_name:nk]' show-apply='true' type='filter' values='cascading' />
+            <card pane-specification-id='1' param='[federated.1q384ho133agad14ntnza0mnomj4].[:Measure Names]' type='color' />
+          </strip>
+        </edge>
+      </cards>
+      <simple-id uuid='{154D794C-23FB-4CA1-B0CE-1ED856AF94B4}' />
+    </window>
+    <window class='dashboard' maximized='true' name='Orders Above The Theshhold'>
+      <viewpoints>
+        <viewpoint name='% of target'>
+          <zoom type='entire-view' />
+        </viewpoint>
+        <viewpoint name='above thereshold'>
+          <zoom type='entire-view' />
+          <highlight field='[federated.1q384ho133agad14ntnza0mnomj4].[:Measure Names]'>
+            <bucket-selection />
+          </highlight>
+        </viewpoint>
+      </viewpoints>
+      <active id='6' />
+      <simple-id uuid='{C96D6A39-A272-42E3-BA3D-C65A2FC374A9}' />
+    </window>
+    <window class='dashboard' name='WOW View'>
+      <viewpoints>
+        <viewpoint name='Weekly View'>
+          <zoom type='fit-width' />
+        </viewpoint>
+        <viewpoint name='weekly trend'>
+          <zoom type='entire-view' />
+        </viewpoint>
+      </viewpoints>
+      <active id='-1' />
+      <simple-id uuid='{C0237BF0-399C-49D5-BE85-5FD1547DD042}' />
+    </window>
+    <window class='dashboard' name='Detalied Table'>
+      <viewpoints>
+        <viewpoint name='Detailed View' />
+      </viewpoints>
+      <active id='-1' />
+      <simple-id uuid='{51130B97-8EAE-4091-8025-21649C1150E8}' />
+    </window>
+  </windows>
+</workbook>

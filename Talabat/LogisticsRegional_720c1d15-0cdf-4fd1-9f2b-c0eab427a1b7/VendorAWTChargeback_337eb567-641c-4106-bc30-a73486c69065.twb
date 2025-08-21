@@ -1,0 +1,1591 @@
+<?xml version='1.0' encoding='utf-8' ?>
+
+<!-- build 20233.25.0106.1650                               -->
+<workbook original-version='18.1' source-build='2023.1.9 (20231.24.0118.1101)' source-platform='mac' version='18.1' xml:base='https://tableau.deliveryhero.net' xmlns:user='http://www.tableausoftware.com/xml/user'>
+  <document-format-change-manifest>
+    <_.fcp.AccessibleZoneTabOrder.true...AccessibleZoneTabOrder />
+    <_.fcp.AnimationOnByDefault.true...AnimationOnByDefault />
+    <AutoCreateAndUpdateDSDPhoneLayouts />
+    <_.fcp.MarkAnimation.true...MarkAnimation />
+    <_.fcp.ObjectModelEncapsulateLegacy.true...ObjectModelEncapsulateLegacy />
+    <_.fcp.ObjectModelExtractV2.true...ObjectModelExtractV2 />
+    <_.fcp.ObjectModelTableType.true...ObjectModelTableType />
+    <_.fcp.SchemaViewerObjectModel.true...SchemaViewerObjectModel />
+    <SetMembershipControl />
+    <SheetIdentifierTracking />
+    <SortTagCleanup />
+    <_.fcp.VConnDownstreamExtractsWithWarnings.true...VConnDownstreamExtractsWithWarnings />
+    <WindowsPersistSimpleIdentifiers />
+    <ZoneBackgroundTransparency />
+  </document-format-change-manifest>
+  <repository-location derived-from='https://tableau.deliveryhero.net/t/Talabat/workbooks/VendorAWTChargeback?rev=2.1' id='VendorAWTChargeback' path='/t/Talabat/workbooks' revision='2.2' site='Talabat' />
+  <preferences>
+    <preference name='ui.encoding.shelf.height' value='24' />
+    <preference name='ui.shelf.height' value='26' />
+  </preferences>
+  <_.fcp.AnimationOnByDefault.false...style>
+    <_.fcp.AnimationOnByDefault.false..._.fcp.MarkAnimation.true...style-rule element='animation'>
+      <_.fcp.AnimationOnByDefault.false...format attr='animation-on' value='ao-on' />
+    </_.fcp.AnimationOnByDefault.false..._.fcp.MarkAnimation.true...style-rule>
+  </_.fcp.AnimationOnByDefault.false...style>
+  <datasources>
+    <datasource hasconnection='false' inline='true' name='Parameters' version='18.1'>
+      <aliases enabled='yes' />
+      <column caption='Dimension Breakdown' datatype='string' name='[AWT Threshold (min) (copy)]' param-domain-type='list' role='measure' type='nominal' value='&quot;Rider Arrival&quot;'>
+        <calculation class='tableau' formula='&quot;Rider Arrival&quot;' />
+        <members>
+          <member value='&quot;Rider Arrival&quot;' />
+          <member value='&quot;Country&quot;' />
+          <member value='&quot;Vertical&quot;' />
+        </members>
+      </column>
+      <column caption='AWT Threshold (min)' datatype='real' name='[Parameter 1]' param-domain-type='any' role='measure' type='quantitative' value='12.'>
+        <calculation class='tableau' formula='12.' />
+      </column>
+      <column caption='Variable Fee' datatype='real' name='[Parameter 2]' param-domain-type='any' role='measure' type='quantitative' value='0.'>
+        <calculation class='tableau' formula='0.' />
+      </column>
+      <column caption='Fixed Fee' datatype='real' name='[Parameter 3]' param-domain-type='any' role='measure' type='quantitative' value='2.7'>
+        <calculation class='tableau' formula='2.7' />
+      </column>
+    </datasource>
+    <datasource caption='Simulator' inline='true' name='federated.0b7av7p1kv6vye13x1p8019zeok0' version='18.1'>
+      <connection class='federated'>
+        <named-connections>
+          <named-connection caption='BigQuery' name='bigquery.03w5jpa1um4f1x1d2iyq804nvumh'>
+            <connection CATALOG='tlb-data-prod' EXECCATALOG='tlb-data-dev' authentication='oauth' bq-dataset-fetch-rows='' bq-fetch-rows='' bq-fetch-tasks='' bq-large-fetch-rows='' bq-project-fetch-rows='' bq-response-rows='' class='bigquery' connection-dialect='google-sql' project='tlb-data-prod' schema='data_platform_logistics' server-oauth='server-custom' username='andrew.iskandar@talabat.com' workgroup-auth-mode='prompt' />
+          </named-connection>
+        </named-connections>
+        <_.fcp.ObjectModelEncapsulateLegacy.false...relation connection='bigquery.03w5jpa1um4f1x1d2iyq804nvumh' name='Custom SQL Query' type='text'><![CDATA[with vars as (
+  select 
+  greatest(date('2024-10-1'), date_sub(current_date(), interval 90 day)) as start,
+  current_date() as stop,
+  --100 as awt_threshold
+  <[Parameters].[Parameter 1]>*60 as awt_threshold
+)
+
+, delivery_geo as (
+  select 
+  country_code,
+  delivery_id,
+  rider_30m_to_pickup_at is not null as is_30m_trigger,
+  rider_30m_to_pickup_at as rider_at_restaurant_at,
+  rider_30m_to_pickup_exit_at as rider_left_restaurant_at,
+  rider_picked_up_at between rider_30m_to_pickup_at and rider_30m_to_pickup_exit_at as is_pu_accurate,
+  
+  from vars, `fulfillment-dwh-production.curated_data_shared.deliveries_geofence_timings`
+
+  where 0=0 
+  and created_date between start and stop
+)
+
+, deliveries as (
+  select 
+  o.created_date,
+  o.country_code,
+  o.vendor.vertical_type,
+  platform_order_code,
+  d.id as delivery_id,
+  delivery_status,
+  original_scheduled_pickup_at as committed_pu_time,
+  rider_picked_up_at,
+  is_primary,
+  -- vendor_delay_v2,
+  -- vendor_delay_v3,
+  o.timings.order_delay,
+  stacked_deliveries_rank,
+  stacked_deliveries_rank is not null as is_stacked,
+  stacked_deliveries_rank = max(stacked_deliveries_rank) over(partition by o.country_code, platform_order_code) as is_last_stack_rank,
+
+  from vars, `fulfillment-dwh-production.curated_data_shared.orders` o
+  left join unnest(deliveries) d
+  -- join `tlb-data-prod.data_platform.fct_logistics_order` lo on (lo.country_code = o.country_code and o.platform_order_code = lo.order_code)
+
+  where 0=0
+  and o.created_date between start and stop
+  and platform in ("TB","TB_OT")
+  and o.country_code is not null
+  and o.vendor.vertical_type is not null
+)
+
+, vendor_delay_calc as (
+  select 
+  o.country_code,
+  platform_order_code,
+  d.id as delivery_id,
+  CASE
+      WHEN rider_30m_to_pickup_at <<= original_scheduled_pickup_at THEN TIMESTAMP_DIFF(d.rider_picked_up_at, original_scheduled_pickup_at, SECOND)
+      ELSE TIMESTAMP_DIFF(d.rider_picked_up_at, rider_30m_to_pickup_at,SECOND)
+  END AS vendor_delay_v2_calc,
+
+  from vars, `fulfillment-dwh-production.curated_data_shared.orders` o
+  left join unnest(deliveries) d
+--  left join `fulfillment-dwh-production.curated_data_shared.deliveries_geofence_timings` g on (g.country_code = o.country_code and g.delivery_id = d.id)
+
+  where 0=0
+  and o.created_date between start and stop
+  and platform in ("TB","TB_OT")
+  and o.country_code is not null
+)
+
+select 
+country_code,
+vertical_type,
+date_trunc(created_date, week) as week,
+is_pu_accurate,
+g.rider_at_restaurant_at << d.committed_pu_time as is_rider_early,
+(not is_stacked or (is_stacked and is_last_stack_rank)) and timestamp_diff(rider_at_restaurant_at, committed_pu_time, second) <<=600 and vendor_delay_v2_calc >>= awt_threshold as is_chargeable_awt,
+count (distinct delivery_id) as total_deliveries,
+count (distinct case when delivery_status ='cancelled' then delivery_id end) as cancelled_deliveries,
+count (distinct case when vendor_delay_v2_calc/60 >> 10 then delivery_id end) vendor_late_deliveries,
+count (distinct case when order_delay/60 >> 10 then delivery_id end) late_deliveries,
+count (distinct case when order_delay/60 between -10 and 10 then delivery_id end) ontime_deliveries,
+count (distinct case when is_stacked then delivery_id end) as stacked_deliveries,
+sum(timestamp_diff(rider_picked_up_at, rider_at_restaurant_at, second))/60 as avt_30,
+sum (
+  case 
+    when (not is_stacked or (is_stacked and is_last_stack_rank)) and rider_at_restaurant_at << committed_pu_time then timestamp_diff(rider_picked_up_at, committed_pu_time, second) -- not stacked or is last stack, rider early
+    when (not is_stacked or (is_stacked and is_last_stack_rank)) and rider_at_restaurant_at >> committed_pu_time and timestamp_diff(rider_picked_up_at, committed_pu_time, second) << awt_threshold and vendor_delay_v2_calc >> awt_threshold then timestamp_diff(rider_picked_up_at, rider_at_restaurant_at, second) -- not stacked or is last stack, rider late by <<10min and vendor late >>10min
+    when (not is_stacked or (is_stacked and is_last_stack_rank)) and rider_at_restaurant_at >> committed_pu_time and timestamp_diff(rider_picked_up_at, committed_pu_time, second) >> awt_threshold then 0 -- not stacked or is last stack, rider late by >>10min
+    else 0
+  end
+)/60 as awt,
+
+sum (
+  case 
+    when (not is_stacked or (is_stacked and is_last_stack_rank)) and timestamp_diff(rider_at_restaurant_at, committed_pu_time, second) <<=600 then vendor_delay_v2_calc -- not stacked or is last stack, rider late by <<10min and vendor late >>10min
+    else 0
+  end
+)/60 as awt_v2,
+
+from vars, deliveries d 
+left join delivery_geo g using (country_code, delivery_id) 
+left join vendor_delay_calc v using (country_code, delivery_id) 
+
+where 0=0
+and is_primary
+
+group by all]]></_.fcp.ObjectModelEncapsulateLegacy.false...relation>
+        <_.fcp.ObjectModelEncapsulateLegacy.true...relation connection='bigquery.03w5jpa1um4f1x1d2iyq804nvumh' name='Custom SQL Query' type='text'><![CDATA[with vars as (
+  select 
+  greatest(date('2024-10-1'), date_sub(current_date(), interval 90 day)) as start,
+  current_date() as stop,
+  --100 as awt_threshold
+  <[Parameters].[Parameter 1]>*60 as awt_threshold
+)
+
+, delivery_geo as (
+  select 
+  country_code,
+  delivery_id,
+  rider_30m_to_pickup_at is not null as is_30m_trigger,
+  rider_30m_to_pickup_at as rider_at_restaurant_at,
+  rider_30m_to_pickup_exit_at as rider_left_restaurant_at,
+  rider_picked_up_at between rider_30m_to_pickup_at and rider_30m_to_pickup_exit_at as is_pu_accurate,
+  
+  from vars, `fulfillment-dwh-production.curated_data_shared.deliveries_geofence_timings`
+
+  where 0=0 
+  and created_date between start and stop
+)
+
+, deliveries as (
+  select 
+  o.created_date,
+  o.country_code,
+  o.vendor.vertical_type,
+  platform_order_code,
+  d.id as delivery_id,
+  delivery_status,
+  original_scheduled_pickup_at as committed_pu_time,
+  rider_picked_up_at,
+  is_primary,
+  -- vendor_delay_v2,
+  -- vendor_delay_v3,
+  o.timings.order_delay,
+  stacked_deliveries_rank,
+  stacked_deliveries_rank is not null as is_stacked,
+  stacked_deliveries_rank = max(stacked_deliveries_rank) over(partition by o.country_code, platform_order_code) as is_last_stack_rank,
+
+  from vars, `fulfillment-dwh-production.curated_data_shared.orders` o
+  left join unnest(deliveries) d
+  -- join `tlb-data-prod.data_platform.fct_logistics_order` lo on (lo.country_code = o.country_code and o.platform_order_code = lo.order_code)
+
+  where 0=0
+  and o.created_date between start and stop
+  and platform in ("TB","TB_OT")
+  and o.country_code is not null
+  and o.vendor.vertical_type is not null
+)
+
+, vendor_delay_calc as (
+  select 
+  o.country_code,
+  platform_order_code,
+  d.id as delivery_id,
+  CASE
+      WHEN rider_30m_to_pickup_at <<= original_scheduled_pickup_at THEN TIMESTAMP_DIFF(d.rider_picked_up_at, original_scheduled_pickup_at, SECOND)
+      ELSE TIMESTAMP_DIFF(d.rider_picked_up_at, rider_30m_to_pickup_at,SECOND)
+  END AS vendor_delay_v2_calc,
+
+  from vars, `fulfillment-dwh-production.curated_data_shared.orders` o
+  left join unnest(deliveries) d
+--  left join `fulfillment-dwh-production.curated_data_shared.deliveries_geofence_timings` g on (g.country_code = o.country_code and g.delivery_id = d.id)
+
+  where 0=0
+  and o.created_date between start and stop
+  and platform in ("TB","TB_OT")
+  and o.country_code is not null
+)
+
+select 
+country_code,
+vertical_type,
+date_trunc(created_date, week) as week,
+is_pu_accurate,
+g.rider_at_restaurant_at << d.committed_pu_time as is_rider_early,
+(not is_stacked or (is_stacked and is_last_stack_rank)) and timestamp_diff(rider_at_restaurant_at, committed_pu_time, second) <<=600 and vendor_delay_v2_calc >>= awt_threshold as is_chargeable_awt,
+count (distinct delivery_id) as total_deliveries,
+count (distinct case when delivery_status ='cancelled' then delivery_id end) as cancelled_deliveries,
+count (distinct case when vendor_delay_v2_calc/60 >> 10 then delivery_id end) vendor_late_deliveries,
+count (distinct case when order_delay/60 >> 10 then delivery_id end) late_deliveries,
+count (distinct case when order_delay/60 between -10 and 10 then delivery_id end) ontime_deliveries,
+count (distinct case when is_stacked then delivery_id end) as stacked_deliveries,
+sum(timestamp_diff(rider_picked_up_at, rider_at_restaurant_at, second))/60 as avt_30,
+sum (
+  case 
+    when (not is_stacked or (is_stacked and is_last_stack_rank)) and rider_at_restaurant_at << committed_pu_time then timestamp_diff(rider_picked_up_at, committed_pu_time, second) -- not stacked or is last stack, rider early
+    when (not is_stacked or (is_stacked and is_last_stack_rank)) and rider_at_restaurant_at >> committed_pu_time and timestamp_diff(rider_picked_up_at, committed_pu_time, second) << awt_threshold and vendor_delay_v2_calc >> awt_threshold then timestamp_diff(rider_picked_up_at, rider_at_restaurant_at, second) -- not stacked or is last stack, rider late by <<10min and vendor late >>10min
+    when (not is_stacked or (is_stacked and is_last_stack_rank)) and rider_at_restaurant_at >> committed_pu_time and timestamp_diff(rider_picked_up_at, committed_pu_time, second) >> awt_threshold then 0 -- not stacked or is last stack, rider late by >>10min
+    else 0
+  end
+)/60 as awt,
+
+sum (
+  case 
+    when (not is_stacked or (is_stacked and is_last_stack_rank)) and timestamp_diff(rider_at_restaurant_at, committed_pu_time, second) <<=600 then vendor_delay_v2_calc -- not stacked or is last stack, rider late by <<10min and vendor late >>10min
+    else 0
+  end
+)/60 as awt_v2,
+
+from vars, deliveries d 
+left join delivery_geo g using (country_code, delivery_id) 
+left join vendor_delay_calc v using (country_code, delivery_id) 
+
+where 0=0
+and is_primary
+
+group by all]]></_.fcp.ObjectModelEncapsulateLegacy.true...relation>
+        <metadata-records>
+          <metadata-record class='column'>
+            <remote-name>country_code</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[country_code]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>country_code</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_E5CB2357FCC14DDA84F5A88DEE3C0AC1]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>vertical_type</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[vertical_type]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>vertical_type</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_E5CB2357FCC14DDA84F5A88DEE3C0AC1]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>week</remote-name>
+            <remote-type>7</remote-type>
+            <local-name>[week]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>week</remote-alias>
+            <local-type>date</local-type>
+            <aggregation>Year</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_E5CB2357FCC14DDA84F5A88DEE3C0AC1]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>is_pu_accurate</remote-name>
+            <remote-type>11</remote-type>
+            <local-name>[is_pu_accurate]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>is_pu_accurate</remote-alias>
+            <local-type>boolean</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_E5CB2357FCC14DDA84F5A88DEE3C0AC1]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>is_rider_early</remote-name>
+            <remote-type>11</remote-type>
+            <local-name>[is_rider_early]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>is_rider_early</remote-alias>
+            <local-type>boolean</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_E5CB2357FCC14DDA84F5A88DEE3C0AC1]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>is_chargeable_awt</remote-name>
+            <remote-type>11</remote-type>
+            <local-name>[is_chargeable_awt]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>is_chargeable_awt</remote-alias>
+            <local-type>boolean</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_E5CB2357FCC14DDA84F5A88DEE3C0AC1]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>total_deliveries</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[total_deliveries]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>total_deliveries</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_E5CB2357FCC14DDA84F5A88DEE3C0AC1]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>cancelled_deliveries</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[cancelled_deliveries]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>cancelled_deliveries</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_E5CB2357FCC14DDA84F5A88DEE3C0AC1]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>vendor_late_deliveries</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[vendor_late_deliveries]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>vendor_late_deliveries</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_E5CB2357FCC14DDA84F5A88DEE3C0AC1]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>late_deliveries</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[late_deliveries]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>late_deliveries</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_E5CB2357FCC14DDA84F5A88DEE3C0AC1]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>ontime_deliveries</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[ontime_deliveries]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>ontime_deliveries</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_E5CB2357FCC14DDA84F5A88DEE3C0AC1]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>stacked_deliveries</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[stacked_deliveries]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>stacked_deliveries</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_E5CB2357FCC14DDA84F5A88DEE3C0AC1]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>avt_30</remote-name>
+            <remote-type>5</remote-type>
+            <local-name>[avt_30]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>avt_30</remote-alias>
+            <local-type>real</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_E5CB2357FCC14DDA84F5A88DEE3C0AC1]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>awt</remote-name>
+            <remote-type>5</remote-type>
+            <local-name>[awt]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>awt</remote-alias>
+            <local-type>real</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_E5CB2357FCC14DDA84F5A88DEE3C0AC1]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>awt_v2</remote-name>
+            <remote-type>5</remote-type>
+            <local-name>[awt_v2]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>awt_v2</remote-alias>
+            <local-type>real</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_E5CB2357FCC14DDA84F5A88DEE3C0AC1]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+        </metadata-records>
+      </connection>
+      <aliases enabled='yes' />
+      <column caption='% Ontime' datatype='real' default-format='p0.0%' name='[% Vendor Delay (30m) (copy) (copy)_6614591598756941831]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='SUM([ontime_deliveries]) / SUM([total_deliveries])' />
+      </column>
+      <column caption='% Order Late ' datatype='real' default-format='p0.0%' name='[% Vendor Delay (30m) (copy)_6614591598756929542]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='SUM([late_deliveries]) / SUM([total_deliveries])' />
+      </column>
+      <column datatype='string' name='[:Measure Names]' role='dimension' type='nominal'>
+        <aliases>
+          <alias key='&quot;[federated.0b7av7p1kv6vye13x1p8019zeok0].[pcto:sum:total_deliveries:qk:2]&quot;' value='% Share Total Deliveries' />
+          <alias key='&quot;[federated.0b7av7p1kv6vye13x1p8019zeok0].[pcto:sum:total_deliveries:qk]&quot;' value='% of Total Total Deliveries' />
+        </aliases>
+      </column>
+      <column caption='% Chargeable Orders' datatype='real' default-format='p0.0%' name='[Calculation_4734549887109701632]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='SUM(IF [is_chargeable_awt] THEN [total_deliveries] END) &#10;/ &#10;SUM([total_deliveries])' />
+      </column>
+      <column caption='Total Variable Fees' datatype='real' name='[Calculation_6614591598754840577]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='[Calculation_6614591598763036681] * SUM([total_deliveries]) * [Parameters].[Parameter 2]' />
+      </column>
+      <column caption='Avg. AWT' datatype='real' default-format='n#,##0.0;-#,##0.0' name='[Calculation_6614591598755840004]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='SUM([awt_v2]) / SUM([total_deliveries])' />
+      </column>
+      <column caption='% Vendor Delay (30m)' datatype='real' default-format='p0.0%' name='[Calculation_6614591598756032517]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='SUM([vendor_late_deliveries]) / SUM([total_deliveries])' />
+      </column>
+      <column caption='AVT 30m' datatype='real' default-format='n#,##0.0;-#,##0.0' name='[Calculation_6614591598758473736]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='SUM([avt_30]) / SUM([total_deliveries])' />
+      </column>
+      <column caption='Avg. Chargeable AWT' datatype='real' default-format='n#,##0.0;-#,##0.0' name='[Calculation_6614591598763036681]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='SUM(IF [is_chargeable_awt] THEN [awt_v2] - ([Parameters].[Parameter 1]*[total_deliveries]) END) &#10;/ &#10;SUM([total_deliveries])' />
+      </column>
+      <column aggregation='Sum' caption='Month' datatype='integer' name='[Calculation_6614591599750950923]' role='dimension' type='ordinal'>
+        <calculation class='tableau' formula='MONTH([week])' />
+      </column>
+      <column caption='Dimension' datatype='string' name='[Calculation_6614591599752269836]' role='dimension' type='nominal'>
+        <calculation class='tableau' formula='IF [Parameters].[AWT Threshold (min) (copy)] = &quot;Rider Arrival&quot; THEN [Calculation_6614591599752896525]&#10;ELSEIF [Parameters].[AWT Threshold (min) (copy)] = &quot;Vertical&quot; THEN [vertical_type]&#10;ELSE [country_code]&#10;END' />
+      </column>
+      <column caption='Rider Arrival' datatype='string' name='[Calculation_6614591599752896525]' role='dimension' type='nominal'>
+        <calculation class='tableau' formula='IF [is_rider_early] THEN &quot;3. Rider Early&quot; &#10;ELSEIF NOT [is_rider_early] THEN &quot;2. Rider Late&quot;&#10;ELSE &quot;1. NULL&quot; &#10;END' />
+      </column>
+      <column caption='Total Fixed Fees' datatype='real' name='[Total Variable Fees (copy)_6614591598755053571]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='SUM(IF [is_chargeable_awt] THEN [total_deliveries] END) * [Parameters].[Parameter 3]' />
+      </column>
+      <column caption='Total Chargeable Fees' datatype='real' name='[Total Variable Fees (copy)_6614591598764392458]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='[Total Variable Fees (copy)_6614591598755053571] + [Calculation_6614591598754840577]' />
+      </column>
+      <_.fcp.ObjectModelTableType.true...column caption='Custom SQL Query' datatype='table' name='[__tableau_internal_object_id__].[_E5CB2357FCC14DDA84F5A88DEE3C0AC1]' role='measure' type='quantitative' />
+      <column datatype='string' name='[country_code]' role='dimension' semantic-role='[Country].[ISO3166_2]' type='nominal' />
+      <column caption='Is Rider Early' datatype='boolean' name='[is_rider_early]' role='dimension' type='nominal' />
+      <column caption='Total Deliveries' datatype='integer' name='[total_deliveries]' role='measure' type='quantitative' />
+      <column caption='Vertical' datatype='string' name='[vertical_type]' role='dimension' type='nominal' />
+      <column datatype='date' default-format='*m/d/yyyy' name='[week]' role='dimension' type='ordinal' />
+      <column-instance column='[Calculation_6614591599752269836]' derivation='None' name='[none:Calculation_6614591599752269836:nk]' pivot='key' type='nominal' />
+      <column-instance column='[total_deliveries]' derivation='Sum' name='[pcto:sum:total_deliveries:qk:2]' pivot='key' type='quantitative'>
+        <table-calc ordering-type='Columns' type='PctTotal' />
+      </column-instance>
+      <column-instance column='[total_deliveries]' derivation='Sum' name='[pcto:sum:total_deliveries:qk]' pivot='key' type='quantitative'>
+        <table-calc ordering-field='[federated.0b7av7p1kv6vye13x1p8019zeok0].[none:Calculation_6614591599752269836:nk]' ordering-type='Field' type='PctTotal' />
+      </column-instance>
+      <extract _.fcp.ObjectModelExtractV2.true...object-id='' _.fcp.VConnDownstreamExtractsWithWarnings.true...user-specific='false' count='-1' enabled='false' units='records'>
+        <connection access_mode='readonly' authentication='auth-none' author-locale='en_US' class='hyper' dbname='/Users/andrew.iskandar/Documents/My Tableau Repository/Datasources/Talabat AWT Vendor Chargeback.hyper' default-settings='yes' schema='Extract' sslmode='' tablename='Extract' update-time='11/27/2024 07:21:39 AM' username='tableau_internal_user'>
+          <_.fcp.ObjectModelEncapsulateLegacy.false...relation name='Extract' table='[Extract].[Extract]' type='table' />
+          <_.fcp.ObjectModelEncapsulateLegacy.true...relation name='Extract' table='[Extract].[Extract]' type='table' />
+          <refresh>
+            <refresh-event add-from-file-path='Custom SQL Query (data_platform_logistics)' increment-value='%null%' refresh-type='create' rows-inserted='3177' timestamp-start='2024-11-27 07:21:20.255' />
+          </refresh>
+          <metadata-records>
+            <metadata-record class='column'>
+              <remote-name>country_code</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[country_code]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>country_code</remote-alias>
+              <ordinal>0</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>7</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>vertical_type</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[vertical_type]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>vertical_type</remote-alias>
+              <ordinal>1</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>8</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>week</remote-name>
+              <remote-type>133</remote-type>
+              <local-name>[week]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>week</remote-alias>
+              <ordinal>2</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>date</local-type>
+              <aggregation>Year</aggregation>
+              <approx-count>9</approx-count>
+              <contains-null>true</contains-null>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>is_pu_accurate</remote-name>
+              <remote-type>11</remote-type>
+              <local-name>[is_pu_accurate]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>is_pu_accurate</remote-alias>
+              <ordinal>3</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>boolean</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>2</approx-count>
+              <contains-null>true</contains-null>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>is_rider_early</remote-name>
+              <remote-type>11</remote-type>
+              <local-name>[is_rider_early]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>is_rider_early</remote-alias>
+              <ordinal>4</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>boolean</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>3</approx-count>
+              <contains-null>true</contains-null>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>is_chargeable_awt</remote-name>
+              <remote-type>11</remote-type>
+              <local-name>[is_chargeable_awt]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>is_chargeable_awt</remote-alias>
+              <ordinal>5</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>boolean</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>2</approx-count>
+              <contains-null>true</contains-null>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>total_deliveries</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[total_deliveries]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>total_deliveries</remote-alias>
+              <ordinal>6</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>1181</approx-count>
+              <contains-null>true</contains-null>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>cancelled_deliveries</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[cancelled_deliveries]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>cancelled_deliveries</remote-alias>
+              <ordinal>7</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>391</approx-count>
+              <contains-null>true</contains-null>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>vendor_late_deliveries</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[vendor_late_deliveries]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>vendor_late_deliveries</remote-alias>
+              <ordinal>8</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>531</approx-count>
+              <contains-null>true</contains-null>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>late_deliveries</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[late_deliveries]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>late_deliveries</remote-alias>
+              <ordinal>9</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>830</approx-count>
+              <contains-null>true</contains-null>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>ontime_deliveries</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[ontime_deliveries]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>ontime_deliveries</remote-alias>
+              <ordinal>10</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>1055</approx-count>
+              <contains-null>true</contains-null>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>stacked_deliveries</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[stacked_deliveries]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>stacked_deliveries</remote-alias>
+              <ordinal>11</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>806</approx-count>
+              <contains-null>true</contains-null>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>avt_30</remote-name>
+              <remote-type>5</remote-type>
+              <local-name>[avt_30]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>avt_30</remote-alias>
+              <ordinal>12</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>real</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>2536</approx-count>
+              <contains-null>true</contains-null>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>awt</remote-name>
+              <remote-type>5</remote-type>
+              <local-name>[awt]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>awt</remote-alias>
+              <ordinal>13</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>real</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>1554</approx-count>
+              <contains-null>true</contains-null>
+            </metadata-record>
+          </metadata-records>
+        </connection>
+      </extract>
+      <layout _.fcp.SchemaViewerObjectModel.false...dim-percentage='0.5' _.fcp.SchemaViewerObjectModel.false...measure-percentage='0.4' dim-ordering='alphabetic' measure-ordering='alphabetic' show-aliased-fields='true' show-structure='true' />
+      <semantic-values>
+        <semantic-value key='[Country].[Name]' value='&quot;United States&quot;' />
+      </semantic-values>
+      <date-options start-of-week='saturday' />
+      <field-sort-info field-sort-order-type='custom-order'>
+        <field-sort-custom-order field='country_code' />
+        <field-sort-custom-order field='week' />
+        <field-sort-custom-order field='Calculation_6614591599750950923' />
+        <field-sort-custom-order field='is_pu_accurate' />
+        <field-sort-custom-order field='is_rider_early' />
+        <field-sort-custom-order field='Calculation_6614591599752896525' />
+        <field-sort-custom-order field='Calculation_6614591599752269836' />
+        <field-sort-custom-order field='is_chargeable_awt' />
+        <field-sort-custom-order field='total_deliveries' />
+        <field-sort-custom-order field='cancelled_deliveries' />
+        <field-sort-custom-order field='vendor_late_deliveries' />
+        <field-sort-custom-order field='late_deliveries' />
+        <field-sort-custom-order field='ontime_deliveries' />
+        <field-sort-custom-order field='stacked_deliveries' />
+        <field-sort-custom-order field='avt_30' />
+        <field-sort-custom-order field='Calculation_6614591598758473736' />
+        <field-sort-custom-order field='awt' />
+        <field-sort-custom-order field='Calculation_6614591598763036681' />
+        <field-sort-custom-order field='Geometry (generated)' />
+        <field-sort-custom-order field='Latitude (generated)' />
+        <field-sort-custom-order field='Longitude (generated)' />
+        <field-sort-custom-order field='Total Variable Fees (copy)_6614591598755053571' />
+        <field-sort-custom-order field='Calculation_6614591598754840577' />
+        <field-sort-custom-order field='Total Variable Fees (copy)_6614591598764392458' />
+        <field-sort-custom-order field='Calculation_6614591598755840004' />
+        <field-sort-custom-order field='% Vendor Delay (30m) (copy) (copy)_6614591598756941831' />
+        <field-sort-custom-order field='% Vendor Delay (30m) (copy)_6614591598756929542' />
+        <field-sort-custom-order field='Calculation_6614591598756032517' />
+        <field-sort-custom-order field=':Measure Names' />
+        <field-sort-custom-order field='Multiple Values' />
+      </field-sort-info>
+      <datasource-dependencies datasource='Parameters'>
+        <column caption='Dimension Breakdown' datatype='string' name='[AWT Threshold (min) (copy)]' param-domain-type='list' role='measure' type='nominal' value='&quot;Rider Arrival&quot;'>
+          <calculation class='tableau' formula='&quot;Rider Arrival&quot;' />
+        </column>
+        <column caption='AWT Threshold (min)' datatype='real' name='[Parameter 1]' param-domain-type='any' role='measure' type='quantitative' value='12.'>
+          <calculation class='tableau' formula='12.' />
+        </column>
+        <column caption='Variable Fee' datatype='real' name='[Parameter 2]' param-domain-type='any' role='measure' type='quantitative' value='0.'>
+          <calculation class='tableau' formula='0.' />
+        </column>
+        <column caption='Fixed Fee' datatype='real' name='[Parameter 3]' param-domain-type='any' role='measure' type='quantitative' value='2.7'>
+          <calculation class='tableau' formula='2.7' />
+        </column>
+      </datasource-dependencies>
+      <_.fcp.ObjectModelEncapsulateLegacy.true...object-graph>
+        <objects>
+          <object caption='Custom SQL Query' id='_E5CB2357FCC14DDA84F5A88DEE3C0AC1'>
+            <properties context=''>
+              <relation connection='bigquery.03w5jpa1um4f1x1d2iyq804nvumh' name='Custom SQL Query' type='text'><![CDATA[with vars as (
+  select 
+  greatest(date('2024-10-1'), date_sub(current_date(), interval 90 day)) as start,
+  current_date() as stop,
+  --100 as awt_threshold
+  <[Parameters].[Parameter 1]>*60 as awt_threshold
+)
+
+, delivery_geo as (
+  select 
+  country_code,
+  delivery_id,
+  rider_30m_to_pickup_at is not null as is_30m_trigger,
+  rider_30m_to_pickup_at as rider_at_restaurant_at,
+  rider_30m_to_pickup_exit_at as rider_left_restaurant_at,
+  rider_picked_up_at between rider_30m_to_pickup_at and rider_30m_to_pickup_exit_at as is_pu_accurate,
+  
+  from vars, `fulfillment-dwh-production.curated_data_shared.deliveries_geofence_timings`
+
+  where 0=0 
+  and created_date between start and stop
+)
+
+, deliveries as (
+  select 
+  o.created_date,
+  o.country_code,
+  o.vendor.vertical_type,
+  platform_order_code,
+  d.id as delivery_id,
+  delivery_status,
+  original_scheduled_pickup_at as committed_pu_time,
+  rider_picked_up_at,
+  is_primary,
+  -- vendor_delay_v2,
+  -- vendor_delay_v3,
+  o.timings.order_delay,
+  stacked_deliveries_rank,
+  stacked_deliveries_rank is not null as is_stacked,
+  stacked_deliveries_rank = max(stacked_deliveries_rank) over(partition by o.country_code, platform_order_code) as is_last_stack_rank,
+
+  from vars, `fulfillment-dwh-production.curated_data_shared.orders` o
+  left join unnest(deliveries) d
+  -- join `tlb-data-prod.data_platform.fct_logistics_order` lo on (lo.country_code = o.country_code and o.platform_order_code = lo.order_code)
+
+  where 0=0
+  and o.created_date between start and stop
+  and platform in ("TB","TB_OT")
+  and o.country_code is not null
+  and o.vendor.vertical_type is not null
+)
+
+, vendor_delay_calc as (
+  select 
+  o.country_code,
+  platform_order_code,
+  d.id as delivery_id,
+  CASE
+      WHEN rider_30m_to_pickup_at <<= original_scheduled_pickup_at THEN TIMESTAMP_DIFF(d.rider_picked_up_at, original_scheduled_pickup_at, SECOND)
+      ELSE TIMESTAMP_DIFF(d.rider_picked_up_at, rider_30m_to_pickup_at,SECOND)
+  END AS vendor_delay_v2_calc,
+
+  from vars, `fulfillment-dwh-production.curated_data_shared.orders` o
+  left join unnest(deliveries) d
+--  left join `fulfillment-dwh-production.curated_data_shared.deliveries_geofence_timings` g on (g.country_code = o.country_code and g.delivery_id = d.id)
+
+  where 0=0
+  and o.created_date between start and stop
+  and platform in ("TB","TB_OT")
+  and o.country_code is not null
+)
+
+select 
+country_code,
+vertical_type,
+date_trunc(created_date, week) as week,
+is_pu_accurate,
+g.rider_at_restaurant_at << d.committed_pu_time as is_rider_early,
+(not is_stacked or (is_stacked and is_last_stack_rank)) and timestamp_diff(rider_at_restaurant_at, committed_pu_time, second) <<=600 and vendor_delay_v2_calc >>= awt_threshold as is_chargeable_awt,
+count (distinct delivery_id) as total_deliveries,
+count (distinct case when delivery_status ='cancelled' then delivery_id end) as cancelled_deliveries,
+count (distinct case when vendor_delay_v2_calc/60 >> 10 then delivery_id end) vendor_late_deliveries,
+count (distinct case when order_delay/60 >> 10 then delivery_id end) late_deliveries,
+count (distinct case when order_delay/60 between -10 and 10 then delivery_id end) ontime_deliveries,
+count (distinct case when is_stacked then delivery_id end) as stacked_deliveries,
+sum(timestamp_diff(rider_picked_up_at, rider_at_restaurant_at, second))/60 as avt_30,
+sum (
+  case 
+    when (not is_stacked or (is_stacked and is_last_stack_rank)) and rider_at_restaurant_at << committed_pu_time then timestamp_diff(rider_picked_up_at, committed_pu_time, second) -- not stacked or is last stack, rider early
+    when (not is_stacked or (is_stacked and is_last_stack_rank)) and rider_at_restaurant_at >> committed_pu_time and timestamp_diff(rider_picked_up_at, committed_pu_time, second) << awt_threshold and vendor_delay_v2_calc >> awt_threshold then timestamp_diff(rider_picked_up_at, rider_at_restaurant_at, second) -- not stacked or is last stack, rider late by <<10min and vendor late >>10min
+    when (not is_stacked or (is_stacked and is_last_stack_rank)) and rider_at_restaurant_at >> committed_pu_time and timestamp_diff(rider_picked_up_at, committed_pu_time, second) >> awt_threshold then 0 -- not stacked or is last stack, rider late by >>10min
+    else 0
+  end
+)/60 as awt,
+
+sum (
+  case 
+    when (not is_stacked or (is_stacked and is_last_stack_rank)) and timestamp_diff(rider_at_restaurant_at, committed_pu_time, second) <<=600 then vendor_delay_v2_calc -- not stacked or is last stack, rider late by <<10min and vendor late >>10min
+    else 0
+  end
+)/60 as awt_v2,
+
+from vars, deliveries d 
+left join delivery_geo g using (country_code, delivery_id) 
+left join vendor_delay_calc v using (country_code, delivery_id) 
+
+where 0=0
+and is_primary
+
+group by all]]></relation>
+            </properties>
+            <properties context='extract'>
+              <relation name='Extract' table='[Extract].[Extract]' type='table' />
+            </properties>
+          </object>
+        </objects>
+      </_.fcp.ObjectModelEncapsulateLegacy.true...object-graph>
+    </datasource>
+    <datasource caption='Fixed Fee' inline='true' name='federated.0pjcby30hbhhq81exyhil1vorx3s' version='18.1'>
+      <connection class='federated'>
+        <named-connections>
+          <named-connection caption='BigQuery' name='bigquery.0ys6o5d02q0xrg1ccsnd10vr6s86'>
+            <connection CATALOG='tlb-data-prod' EXECCATALOG='tlb-data-dev' authentication='oauth' bq-dataset-fetch-rows='' bq-fetch-rows='' bq-fetch-tasks='' bq-large-fetch-rows='' bq-project-fetch-rows='' bq-response-rows='' class='bigquery' connection-dialect='google-sql' project='tlb-data-prod' schema='data_platform_logistics' server-oauth='server-custom' username='andrew.iskandar@talabat.com' workgroup-auth-mode='prompt' />
+          </named-connection>
+        </named-connections>
+        <_.fcp.ObjectModelEncapsulateLegacy.false...relation connection='bigquery.0ys6o5d02q0xrg1ccsnd10vr6s86' name='Custom SQL Query' type='text'>WITH data AS (
+  SELECT 
+    [&apos;ae&apos;, &apos;qa&apos;, &apos;om&apos;, &apos;eg&apos;, &apos;kw&apos;, &apos;iq&apos;, &apos;jo&apos;, &apos;bh&apos;] AS country,
+    [15, 15, 1, 30, 1, 3000, 1, 1] AS cpo3_comp_lc
+)
+
+, base as (
+  SELECT 
+    country_code,
+    cpo3_comp_lc,
+
+  FROM data, 
+  UNNEST(country) AS country_code WITH OFFSET AS pos1,
+  UNNEST(cpo3_comp_lc) AS cpo3_comp_lc WITH OFFSET AS pos2
+
+  WHERE pos1 = pos2
+)
+
+select 
+b.country_code,
+cpo3_comp_lc as fixed_fee_lc,
+round (cpo3_comp_lc / exchange_rate_value,2) as fixed_fee_eur,
+
+from base b
+left join `tlb-data-prod.data_platform.dim_exchange_rate` e on (b.country_code = lower(e.country_code))
+
+where 0=0
+and exchange_rate_date = date_sub(current_date(), interval 1 day)
+and exchange_rate_base in (&quot;EUR&quot;)</_.fcp.ObjectModelEncapsulateLegacy.false...relation>
+        <_.fcp.ObjectModelEncapsulateLegacy.true...relation connection='bigquery.0ys6o5d02q0xrg1ccsnd10vr6s86' name='Custom SQL Query' type='text'>WITH data AS (
+  SELECT 
+    [&apos;ae&apos;, &apos;qa&apos;, &apos;om&apos;, &apos;eg&apos;, &apos;kw&apos;, &apos;iq&apos;, &apos;jo&apos;, &apos;bh&apos;] AS country,
+    [15, 15, 1, 30, 1, 3000, 1, 1] AS cpo3_comp_lc
+)
+
+, base as (
+  SELECT 
+    country_code,
+    cpo3_comp_lc,
+
+  FROM data, 
+  UNNEST(country) AS country_code WITH OFFSET AS pos1,
+  UNNEST(cpo3_comp_lc) AS cpo3_comp_lc WITH OFFSET AS pos2
+
+  WHERE pos1 = pos2
+)
+
+select 
+b.country_code,
+cpo3_comp_lc as fixed_fee_lc,
+round (cpo3_comp_lc / exchange_rate_value,2) as fixed_fee_eur,
+
+from base b
+left join `tlb-data-prod.data_platform.dim_exchange_rate` e on (b.country_code = lower(e.country_code))
+
+where 0=0
+and exchange_rate_date = date_sub(current_date(), interval 1 day)
+and exchange_rate_base in (&quot;EUR&quot;)</_.fcp.ObjectModelEncapsulateLegacy.true...relation>
+        <metadata-records>
+          <metadata-record class='column'>
+            <remote-name>country_code</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[country_code]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>country_code</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_01C6C6674E594F048338FA8B58C7E546]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>fixed_fee_lc</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[fixed_fee_lc]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>fixed_fee_lc</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_01C6C6674E594F048338FA8B58C7E546]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>fixed_fee_eur</remote-name>
+            <remote-type>5</remote-type>
+            <local-name>[fixed_fee_eur]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>fixed_fee_eur</remote-alias>
+            <local-type>real</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_01C6C6674E594F048338FA8B58C7E546]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+        </metadata-records>
+      </connection>
+      <aliases enabled='yes' />
+      <_.fcp.ObjectModelTableType.true...column caption='Custom SQL Query' datatype='table' name='[__tableau_internal_object_id__].[_01C6C6674E594F048338FA8B58C7E546]' role='measure' type='quantitative' />
+      <column caption='Country Code' datatype='string' name='[country_code]' role='dimension' semantic-role='[Country].[ISO3166_2]' type='nominal' />
+      <column caption='Fixed Fee Amt. (EUR)' datatype='real' default-format='N' name='[fixed_fee_eur]' role='measure' type='quantitative' />
+      <column caption='Fixed Fee Amt. (LC)' datatype='integer' name='[fixed_fee_lc]' role='measure' type='quantitative' />
+      <layout _.fcp.SchemaViewerObjectModel.false...dim-percentage='0.5' _.fcp.SchemaViewerObjectModel.false...measure-percentage='0.4' dim-ordering='alphabetic' measure-ordering='alphabetic' show-structure='true' />
+      <semantic-values>
+        <semantic-value key='[Country].[Name]' value='&quot;United States&quot;' />
+      </semantic-values>
+      <date-options start-of-week='saturday' />
+      <_.fcp.ObjectModelEncapsulateLegacy.true...object-graph>
+        <objects>
+          <object caption='Custom SQL Query' id='_01C6C6674E594F048338FA8B58C7E546'>
+            <properties context=''>
+              <relation connection='bigquery.0ys6o5d02q0xrg1ccsnd10vr6s86' name='Custom SQL Query' type='text'>WITH data AS (
+  SELECT 
+    [&apos;ae&apos;, &apos;qa&apos;, &apos;om&apos;, &apos;eg&apos;, &apos;kw&apos;, &apos;iq&apos;, &apos;jo&apos;, &apos;bh&apos;] AS country,
+    [15, 15, 1, 30, 1, 3000, 1, 1] AS cpo3_comp_lc
+)
+
+, base as (
+  SELECT 
+    country_code,
+    cpo3_comp_lc,
+
+  FROM data, 
+  UNNEST(country) AS country_code WITH OFFSET AS pos1,
+  UNNEST(cpo3_comp_lc) AS cpo3_comp_lc WITH OFFSET AS pos2
+
+  WHERE pos1 = pos2
+)
+
+select 
+b.country_code,
+cpo3_comp_lc as fixed_fee_lc,
+round (cpo3_comp_lc / exchange_rate_value,2) as fixed_fee_eur,
+
+from base b
+left join `tlb-data-prod.data_platform.dim_exchange_rate` e on (b.country_code = lower(e.country_code))
+
+where 0=0
+and exchange_rate_date = date_sub(current_date(), interval 1 day)
+and exchange_rate_base in (&quot;EUR&quot;)</relation>
+            </properties>
+          </object>
+        </objects>
+      </_.fcp.ObjectModelEncapsulateLegacy.true...object-graph>
+    </datasource>
+  </datasources>
+  <shared-views>
+    <shared-view name='federated.0b7av7p1kv6vye13x1p8019zeok0'>
+      <datasources>
+        <datasource caption='Simulator' name='federated.0b7av7p1kv6vye13x1p8019zeok0' />
+      </datasources>
+      <datasource-dependencies datasource='federated.0b7av7p1kv6vye13x1p8019zeok0'>
+        <column datatype='string' name='[country_code]' role='dimension' semantic-role='[Country].[ISO3166_2]' type='nominal' />
+        <column-instance column='[country_code]' derivation='None' name='[none:country_code:nk]' pivot='key' type='nominal' />
+        <column-instance column='[vertical_type]' derivation='None' name='[none:vertical_type:nk]' pivot='key' type='nominal' />
+        <column-instance column='[week]' derivation='None' name='[none:week:qk]' pivot='key' type='quantitative' />
+        <column caption='Vertical' datatype='string' name='[vertical_type]' role='dimension' type='nominal' />
+        <column datatype='date' default-format='*m/d/yyyy' name='[week]' role='dimension' type='ordinal' />
+      </datasource-dependencies>
+      <filter class='categorical' column='[federated.0b7av7p1kv6vye13x1p8019zeok0].[none:country_code:nk]'>
+        <groupfilter function='level-members' level='[none:country_code:nk]' user:ui-enumeration='all' user:ui-marker='enumerate' />
+      </filter>
+      <filter class='categorical' column='[federated.0b7av7p1kv6vye13x1p8019zeok0].[none:vertical_type:nk]'>
+        <groupfilter function='member' level='[none:vertical_type:nk]' member='&quot;restaurants&quot;' user:ui-domain='database' user:ui-enumeration='inclusive' user:ui-marker='enumerate' />
+      </filter>
+      <filter class='quantitative' column='[federated.0b7av7p1kv6vye13x1p8019zeok0].[none:week:qk]' included-values='all' />
+    </shared-view>
+  </shared-views>
+  <worksheets>
+    <worksheet name='Fixed Fee Values'>
+      <repository-location id='FixedFeeValues' path='/t/Talabat/workbooks/VendorAWTChargeback' revision='' site='Talabat' />
+      <layout-options>
+        <title>
+          <formatted-text>
+            <run bold='true' fontalignment='1'>&lt;Sheet Name&gt;</run>
+          </formatted-text>
+        </title>
+      </layout-options>
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='Fixed Fee' name='federated.0pjcby30hbhhq81exyhil1vorx3s' />
+          </datasources>
+          <datasource-dependencies datasource='federated.0pjcby30hbhhq81exyhil1vorx3s'>
+            <column caption='Country Code' datatype='string' name='[country_code]' role='dimension' semantic-role='[Country].[ISO3166_2]' type='nominal' />
+            <column caption='Fixed Fee Amt. (EUR)' datatype='real' default-format='N' name='[fixed_fee_eur]' role='measure' type='quantitative' />
+            <column caption='Fixed Fee Amt. (LC)' datatype='integer' name='[fixed_fee_lc]' role='measure' type='quantitative' />
+            <column-instance column='[country_code]' derivation='None' name='[none:country_code:nk]' pivot='key' type='nominal' />
+            <column-instance column='[fixed_fee_eur]' derivation='Sum' name='[sum:fixed_fee_eur:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[fixed_fee_lc]' derivation='Sum' name='[sum:fixed_fee_lc:qk]' pivot='key' type='quantitative' />
+          </datasource-dependencies>
+          <filter class='categorical' column='[federated.0pjcby30hbhhq81exyhil1vorx3s].[:Measure Names]'>
+            <groupfilter function='union' user:op='manual'>
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.0pjcby30hbhhq81exyhil1vorx3s].[sum:fixed_fee_lc:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.0pjcby30hbhhq81exyhil1vorx3s].[sum:fixed_fee_eur:qk]&quot;' />
+            </groupfilter>
+          </filter>
+          <manual-sort column='[federated.0pjcby30hbhhq81exyhil1vorx3s].[:Measure Names]' direction='ASC'>
+            <dictionary>
+              <bucket>&quot;[federated.0pjcby30hbhhq81exyhil1vorx3s].[sum:fixed_fee_lc:qk]&quot;</bucket>
+              <bucket>&quot;[federated.0pjcby30hbhhq81exyhil1vorx3s].[sum:fixed_fee_eur:qk]&quot;</bucket>
+            </dictionary>
+          </manual-sort>
+          <slices>
+            <column>[federated.0pjcby30hbhhq81exyhil1vorx3s].[:Measure Names]</column>
+          </slices>
+          <aggregation value='true' />
+        </view>
+        <style>
+          <style-rule element='cell'>
+            <format attr='width' field='[federated.0pjcby30hbhhq81exyhil1vorx3s].[:Measure Names]' value='131' />
+          </style-rule>
+          <style-rule element='header'>
+            <format attr='width' field='[federated.0pjcby30hbhhq81exyhil1vorx3s].[none:country_code:nk]' value='104' />
+          </style-rule>
+        </style>
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Automatic' />
+            <encodings>
+              <text column='[federated.0pjcby30hbhhq81exyhil1vorx3s].[Multiple Values]' />
+            </encodings>
+            <style>
+              <style-rule element='mark'>
+                <format attr='mark-labels-show' value='true' />
+              </style-rule>
+              <style-rule element='pane'>
+                <format attr='minwidth' value='-1' />
+                <format attr='maxwidth' value='-1' />
+              </style-rule>
+            </style>
+          </pane>
+        </panes>
+        <rows>[federated.0pjcby30hbhhq81exyhil1vorx3s].[none:country_code:nk]</rows>
+        <cols>[federated.0pjcby30hbhhq81exyhil1vorx3s].[:Measure Names]</cols>
+      </table>
+      <simple-id uuid='{2541F61A-F7C2-4ADA-BD3E-1709ABA7BF93}' />
+    </worksheet>
+    <worksheet name='Simulator'>
+      <layout-options>
+        <title>
+          <formatted-text>
+            <run bold='true' fontalignment='1'>&lt;Sheet Name&gt;</run>
+          </formatted-text>
+        </title>
+      </layout-options>
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='Simulator' name='federated.0b7av7p1kv6vye13x1p8019zeok0' />
+            <datasource name='Parameters' />
+          </datasources>
+          <datasource-dependencies datasource='Parameters'>
+            <column caption='Dimension Breakdown' datatype='string' name='[AWT Threshold (min) (copy)]' param-domain-type='list' role='measure' type='nominal' value='&quot;Rider Arrival&quot;'>
+              <calculation class='tableau' formula='&quot;Rider Arrival&quot;' />
+            </column>
+            <column caption='AWT Threshold (min)' datatype='real' name='[Parameter 1]' param-domain-type='any' role='measure' type='quantitative' value='12.'>
+              <calculation class='tableau' formula='12.' />
+            </column>
+            <column caption='Variable Fee' datatype='real' name='[Parameter 2]' param-domain-type='any' role='measure' type='quantitative' value='0.'>
+              <calculation class='tableau' formula='0.' />
+            </column>
+            <column caption='Fixed Fee' datatype='real' name='[Parameter 3]' param-domain-type='any' role='measure' type='quantitative' value='2.7'>
+              <calculation class='tableau' formula='2.7' />
+            </column>
+          </datasource-dependencies>
+          <datasource-dependencies datasource='federated.0b7av7p1kv6vye13x1p8019zeok0'>
+            <column caption='% Ontime' datatype='real' default-format='p0.0%' name='[% Vendor Delay (30m) (copy) (copy)_6614591598756941831]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='SUM([ontime_deliveries]) / SUM([total_deliveries])' />
+            </column>
+            <column caption='% Order Late ' datatype='real' default-format='p0.0%' name='[% Vendor Delay (30m) (copy)_6614591598756929542]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='SUM([late_deliveries]) / SUM([total_deliveries])' />
+            </column>
+            <column caption='% Chargeable Orders' datatype='real' default-format='p0.0%' name='[Calculation_4734549887109701632]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='SUM(IF [is_chargeable_awt] THEN [total_deliveries] END) &#10;/ &#10;SUM([total_deliveries])' />
+            </column>
+            <column caption='Total Variable Fees' datatype='real' name='[Calculation_6614591598754840577]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='[Calculation_6614591598763036681] * SUM([total_deliveries]) * [Parameters].[Parameter 2]' />
+            </column>
+            <column caption='Avg. AWT' datatype='real' default-format='n#,##0.0;-#,##0.0' name='[Calculation_6614591598755840004]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='SUM([awt_v2]) / SUM([total_deliveries])' />
+            </column>
+            <column caption='% Vendor Delay (30m)' datatype='real' default-format='p0.0%' name='[Calculation_6614591598756032517]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='SUM([vendor_late_deliveries]) / SUM([total_deliveries])' />
+            </column>
+            <column caption='AVT 30m' datatype='real' default-format='n#,##0.0;-#,##0.0' name='[Calculation_6614591598758473736]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='SUM([avt_30]) / SUM([total_deliveries])' />
+            </column>
+            <column caption='Avg. Chargeable AWT' datatype='real' default-format='n#,##0.0;-#,##0.0' name='[Calculation_6614591598763036681]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='SUM(IF [is_chargeable_awt] THEN [awt_v2] - ([Parameters].[Parameter 1]*[total_deliveries]) END) &#10;/ &#10;SUM([total_deliveries])' />
+            </column>
+            <column caption='Dimension' datatype='string' name='[Calculation_6614591599752269836]' role='dimension' type='nominal'>
+              <calculation class='tableau' formula='IF [Parameters].[AWT Threshold (min) (copy)] = &quot;Rider Arrival&quot; THEN [Calculation_6614591599752896525]&#10;ELSEIF [Parameters].[AWT Threshold (min) (copy)] = &quot;Vertical&quot; THEN [vertical_type]&#10;ELSE [country_code]&#10;END' />
+            </column>
+            <column caption='Rider Arrival' datatype='string' name='[Calculation_6614591599752896525]' role='dimension' type='nominal'>
+              <calculation class='tableau' formula='IF [is_rider_early] THEN &quot;3. Rider Early&quot; &#10;ELSEIF NOT [is_rider_early] THEN &quot;2. Rider Late&quot;&#10;ELSE &quot;1. NULL&quot; &#10;END' />
+            </column>
+            <column caption='Total Fixed Fees' datatype='real' name='[Total Variable Fees (copy)_6614591598755053571]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='SUM(IF [is_chargeable_awt] THEN [total_deliveries] END) * [Parameters].[Parameter 3]' />
+            </column>
+            <column caption='Total Chargeable Fees' datatype='real' name='[Total Variable Fees (copy)_6614591598764392458]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='[Total Variable Fees (copy)_6614591598755053571] + [Calculation_6614591598754840577]' />
+            </column>
+            <column datatype='real' name='[avt_30]' role='measure' type='quantitative' />
+            <column datatype='real' name='[awt_v2]' role='measure' type='quantitative' />
+            <column datatype='string' name='[country_code]' role='dimension' semantic-role='[Country].[ISO3166_2]' type='nominal' />
+            <column datatype='boolean' name='[is_chargeable_awt]' role='dimension' type='nominal' />
+            <column caption='Is Rider Early' datatype='boolean' name='[is_rider_early]' role='dimension' type='nominal' />
+            <column datatype='integer' name='[late_deliveries]' role='measure' type='quantitative' />
+            <column-instance column='[Calculation_6614591599752269836]' derivation='None' name='[none:Calculation_6614591599752269836:nk]' pivot='key' type='nominal' />
+            <column-instance column='[Calculation_6614591599752896525]' derivation='None' name='[none:Calculation_6614591599752896525:nk]' pivot='key' type='nominal' />
+            <column-instance column='[country_code]' derivation='None' name='[none:country_code:nk]' pivot='key' type='nominal' />
+            <column-instance column='[vertical_type]' derivation='None' name='[none:vertical_type:nk]' pivot='key' type='nominal' />
+            <column-instance column='[week]' derivation='None' name='[none:week:qk]' pivot='key' type='quantitative' />
+            <column datatype='integer' name='[ontime_deliveries]' role='measure' type='quantitative' />
+            <column-instance column='[total_deliveries]' derivation='Sum' name='[pcto:sum:total_deliveries:qk]' pivot='key' type='quantitative'>
+              <table-calc ordering-field='[federated.0b7av7p1kv6vye13x1p8019zeok0].[none:Calculation_6614591599752269836:nk]' ordering-type='Field' type='PctTotal' />
+            </column-instance>
+            <column-instance column='[total_deliveries]' derivation='Sum' name='[sum:total_deliveries:qk]' pivot='key' type='quantitative' />
+            <column caption='Total Deliveries' datatype='integer' name='[total_deliveries]' role='measure' type='quantitative' />
+            <column-instance column='[week]' derivation='Week-Trunc' name='[twk:week:ok]' pivot='key' type='ordinal' />
+            <column-instance column='[% Vendor Delay (30m) (copy) (copy)_6614591598756941831]' derivation='User' name='[usr:% Vendor Delay (30m) (copy) (copy)_6614591598756941831:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[% Vendor Delay (30m) (copy)_6614591598756929542]' derivation='User' name='[usr:% Vendor Delay (30m) (copy)_6614591598756929542:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[Calculation_4734549887109701632]' derivation='User' name='[usr:Calculation_4734549887109701632:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[Calculation_6614591598754840577]' derivation='User' name='[usr:Calculation_6614591598754840577:vtavg:qk]' pivot='key' type='quantitative' visual-totals='Avg' />
+            <column-instance column='[Calculation_6614591598755840004]' derivation='User' name='[usr:Calculation_6614591598755840004:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[Calculation_6614591598756032517]' derivation='User' name='[usr:Calculation_6614591598756032517:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[Calculation_6614591598758473736]' derivation='User' name='[usr:Calculation_6614591598758473736:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[Calculation_6614591598763036681]' derivation='User' name='[usr:Calculation_6614591598763036681:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[Total Variable Fees (copy)_6614591598755053571]' derivation='User' name='[usr:Total Variable Fees (copy)_6614591598755053571:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[Total Variable Fees (copy)_6614591598764392458]' derivation='User' name='[usr:Total Variable Fees (copy)_6614591598764392458:qk]' pivot='key' type='quantitative' />
+            <column datatype='integer' name='[vendor_late_deliveries]' role='measure' type='quantitative' />
+            <column caption='Vertical' datatype='string' name='[vertical_type]' role='dimension' type='nominal' />
+            <column datatype='date' default-format='*m/d/yyyy' name='[week]' role='dimension' type='ordinal' />
+          </datasource-dependencies>
+          <filter class='categorical' column='[federated.0b7av7p1kv6vye13x1p8019zeok0].[:Measure Names]'>
+            <groupfilter function='union' user:op='manual'>
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.0b7av7p1kv6vye13x1p8019zeok0].[sum:total_deliveries:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.0b7av7p1kv6vye13x1p8019zeok0].[pcto:sum:total_deliveries:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.0b7av7p1kv6vye13x1p8019zeok0].[usr:\% Vendor Delay (30m) (copy) (copy)_6614591598756941831:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.0b7av7p1kv6vye13x1p8019zeok0].[usr:\% Vendor Delay (30m) (copy)_6614591598756929542:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.0b7av7p1kv6vye13x1p8019zeok0].[usr:Calculation_6614591598756032517:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.0b7av7p1kv6vye13x1p8019zeok0].[usr:Calculation_4734549887109701632:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.0b7av7p1kv6vye13x1p8019zeok0].[usr:Calculation_6614591598758473736:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.0b7av7p1kv6vye13x1p8019zeok0].[usr:Calculation_6614591598755840004:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.0b7av7p1kv6vye13x1p8019zeok0].[usr:Calculation_6614591598763036681:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.0b7av7p1kv6vye13x1p8019zeok0].[usr:Total Variable Fees (copy)_6614591598755053571:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.0b7av7p1kv6vye13x1p8019zeok0].[usr:Calculation_6614591598754840577:vtavg:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.0b7av7p1kv6vye13x1p8019zeok0].[usr:Total Variable Fees (copy)_6614591598764392458:qk]&quot;' />
+            </groupfilter>
+          </filter>
+          <manual-sort column='[federated.0b7av7p1kv6vye13x1p8019zeok0].[:Measure Names]' direction='ASC'>
+            <dictionary>
+              <bucket>&quot;[federated.0b7av7p1kv6vye13x1p8019zeok0].[sum:total_deliveries:qk]&quot;</bucket>
+              <bucket>&quot;[federated.0b7av7p1kv6vye13x1p8019zeok0].[pcto:sum:total_deliveries:qk]&quot;</bucket>
+              <bucket>&quot;[federated.0b7av7p1kv6vye13x1p8019zeok0].[usr:\% Vendor Delay (30m) (copy) (copy)_6614591598756941831:qk]&quot;</bucket>
+              <bucket>&quot;[federated.0b7av7p1kv6vye13x1p8019zeok0].[usr:\% Vendor Delay (30m) (copy)_6614591598756929542:qk]&quot;</bucket>
+              <bucket>&quot;[federated.0b7av7p1kv6vye13x1p8019zeok0].[usr:Calculation_6614591598756032517:qk]&quot;</bucket>
+              <bucket>&quot;[federated.0b7av7p1kv6vye13x1p8019zeok0].[usr:Calculation_4734549887109701632:qk]&quot;</bucket>
+              <bucket>&quot;[federated.0b7av7p1kv6vye13x1p8019zeok0].[usr:Calculation_6614591598758473736:qk]&quot;</bucket>
+              <bucket>&quot;[federated.0b7av7p1kv6vye13x1p8019zeok0].[usr:Calculation_6614591598755840004:qk]&quot;</bucket>
+              <bucket>&quot;[federated.0b7av7p1kv6vye13x1p8019zeok0].[usr:Calculation_6614591598763036681:qk]&quot;</bucket>
+              <bucket>&quot;[federated.0b7av7p1kv6vye13x1p8019zeok0].[usr:Total Variable Fees (copy)_6614591598755053571:qk]&quot;</bucket>
+              <bucket>&quot;[federated.0b7av7p1kv6vye13x1p8019zeok0].[usr:Calculation_6614591598754840577:vtavg:qk]&quot;</bucket>
+              <bucket>&quot;[federated.0b7av7p1kv6vye13x1p8019zeok0].[usr:Total Variable Fees (copy)_6614591598764392458:qk]&quot;</bucket>
+            </dictionary>
+          </manual-sort>
+          <filter class='categorical' column='[federated.0b7av7p1kv6vye13x1p8019zeok0].[none:Calculation_6614591599752896525:nk]'>
+            <groupfilter function='level-members' level='[none:Calculation_6614591599752896525:nk]' />
+          </filter>
+          <slices>
+            <column>[federated.0b7av7p1kv6vye13x1p8019zeok0].[none:country_code:nk]</column>
+            <column>[federated.0b7av7p1kv6vye13x1p8019zeok0].[none:week:qk]</column>
+            <column>[federated.0b7av7p1kv6vye13x1p8019zeok0].[none:vertical_type:nk]</column>
+            <column>[federated.0b7av7p1kv6vye13x1p8019zeok0].[:Measure Names]</column>
+            <column>[federated.0b7av7p1kv6vye13x1p8019zeok0].[none:Calculation_6614591599752896525:nk]</column>
+          </slices>
+          <aggregation value='true' />
+        </view>
+        <style>
+          <style-rule element='cell'>
+            <format attr='width' field='[federated.0b7av7p1kv6vye13x1p8019zeok0].[twk:week:ok]' value='71' />
+            <format attr='text-format' field='[federated.0b7av7p1kv6vye13x1p8019zeok0].[pcto:sum:total_deliveries:qk]' value='p0.0%' />
+          </style-rule>
+          <style-rule element='header'>
+            <format attr='width' field='[federated.0b7av7p1kv6vye13x1p8019zeok0].[:Measure Names]' value='156' />
+          </style-rule>
+        </style>
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Automatic' />
+            <encodings>
+              <text column='[federated.0b7av7p1kv6vye13x1p8019zeok0].[Multiple Values]' />
+            </encodings>
+            <style>
+              <style-rule element='mark'>
+                <format attr='mark-labels-show' value='true' />
+              </style-rule>
+              <style-rule element='pane'>
+                <format attr='minwidth' value='-1' />
+                <format attr='maxwidth' value='-1' />
+              </style-rule>
+            </style>
+          </pane>
+        </panes>
+        <rows>([federated.0b7av7p1kv6vye13x1p8019zeok0].[none:Calculation_6614591599752269836:nk] / [federated.0b7av7p1kv6vye13x1p8019zeok0].[:Measure Names])</rows>
+        <cols>[federated.0b7av7p1kv6vye13x1p8019zeok0].[twk:week:ok]</cols>
+      </table>
+      <simple-id uuid='{3C54CC6E-C4E3-4C49-B826-62688A2744CB}' />
+    </worksheet>
+  </worksheets>
+  <dashboards>
+    <dashboard _.fcp.AccessibleZoneTabOrder.true...enable-sort-zone-taborder='true' name='Vendor Chargeback Simulator'>
+      <repository-location id='VendorChargebackSimulator' path='/t/Talabat/workbooks/VendorAWTChargeback' revision='' site='Talabat' />
+      <style />
+      <size maxheight='1200' maxwidth='1300' minheight='1200' minwidth='1300' sizing-mode='fixed' />
+      <datasources>
+        <datasource name='Parameters' />
+        <datasource caption='Simulator' name='federated.0b7av7p1kv6vye13x1p8019zeok0' />
+      </datasources>
+      <datasource-dependencies datasource='Parameters'>
+        <column caption='Dimension Breakdown' datatype='string' name='[AWT Threshold (min) (copy)]' param-domain-type='list' role='measure' type='nominal' value='&quot;Rider Arrival&quot;'>
+          <calculation class='tableau' formula='&quot;Rider Arrival&quot;' />
+          <members>
+            <member value='&quot;Rider Arrival&quot;' />
+            <member value='&quot;Country&quot;' />
+            <member value='&quot;Vertical&quot;' />
+          </members>
+        </column>
+        <column caption='AWT Threshold (min)' datatype='real' name='[Parameter 1]' param-domain-type='any' role='measure' type='quantitative' value='12.'>
+          <calculation class='tableau' formula='12.' />
+        </column>
+        <column caption='Variable Fee' datatype='real' name='[Parameter 2]' param-domain-type='any' role='measure' type='quantitative' value='0.'>
+          <calculation class='tableau' formula='0.' />
+        </column>
+        <column caption='Fixed Fee' datatype='real' name='[Parameter 3]' param-domain-type='any' role='measure' type='quantitative' value='2.7'>
+          <calculation class='tableau' formula='2.7' />
+        </column>
+      </datasource-dependencies>
+      <datasource-dependencies datasource='federated.0b7av7p1kv6vye13x1p8019zeok0'>
+        <column datatype='string' name='[country_code]' role='dimension' semantic-role='[Country].[ISO3166_2]' type='nominal' />
+        <column-instance column='[country_code]' derivation='None' name='[none:country_code:nk]' pivot='key' type='nominal' />
+        <column-instance column='[vertical_type]' derivation='None' name='[none:vertical_type:nk]' pivot='key' type='nominal' />
+        <column-instance column='[week]' derivation='None' name='[none:week:qk]' pivot='key' type='quantitative' />
+        <column caption='Vertical' datatype='string' name='[vertical_type]' role='dimension' type='nominal' />
+        <column datatype='date' default-format='*m/d/yyyy' name='[week]' role='dimension' type='ordinal' />
+      </datasource-dependencies>
+      <zones>
+        <zone h='100000' id='4' type-v2='layout-basic' w='100000' x='0' y='0'>
+          <zone h='98666' id='7' param='horz' type-v2='layout-flow' w='98770' x='615' y='667'>
+            <zone h='98666' id='5' type-v2='layout-basic' w='86462' x='615' y='667'>
+              <zone h='98666' id='3' name='Simulator' w='86462' x='615' y='667'>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+            </zone>
+            <zone fixed-size='160' h='98666' id='6' is-fixed='true' param='vert' type-v2='layout-flow' w='12308' x='87077' y='667'>
+              <zone h='5750' id='8' name='Simulator' param='[federated.0b7av7p1kv6vye13x1p8019zeok0].[none:week:qk]' show-domain='false' show-null-ctrls='false' type-v2='filter' w='12308' x='87077' y='667'>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+              <zone h='4334' id='10' mode='compact' param='[Parameters].[AWT Threshold (min) (copy)]' type-v2='paramctrl' w='12308' x='87077' y='6417'>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+              <zone h='4334' id='9' mode='checkdropdown' name='Simulator' param='[federated.0b7av7p1kv6vye13x1p8019zeok0].[none:country_code:nk]' show-apply='true' type-v2='filter' w='12308' x='87077' y='10751'>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+              <zone h='4334' id='18' mode='checkdropdown' name='Simulator' param='[federated.0b7av7p1kv6vye13x1p8019zeok0].[none:vertical_type:nk]' show-apply='true' type-v2='filter' values='relevant' w='12308' x='87077' y='15085'>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+              <zone h='4334' id='11' mode='type_in' param='[Parameters].[Parameter 1]' type-v2='paramctrl' w='12308' x='87077' y='19419'>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+              <zone h='4334' id='12' mode='type_in' param='[Parameters].[Parameter 3]' type-v2='paramctrl' w='12308' x='87077' y='23753'>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+              <zone h='4334' id='13' mode='type_in' param='[Parameters].[Parameter 2]' type-v2='paramctrl' w='12308' x='87077' y='28087'>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+            </zone>
+          </zone>
+          <zone-style>
+            <format attr='border-color' value='#000000' />
+            <format attr='border-style' value='none' />
+            <format attr='border-width' value='0' />
+            <format attr='margin' value='8' />
+          </zone-style>
+        </zone>
+      </zones>
+      <devicelayouts>
+        <devicelayout auto-generated='true' name='Phone'>
+          <size maxheight='750' minheight='750' sizing-mode='vscroll' />
+          <zones>
+            <zone h='100000' id='72' type-v2='layout-basic' w='100000' x='0' y='0'>
+              <zone h='98666' id='71' param='vert' type-v2='layout-flow' w='98770' x='615' y='667'>
+                <zone h='5750' id='8' name='Simulator' param='[federated.0b7av7p1kv6vye13x1p8019zeok0].[none:week:qk]' show-domain='false' show-null-ctrls='false' type-v2='filter' w='12308' x='87077' y='667'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone h='4334' id='9' mode='checkdropdown' name='Simulator' param='[federated.0b7av7p1kv6vye13x1p8019zeok0].[none:country_code:nk]' show-apply='true' type-v2='filter' w='12308' x='87077' y='10751'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone h='4334' id='18' mode='checkdropdown' name='Simulator' param='[federated.0b7av7p1kv6vye13x1p8019zeok0].[none:vertical_type:nk]' show-apply='true' type-v2='filter' values='relevant' w='12308' x='87077' y='15085'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone fixed-size='280' h='98666' id='3' is-fixed='true' name='Simulator' w='86462' x='615' y='667'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone h='4334' id='10' mode='compact' param='[Parameters].[AWT Threshold (min) (copy)]' type-v2='paramctrl' w='12308' x='87077' y='6417'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone h='4334' id='11' mode='type_in' param='[Parameters].[Parameter 1]' type-v2='paramctrl' w='12308' x='87077' y='19419'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone h='4334' id='12' mode='type_in' param='[Parameters].[Parameter 3]' type-v2='paramctrl' w='12308' x='87077' y='23753'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone h='4334' id='13' mode='type_in' param='[Parameters].[Parameter 2]' type-v2='paramctrl' w='12308' x='87077' y='28087'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+              </zone>
+              <zone-style>
+                <format attr='border-color' value='#000000' />
+                <format attr='border-style' value='none' />
+                <format attr='border-width' value='0' />
+                <format attr='margin' value='8' />
+              </zone-style>
+            </zone>
+          </zones>
+        </devicelayout>
+      </devicelayouts>
+      <simple-id uuid='{53CAA49F-4F3F-4891-9D66-04D622654ED5}' />
+    </dashboard>
+  </dashboards>
+  <windows source-height='51'>
+    <window class='worksheet' maximized='true' name='Simulator'>
+      <cards>
+        <edge name='left'>
+          <strip size='170'>
+            <card type='pages' />
+            <card type='filters' />
+            <card type='marks' />
+            <card type='measures' />
+          </strip>
+        </edge>
+        <edge name='top'>
+          <strip size='2147483647'>
+            <card type='columns' />
+          </strip>
+          <strip size='2147483647'>
+            <card type='rows' />
+          </strip>
+          <strip size='31'>
+            <card type='title' />
+          </strip>
+        </edge>
+        <edge name='right'>
+          <strip size='160'>
+            <card param='[federated.0b7av7p1kv6vye13x1p8019zeok0].[none:Calculation_6614591599752896525:nk]' type='filter' />
+            <card param='[federated.0b7av7p1kv6vye13x1p8019zeok0].[none:vertical_type:nk]' type='filter' />
+            <card param='[federated.0b7av7p1kv6vye13x1p8019zeok0].[none:week:qk]' show-domain='false' show-null-ctrls='false' type='filter' />
+            <card mode='compact' param='[Parameters].[AWT Threshold (min) (copy)]' type='parameter' />
+            <card mode='checkdropdown' param='[federated.0b7av7p1kv6vye13x1p8019zeok0].[none:country_code:nk]' show-apply='true' type='filter' />
+            <card mode='type_in' param='[Parameters].[Parameter 1]' type='parameter' />
+            <card mode='type_in' param='[Parameters].[Parameter 3]' type='parameter' />
+            <card mode='type_in' param='[Parameters].[Parameter 2]' type='parameter' />
+          </strip>
+        </edge>
+      </cards>
+      <viewpoint>
+        <highlight>
+          <color-one-way>
+            <field>[federated.0b7av7p1kv6vye13x1p8019zeok0].[:Measure Names]</field>
+            <field>[federated.0b7av7p1kv6vye13x1p8019zeok0].[none:Calculation_6614591599752269836:nk]</field>
+            <field>[federated.0b7av7p1kv6vye13x1p8019zeok0].[none:is_rider_early:nk]</field>
+            <field>[federated.0b7av7p1kv6vye13x1p8019zeok0].[yr:week:ok]</field>
+          </color-one-way>
+        </highlight>
+      </viewpoint>
+      <simple-id uuid='{9F45D8BB-BAB5-4788-95C8-5C109EC92794}' />
+    </window>
+    <window class='worksheet' name='Fixed Fee Values'>
+      <cards>
+        <edge name='left'>
+          <strip size='160'>
+            <card type='pages' />
+            <card type='filters' />
+            <card type='marks' />
+            <card type='measures' />
+          </strip>
+        </edge>
+        <edge name='top'>
+          <strip size='2147483647'>
+            <card type='columns' />
+          </strip>
+          <strip size='2147483647'>
+            <card type='rows' />
+          </strip>
+          <strip size='31'>
+            <card type='title' />
+          </strip>
+        </edge>
+      </cards>
+      <viewpoint>
+        <highlight>
+          <color-one-way>
+            <field>[federated.0pjcby30hbhhq81exyhil1vorx3s].[none:country_code:nk]</field>
+          </color-one-way>
+        </highlight>
+      </viewpoint>
+      <simple-id uuid='{AB4FF406-698B-4664-AB12-9FBB7A1A57F1}' />
+    </window>
+    <window class='dashboard' name='Vendor Chargeback Simulator'>
+      <viewpoints>
+        <viewpoint name='Simulator'>
+          <zoom type='fit-width' />
+        </viewpoint>
+      </viewpoints>
+      <active id='9' />
+      <simple-id uuid='{1B186462-5DE8-4A2F-A251-51F27F527B99}' />
+    </window>
+  </windows>
+</workbook>

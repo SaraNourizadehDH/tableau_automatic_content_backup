@@ -1,0 +1,2546 @@
+<?xml version='1.0' encoding='utf-8' ?>
+
+<!-- build 20231.24.0118.1101                               -->
+<workbook original-version='18.1' source-build='2023.1.9 (20231.24.0118.1101)' version='18.1' xml:base='http://ip-172-31-0-132:8196' xmlns:user='http://www.tableausoftware.com/xml/user'>
+  <document-format-change-manifest>
+    <_.fcp.AccessibleZoneTabOrder.true...AccessibleZoneTabOrder />
+    <_.fcp.AnimationOnByDefault.true...AnimationOnByDefault />
+    <AutoCreateAndUpdateDSDPhoneLayouts />
+    <_.fcp.MarkAnimation.true...MarkAnimation />
+    <_.fcp.ObjectModelEncapsulateLegacy.true...ObjectModelEncapsulateLegacy />
+    <_.fcp.ObjectModelExtractV2.true...ObjectModelExtractV2 />
+    <_.fcp.ObjectModelTableType.true...ObjectModelTableType />
+    <_.fcp.SchemaViewerObjectModel.true...SchemaViewerObjectModel />
+    <SetMembershipControl />
+    <SheetIdentifierTracking />
+    <_.fcp.VConnDownstreamExtractsWithWarnings.true...VConnDownstreamExtractsWithWarnings />
+    <WindowsPersistSimpleIdentifiers />
+    <ZoneBackgroundTransparency />
+  </document-format-change-manifest>
+  <repository-location derived-from='https://tableau.deliveryhero.net/t/Talabat/workbooks/tproAdoptionandChurn-Deepdive?rev=1.1' id='tproAdoptionandChurn-Deepdive' path='/t/Talabat/workbooks' revision='1.2' site='Talabat' />
+  <preferences />
+  <style-theme name='classic' />
+  <_.fcp.AnimationOnByDefault.false...style>
+    <_.fcp.AnimationOnByDefault.false..._.fcp.MarkAnimation.true...style-rule element='animation'>
+      <_.fcp.AnimationOnByDefault.false...format attr='animation-on' value='ao-on' />
+    </_.fcp.AnimationOnByDefault.false..._.fcp.MarkAnimation.true...style-rule>
+  </_.fcp.AnimationOnByDefault.false...style>
+  <datasources>
+    <datasource caption='churn- segment' inline='true' name='federated.1ogtooq0rqndz014s6mrx0kxru2w' version='18.1'>
+      <connection class='federated'>
+        <named-connections>
+          <named-connection caption='BigQuery' name='bigquery.0zp6e4i0k7s6lc1aeacof0ksnla0'>
+            <connection CATALOG='tlb-data-prod' EXECCATALOG='tlb-data-dev' authentication='oauth' bq-dataset-fetch-rows='' bq-fetch-rows='' bq-fetch-tasks='' bq-large-fetch-rows='' bq-project-fetch-rows='' bq-response-rows='' class='bigquery' connection-dialect='google-sql' project='tlb-data-prod' schema='data_platform' server-oauth='' username='hajira.zulfiqar@talabat.com' workgroup-auth-mode='prompt' />
+          </named-connection>
+        </named-connections>
+        <_.fcp.ObjectModelEncapsulateLegacy.false...relation connection='bigquery.0zp6e4i0k7s6lc1aeacof0ksnla0' name='Custom SQL Query' type='text'><![CDATA[with  subscriber_daily as 
+(
+select *,case when (lead(start_date) over (partition by account_id,plan_id order by iso_date asc)  is not null and lead(date(start_date)) over (partition by account_id,plan_id order by iso_date asc) != date(start_date) and lead(date(start_date)) over (partition by account_id,plan_id order by iso_date asc) <<= date(end_date)) then iso_date else date(end_date) end  as new_end_date
+        ,row_number() over (partition by account_id ,country,case when subscription_state = 'BILLING RETRY' then 1 else 0 end order by iso_date asc) as days_on_pro
+from `tlb-data-prod.data_platform.fct_tpro_subscriber_daily`
+
+)
+,customers_monthly as 
+(
+select   fs.*
+         ,date_add(iso_date,interval 1 day) as up_for_renewal_date
+         
+
+from subscriber_daily  fs 
+where subscription_state <<>> 'BILLING RETRY'
+and iso_date = date(new_end_date)
+and plan_id not in (31,34)
+and iso_date <<=current_date-2
+
+),end_of_month_active as
+(
+select  date_trunc(iso_date,month)  as month,fs.country ,fs.account_id,fs.subscription_state
+from   `tlb-data-prod.data_platform.fct_tpro_subscriber_daily` fs
+inner join (select month_start_date,month_end_date
+            from `tlb-data-prod.data_platform.dim_date` dd 
+            where  dd.date >>= '2023-01-01'and dd.date<<=current_date()
+            group by 1,2) dd
+on      fs.iso_date = (case when month_start_date = date_trunc(current_date,month) then current_date-1 else month_end_date end )
+--and     subscription_state <<>> 'BILLING RETRY'
+and     plan_id not in (31,34)
+group by 1,2,3,4
+),ranking_monthly as 
+(
+select *,date_trunc(up_for_renewal_date,month) as month
+        ,row_number()over(partition by account_id,country,date_trunc(up_for_renewal_date,month) order by up_for_renewal_date desc ) as rank_number 
+from  customers_monthly cm 
+),monthly_load as 
+(
+select cm.country
+      ,cm.month as iso_date
+      ,cm.plan_id
+      ,'monthly' as type
+      ,'renewed' as status
+      ,case when cm.subscription_state = 'GRACE PERIOD' then cm.prev_subs_type else cm.subscription_state end as subscriptiontype
+      ,'' as churn_type
+      ,cm.account_id
+      ,cm.up_for_renewal_date 
+      ,date(cm.start_date) as start_date
+      ,date(cm.new_end_date) as end_date
+      ,cm.days_on_pro
+      --,count(distinct case when  em.account_id is not null and em.subscription_state <<>> 'BILLING RETRY' then cm.account_id end ) as customers
+from ranking_monthly cm
+left join end_of_month_active em 
+on   cm.account_id = em.account_id 
+and  cm.country = em.country
+and  cm.month = em.month
+where  cm.month<<=current_date
+and  cm.rank_number = 1
+and  em.account_id is not null and em.subscription_state <<>> 'BILLING RETRY'
+group by all
+union all 
+select cm.country
+      ,cm.month as iso_date
+      ,cm.plan_id
+      ,'monthly' as type
+      ,'churned' as status
+      ,case when cm.subscription_state = 'GRACE PERIOD' then cm.prev_subs_type else cm.subscription_state end as subscriptiontype
+      ,case when (fs.subscription_state = 'BILLING RETRY' or cm.subscription_state ='GRACE PERIOD') then 'Involuntary Churn' else 'Voluntary Churn' end as churn_type
+      ,cm.account_id 
+      ,up_for_renewal_date
+      --,count(distinct case when em.account_id is null or (em.subscription_state = 'BILLING RETRY') then cm.account_id end) as customers
+      ,date(cm.start_date) as start_date
+      ,date(cm.new_end_date) as end_date
+      ,cm.days_on_pro
+
+from ranking_monthly cm
+left join end_of_month_active em 
+on   cm.account_id = em.account_id 
+and  cm.country = em.country
+and  cm.month = em.month
+left join `tlb-data-prod.data_platform.fct_tpro_subscriber_daily` fs
+on   fs.account_id = cm.account_id 
+and  cm.up_for_renewal_date = fs.iso_date 
+and  fs.plan_id = cm.plan_id 
+and  fs.country = cm.country 
+where   cm.month<<=current_date
+and cm.rank_number = 1
+and (em.account_id is null or (em.subscription_state = 'BILLING RETRY'))
+group by all
+), order_kpis as 
+(
+select cm.*
+       ,count(distinct fi.order_id) as orders
+       ,count(distinct case when vh.vendor_id is not null then fi.order_id end) as pro_vendor_orders
+       ,count(distinct case when fi.is_tpro_order then fi.order_id end) as tpro_orders
+       ,sum(case when fi.is_modified then fi.mod_original_gmv_amount_lc else fi.gmv_amount_lc end - fi.delivery_fee_amount_lc- fi.service_fee_amount_lc - fi.tourist_tax_amount_lc - fi.municipality_tax_amount_lc ) as gfv 
+       ,sum(case when fi.is_tpro_order then 
+                  case when fi.is_modified then fi.mod_original_gmv_amount_lc else fi.gmv_amount_lc end - fi.delivery_fee_amount_lc - fi.service_fee_amount_lc - fi.tourist_tax_amount_lc - fi.municipality_tax_amount_lc end ) as gfv_pro
+       ,sum(fi.tpro_discount_lc) as pro_savings 
+
+
+from monthly_load cm 
+left join `tlb-data-prod.data_platform.fct_order_info` fi 
+on   cm.account_id = fi.account_id 
+and  cm.country = fi.country_iso 
+and  fi.order_date between date_add(end_date,interval -30 day) and end_date 
+and  fi.is_successful 
+and  fi.order_date >>='2023-01-01'
+left join `tlb-data-prod.data_platform_rest_tables.tpro_vendor_history` vh 
+on   vh.vendor_id = fi.vendor_id 
+and  vh.date = fi.order_date 
+group by all
+)
+select  ok.country
+        ,case when lower(ok.subscriptiontype) like '%free%' then 'FREE TRIAL' ELSE ok.subscriptiontype end as subs_type
+        ,ok.iso_date as date 
+        ,ok.account_id 
+        ,ok.up_for_renewal_date
+        ,ok.end_date
+        ,ok.days_on_pro 
+        ,case when churn_type = 'Voluntary Churn' then 1 else 0 end as vol_churn
+        ,case when status = 'churned' then 1 else 0 end as churned
+        ,ok.plan_id as prev_planid
+        ,coalesce(ok.orders,0) as total_orders
+        ,coalesce(ok.pro_vendor_orders,0) as orders_pro_restaurants
+        ,coalesce(ok.pro_savings,0) as pro_savings 
+        ,coalesce(ok.gfv,0) as gfv_lc
+        ,0 as avg_rating 
+        ,coalesce(ok.tpro_orders,0) as pro_orders
+
+
+
+
+from    order_kpis ok 
+where ok.iso_date >>= date_add(date_trunc(current_date,month),interval -6 month)
+and subscriptiontype is not null]]></_.fcp.ObjectModelEncapsulateLegacy.false...relation>
+        <_.fcp.ObjectModelEncapsulateLegacy.true...relation connection='bigquery.0zp6e4i0k7s6lc1aeacof0ksnla0' name='Custom SQL Query' type='text'><![CDATA[with  subscriber_daily as 
+(
+select *,case when (lead(start_date) over (partition by account_id,plan_id order by iso_date asc)  is not null and lead(date(start_date)) over (partition by account_id,plan_id order by iso_date asc) != date(start_date) and lead(date(start_date)) over (partition by account_id,plan_id order by iso_date asc) <<= date(end_date)) then iso_date else date(end_date) end  as new_end_date
+        ,row_number() over (partition by account_id ,country,case when subscription_state = 'BILLING RETRY' then 1 else 0 end order by iso_date asc) as days_on_pro
+from `tlb-data-prod.data_platform.fct_tpro_subscriber_daily`
+
+)
+,customers_monthly as 
+(
+select   fs.*
+         ,date_add(iso_date,interval 1 day) as up_for_renewal_date
+         
+
+from subscriber_daily  fs 
+where subscription_state <<>> 'BILLING RETRY'
+and iso_date = date(new_end_date)
+and plan_id not in (31,34)
+and iso_date <<=current_date-2
+
+),end_of_month_active as
+(
+select  date_trunc(iso_date,month)  as month,fs.country ,fs.account_id,fs.subscription_state
+from   `tlb-data-prod.data_platform.fct_tpro_subscriber_daily` fs
+inner join (select month_start_date,month_end_date
+            from `tlb-data-prod.data_platform.dim_date` dd 
+            where  dd.date >>= '2023-01-01'and dd.date<<=current_date()
+            group by 1,2) dd
+on      fs.iso_date = (case when month_start_date = date_trunc(current_date,month) then current_date-1 else month_end_date end )
+--and     subscription_state <<>> 'BILLING RETRY'
+and     plan_id not in (31,34)
+group by 1,2,3,4
+),ranking_monthly as 
+(
+select *,date_trunc(up_for_renewal_date,month) as month
+        ,row_number()over(partition by account_id,country,date_trunc(up_for_renewal_date,month) order by up_for_renewal_date desc ) as rank_number 
+from  customers_monthly cm 
+),monthly_load as 
+(
+select cm.country
+      ,cm.month as iso_date
+      ,cm.plan_id
+      ,'monthly' as type
+      ,'renewed' as status
+      ,case when cm.subscription_state = 'GRACE PERIOD' then cm.prev_subs_type else cm.subscription_state end as subscriptiontype
+      ,'' as churn_type
+      ,cm.account_id
+      ,cm.up_for_renewal_date 
+      ,date(cm.start_date) as start_date
+      ,date(cm.new_end_date) as end_date
+      ,cm.days_on_pro
+      --,count(distinct case when  em.account_id is not null and em.subscription_state <<>> 'BILLING RETRY' then cm.account_id end ) as customers
+from ranking_monthly cm
+left join end_of_month_active em 
+on   cm.account_id = em.account_id 
+and  cm.country = em.country
+and  cm.month = em.month
+where  cm.month<<=current_date
+and  cm.rank_number = 1
+and  em.account_id is not null and em.subscription_state <<>> 'BILLING RETRY'
+group by all
+union all 
+select cm.country
+      ,cm.month as iso_date
+      ,cm.plan_id
+      ,'monthly' as type
+      ,'churned' as status
+      ,case when cm.subscription_state = 'GRACE PERIOD' then cm.prev_subs_type else cm.subscription_state end as subscriptiontype
+      ,case when (fs.subscription_state = 'BILLING RETRY' or cm.subscription_state ='GRACE PERIOD') then 'Involuntary Churn' else 'Voluntary Churn' end as churn_type
+      ,cm.account_id 
+      ,up_for_renewal_date
+      --,count(distinct case when em.account_id is null or (em.subscription_state = 'BILLING RETRY') then cm.account_id end) as customers
+      ,date(cm.start_date) as start_date
+      ,date(cm.new_end_date) as end_date
+      ,cm.days_on_pro
+
+from ranking_monthly cm
+left join end_of_month_active em 
+on   cm.account_id = em.account_id 
+and  cm.country = em.country
+and  cm.month = em.month
+left join `tlb-data-prod.data_platform.fct_tpro_subscriber_daily` fs
+on   fs.account_id = cm.account_id 
+and  cm.up_for_renewal_date = fs.iso_date 
+and  fs.plan_id = cm.plan_id 
+and  fs.country = cm.country 
+where   cm.month<<=current_date
+and cm.rank_number = 1
+and (em.account_id is null or (em.subscription_state = 'BILLING RETRY'))
+group by all
+), order_kpis as 
+(
+select cm.*
+       ,count(distinct fi.order_id) as orders
+       ,count(distinct case when vh.vendor_id is not null then fi.order_id end) as pro_vendor_orders
+       ,count(distinct case when fi.is_tpro_order then fi.order_id end) as tpro_orders
+       ,sum(case when fi.is_modified then fi.mod_original_gmv_amount_lc else fi.gmv_amount_lc end - fi.delivery_fee_amount_lc- fi.service_fee_amount_lc - fi.tourist_tax_amount_lc - fi.municipality_tax_amount_lc ) as gfv 
+       ,sum(case when fi.is_tpro_order then 
+                  case when fi.is_modified then fi.mod_original_gmv_amount_lc else fi.gmv_amount_lc end - fi.delivery_fee_amount_lc - fi.service_fee_amount_lc - fi.tourist_tax_amount_lc - fi.municipality_tax_amount_lc end ) as gfv_pro
+       ,sum(fi.tpro_discount_lc) as pro_savings 
+
+
+from monthly_load cm 
+left join `tlb-data-prod.data_platform.fct_order_info` fi 
+on   cm.account_id = fi.account_id 
+and  cm.country = fi.country_iso 
+and  fi.order_date between date_add(end_date,interval -30 day) and end_date 
+and  fi.is_successful 
+and  fi.order_date >>='2023-01-01'
+left join `tlb-data-prod.data_platform_rest_tables.tpro_vendor_history` vh 
+on   vh.vendor_id = fi.vendor_id 
+and  vh.date = fi.order_date 
+group by all
+)
+select  ok.country
+        ,case when lower(ok.subscriptiontype) like '%free%' then 'FREE TRIAL' ELSE ok.subscriptiontype end as subs_type
+        ,ok.iso_date as date 
+        ,ok.account_id 
+        ,ok.up_for_renewal_date
+        ,ok.end_date
+        ,ok.days_on_pro 
+        ,case when churn_type = 'Voluntary Churn' then 1 else 0 end as vol_churn
+        ,case when status = 'churned' then 1 else 0 end as churned
+        ,ok.plan_id as prev_planid
+        ,coalesce(ok.orders,0) as total_orders
+        ,coalesce(ok.pro_vendor_orders,0) as orders_pro_restaurants
+        ,coalesce(ok.pro_savings,0) as pro_savings 
+        ,coalesce(ok.gfv,0) as gfv_lc
+        ,0 as avg_rating 
+        ,coalesce(ok.tpro_orders,0) as pro_orders
+
+
+
+
+from    order_kpis ok 
+where ok.iso_date >>= date_add(date_trunc(current_date,month),interval -6 month)
+and subscriptiontype is not null]]></_.fcp.ObjectModelEncapsulateLegacy.true...relation>
+        <metadata-records>
+          <metadata-record class='column'>
+            <remote-name>country</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[country]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>country</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_EFD38B6871294F6E9A794AE35FFDA105]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>subs_type</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[subs_type]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>subs_type</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_EFD38B6871294F6E9A794AE35FFDA105]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>date</remote-name>
+            <remote-type>7</remote-type>
+            <local-name>[date]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>date</remote-alias>
+            <local-type>date</local-type>
+            <aggregation>Year</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_EFD38B6871294F6E9A794AE35FFDA105]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>account_id</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[account_id]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>account_id</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_EFD38B6871294F6E9A794AE35FFDA105]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>up_for_renewal_date</remote-name>
+            <remote-type>7</remote-type>
+            <local-name>[up_for_renewal_date]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>up_for_renewal_date</remote-alias>
+            <local-type>date</local-type>
+            <aggregation>Year</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_EFD38B6871294F6E9A794AE35FFDA105]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>end_date</remote-name>
+            <remote-type>7</remote-type>
+            <local-name>[end_date]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>end_date</remote-alias>
+            <local-type>date</local-type>
+            <aggregation>Year</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_EFD38B6871294F6E9A794AE35FFDA105]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>days_on_pro</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[days_on_pro]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>days_on_pro</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_EFD38B6871294F6E9A794AE35FFDA105]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>vol_churn</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[vol_churn]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>vol_churn</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_EFD38B6871294F6E9A794AE35FFDA105]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>churned</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[churned]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>churned</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_EFD38B6871294F6E9A794AE35FFDA105]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>prev_planid</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[prev_planid]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>prev_planid</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_EFD38B6871294F6E9A794AE35FFDA105]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>total_orders</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[total_orders]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>total_orders</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_EFD38B6871294F6E9A794AE35FFDA105]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>orders_pro_restaurants</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[orders_pro_restaurants]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>orders_pro_restaurants</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_EFD38B6871294F6E9A794AE35FFDA105]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>pro_savings</remote-name>
+            <remote-type>5</remote-type>
+            <local-name>[pro_savings]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>pro_savings</remote-alias>
+            <local-type>real</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_EFD38B6871294F6E9A794AE35FFDA105]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>gfv_lc</remote-name>
+            <remote-type>5</remote-type>
+            <local-name>[gfv_lc]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>gfv_lc</remote-alias>
+            <local-type>real</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_EFD38B6871294F6E9A794AE35FFDA105]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>avg_rating</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[avg_rating]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>avg_rating</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_EFD38B6871294F6E9A794AE35FFDA105]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>pro_orders</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[pro_orders]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>pro_orders</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_EFD38B6871294F6E9A794AE35FFDA105]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+        </metadata-records>
+      </connection>
+      <aliases enabled='yes' />
+      <column caption='Segment Bucket' datatype='string' name='[Calculation_1176565417911566336]' role='dimension' type='nominal'>
+        <calculation class='tableau' formula='case [country] when &apos;AE&apos; then &#13;&#10;    (if [total_orders]&lt;=1   then &apos;0.Inactive&apos;&#13;&#10;     ELSEIF  ([total_orders] &lt;=4) then &apos;1.Low&apos;&#13;&#10;     ELSEIF   [total_orders] &lt;=10 then &apos;2.Medium&apos;&#13;&#10;     ELSEIF     [total_orders] &gt;10 then &apos;3.High&apos;&#13;&#10;     ELSE &apos;None&apos;  end )&#13;&#10;     when &apos;BH&apos; then &#13;&#10;    (if [total_orders]&lt;=1   then &apos;0.Inactive&apos;&#13;&#10;     ELSEIF  ([total_orders] &lt;=4) then &apos;1.Low&apos;&#13;&#10;     ELSEIF   [total_orders] &lt;=10 then &apos;2.Medium&apos;&#13;&#10;     ELSEIF     [total_orders] &gt;10 then &apos;3.High&apos;&#13;&#10;     ELSE &apos;None&apos;  end )&#13;&#10;     when &apos;JO&apos; then &#13;&#10;    (if [total_orders]&lt;=1   then &apos;0.Inactive&apos;&#13;&#10;     ELSEIF  ([total_orders] &lt;=2) then &apos;1.Low&apos;&#13;&#10;     ELSEIF   [total_orders] &lt;=5 then &apos;2.Medium&apos;&#13;&#10;     ELSEIF     [total_orders] &gt;5 then &apos;3.High&apos;&#13;&#10;     ELSE &apos;None&apos;  end )&#13;&#10;     when &apos;KW&apos; then &#13;&#10;    (if [total_orders]&lt;=1   then &apos;0.Inactive&apos;&#13;&#10;     ELSEIF  ([total_orders] &lt;=6) then &apos;1.Low&apos;&#13;&#10;     ELSEIF   [total_orders] &lt;=13 then &apos;2.Medium&apos;&#13;&#10;     ELSEIF     [total_orders] &gt;13 then &apos;3.High&apos;&#13;&#10;     ELSE &apos;None&apos;  end )&#13;&#10;     when &apos;OM&apos; then &#13;&#10;    (if [total_orders]&lt;=1   then &apos;0.Inactive&apos;&#13;&#10;     ELSEIF  ([total_orders] &lt;=3) then &apos;1.Low&apos;&#13;&#10;     ELSEIF   [total_orders] &lt;=8 then &apos;2.Medium&apos;&#13;&#10;     ELSEIF     [total_orders] &gt;8 then &apos;3.High&apos;&#13;&#10;     ELSE &apos;None&apos;  end )&#13;&#10;    when &apos;QA&apos; then &#13;&#10;    (if [total_orders]&lt;=1   then &apos;0.Inactive&apos;&#13;&#10;     ELSEIF  ([total_orders] &lt;=4) then &apos;1.Low&apos;&#13;&#10;     ELSEIF   [total_orders] &lt;=10 then &apos;2.Medium&apos;&#13;&#10;     ELSEIF     [total_orders] &gt;10 then &apos;3.High&apos;&#13;&#10;     ELSE &apos;None&apos;  end )&#13;&#10;&#13;&#10;end' />
+      </column>
+      <column caption='Churned %' datatype='real' name='[Calculation_1176565417912512513]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='countd(if [churned]=1 then [account_id] else null end)&#13;&#10;/&#13;&#10;countd([account_id])' />
+      </column>
+      <_.fcp.ObjectModelTableType.true...column caption='Custom SQL Query' datatype='table' name='[__tableau_internal_object_id__].[_EFD38B6871294F6E9A794AE35FFDA105]' role='measure' type='quantitative' />
+      <column datatype='string' name='[country]' role='dimension' semantic-role='[Country].[ISO3166_2]' type='nominal' />
+      <extract _.fcp.ObjectModelExtractV2.true...object-id='' _.fcp.VConnDownstreamExtractsWithWarnings.true...user-specific='false' count='-1' enabled='true' units='records'>
+        <connection author-locale='en_US' class='hyper' dbname='extract/a6/d9/{13C99759-2A05-4767-8240-BF3E7E6B8290}/federated_1ogtooq0rqndz014s6mrx0.hyper' default-settings='yes' extract-engine='true' schema='Extract' sslmode='' tablename='Extract' update-time='05/06/2024 12:58:57 PM' username=''>
+          <_.fcp.ObjectModelEncapsulateLegacy.false...relation name='Extract' table='[Extract].[Extract]' type='table' />
+          <_.fcp.ObjectModelEncapsulateLegacy.true...relation name='Extract' table='[Extract].[Extract]' type='table' />
+          <refresh>
+            <refresh-event add-from-file-path='churn- segment' increment-value='%null%' refresh-type='create' rows-inserted='1176208' timestamp-start='2024-05-06 12:55:57.602' />
+          </refresh>
+          <metadata-records>
+            <metadata-record class='column'>
+              <remote-name>country</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[country]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>country</remote-alias>
+              <ordinal>0</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>6</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_EFD38B6871294F6E9A794AE35FFDA105]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>subs_type</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[subs_type]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>subs_type</remote-alias>
+              <ordinal>1</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>2</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_EFD38B6871294F6E9A794AE35FFDA105]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>date</remote-name>
+              <remote-type>133</remote-type>
+              <local-name>[date]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>date</remote-alias>
+              <ordinal>2</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>date</local-type>
+              <aggregation>Year</aggregation>
+              <approx-count>7</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_EFD38B6871294F6E9A794AE35FFDA105]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>account_id</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[account_id]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>account_id</remote-alias>
+              <ordinal>3</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>669486</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_EFD38B6871294F6E9A794AE35FFDA105]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>up_for_renewal_date</remote-name>
+              <remote-type>133</remote-type>
+              <local-name>[up_for_renewal_date]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>up_for_renewal_date</remote-alias>
+              <ordinal>4</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>date</local-type>
+              <aggregation>Year</aggregation>
+              <approx-count>187</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_EFD38B6871294F6E9A794AE35FFDA105]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>end_date</remote-name>
+              <remote-type>133</remote-type>
+              <local-name>[end_date]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>end_date</remote-alias>
+              <ordinal>5</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>date</local-type>
+              <aggregation>Year</aggregation>
+              <approx-count>187</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_EFD38B6871294F6E9A794AE35FFDA105]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>days_on_pro</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[days_on_pro]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>days_on_pro</remote-alias>
+              <ordinal>6</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>2611</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_EFD38B6871294F6E9A794AE35FFDA105]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>vol_churn</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[vol_churn]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>vol_churn</remote-alias>
+              <ordinal>7</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>2</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_EFD38B6871294F6E9A794AE35FFDA105]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>churned</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[churned]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>churned</remote-alias>
+              <ordinal>8</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>2</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_EFD38B6871294F6E9A794AE35FFDA105]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>prev_planid</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[prev_planid]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>prev_planid</remote-alias>
+              <ordinal>9</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>12</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_EFD38B6871294F6E9A794AE35FFDA105]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>total_orders</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[total_orders]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>total_orders</remote-alias>
+              <ordinal>10</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>306</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_EFD38B6871294F6E9A794AE35FFDA105]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>orders_pro_restaurants</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[orders_pro_restaurants]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>orders_pro_restaurants</remote-alias>
+              <ordinal>11</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>220</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_EFD38B6871294F6E9A794AE35FFDA105]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>pro_savings</remote-name>
+              <remote-type>5</remote-type>
+              <local-name>[pro_savings]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>pro_savings</remote-alias>
+              <ordinal>12</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>real</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>26025</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_EFD38B6871294F6E9A794AE35FFDA105]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>gfv_lc</remote-name>
+              <remote-type>5</remote-type>
+              <local-name>[gfv_lc]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>gfv_lc</remote-alias>
+              <ordinal>13</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>real</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>217334</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_EFD38B6871294F6E9A794AE35FFDA105]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>avg_rating</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[avg_rating]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>avg_rating</remote-alias>
+              <ordinal>14</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>1</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_EFD38B6871294F6E9A794AE35FFDA105]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>pro_orders</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[pro_orders]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>pro_orders</remote-alias>
+              <ordinal>15</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>156</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_EFD38B6871294F6E9A794AE35FFDA105]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+          </metadata-records>
+        </connection>
+      </extract>
+      <layout _.fcp.SchemaViewerObjectModel.false...dim-percentage='0.5' _.fcp.SchemaViewerObjectModel.false...measure-percentage='0.4' dim-ordering='alphabetic' measure-ordering='alphabetic' show-structure='true' />
+      <semantic-values>
+        <semantic-value key='[Country].[Name]' value='&quot;United States&quot;' />
+      </semantic-values>
+      <_.fcp.ObjectModelEncapsulateLegacy.true...object-graph>
+        <objects>
+          <object caption='Custom SQL Query' id='_EFD38B6871294F6E9A794AE35FFDA105'>
+            <properties context=''>
+              <relation connection='bigquery.0zp6e4i0k7s6lc1aeacof0ksnla0' name='Custom SQL Query' type='text'><![CDATA[with  subscriber_daily as 
+(
+select *,case when (lead(start_date) over (partition by account_id,plan_id order by iso_date asc)  is not null and lead(date(start_date)) over (partition by account_id,plan_id order by iso_date asc) != date(start_date) and lead(date(start_date)) over (partition by account_id,plan_id order by iso_date asc) <<= date(end_date)) then iso_date else date(end_date) end  as new_end_date
+        ,row_number() over (partition by account_id ,country,case when subscription_state = 'BILLING RETRY' then 1 else 0 end order by iso_date asc) as days_on_pro
+from `tlb-data-prod.data_platform.fct_tpro_subscriber_daily`
+
+)
+,customers_monthly as 
+(
+select   fs.*
+         ,date_add(iso_date,interval 1 day) as up_for_renewal_date
+         
+
+from subscriber_daily  fs 
+where subscription_state <<>> 'BILLING RETRY'
+and iso_date = date(new_end_date)
+and plan_id not in (31,34)
+and iso_date <<=current_date-2
+
+),end_of_month_active as
+(
+select  date_trunc(iso_date,month)  as month,fs.country ,fs.account_id,fs.subscription_state
+from   `tlb-data-prod.data_platform.fct_tpro_subscriber_daily` fs
+inner join (select month_start_date,month_end_date
+            from `tlb-data-prod.data_platform.dim_date` dd 
+            where  dd.date >>= '2023-01-01'and dd.date<<=current_date()
+            group by 1,2) dd
+on      fs.iso_date = (case when month_start_date = date_trunc(current_date,month) then current_date-1 else month_end_date end )
+--and     subscription_state <<>> 'BILLING RETRY'
+and     plan_id not in (31,34)
+group by 1,2,3,4
+),ranking_monthly as 
+(
+select *,date_trunc(up_for_renewal_date,month) as month
+        ,row_number()over(partition by account_id,country,date_trunc(up_for_renewal_date,month) order by up_for_renewal_date desc ) as rank_number 
+from  customers_monthly cm 
+),monthly_load as 
+(
+select cm.country
+      ,cm.month as iso_date
+      ,cm.plan_id
+      ,'monthly' as type
+      ,'renewed' as status
+      ,case when cm.subscription_state = 'GRACE PERIOD' then cm.prev_subs_type else cm.subscription_state end as subscriptiontype
+      ,'' as churn_type
+      ,cm.account_id
+      ,cm.up_for_renewal_date 
+      ,date(cm.start_date) as start_date
+      ,date(cm.new_end_date) as end_date
+      ,cm.days_on_pro
+      --,count(distinct case when  em.account_id is not null and em.subscription_state <<>> 'BILLING RETRY' then cm.account_id end ) as customers
+from ranking_monthly cm
+left join end_of_month_active em 
+on   cm.account_id = em.account_id 
+and  cm.country = em.country
+and  cm.month = em.month
+where  cm.month<<=current_date
+and  cm.rank_number = 1
+and  em.account_id is not null and em.subscription_state <<>> 'BILLING RETRY'
+group by all
+union all 
+select cm.country
+      ,cm.month as iso_date
+      ,cm.plan_id
+      ,'monthly' as type
+      ,'churned' as status
+      ,case when cm.subscription_state = 'GRACE PERIOD' then cm.prev_subs_type else cm.subscription_state end as subscriptiontype
+      ,case when (fs.subscription_state = 'BILLING RETRY' or cm.subscription_state ='GRACE PERIOD') then 'Involuntary Churn' else 'Voluntary Churn' end as churn_type
+      ,cm.account_id 
+      ,up_for_renewal_date
+      --,count(distinct case when em.account_id is null or (em.subscription_state = 'BILLING RETRY') then cm.account_id end) as customers
+      ,date(cm.start_date) as start_date
+      ,date(cm.new_end_date) as end_date
+      ,cm.days_on_pro
+
+from ranking_monthly cm
+left join end_of_month_active em 
+on   cm.account_id = em.account_id 
+and  cm.country = em.country
+and  cm.month = em.month
+left join `tlb-data-prod.data_platform.fct_tpro_subscriber_daily` fs
+on   fs.account_id = cm.account_id 
+and  cm.up_for_renewal_date = fs.iso_date 
+and  fs.plan_id = cm.plan_id 
+and  fs.country = cm.country 
+where   cm.month<<=current_date
+and cm.rank_number = 1
+and (em.account_id is null or (em.subscription_state = 'BILLING RETRY'))
+group by all
+), order_kpis as 
+(
+select cm.*
+       ,count(distinct fi.order_id) as orders
+       ,count(distinct case when vh.vendor_id is not null then fi.order_id end) as pro_vendor_orders
+       ,count(distinct case when fi.is_tpro_order then fi.order_id end) as tpro_orders
+       ,sum(case when fi.is_modified then fi.mod_original_gmv_amount_lc else fi.gmv_amount_lc end - fi.delivery_fee_amount_lc- fi.service_fee_amount_lc - fi.tourist_tax_amount_lc - fi.municipality_tax_amount_lc ) as gfv 
+       ,sum(case when fi.is_tpro_order then 
+                  case when fi.is_modified then fi.mod_original_gmv_amount_lc else fi.gmv_amount_lc end - fi.delivery_fee_amount_lc - fi.service_fee_amount_lc - fi.tourist_tax_amount_lc - fi.municipality_tax_amount_lc end ) as gfv_pro
+       ,sum(fi.tpro_discount_lc) as pro_savings 
+
+
+from monthly_load cm 
+left join `tlb-data-prod.data_platform.fct_order_info` fi 
+on   cm.account_id = fi.account_id 
+and  cm.country = fi.country_iso 
+and  fi.order_date between date_add(end_date,interval -30 day) and end_date 
+and  fi.is_successful 
+and  fi.order_date >>='2023-01-01'
+left join `tlb-data-prod.data_platform_rest_tables.tpro_vendor_history` vh 
+on   vh.vendor_id = fi.vendor_id 
+and  vh.date = fi.order_date 
+group by all
+)
+select  ok.country
+        ,case when lower(ok.subscriptiontype) like '%free%' then 'FREE TRIAL' ELSE ok.subscriptiontype end as subs_type
+        ,ok.iso_date as date 
+        ,ok.account_id 
+        ,ok.up_for_renewal_date
+        ,ok.end_date
+        ,ok.days_on_pro 
+        ,case when churn_type = 'Voluntary Churn' then 1 else 0 end as vol_churn
+        ,case when status = 'churned' then 1 else 0 end as churned
+        ,ok.plan_id as prev_planid
+        ,coalesce(ok.orders,0) as total_orders
+        ,coalesce(ok.pro_vendor_orders,0) as orders_pro_restaurants
+        ,coalesce(ok.pro_savings,0) as pro_savings 
+        ,coalesce(ok.gfv,0) as gfv_lc
+        ,0 as avg_rating 
+        ,coalesce(ok.tpro_orders,0) as pro_orders
+
+
+
+
+from    order_kpis ok 
+where ok.iso_date >>= date_add(date_trunc(current_date,month),interval -6 month)
+and subscriptiontype is not null]]></relation>
+            </properties>
+            <properties context='extract'>
+              <relation name='Extract' table='[Extract].[Extract]' type='table' />
+            </properties>
+          </object>
+        </objects>
+      </_.fcp.ObjectModelEncapsulateLegacy.true...object-graph>
+    </datasource>
+    <datasource caption='adoption%' inline='true' name='federated.1p8e75z1tuys2q1cv8756065kurk' version='18.1'>
+      <connection class='federated'>
+        <named-connections>
+          <named-connection caption='BigQuery' name='bigquery.0fj25eq05nnccd12jpu6c1hik12f'>
+            <connection CATALOG='tlb-data-prod' EXECCATALOG='tlb-data-dev' authentication='oauth' bq-dataset-fetch-rows='' bq-fetch-rows='' bq-fetch-tasks='' bq-large-fetch-rows='' bq-project-fetch-rows='' bq-response-rows='' class='bigquery' connection-dialect='google-sql' project='tlb-data-prod' schema='data_platform' server-oauth='' username='hajira.zulfiqar@talabat.com' workgroup-auth-mode='prompt' />
+          </named-connection>
+        </named-connections>
+        <_.fcp.ObjectModelEncapsulateLegacy.false...relation connection='bigquery.0fj25eq05nnccd12jpu6c1hik12f' name='Custom SQL Query' type='text'><![CDATA[with 
+active_customers as(select distinct a.account_id ,a.country, date_trunc(a.iso_date,month) as month,case when plan_duration_days<<=31 then "STP" else "LTP" end as plan_type,
+from `tlb-data-prod.data_platform.fct_tpro_subscriber_daily` as a
+inner join `tlb-data-prod.data_platform.dim_date` as d
+on a.iso_date=d.month_end_date
+inner join `tlb-data-prod.data_platform.dim_subscription_plan` as s
+on s.plan_id=a.plan_id
+and d.date<<=current_date()
+where d.date between date_sub(current_date(),  interval  12 month)  and current_date()
+and a.plan_id not in (31,34) and a.subscription_state<<>>'BILLING RETRY')
+
+
+,orders as(select country_iso,date_trunc(order_date,month) as month, account_id, coalesce(count(distinct order_id),0) as freq, coalesce(sum(gmv_amount_lc),0) as gmv, 
+from  `tlb-data-prod.data_platform.fct_order_info`
+where order_date between date_sub(date_trunc(current_date(),month),  interval  12 month)  and current_date()
+and is_successful
+and country_iso in ("OM","BH","KW","QA","AE","JO")
+group by all)
+
+,pro_users as ( select 
+ a.month,
+ a.country,
+ a.plan_type,
+ case 
+    when a.country in ("AE", "BH","QA") then
+      case
+        when b.freq<<= 1 then "1.Inactive"
+        when b.account_id is null then "1.Inactive"
+        when b.freq between 2 and 4 then "2.Low"
+        when b.freq between 5 and 10 then "3.Medium"
+        when b.freq >> 10 then "4.High" end
+    when a.country in ("JO") then
+      case
+        when b.freq<<= 1 then "1.Inactive"
+        when b.account_id is null then "1.Inactive"
+        when b.freq =2 then "2.Low"
+        when b.freq between 3 and 5 then "3.Medium"
+        when b.freq >>5 then "4.High" end
+    when a.country in ("KW") then
+      case
+        when b.freq<<= 1 then "1.Inactive"
+        when b.account_id is null then "1.Inactive"
+        when b.freq between 2 and 6 then "2.Low"
+        when b.freq between 7 and 13 then "3.Medium"
+        when b.freq >>13 then "4.High" end
+    when a.country in ("OM") then
+      case
+         when b.freq<<= 1 then "1.Inactive"
+         when b.account_id is null then "1.Inactive"
+        when b.freq between 2 and 3 then "2.Low"
+        when b.freq between 4 and 8 then "3.Medium"
+        when b.freq >>8 then "4.High" end
+    else "Others"
+    end as order_segment,
+    count(distinct a.account_id) as pro_user,
+
+ from active_customers as a
+ left join orders as b
+ on b.account_id=a.account_id
+ and b.country_iso=a.country
+ and b.month=a.month
+ group by all
+)
+
+
+
+select 
+"Talabat KPIs" as type,
+a.country_iso,
+a.month,
+case 
+    when a.country_iso in ("AE", "BH","QA") then
+      case
+        when b.freq<<= 1 then "1.Inactive"
+        when b.account_id is null then "1.Inactive"
+        when b.freq between 2 and 4 then "2.Low"
+        when b.freq between 5 and 10 then "3.Medium"
+        when b.freq >> 10 then "4.High" end
+    when a.country_iso in ("JO") then
+      case
+        when b.freq<<= 1 then "1.Inactive"
+        when b.account_id is null then "1.Inactive"
+        when b.freq =2 then "2.Low"
+        when b.freq between 3 and 5 then "3.Medium"
+        when b.freq >>5 then "4.High" end
+    when a.country_iso in ("KW") then
+      case
+        when b.freq<<= 1 then "1.Inactive"
+        when b.account_id is null then "1.Inactive"
+        when b.freq between 2 and 6 then "2.Low"
+        when b.freq between 7 and 13 then "3.Medium"
+        when b.freq >>13 then "4.High" end
+    when a.country_iso in ("OM") then
+      case
+         when b.freq<<= 1 then "1.Inactive"
+         when b.account_id is null then "1.Inactive"
+        when b.freq between 2 and 3 then "2.Low"
+        when b.freq between 4 and 8 then "3.Medium"
+        when b.freq >>8 then "4.High" end
+    else "Others"
+    end as order_segment,
+count(distinct a.account_id) as talabat_base, 
+from orders as a
+left join orders as b
+on b.account_id=a.account_id
+and b.country_iso=a.country_iso
+and b.month=a.month
+group by all
+
+
+
+
+UNION ALL
+
+SELECT 
+case when plan_type="STP" then "STP" else "LTP" end as type,
+ country,
+ month,
+ order_segment,
+ pro_user
+ from pro_users
+ group by all]]></_.fcp.ObjectModelEncapsulateLegacy.false...relation>
+        <_.fcp.ObjectModelEncapsulateLegacy.true...relation connection='bigquery.0fj25eq05nnccd12jpu6c1hik12f' name='Custom SQL Query' type='text'><![CDATA[with 
+active_customers as(select distinct a.account_id ,a.country, date_trunc(a.iso_date,month) as month,case when plan_duration_days<<=31 then "STP" else "LTP" end as plan_type,
+from `tlb-data-prod.data_platform.fct_tpro_subscriber_daily` as a
+inner join `tlb-data-prod.data_platform.dim_date` as d
+on a.iso_date=d.month_end_date
+inner join `tlb-data-prod.data_platform.dim_subscription_plan` as s
+on s.plan_id=a.plan_id
+and d.date<<=current_date()
+where d.date between date_sub(current_date(),  interval  12 month)  and current_date()
+and a.plan_id not in (31,34) and a.subscription_state<<>>'BILLING RETRY')
+
+
+,orders as(select country_iso,date_trunc(order_date,month) as month, account_id, coalesce(count(distinct order_id),0) as freq, coalesce(sum(gmv_amount_lc),0) as gmv, 
+from  `tlb-data-prod.data_platform.fct_order_info`
+where order_date between date_sub(date_trunc(current_date(),month),  interval  12 month)  and current_date()
+and is_successful
+and country_iso in ("OM","BH","KW","QA","AE","JO")
+group by all)
+
+,pro_users as ( select 
+ a.month,
+ a.country,
+ a.plan_type,
+ case 
+    when a.country in ("AE", "BH","QA") then
+      case
+        when b.freq<<= 1 then "1.Inactive"
+        when b.account_id is null then "1.Inactive"
+        when b.freq between 2 and 4 then "2.Low"
+        when b.freq between 5 and 10 then "3.Medium"
+        when b.freq >> 10 then "4.High" end
+    when a.country in ("JO") then
+      case
+        when b.freq<<= 1 then "1.Inactive"
+        when b.account_id is null then "1.Inactive"
+        when b.freq =2 then "2.Low"
+        when b.freq between 3 and 5 then "3.Medium"
+        when b.freq >>5 then "4.High" end
+    when a.country in ("KW") then
+      case
+        when b.freq<<= 1 then "1.Inactive"
+        when b.account_id is null then "1.Inactive"
+        when b.freq between 2 and 6 then "2.Low"
+        when b.freq between 7 and 13 then "3.Medium"
+        when b.freq >>13 then "4.High" end
+    when a.country in ("OM") then
+      case
+         when b.freq<<= 1 then "1.Inactive"
+         when b.account_id is null then "1.Inactive"
+        when b.freq between 2 and 3 then "2.Low"
+        when b.freq between 4 and 8 then "3.Medium"
+        when b.freq >>8 then "4.High" end
+    else "Others"
+    end as order_segment,
+    count(distinct a.account_id) as pro_user,
+
+ from active_customers as a
+ left join orders as b
+ on b.account_id=a.account_id
+ and b.country_iso=a.country
+ and b.month=a.month
+ group by all
+)
+
+
+
+select 
+"Talabat KPIs" as type,
+a.country_iso,
+a.month,
+case 
+    when a.country_iso in ("AE", "BH","QA") then
+      case
+        when b.freq<<= 1 then "1.Inactive"
+        when b.account_id is null then "1.Inactive"
+        when b.freq between 2 and 4 then "2.Low"
+        when b.freq between 5 and 10 then "3.Medium"
+        when b.freq >> 10 then "4.High" end
+    when a.country_iso in ("JO") then
+      case
+        when b.freq<<= 1 then "1.Inactive"
+        when b.account_id is null then "1.Inactive"
+        when b.freq =2 then "2.Low"
+        when b.freq between 3 and 5 then "3.Medium"
+        when b.freq >>5 then "4.High" end
+    when a.country_iso in ("KW") then
+      case
+        when b.freq<<= 1 then "1.Inactive"
+        when b.account_id is null then "1.Inactive"
+        when b.freq between 2 and 6 then "2.Low"
+        when b.freq between 7 and 13 then "3.Medium"
+        when b.freq >>13 then "4.High" end
+    when a.country_iso in ("OM") then
+      case
+         when b.freq<<= 1 then "1.Inactive"
+         when b.account_id is null then "1.Inactive"
+        when b.freq between 2 and 3 then "2.Low"
+        when b.freq between 4 and 8 then "3.Medium"
+        when b.freq >>8 then "4.High" end
+    else "Others"
+    end as order_segment,
+count(distinct a.account_id) as talabat_base, 
+from orders as a
+left join orders as b
+on b.account_id=a.account_id
+and b.country_iso=a.country_iso
+and b.month=a.month
+group by all
+
+
+
+
+UNION ALL
+
+SELECT 
+case when plan_type="STP" then "STP" else "LTP" end as type,
+ country,
+ month,
+ order_segment,
+ pro_user
+ from pro_users
+ group by all]]></_.fcp.ObjectModelEncapsulateLegacy.true...relation>
+        <metadata-records>
+          <metadata-record class='column'>
+            <remote-name>type</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[type]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>type</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_DF050D57BA4945ED9C404E157994F363]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>country_iso</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[country_iso]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>country_iso</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_DF050D57BA4945ED9C404E157994F363]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>month</remote-name>
+            <remote-type>7</remote-type>
+            <local-name>[month]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>month</remote-alias>
+            <local-type>date</local-type>
+            <aggregation>Year</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_DF050D57BA4945ED9C404E157994F363]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>order_segment</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[order_segment]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>order_segment</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_DF050D57BA4945ED9C404E157994F363]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>talabat_base</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[talabat_base]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>talabat_base</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_DF050D57BA4945ED9C404E157994F363]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+        </metadata-records>
+      </connection>
+      <aliases enabled='yes' />
+      <column caption='Combined' datatype='real' name='[Calculation_1176565418224472067]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='sum(case    [type] when   &quot;LTP&quot;   then      [talabat_base] &#13;&#10;WHEN  &quot;STP&quot; then        [talabat_base] else 0 END)/&#13;&#10;&#13;&#10;SUM(case    [type] when &quot;Talabat KPIs&quot; THEN  [talabat_base]  else 0&#13;&#10;  END)' />
+      </column>
+      <column caption='STP Adoption%' datatype='real' name='[Combined (copy)_1176565418230009861]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='sum(case    [type] when     &quot;STP&quot; then        [talabat_base] else 0 END)/&#13;&#10;&#13;&#10;SUM(case    [type] when &quot;Talabat KPIs&quot; THEN  [talabat_base]  else 0&#13;&#10;  END)' />
+      </column>
+      <column caption='tpro subcribers' datatype='integer' name='[Combined (copy)_1176565418235969544]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='sum(case    [type] when   &quot;LTP&quot;   then      [talabat_base] &#13;&#10;WHEN  &quot;STP&quot; then        [talabat_base] else 0 END)' />
+      </column>
+      <column caption='Talabat Users' datatype='integer' name='[Combined (copy)_1176565418236416009]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='SUM(case    [type] when &quot;Talabat KPIs&quot; THEN  [talabat_base]  else 0&#13;&#10;  END)' />
+      </column>
+      <column caption='LTP Users' datatype='integer' name='[LTP Adoption% (copy)_1176565418235719687]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='sum(case    [type] when     &quot;LTP&quot; then        [talabat_base] else 0 END)' />
+      </column>
+      <column caption='LTP Adoption%' datatype='real' name='[STP Adoption% (copy)_1176565418230616070]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='sum(case    [type] when     &quot;LTP&quot; then        [talabat_base] else 0 END)/&#13;&#10;&#13;&#10;SUM(case    [type] when &quot;Talabat KPIs&quot; THEN  [talabat_base]  else 0&#13;&#10;  END)' />
+      </column>
+      <_.fcp.ObjectModelTableType.true...column caption='Custom SQL Query' datatype='table' name='[__tableau_internal_object_id__].[_DF050D57BA4945ED9C404E157994F363]' role='measure' type='quantitative' />
+      <column caption='Country' datatype='string' name='[country_iso]' role='dimension' semantic-role='[Country].[ISO3166_2]' type='nominal' />
+      <extract _.fcp.ObjectModelExtractV2.true...object-id='' _.fcp.VConnDownstreamExtractsWithWarnings.true...user-specific='false' count='-1' enabled='true' units='records'>
+        <connection author-locale='en_US' class='hyper' dbname='extract/a6/d9/{13C99759-2A05-4767-8240-BF3E7E6B8290}/federated_1p8e75z1tuys2q1cv87560.hyper' default-settings='yes' extract-engine='true' schema='Extract' tablename='Extract' update-time='05/07/2024 10:56:46 AM'>
+          <_.fcp.ObjectModelEncapsulateLegacy.false...relation name='Extract' table='[Extract].[Extract]' type='table' />
+          <_.fcp.ObjectModelEncapsulateLegacy.true...relation name='Extract' table='[Extract].[Extract]' type='table' />
+          <refresh>
+            <refresh-event add-from-file-path='adoption%' increment-value='%null%' refresh-type='create' rows-inserted='871' timestamp-start='2024-05-07 10:55:09.950' />
+          </refresh>
+          <metadata-records>
+            <metadata-record class='column'>
+              <remote-name>type</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[type]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>type</remote-alias>
+              <ordinal>0</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>3</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_DF050D57BA4945ED9C404E157994F363]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>country_iso</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[country_iso]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>country_iso</remote-alias>
+              <ordinal>1</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>6</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_DF050D57BA4945ED9C404E157994F363]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>month</remote-name>
+              <remote-type>133</remote-type>
+              <local-name>[month]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>month</remote-alias>
+              <ordinal>2</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>date</local-type>
+              <aggregation>Year</aggregation>
+              <approx-count>13</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_DF050D57BA4945ED9C404E157994F363]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>order_segment</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[order_segment]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>order_segment</remote-alias>
+              <ordinal>3</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>4</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_DF050D57BA4945ED9C404E157994F363]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>talabat_base</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[talabat_base]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>talabat_base</remote-alias>
+              <ordinal>4</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>834</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_DF050D57BA4945ED9C404E157994F363]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+          </metadata-records>
+        </connection>
+      </extract>
+      <layout _.fcp.SchemaViewerObjectModel.false...dim-percentage='0.5' _.fcp.SchemaViewerObjectModel.false...measure-percentage='0.4' dim-ordering='alphabetic' measure-ordering='alphabetic' show-structure='true' />
+      <semantic-values>
+        <semantic-value key='[Country].[Name]' value='&quot;United States&quot;' />
+      </semantic-values>
+      <_.fcp.ObjectModelEncapsulateLegacy.true...object-graph>
+        <objects>
+          <object caption='Custom SQL Query' id='_DF050D57BA4945ED9C404E157994F363'>
+            <properties context=''>
+              <relation connection='bigquery.0fj25eq05nnccd12jpu6c1hik12f' name='Custom SQL Query' type='text'><![CDATA[with 
+active_customers as(select distinct a.account_id ,a.country, date_trunc(a.iso_date,month) as month,case when plan_duration_days<<=31 then "STP" else "LTP" end as plan_type,
+from `tlb-data-prod.data_platform.fct_tpro_subscriber_daily` as a
+inner join `tlb-data-prod.data_platform.dim_date` as d
+on a.iso_date=d.month_end_date
+inner join `tlb-data-prod.data_platform.dim_subscription_plan` as s
+on s.plan_id=a.plan_id
+and d.date<<=current_date()
+where d.date between date_sub(current_date(),  interval  12 month)  and current_date()
+and a.plan_id not in (31,34) and a.subscription_state<<>>'BILLING RETRY')
+
+
+,orders as(select country_iso,date_trunc(order_date,month) as month, account_id, coalesce(count(distinct order_id),0) as freq, coalesce(sum(gmv_amount_lc),0) as gmv, 
+from  `tlb-data-prod.data_platform.fct_order_info`
+where order_date between date_sub(date_trunc(current_date(),month),  interval  12 month)  and current_date()
+and is_successful
+and country_iso in ("OM","BH","KW","QA","AE","JO")
+group by all)
+
+,pro_users as ( select 
+ a.month,
+ a.country,
+ a.plan_type,
+ case 
+    when a.country in ("AE", "BH","QA") then
+      case
+        when b.freq<<= 1 then "1.Inactive"
+        when b.account_id is null then "1.Inactive"
+        when b.freq between 2 and 4 then "2.Low"
+        when b.freq between 5 and 10 then "3.Medium"
+        when b.freq >> 10 then "4.High" end
+    when a.country in ("JO") then
+      case
+        when b.freq<<= 1 then "1.Inactive"
+        when b.account_id is null then "1.Inactive"
+        when b.freq =2 then "2.Low"
+        when b.freq between 3 and 5 then "3.Medium"
+        when b.freq >>5 then "4.High" end
+    when a.country in ("KW") then
+      case
+        when b.freq<<= 1 then "1.Inactive"
+        when b.account_id is null then "1.Inactive"
+        when b.freq between 2 and 6 then "2.Low"
+        when b.freq between 7 and 13 then "3.Medium"
+        when b.freq >>13 then "4.High" end
+    when a.country in ("OM") then
+      case
+         when b.freq<<= 1 then "1.Inactive"
+         when b.account_id is null then "1.Inactive"
+        when b.freq between 2 and 3 then "2.Low"
+        when b.freq between 4 and 8 then "3.Medium"
+        when b.freq >>8 then "4.High" end
+    else "Others"
+    end as order_segment,
+    count(distinct a.account_id) as pro_user,
+
+ from active_customers as a
+ left join orders as b
+ on b.account_id=a.account_id
+ and b.country_iso=a.country
+ and b.month=a.month
+ group by all
+)
+
+
+
+select 
+"Talabat KPIs" as type,
+a.country_iso,
+a.month,
+case 
+    when a.country_iso in ("AE", "BH","QA") then
+      case
+        when b.freq<<= 1 then "1.Inactive"
+        when b.account_id is null then "1.Inactive"
+        when b.freq between 2 and 4 then "2.Low"
+        when b.freq between 5 and 10 then "3.Medium"
+        when b.freq >> 10 then "4.High" end
+    when a.country_iso in ("JO") then
+      case
+        when b.freq<<= 1 then "1.Inactive"
+        when b.account_id is null then "1.Inactive"
+        when b.freq =2 then "2.Low"
+        when b.freq between 3 and 5 then "3.Medium"
+        when b.freq >>5 then "4.High" end
+    when a.country_iso in ("KW") then
+      case
+        when b.freq<<= 1 then "1.Inactive"
+        when b.account_id is null then "1.Inactive"
+        when b.freq between 2 and 6 then "2.Low"
+        when b.freq between 7 and 13 then "3.Medium"
+        when b.freq >>13 then "4.High" end
+    when a.country_iso in ("OM") then
+      case
+         when b.freq<<= 1 then "1.Inactive"
+         when b.account_id is null then "1.Inactive"
+        when b.freq between 2 and 3 then "2.Low"
+        when b.freq between 4 and 8 then "3.Medium"
+        when b.freq >>8 then "4.High" end
+    else "Others"
+    end as order_segment,
+count(distinct a.account_id) as talabat_base, 
+from orders as a
+left join orders as b
+on b.account_id=a.account_id
+and b.country_iso=a.country_iso
+and b.month=a.month
+group by all
+
+
+
+
+UNION ALL
+
+SELECT 
+case when plan_type="STP" then "STP" else "LTP" end as type,
+ country,
+ month,
+ order_segment,
+ pro_user
+ from pro_users
+ group by all]]></relation>
+            </properties>
+            <properties context='extract'>
+              <relation name='Extract' table='[Extract].[Extract]' type='table' />
+            </properties>
+          </object>
+        </objects>
+      </_.fcp.ObjectModelEncapsulateLegacy.true...object-graph>
+    </datasource>
+  </datasources>
+  <worksheets>
+    <worksheet name='Churn%'>
+      <layout-options>
+        <title>
+          <formatted-text>
+            <run bold='true'>Churn % by Order Segments</run>
+          </formatted-text>
+        </title>
+      </layout-options>
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='churn- segment' name='federated.1ogtooq0rqndz014s6mrx0kxru2w' />
+          </datasources>
+          <datasource-dependencies datasource='federated.1ogtooq0rqndz014s6mrx0kxru2w'>
+            <column caption='Segment Bucket' datatype='string' name='[Calculation_1176565417911566336]' role='dimension' type='nominal'>
+              <calculation class='tableau' formula='case [country] when &apos;AE&apos; then &#13;&#10;    (if [total_orders]&lt;=1   then &apos;0.Inactive&apos;&#13;&#10;     ELSEIF  ([total_orders] &lt;=4) then &apos;1.Low&apos;&#13;&#10;     ELSEIF   [total_orders] &lt;=10 then &apos;2.Medium&apos;&#13;&#10;     ELSEIF     [total_orders] &gt;10 then &apos;3.High&apos;&#13;&#10;     ELSE &apos;None&apos;  end )&#13;&#10;     when &apos;BH&apos; then &#13;&#10;    (if [total_orders]&lt;=1   then &apos;0.Inactive&apos;&#13;&#10;     ELSEIF  ([total_orders] &lt;=4) then &apos;1.Low&apos;&#13;&#10;     ELSEIF   [total_orders] &lt;=10 then &apos;2.Medium&apos;&#13;&#10;     ELSEIF     [total_orders] &gt;10 then &apos;3.High&apos;&#13;&#10;     ELSE &apos;None&apos;  end )&#13;&#10;     when &apos;JO&apos; then &#13;&#10;    (if [total_orders]&lt;=1   then &apos;0.Inactive&apos;&#13;&#10;     ELSEIF  ([total_orders] &lt;=2) then &apos;1.Low&apos;&#13;&#10;     ELSEIF   [total_orders] &lt;=5 then &apos;2.Medium&apos;&#13;&#10;     ELSEIF     [total_orders] &gt;5 then &apos;3.High&apos;&#13;&#10;     ELSE &apos;None&apos;  end )&#13;&#10;     when &apos;KW&apos; then &#13;&#10;    (if [total_orders]&lt;=1   then &apos;0.Inactive&apos;&#13;&#10;     ELSEIF  ([total_orders] &lt;=6) then &apos;1.Low&apos;&#13;&#10;     ELSEIF   [total_orders] &lt;=13 then &apos;2.Medium&apos;&#13;&#10;     ELSEIF     [total_orders] &gt;13 then &apos;3.High&apos;&#13;&#10;     ELSE &apos;None&apos;  end )&#13;&#10;     when &apos;OM&apos; then &#13;&#10;    (if [total_orders]&lt;=1   then &apos;0.Inactive&apos;&#13;&#10;     ELSEIF  ([total_orders] &lt;=3) then &apos;1.Low&apos;&#13;&#10;     ELSEIF   [total_orders] &lt;=8 then &apos;2.Medium&apos;&#13;&#10;     ELSEIF     [total_orders] &gt;8 then &apos;3.High&apos;&#13;&#10;     ELSE &apos;None&apos;  end )&#13;&#10;    when &apos;QA&apos; then &#13;&#10;    (if [total_orders]&lt;=1   then &apos;0.Inactive&apos;&#13;&#10;     ELSEIF  ([total_orders] &lt;=4) then &apos;1.Low&apos;&#13;&#10;     ELSEIF   [total_orders] &lt;=10 then &apos;2.Medium&apos;&#13;&#10;     ELSEIF     [total_orders] &gt;10 then &apos;3.High&apos;&#13;&#10;     ELSE &apos;None&apos;  end )&#13;&#10;&#13;&#10;end' />
+            </column>
+            <column caption='Churned %' datatype='real' name='[Calculation_1176565417912512513]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='countd(if [churned]=1 then [account_id] else null end)&#13;&#10;/&#13;&#10;countd([account_id])' />
+            </column>
+            <column datatype='integer' name='[account_id]' role='measure' type='quantitative' />
+            <column datatype='integer' name='[churned]' role='measure' type='quantitative' />
+            <column datatype='string' name='[country]' role='dimension' semantic-role='[Country].[ISO3166_2]' type='nominal' />
+            <column datatype='date' name='[date]' role='dimension' type='ordinal' />
+            <column-instance column='[Calculation_1176565417911566336]' derivation='None' name='[none:Calculation_1176565417911566336:nk]' pivot='key' type='nominal' />
+            <column-instance column='[country]' derivation='None' name='[none:country:nk]' pivot='key' type='nominal' />
+            <column-instance column='[date]' derivation='Month-Trunc' name='[tmn:date:ok]' pivot='key' type='ordinal' />
+            <column datatype='integer' name='[total_orders]' role='measure' type='quantitative' />
+            <column-instance column='[Calculation_1176565417912512513]' derivation='User' name='[usr:Calculation_1176565417912512513:qk]' pivot='key' type='quantitative' />
+          </datasource-dependencies>
+          <filter class='categorical' column='[federated.1ogtooq0rqndz014s6mrx0kxru2w].[tmn:date:ok]'>
+            <groupfilter function='union' user:ui-domain='database' user:ui-enumeration='inclusive' user:ui-marker='enumerate'>
+              <groupfilter function='member' level='[tmn:date:ok]' member='#2024-01-01 00:00:00#' />
+              <groupfilter function='member' level='[tmn:date:ok]' member='#2024-02-01 00:00:00#' />
+              <groupfilter function='member' level='[tmn:date:ok]' member='#2024-03-01 00:00:00#' />
+              <groupfilter function='member' level='[tmn:date:ok]' member='#2024-04-01 00:00:00#' />
+              <groupfilter function='member' level='[tmn:date:ok]' member='#2024-05-01 00:00:00#' />
+            </groupfilter>
+          </filter>
+          <slices>
+            <column>[federated.1ogtooq0rqndz014s6mrx0kxru2w].[tmn:date:ok]</column>
+          </slices>
+          <aggregation value='true' />
+        </view>
+        <style>
+          <style-rule element='cell'>
+            <format attr='width' field='[federated.1ogtooq0rqndz014s6mrx0kxru2w].[tmn:date:ok]' value='67' />
+            <format attr='height' field='[federated.1ogtooq0rqndz014s6mrx0kxru2w].[none:country:nk]' value='49' />
+            <format attr='text-format' field='[federated.1ogtooq0rqndz014s6mrx0kxru2w].[usr:Calculation_1176565417912512513:qk]' value='p0.0%' />
+          </style-rule>
+          <style-rule element='header'>
+            <format attr='width' field='[federated.1ogtooq0rqndz014s6mrx0kxru2w].[none:Calculation_1176565417911566336:nk]' value='296' />
+            <format attr='height' field='[federated.1ogtooq0rqndz014s6mrx0kxru2w].[none:Calculation_1176565417911566336:nk]' value='35' />
+            <format attr='width' field='[federated.1ogtooq0rqndz014s6mrx0kxru2w].[none:country:nk]' value='75' />
+          </style-rule>
+          <style-rule element='label'>
+            <format attr='text-format' field='[federated.1ogtooq0rqndz014s6mrx0kxru2w].[tmn:date:ok]' value='*mmmyy' />
+            <format attr='font-weight' field='[federated.1ogtooq0rqndz014s6mrx0kxru2w].[none:Calculation_1176565417911566336:nk]' value='bold' />
+          </style-rule>
+          <style-rule element='mark'>
+            <encoding attr='color' center='0.20000000000000001' field='[federated.1ogtooq0rqndz014s6mrx0kxru2w].[usr:Calculation_1176565417912512513:qk]' num-steps='100' palette='red_green_diverging_10_0' reverse='true' type='interpolated' />
+          </style-rule>
+          <style-rule element='worksheet'>
+            <format attr='display-field-labels' scope='cols' value='false' />
+          </style-rule>
+          <style-rule element='table-div'>
+            <format attr='stroke-size' scope='cols' value='2' />
+            <format attr='line-visibility' scope='cols' value='on' />
+            <format attr='line-pattern-only' scope='cols' value='dashed' />
+            <format attr='stroke-color' scope='cols' value='#f28e2b' />
+          </style-rule>
+          <style-rule element='title'>
+            <format attr='background-color' value='#d4d4d4' />
+          </style-rule>
+          <style-rule element='legend-title-text'>
+            <format attr='color' field='[federated.1ogtooq0rqndz014s6mrx0kxru2w].[usr:Calculation_1176565417912512513:qk]' value='Churned %' />
+          </style-rule>
+          <style-rule element='quick-filter'>
+            <format attr='title' field='[federated.1ogtooq0rqndz014s6mrx0kxru2w].[tmn:date:ok]' value='Month ' />
+          </style-rule>
+        </style>
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Square' />
+            <encodings>
+              <color column='[federated.1ogtooq0rqndz014s6mrx0kxru2w].[usr:Calculation_1176565417912512513:qk]' />
+              <text column='[federated.1ogtooq0rqndz014s6mrx0kxru2w].[usr:Calculation_1176565417912512513:qk]' />
+            </encodings>
+            <style>
+              <style-rule element='mark'>
+                <format attr='mark-labels-show' value='true' />
+                <format attr='mark-transparency' value='96' />
+              </style-rule>
+              <style-rule element='pane'>
+                <format attr='minwidth' value='-1' />
+                <format attr='maxwidth' value='-1' />
+                <format attr='minheight' value='-1' />
+                <format attr='maxheight' value='-1' />
+              </style-rule>
+            </style>
+          </pane>
+        </panes>
+        <rows>[federated.1ogtooq0rqndz014s6mrx0kxru2w].[none:country:nk]</rows>
+        <cols>([federated.1ogtooq0rqndz014s6mrx0kxru2w].[none:Calculation_1176565417911566336:nk] / [federated.1ogtooq0rqndz014s6mrx0kxru2w].[tmn:date:ok])</cols>
+      </table>
+      <simple-id uuid='{E5DFF333-0844-4F07-8A14-8CB0DA49AA53}' />
+    </worksheet>
+    <worksheet name='LTP Adoption%'>
+      <layout-options>
+        <title>
+          <formatted-text>
+            <run>LTP Adoption by Segments%</run>
+          </formatted-text>
+        </title>
+      </layout-options>
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='adoption%' name='federated.1p8e75z1tuys2q1cv8756065kurk' />
+          </datasources>
+          <datasource-dependencies datasource='federated.1p8e75z1tuys2q1cv8756065kurk'>
+            <column caption='LTP Adoption%' datatype='real' name='[STP Adoption% (copy)_1176565418230616070]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='sum(case    [type] when     &quot;LTP&quot; then        [talabat_base] else 0 END)/&#13;&#10;&#13;&#10;SUM(case    [type] when &quot;Talabat KPIs&quot; THEN  [talabat_base]  else 0&#13;&#10;  END)' />
+            </column>
+            <column caption='Country' datatype='string' name='[country_iso]' role='dimension' semantic-role='[Country].[ISO3166_2]' type='nominal' />
+            <column datatype='date' name='[month]' role='dimension' type='ordinal' />
+            <column-instance column='[month]' derivation='MY' name='[my:month:ok]' pivot='key' type='ordinal' />
+            <column-instance column='[country_iso]' derivation='None' name='[none:country_iso:nk]' pivot='key' type='nominal' />
+            <column-instance column='[order_segment]' derivation='None' name='[none:order_segment:nk]' pivot='key' type='nominal' />
+            <column datatype='string' name='[order_segment]' role='dimension' type='nominal' />
+            <column datatype='integer' name='[talabat_base]' role='measure' type='quantitative' />
+            <column-instance column='[month]' derivation='Month-Trunc' name='[tmn:month:ok]' pivot='key' type='ordinal' />
+            <column datatype='string' name='[type]' role='dimension' type='nominal' />
+            <column-instance column='[STP Adoption% (copy)_1176565418230616070]' derivation='User' name='[usr:STP Adoption% (copy)_1176565418230616070:qk]' pivot='key' type='quantitative' />
+          </datasource-dependencies>
+          <filter class='categorical' column='[federated.1p8e75z1tuys2q1cv8756065kurk].[my:month:ok]' filter-group='4'>
+            <groupfilter function='union' user:ui-domain='database' user:ui-enumeration='inclusive' user:ui-marker='enumerate'>
+              <groupfilter function='member' level='[my:month:ok]' member='202401' />
+              <groupfilter function='member' level='[my:month:ok]' member='202402' />
+              <groupfilter function='member' level='[my:month:ok]' member='202403' />
+              <groupfilter function='member' level='[my:month:ok]' member='202404' />
+            </groupfilter>
+          </filter>
+          <slices>
+            <column>[federated.1p8e75z1tuys2q1cv8756065kurk].[my:month:ok]</column>
+          </slices>
+          <aggregation value='true' />
+        </view>
+        <style>
+          <style-rule element='cell'>
+            <format attr='height' field='[federated.1p8e75z1tuys2q1cv8756065kurk].[none:country_iso:nk]' value='131' />
+            <format attr='text-format' field='[federated.1p8e75z1tuys2q1cv8756065kurk].[usr:STP Adoption% (copy)_1176565418230616070:qk]' value='p0.0%' />
+            <format attr='text-align' value='center' />
+          </style-rule>
+          <style-rule element='header'>
+            <format attr='width' field='[federated.1p8e75z1tuys2q1cv8756065kurk].[none:country_iso:nk]' value='79' />
+          </style-rule>
+          <style-rule element='label'>
+            <format attr='font-weight' field='[federated.1p8e75z1tuys2q1cv8756065kurk].[none:order_segment:nk]' value='bold' />
+            <format attr='text-format' field='[federated.1p8e75z1tuys2q1cv8756065kurk].[tmn:month:ok]' value='*mmmyy' />
+          </style-rule>
+          <style-rule element='mark'>
+            <encoding attr='color' field='[federated.1p8e75z1tuys2q1cv8756065kurk].[usr:STP Adoption% (copy)_1176565418230616070:qk]' num-steps='100' type='custom-interpolated'>
+              <color-palette custom='true' name='' type='ordered-diverging'>
+                <color>#ffaa00</color>
+                <color>#faae16</color>
+                <color>#f5b22c</color>
+                <color>#f0b641</color>
+                <color>#ebb955</color>
+                <color>#e6bc68</color>
+                <color>#e2bf7b</color>
+                <color>#ddc28c</color>
+                <color>#d8c49d</color>
+                <color>#d3c6ad</color>
+                <color>#cec8bc</color>
+                <color>#cacaca</color>
+                <color>#99d788</color>
+                <color>#88cd7a</color>
+                <color>#7bc26f</color>
+                <color>#6fb663</color>
+                <color>#64ab59</color>
+                <color>#57a153</color>
+                <color>#499550</color>
+                <color>#3b8a4a</color>
+                <color>#2d7f42</color>
+                <color>#27753d</color>
+                <color>#24693d</color>
+              </color-palette>
+            </encoding>
+          </style-rule>
+          <style-rule element='worksheet'>
+            <format attr='display-field-labels' scope='cols' value='false' />
+          </style-rule>
+          <style-rule element='table-div'>
+            <format attr='stroke-color' scope='cols' value='#f28e2b' />
+            <format attr='line-visibility' scope='cols' value='on' />
+            <format attr='line-pattern-only' scope='cols' value='dotted' />
+          </style-rule>
+          <style-rule element='title'>
+            <format attr='background-color' value='#d4d4d4' />
+          </style-rule>
+          <style-rule element='legend-title-text'>
+            <format attr='color' field='[federated.1p8e75z1tuys2q1cv8756065kurk].[usr:STP Adoption% (copy)_1176565418230616070:qk]' value='LTP Adoption%'>
+              <formatted-text>
+                <run fontsize='6'>LTP Adoption%</run>
+              </formatted-text>
+            </format>
+          </style-rule>
+        </style>
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Square' />
+            <encodings>
+              <color column='[federated.1p8e75z1tuys2q1cv8756065kurk].[usr:STP Adoption% (copy)_1176565418230616070:qk]' />
+              <text column='[federated.1p8e75z1tuys2q1cv8756065kurk].[usr:STP Adoption% (copy)_1176565418230616070:qk]' />
+            </encodings>
+            <style>
+              <style-rule element='mark'>
+                <format attr='mark-labels-show' value='true' />
+                <format attr='mark-transparency' value='103' />
+              </style-rule>
+              <style-rule element='pane'>
+                <format attr='minheight' value='-1' />
+                <format attr='maxheight' value='-1' />
+              </style-rule>
+            </style>
+          </pane>
+        </panes>
+        <rows>[federated.1p8e75z1tuys2q1cv8756065kurk].[none:country_iso:nk]</rows>
+        <cols>([federated.1p8e75z1tuys2q1cv8756065kurk].[none:order_segment:nk] / [federated.1p8e75z1tuys2q1cv8756065kurk].[tmn:month:ok])</cols>
+      </table>
+      <simple-id uuid='{A902D5FE-6A02-4A46-BDE9-C175811E8237}' />
+    </worksheet>
+    <worksheet name='LTP Adoption% (2)'>
+      <layout-options>
+        <title>
+          <formatted-text>
+            <run>LTP Adoption%</run>
+          </formatted-text>
+        </title>
+      </layout-options>
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='adoption%' name='federated.1p8e75z1tuys2q1cv8756065kurk' />
+          </datasources>
+          <datasource-dependencies datasource='federated.1p8e75z1tuys2q1cv8756065kurk'>
+            <column caption='tpro subcribers' datatype='integer' name='[Combined (copy)_1176565418235969544]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='sum(case    [type] when   &quot;LTP&quot;   then      [talabat_base] &#13;&#10;WHEN  &quot;STP&quot; then        [talabat_base] else 0 END)' />
+            </column>
+            <column caption='Country' datatype='string' name='[country_iso]' role='dimension' semantic-role='[Country].[ISO3166_2]' type='nominal' />
+            <column datatype='date' name='[month]' role='dimension' type='ordinal' />
+            <column-instance column='[month]' derivation='MY' name='[my:month:ok]' pivot='key' type='ordinal' />
+            <column-instance column='[country_iso]' derivation='None' name='[none:country_iso:nk]' pivot='key' type='nominal' />
+            <column-instance column='[order_segment]' derivation='None' name='[none:order_segment:nk]' pivot='key' type='nominal' />
+            <column datatype='string' name='[order_segment]' role='dimension' type='nominal' />
+            <column datatype='integer' name='[talabat_base]' role='measure' type='quantitative' />
+            <column datatype='string' name='[type]' role='dimension' type='nominal' />
+            <column-instance column='[Combined (copy)_1176565418235969544]' derivation='User' name='[usr:Combined (copy)_1176565418235969544:qk]' pivot='key' type='quantitative' />
+          </datasource-dependencies>
+          <filter class='categorical' column='[federated.1p8e75z1tuys2q1cv8756065kurk].[my:month:ok]'>
+            <groupfilter function='member' level='[my:month:ok]' member='202403' user:ui-domain='database' user:ui-enumeration='inclusive' user:ui-marker='enumerate' />
+          </filter>
+          <slices>
+            <column>[federated.1p8e75z1tuys2q1cv8756065kurk].[my:month:ok]</column>
+          </slices>
+          <aggregation value='true' />
+        </view>
+        <style />
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Automatic' />
+            <encodings>
+              <text column='[federated.1p8e75z1tuys2q1cv8756065kurk].[usr:Combined (copy)_1176565418235969544:qk]' />
+            </encodings>
+            <style>
+              <style-rule element='mark'>
+                <format attr='mark-labels-show' value='true' />
+              </style-rule>
+            </style>
+          </pane>
+        </panes>
+        <rows>[federated.1p8e75z1tuys2q1cv8756065kurk].[none:order_segment:nk]</rows>
+        <cols>[federated.1p8e75z1tuys2q1cv8756065kurk].[none:country_iso:nk]</cols>
+      </table>
+      <simple-id uuid='{80FD6606-C0CF-491D-89AA-068D2AA07066}' />
+    </worksheet>
+    <worksheet name='Overall Adoption%'>
+      <layout-options>
+        <title>
+          <formatted-text>
+            <run bold='true'>Overall Adoption% by Segments</run>
+          </formatted-text>
+        </title>
+      </layout-options>
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='adoption%' name='federated.1p8e75z1tuys2q1cv8756065kurk' />
+          </datasources>
+          <datasource-dependencies datasource='federated.1p8e75z1tuys2q1cv8756065kurk'>
+            <column caption='Combined' datatype='real' name='[Calculation_1176565418224472067]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='sum(case    [type] when   &quot;LTP&quot;   then      [talabat_base] &#13;&#10;WHEN  &quot;STP&quot; then        [talabat_base] else 0 END)/&#13;&#10;&#13;&#10;SUM(case    [type] when &quot;Talabat KPIs&quot; THEN  [talabat_base]  else 0&#13;&#10;  END)' />
+            </column>
+            <column caption='Country' datatype='string' name='[country_iso]' role='dimension' semantic-role='[Country].[ISO3166_2]' type='nominal' />
+            <column datatype='date' name='[month]' role='dimension' type='ordinal' />
+            <column-instance column='[month]' derivation='MY' name='[my:month:ok]' pivot='key' type='ordinal' />
+            <column-instance column='[country_iso]' derivation='None' name='[none:country_iso:nk]' pivot='key' type='nominal' />
+            <column-instance column='[order_segment]' derivation='None' name='[none:order_segment:nk]' pivot='key' type='nominal' />
+            <column datatype='string' name='[order_segment]' role='dimension' type='nominal' />
+            <column datatype='integer' name='[talabat_base]' role='measure' type='quantitative' />
+            <column-instance column='[month]' derivation='Month-Trunc' name='[tmn:month:ok]' pivot='key' type='ordinal' />
+            <column datatype='string' name='[type]' role='dimension' type='nominal' />
+            <column-instance column='[Calculation_1176565418224472067]' derivation='User' name='[usr:Calculation_1176565418224472067:qk]' pivot='key' type='quantitative' />
+          </datasource-dependencies>
+          <filter class='categorical' column='[federated.1p8e75z1tuys2q1cv8756065kurk].[my:month:ok]' filter-group='4'>
+            <groupfilter function='union' user:ui-domain='database' user:ui-enumeration='inclusive' user:ui-marker='enumerate'>
+              <groupfilter function='member' level='[my:month:ok]' member='202401' />
+              <groupfilter function='member' level='[my:month:ok]' member='202402' />
+              <groupfilter function='member' level='[my:month:ok]' member='202403' />
+              <groupfilter function='member' level='[my:month:ok]' member='202404' />
+            </groupfilter>
+          </filter>
+          <slices>
+            <column>[federated.1p8e75z1tuys2q1cv8756065kurk].[my:month:ok]</column>
+          </slices>
+          <aggregation value='true' />
+        </view>
+        <style>
+          <style-rule element='cell'>
+            <format attr='text-format' field='[federated.1p8e75z1tuys2q1cv8756065kurk].[usr:Calculation_1176565418224472067:qk]' value='p0.0%' />
+            <format attr='text-align' value='center' />
+          </style-rule>
+          <style-rule element='header'>
+            <format attr='width' field='[federated.1p8e75z1tuys2q1cv8756065kurk].[none:country_iso:nk]' value='83' />
+          </style-rule>
+          <style-rule element='label'>
+            <format attr='text-format' field='[federated.1p8e75z1tuys2q1cv8756065kurk].[tmn:month:ok]' value='*mmmyy' />
+            <format attr='font-weight' field='[federated.1p8e75z1tuys2q1cv8756065kurk].[none:order_segment:nk]' value='bold' />
+          </style-rule>
+          <style-rule element='mark'>
+            <encoding attr='color' field='[federated.1p8e75z1tuys2q1cv8756065kurk].[usr:Calculation_1176565418224472067:qk]' num-steps='5' palette='green_gold_10_0' type='interpolated' />
+          </style-rule>
+          <style-rule element='worksheet'>
+            <format attr='display-field-labels' scope='cols' value='false' />
+          </style-rule>
+          <style-rule element='table-div'>
+            <format attr='stroke-color' scope='cols' value='#f28e2b' />
+            <format attr='line-visibility' scope='cols' value='on' />
+            <format attr='line-pattern-only' scope='cols' value='dotted' />
+          </style-rule>
+          <style-rule element='title'>
+            <format attr='background-color' value='#d4d4d4be' />
+          </style-rule>
+          <style-rule element='legend-title-text'>
+            <format attr='color' field='[federated.1p8e75z1tuys2q1cv8756065kurk].[usr:Calculation_1176565418224472067:qk]' value='Overall %'>
+              <formatted-text>
+                <run fontsize='6'>Overall %</run>
+              </formatted-text>
+            </format>
+          </style-rule>
+          <style-rule element='quick-filter'>
+            <format attr='title' field='[federated.1p8e75z1tuys2q1cv8756065kurk].[my:month:ok]' value='Month' />
+          </style-rule>
+        </style>
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Square' />
+            <encodings>
+              <color column='[federated.1p8e75z1tuys2q1cv8756065kurk].[usr:Calculation_1176565418224472067:qk]' />
+              <text column='[federated.1p8e75z1tuys2q1cv8756065kurk].[usr:Calculation_1176565418224472067:qk]' />
+            </encodings>
+            <style>
+              <style-rule element='mark'>
+                <format attr='mark-labels-show' value='true' />
+                <format attr='mark-transparency' value='70' />
+              </style-rule>
+            </style>
+          </pane>
+        </panes>
+        <rows>[federated.1p8e75z1tuys2q1cv8756065kurk].[none:country_iso:nk]</rows>
+        <cols>([federated.1p8e75z1tuys2q1cv8756065kurk].[none:order_segment:nk] / [federated.1p8e75z1tuys2q1cv8756065kurk].[tmn:month:ok])</cols>
+      </table>
+      <simple-id uuid='{ABD8E174-DDD1-4DF8-86E4-2CD9E4029BF3}' />
+    </worksheet>
+    <worksheet name='STP Adoption%'>
+      <layout-options>
+        <title>
+          <formatted-text>
+            <run>STP Adoption by Segments %</run>
+          </formatted-text>
+        </title>
+      </layout-options>
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='adoption%' name='federated.1p8e75z1tuys2q1cv8756065kurk' />
+          </datasources>
+          <datasource-dependencies datasource='federated.1p8e75z1tuys2q1cv8756065kurk'>
+            <column caption='STP Adoption%' datatype='real' name='[Combined (copy)_1176565418230009861]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='sum(case    [type] when     &quot;STP&quot; then        [talabat_base] else 0 END)/&#13;&#10;&#13;&#10;SUM(case    [type] when &quot;Talabat KPIs&quot; THEN  [talabat_base]  else 0&#13;&#10;  END)' />
+            </column>
+            <column caption='Country' datatype='string' name='[country_iso]' role='dimension' semantic-role='[Country].[ISO3166_2]' type='nominal' />
+            <column datatype='date' name='[month]' role='dimension' type='ordinal' />
+            <column-instance column='[month]' derivation='MY' name='[my:month:ok]' pivot='key' type='ordinal' />
+            <column-instance column='[country_iso]' derivation='None' name='[none:country_iso:nk]' pivot='key' type='nominal' />
+            <column-instance column='[order_segment]' derivation='None' name='[none:order_segment:nk]' pivot='key' type='nominal' />
+            <column datatype='string' name='[order_segment]' role='dimension' type='nominal' />
+            <column datatype='integer' name='[talabat_base]' role='measure' type='quantitative' />
+            <column-instance column='[month]' derivation='Month-Trunc' name='[tmn:month:ok]' pivot='key' type='ordinal' />
+            <column datatype='string' name='[type]' role='dimension' type='nominal' />
+            <column-instance column='[Combined (copy)_1176565418230009861]' derivation='User' name='[usr:Combined (copy)_1176565418230009861:qk]' pivot='key' type='quantitative' />
+          </datasource-dependencies>
+          <filter class='categorical' column='[federated.1p8e75z1tuys2q1cv8756065kurk].[my:month:ok]' filter-group='4'>
+            <groupfilter function='union' user:ui-domain='database' user:ui-enumeration='inclusive' user:ui-marker='enumerate'>
+              <groupfilter function='member' level='[my:month:ok]' member='202401' />
+              <groupfilter function='member' level='[my:month:ok]' member='202402' />
+              <groupfilter function='member' level='[my:month:ok]' member='202403' />
+              <groupfilter function='member' level='[my:month:ok]' member='202404' />
+            </groupfilter>
+          </filter>
+          <slices>
+            <column>[federated.1p8e75z1tuys2q1cv8756065kurk].[my:month:ok]</column>
+          </slices>
+          <aggregation value='true' />
+        </view>
+        <style>
+          <style-rule element='cell'>
+            <format attr='height' field='[federated.1p8e75z1tuys2q1cv8756065kurk].[none:country_iso:nk]' value='89' />
+            <format attr='text-format' field='[federated.1p8e75z1tuys2q1cv8756065kurk].[usr:Combined (copy)_1176565418230009861:qk]' value='p0.0%' />
+            <format attr='text-align' value='center' />
+          </style-rule>
+          <style-rule element='header'>
+            <format attr='width' field='[federated.1p8e75z1tuys2q1cv8756065kurk].[none:country_iso:nk]' value='83' />
+          </style-rule>
+          <style-rule element='label'>
+            <format attr='text-format' field='[federated.1p8e75z1tuys2q1cv8756065kurk].[tmn:month:ok]' value='*mmmyy' />
+            <format attr='font-weight' field='[federated.1p8e75z1tuys2q1cv8756065kurk].[tmn:month:ok]' value='normal' />
+            <format attr='font-weight' field='[federated.1p8e75z1tuys2q1cv8756065kurk].[none:order_segment:nk]' value='bold' />
+          </style-rule>
+          <style-rule element='mark'>
+            <encoding attr='color' field='[federated.1p8e75z1tuys2q1cv8756065kurk].[usr:Combined (copy)_1176565418230009861:qk]' num-steps='100' type='custom-interpolated'>
+              <color-palette custom='true' name='' type='ordered-diverging'>
+                <color>#ffaa00</color>
+                <color>#faae16</color>
+                <color>#f5b22c</color>
+                <color>#f0b641</color>
+                <color>#ebb955</color>
+                <color>#e6bc68</color>
+                <color>#e2bf7b</color>
+                <color>#ddc28c</color>
+                <color>#d8c49d</color>
+                <color>#d3c6ad</color>
+                <color>#cec8bc</color>
+                <color>#cacaca</color>
+                <color>#99d788</color>
+                <color>#88cd7a</color>
+                <color>#7bc26f</color>
+                <color>#6fb663</color>
+                <color>#64ab59</color>
+                <color>#57a153</color>
+                <color>#499550</color>
+                <color>#3b8a4a</color>
+                <color>#2d7f42</color>
+                <color>#27753d</color>
+                <color>#24693d</color>
+              </color-palette>
+            </encoding>
+          </style-rule>
+          <style-rule element='worksheet'>
+            <format attr='display-field-labels' scope='cols' value='false' />
+          </style-rule>
+          <style-rule element='table-div'>
+            <format attr='stroke-color' scope='cols' value='#f28e2b' />
+            <format attr='line-visibility' scope='cols' value='on' />
+            <format attr='line-pattern-only' scope='cols' value='dotted' />
+          </style-rule>
+          <style-rule element='title'>
+            <format attr='background-color' value='#d4d4d4' />
+          </style-rule>
+          <style-rule element='legend-title-text'>
+            <format attr='color' field='[federated.1p8e75z1tuys2q1cv8756065kurk].[usr:Combined (copy)_1176565418230009861:qk]' value='STP Adoption%'>
+              <formatted-text>
+                <run fontsize='6'>STP Adoption%</run>
+              </formatted-text>
+            </format>
+          </style-rule>
+        </style>
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Square' />
+            <encodings>
+              <color column='[federated.1p8e75z1tuys2q1cv8756065kurk].[usr:Combined (copy)_1176565418230009861:qk]' />
+              <text column='[federated.1p8e75z1tuys2q1cv8756065kurk].[usr:Combined (copy)_1176565418230009861:qk]' />
+            </encodings>
+            <style>
+              <style-rule element='mark'>
+                <format attr='mark-labels-show' value='true' />
+                <format attr='mark-transparency' value='70' />
+              </style-rule>
+              <style-rule element='pane'>
+                <format attr='minheight' value='-1' />
+                <format attr='maxheight' value='-1' />
+              </style-rule>
+            </style>
+          </pane>
+        </panes>
+        <rows>[federated.1p8e75z1tuys2q1cv8756065kurk].[none:country_iso:nk]</rows>
+        <cols>([federated.1p8e75z1tuys2q1cv8756065kurk].[none:order_segment:nk] / [federated.1p8e75z1tuys2q1cv8756065kurk].[tmn:month:ok])</cols>
+      </table>
+      <simple-id uuid='{1F2BB629-82EF-4BD6-98FA-300ACF346CDF}' />
+    </worksheet>
+  </worksheets>
+  <dashboards>
+    <dashboard _.fcp.AccessibleZoneTabOrder.true...enable-sort-zone-taborder='true' name='Adoption by Order Segments'>
+      <repository-location derived-from='https://tableau.deliveryhero.net/t/Talabat/workbooks/tproAdoptionandChurn-Deepdive/AdoptionbyOrderSegments?rev=' id='AdoptionbyOrderSegments' path='/t/Talabat/workbooks/tproAdoptionandChurn-Deepdive' revision='' site='Talabat' />
+      <style>
+        <style-rule element='dash-title'>
+          <format attr='font-family' value='Benton Sans Book' />
+        </style-rule>
+        <style-rule element='dash-subtitle'>
+          <format attr='font-family' value='Benton Sans Book' />
+        </style-rule>
+        <style-rule element='dash-text'>
+          <format attr='font-family' value='Benton Sans Book' />
+        </style-rule>
+      </style>
+      <size maxheight='1206' maxwidth='1604' minheight='1206' minwidth='1604' sizing-mode='fixed' />
+      <datasources>
+        <datasource caption='adoption%' name='federated.1p8e75z1tuys2q1cv8756065kurk' />
+      </datasources>
+      <datasource-dependencies datasource='federated.1p8e75z1tuys2q1cv8756065kurk'>
+        <column datatype='date' name='[month]' role='dimension' type='ordinal' />
+        <column-instance column='[month]' derivation='MY' name='[my:month:ok]' pivot='key' type='ordinal' />
+      </datasource-dependencies>
+      <zones>
+        <zone h='100000' id='4' type-v2='layout-basic' w='100000' x='0' y='0'>
+          <zone h='98674' id='10' param='horz' type-v2='layout-flow' w='99002' x='499' y='663'>
+            <zone h='98674' id='7' param='horz' type-v2='layout-flow' w='86845' x='499' y='663'>
+              <zone h='98674' id='5' type-v2='layout-basic' w='86845' x='499' y='663'>
+                <zone h='31509' id='17' name='LTP Adoption%' w='86845' x='499' y='67828'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='10' />
+                  </zone-style>
+                </zone>
+                <zone h='31858' id='8' name='STP Adoption%' w='86845' x='499' y='33316'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='10' />
+                  </zone-style>
+                </zone>
+                <zone h='27615' id='12' name='Overall Adoption%' w='86845' x='499' y='3289'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='10' />
+                  </zone-style>
+                </zone>
+                <zone h='2626' id='14' param='vert' type-v2='layout-flow' w='86845' x='499' y='663' />
+                <zone h='2412' id='15' param='horz' type-v2='layout-flow' w='86845' x='499' y='30904' />
+                <zone h='2654' id='18' param='vert' type-v2='layout-flow' w='86845' x='499' y='65174' />
+              </zone>
+            </zone>
+            <zone fixed-size='195' h='98674' id='9' is-fixed='true' param='vert' type-v2='layout-flow' w='12157' x='87344' y='663'>
+              <zone forceUpdate='true' h='14842' id='20' type-v2='text' w='12157' x='87344' y='663'>
+                <formatted-text>
+                  <run bold='true' fontcolor='#4e79a7' fontsize='10'>Definitions:</run>
+                  <run bold='true' fontcolor='#333333' fontsize='10'>Æ </run>
+                  <run>Æ&#10;</run>
+                  <run bold='true' fontcolor='#333333' fontsize='8'>Adoption</run>
+                  <run fontcolor='#333333' fontsize='8'> : tpro users active end of the month / talabat users active in the month</run>
+                  <run>Æ&#10;</run>
+                  <run fontcolor='#333333' fontsize='8'>Segments based on the orders in the month for both the groups </run>
+                  <run>Æ&#10;</run>
+                </formatted-text>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+              <zone fixed-size='88' h='7960' id='16' is-fixed='true' mode='checkdropdown' name='Overall Adoption%' param='[federated.1p8e75z1tuys2q1cv8756065kurk].[my:month:ok]' show-apply='true' type-v2='filter' values='database' w='12157' x='87344' y='15505'>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+              <zone h='6716' id='13' name='Overall Adoption%' pane-specification-id='0' param='[federated.1p8e75z1tuys2q1cv8756065kurk].[usr:Calculation_1176565418224472067:qk]' type-v2='color' w='12157' x='87344' y='23465'>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+              <zone h='6716' id='11' name='STP Adoption%' pane-specification-id='0' param='[federated.1p8e75z1tuys2q1cv8756065kurk].[usr:Combined (copy)_1176565418230009861:qk]' type-v2='color' w='12157' x='87344' y='30181'>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+              <zone h='6716' id='19' name='LTP Adoption%' pane-specification-id='0' param='[federated.1p8e75z1tuys2q1cv8756065kurk].[usr:STP Adoption% (copy)_1176565418230616070:qk]' type-v2='color' w='12157' x='87344' y='36897'>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+            </zone>
+          </zone>
+          <zone-style>
+            <format attr='border-color' value='#000000' />
+            <format attr='border-style' value='none' />
+            <format attr='border-width' value='0' />
+            <format attr='margin' value='8' />
+          </zone-style>
+        </zone>
+      </zones>
+      <devicelayouts>
+        <devicelayout auto-generated='true' name='Phone'>
+          <size maxheight='1200' minheight='1200' sizing-mode='vscroll' />
+          <zones>
+            <zone h='100000' id='26' type-v2='layout-basic' w='100000' x='0' y='0'>
+              <zone h='84000' id='25' param='vert' type-v2='layout-flow' w='84000' x='8000' y='8000'>
+                <zone forceUpdate='true' h='14842' id='20' type-v2='text' w='12157' x='87344' y='663'>
+                  <formatted-text>
+                    <run bold='true' fontcolor='#4e79a7' fontsize='10'>Definitions:</run>
+                    <run bold='true' fontcolor='#333333' fontsize='10'>Æ </run>
+                    <run>Æ&#10;</run>
+                    <run bold='true' fontcolor='#333333' fontsize='8'>Adoption</run>
+                    <run fontcolor='#333333' fontsize='8'> : tpro users active end of the month / talabat users active in the month</run>
+                    <run>Æ&#10;</run>
+                    <run fontcolor='#333333' fontsize='8'>Segments based on the orders in the month for both the groups </run>
+                    <run>Æ&#10;</run>
+                  </formatted-text>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone fixed-size='88' h='7960' id='16' mode='checkdropdown' name='Overall Adoption%' param='[federated.1p8e75z1tuys2q1cv8756065kurk].[my:month:ok]' show-apply='true' type-v2='filter' values='database' w='12157' x='87344' y='15505'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone fixed-size='280' h='27615' id='12' is-fixed='true' name='Overall Adoption%' w='86845' x='499' y='3289'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone h='6716' id='13' name='Overall Adoption%' pane-specification-id='0' param='[federated.1p8e75z1tuys2q1cv8756065kurk].[usr:Calculation_1176565418224472067:qk]' type-v2='color' w='12157' x='87344' y='23465'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone fixed-size='280' h='31858' id='8' is-fixed='true' name='STP Adoption%' w='86845' x='499' y='33316'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone h='6716' id='11' name='STP Adoption%' pane-specification-id='0' param='[federated.1p8e75z1tuys2q1cv8756065kurk].[usr:Combined (copy)_1176565418230009861:qk]' type-v2='color' w='12157' x='87344' y='30181'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone fixed-size='280' h='31509' id='17' is-fixed='true' name='LTP Adoption%' w='86845' x='499' y='67828'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone h='6716' id='19' name='LTP Adoption%' pane-specification-id='0' param='[federated.1p8e75z1tuys2q1cv8756065kurk].[usr:STP Adoption% (copy)_1176565418230616070:qk]' type-v2='color' w='12157' x='87344' y='36897'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+              </zone>
+              <zone-style>
+                <format attr='border-color' value='#000000' />
+                <format attr='border-style' value='none' />
+                <format attr='border-width' value='0' />
+                <format attr='margin' value='8' />
+              </zone-style>
+            </zone>
+          </zones>
+        </devicelayout>
+      </devicelayouts>
+      <simple-id uuid='{E4E0D155-122E-4261-AD8F-A207091E7503}' />
+    </dashboard>
+    <dashboard _.fcp.AccessibleZoneTabOrder.true...enable-sort-zone-taborder='true' name='Churn by Order Segments'>
+      <repository-location derived-from='https://tableau.deliveryhero.net/t/Talabat/workbooks/tproAdoptionandChurn-Deepdive/ChurnbyOrderSegments?rev=' id='ChurnbyOrderSegments' path='/t/Talabat/workbooks/tproAdoptionandChurn-Deepdive' revision='' site='Talabat' />
+      <style>
+        <style-rule element='dash-title'>
+          <format attr='font-family' value='Benton Sans Book' />
+        </style-rule>
+        <style-rule element='dash-subtitle'>
+          <format attr='font-family' value='Benton Sans Book' />
+        </style-rule>
+        <style-rule element='dash-text'>
+          <format attr='font-family' value='Benton Sans Book' />
+        </style-rule>
+      </style>
+      <size maxheight='400' maxwidth='1604' minheight='400' minwidth='1604' sizing-mode='fixed' />
+      <datasources>
+        <datasource caption='churn- segment' name='federated.1ogtooq0rqndz014s6mrx0kxru2w' />
+      </datasources>
+      <datasource-dependencies datasource='federated.1ogtooq0rqndz014s6mrx0kxru2w'>
+        <column datatype='date' name='[date]' role='dimension' type='ordinal' />
+        <column-instance column='[date]' derivation='Month-Trunc' name='[tmn:date:ok]' pivot='key' type='ordinal' />
+      </datasource-dependencies>
+      <zones>
+        <zone h='100000' id='4' type-v2='layout-basic' w='100000' x='0' y='0'>
+          <zone h='96000' id='7' param='horz' type-v2='layout-flow' w='99002' x='499' y='2000'>
+            <zone h='96000' id='5' type-v2='layout-basic' w='89027' x='499' y='2000'>
+              <zone h='96000' id='3' name='Churn%' w='89027' x='499' y='2000'>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='10' />
+                </zone-style>
+              </zone>
+            </zone>
+            <zone fixed-size='160' h='96000' id='6' is-fixed='true' param='vert' type-v2='layout-flow' w='9975' x='89526' y='2000'>
+              <zone fixed-size='139' forceUpdate='true' h='36750' id='10' is-fixed='true' type-v2='text' w='9975' x='89526' y='2000'>
+                <formatted-text>
+                  <run bold='true' fontcolor='#4e79a7' fontsize='10'>Definitions:</run>
+                  <run>Æ&#10;</run>
+                  <run bold='true' fontcolor='#1b1b1b' fontsize='8'>Churn Rate</run>
+                  <run bold='true' fontcolor='#4e79a7' fontsize='8'>: </run>
+                  <run fontcolor='#333333' fontsize='8'>Churned Users in the month/ Up for renewal users in the month</run>
+                  <run>Æ&#10;</run>
+                  <run fontcolor='#333333' fontsize='8'>Segment is based on the order 30 days before the churn date</run>
+                </formatted-text>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+              <zone fixed-size='37' h='11250' id='9' is-fixed='true' mode='checkdropdown' name='Churn%' param='[federated.1ogtooq0rqndz014s6mrx0kxru2w].[tmn:date:ok]' show-apply='true' type-v2='filter' values='database' w='9975' x='89526' y='38750'>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+              <zone h='15500' id='8' name='Churn%' pane-specification-id='0' param='[federated.1ogtooq0rqndz014s6mrx0kxru2w].[usr:Calculation_1176565417912512513:qk]' type-v2='color' w='9975' x='89526' y='50000'>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+            </zone>
+          </zone>
+          <zone-style>
+            <format attr='border-color' value='#000000' />
+            <format attr='border-style' value='none' />
+            <format attr='border-width' value='0' />
+            <format attr='margin' value='8' />
+          </zone-style>
+        </zone>
+      </zones>
+      <devicelayouts>
+        <devicelayout auto-generated='true' name='Phone'>
+          <size maxheight='700' minheight='700' sizing-mode='vscroll' />
+          <zones>
+            <zone h='100000' id='16' type-v2='layout-basic' w='100000' x='0' y='0'>
+              <zone h='96000' id='15' param='vert' type-v2='layout-flow' w='99002' x='499' y='2000'>
+                <zone fixed-size='37' h='11250' id='9' mode='checkdropdown' name='Churn%' param='[federated.1ogtooq0rqndz014s6mrx0kxru2w].[tmn:date:ok]' show-apply='true' type-v2='filter' values='database' w='9975' x='89526' y='38750'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone fixed-size='280' h='96000' id='3' is-fixed='true' name='Churn%' w='89027' x='499' y='2000'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone h='15500' id='8' name='Churn%' pane-specification-id='0' param='[federated.1ogtooq0rqndz014s6mrx0kxru2w].[usr:Calculation_1176565417912512513:qk]' type-v2='color' w='9975' x='89526' y='50000'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone fixed-size='139' forceUpdate='true' h='36750' id='10' type-v2='text' w='9975' x='89526' y='2000'>
+                  <formatted-text>
+                    <run bold='true' fontcolor='#4e79a7' fontsize='10'>Definitions:</run>
+                    <run>Æ&#10;</run>
+                    <run bold='true' fontcolor='#1b1b1b' fontsize='8'>Churn Rate</run>
+                    <run bold='true' fontcolor='#4e79a7' fontsize='8'>: </run>
+                    <run fontcolor='#333333' fontsize='8'>Churned Users in the month/ Up for renewal users in the month</run>
+                    <run>Æ&#10;</run>
+                    <run fontcolor='#333333' fontsize='8'>Segment is based on the order 30 days before the churn date</run>
+                  </formatted-text>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+              </zone>
+              <zone-style>
+                <format attr='border-color' value='#000000' />
+                <format attr='border-style' value='none' />
+                <format attr='border-width' value='0' />
+                <format attr='margin' value='8' />
+              </zone-style>
+            </zone>
+          </zones>
+        </devicelayout>
+      </devicelayouts>
+      <simple-id uuid='{A211824C-BDC8-47A3-9377-ABED7CE2601D}' />
+    </dashboard>
+  </dashboards>
+  <windows source-height='75'>
+    <window class='worksheet' name='Churn%'>
+      <cards>
+        <edge name='left'>
+          <strip size='160'>
+            <card type='pages' />
+            <card type='filters' />
+            <card type='marks' />
+          </strip>
+        </edge>
+        <edge name='top'>
+          <strip size='2147483647'>
+            <card type='columns' />
+          </strip>
+          <strip size='2147483647'>
+            <card type='rows' />
+          </strip>
+          <strip size='30'>
+            <card type='title' />
+          </strip>
+        </edge>
+        <edge name='right'>
+          <strip size='160'>
+            <card pane-specification-id='0' param='[federated.1ogtooq0rqndz014s6mrx0kxru2w].[usr:Calculation_1176565417912512513:qk]' type='color' />
+          </strip>
+        </edge>
+      </cards>
+      <viewpoint>
+        <highlight>
+          <color-one-way>
+            <field>[federated.1ogtooq0rqndz014s6mrx0kxru2w].[none:Calculation_1176565417911566336:nk]</field>
+            <field>[federated.1ogtooq0rqndz014s6mrx0kxru2w].[none:country:nk]</field>
+            <field>[federated.1ogtooq0rqndz014s6mrx0kxru2w].[yr:date:ok]</field>
+          </color-one-way>
+        </highlight>
+      </viewpoint>
+      <simple-id uuid='{56D97890-CD47-459B-895A-FBB61361EBDD}' />
+    </window>
+    <window class='worksheet' name='Overall Adoption%'>
+      <cards>
+        <edge name='left'>
+          <strip size='160'>
+            <card type='pages' />
+            <card type='filters' />
+            <card type='marks' />
+          </strip>
+        </edge>
+        <edge name='top'>
+          <strip size='2147483647'>
+            <card type='columns' />
+          </strip>
+          <strip size='2147483647'>
+            <card type='rows' />
+          </strip>
+          <strip size='30'>
+            <card type='title' />
+          </strip>
+        </edge>
+        <edge name='right'>
+          <strip size='160'>
+            <card pane-specification-id='0' param='[federated.1p8e75z1tuys2q1cv8756065kurk].[usr:Calculation_1176565418224472067:qk]' type='color' />
+          </strip>
+        </edge>
+      </cards>
+      <viewpoint>
+        <highlight>
+          <color-one-way>
+            <field>[federated.1p8e75z1tuys2q1cv8756065kurk].[my:month:ok]</field>
+            <field>[federated.1p8e75z1tuys2q1cv8756065kurk].[none:country_iso:nk]</field>
+            <field>[federated.1p8e75z1tuys2q1cv8756065kurk].[none:order_segment:nk]</field>
+            <field>[federated.1p8e75z1tuys2q1cv8756065kurk].[none:type:nk]</field>
+            <field>[federated.1p8e75z1tuys2q1cv8756065kurk].[tmn:month:ok]</field>
+            <field>[federated.1p8e75z1tuys2q1cv8756065kurk].[yr:month:ok]</field>
+          </color-one-way>
+        </highlight>
+      </viewpoint>
+      <simple-id uuid='{A68FE4CE-374C-4A38-83E9-6A8E3B0F0C2D}' />
+    </window>
+    <window class='worksheet' name='STP Adoption%'>
+      <cards>
+        <edge name='left'>
+          <strip size='160'>
+            <card type='pages' />
+            <card type='filters' />
+            <card type='marks' />
+          </strip>
+        </edge>
+        <edge name='top'>
+          <strip size='2147483647'>
+            <card type='columns' />
+          </strip>
+          <strip size='2147483647'>
+            <card type='rows' />
+          </strip>
+          <strip size='30'>
+            <card type='title' />
+          </strip>
+        </edge>
+        <edge name='right'>
+          <strip size='160'>
+            <card pane-specification-id='0' param='[federated.1p8e75z1tuys2q1cv8756065kurk].[usr:Combined (copy)_1176565418230009861:qk]' type='color' />
+          </strip>
+        </edge>
+      </cards>
+      <viewpoint>
+        <highlight>
+          <color-one-way>
+            <field>[federated.1p8e75z1tuys2q1cv8756065kurk].[none:country_iso:nk]</field>
+            <field>[federated.1p8e75z1tuys2q1cv8756065kurk].[none:order_segment:nk]</field>
+            <field>[federated.1p8e75z1tuys2q1cv8756065kurk].[none:type:nk]</field>
+            <field>[federated.1p8e75z1tuys2q1cv8756065kurk].[tmn:month:ok]</field>
+            <field>[federated.1p8e75z1tuys2q1cv8756065kurk].[yr:month:ok]</field>
+          </color-one-way>
+        </highlight>
+      </viewpoint>
+      <simple-id uuid='{F5D230A9-96EF-474C-8204-E1CEFCB3C085}' />
+    </window>
+    <window class='worksheet' name='LTP Adoption%'>
+      <cards>
+        <edge name='left'>
+          <strip size='160'>
+            <card type='pages' />
+            <card type='filters' />
+            <card type='marks' />
+          </strip>
+        </edge>
+        <edge name='top'>
+          <strip size='2147483647'>
+            <card type='columns' />
+          </strip>
+          <strip size='2147483647'>
+            <card type='rows' />
+          </strip>
+          <strip size='30'>
+            <card type='title' />
+          </strip>
+        </edge>
+        <edge name='right'>
+          <strip size='160'>
+            <card pane-specification-id='0' param='[federated.1p8e75z1tuys2q1cv8756065kurk].[usr:STP Adoption% (copy)_1176565418230616070:qk]' type='color' />
+          </strip>
+        </edge>
+      </cards>
+      <viewpoint>
+        <highlight>
+          <color-one-way>
+            <field>[federated.1p8e75z1tuys2q1cv8756065kurk].[none:country_iso:nk]</field>
+            <field>[federated.1p8e75z1tuys2q1cv8756065kurk].[none:order_segment:nk]</field>
+            <field>[federated.1p8e75z1tuys2q1cv8756065kurk].[none:type:nk]</field>
+            <field>[federated.1p8e75z1tuys2q1cv8756065kurk].[tmn:month:ok]</field>
+            <field>[federated.1p8e75z1tuys2q1cv8756065kurk].[usr:STP Adoption% (copy)_1176565418230616070:qk]</field>
+            <field>[federated.1p8e75z1tuys2q1cv8756065kurk].[yr:month:ok]</field>
+          </color-one-way>
+        </highlight>
+      </viewpoint>
+      <simple-id uuid='{29BF1F84-9A2F-4074-9A08-1927D15D1A1E}' />
+    </window>
+    <window class='worksheet' name='LTP Adoption% (2)'>
+      <cards>
+        <edge name='left'>
+          <strip size='160'>
+            <card type='pages' />
+            <card type='filters' />
+            <card type='marks' />
+          </strip>
+        </edge>
+        <edge name='top'>
+          <strip size='2147483647'>
+            <card type='columns' />
+          </strip>
+          <strip size='2147483647'>
+            <card type='rows' />
+          </strip>
+          <strip size='30'>
+            <card type='title' />
+          </strip>
+        </edge>
+      </cards>
+      <viewpoint>
+        <highlight>
+          <color-one-way>
+            <field>[federated.1p8e75z1tuys2q1cv8756065kurk].[my:month:ok]</field>
+            <field>[federated.1p8e75z1tuys2q1cv8756065kurk].[none:country_iso:nk]</field>
+            <field>[federated.1p8e75z1tuys2q1cv8756065kurk].[none:order_segment:nk]</field>
+            <field>[federated.1p8e75z1tuys2q1cv8756065kurk].[none:type:nk]</field>
+            <field>[federated.1p8e75z1tuys2q1cv8756065kurk].[tmn:month:ok]</field>
+            <field>[federated.1p8e75z1tuys2q1cv8756065kurk].[usr:STP Adoption% (copy)_1176565418230616070:qk]</field>
+            <field>[federated.1p8e75z1tuys2q1cv8756065kurk].[yr:month:ok]</field>
+          </color-one-way>
+        </highlight>
+      </viewpoint>
+      <simple-id uuid='{6DBC6238-A129-495C-8C14-42BDD83923A8}' />
+    </window>
+    <window class='dashboard' name='Adoption by Order Segments'>
+      <viewpoints>
+        <viewpoint name='LTP Adoption%'>
+          <zoom type='entire-view' />
+        </viewpoint>
+        <viewpoint name='Overall Adoption%'>
+          <zoom type='entire-view' />
+        </viewpoint>
+        <viewpoint name='STP Adoption%'>
+          <zoom type='entire-view' />
+        </viewpoint>
+      </viewpoints>
+      <active id='17' />
+      <simple-id uuid='{D7E16D79-68CB-4284-AA26-712D8B657002}' />
+    </window>
+    <window class='dashboard' maximized='true' name='Churn by Order Segments'>
+      <viewpoints>
+        <viewpoint name='Churn%'>
+          <zoom type='entire-view' />
+        </viewpoint>
+      </viewpoints>
+      <active id='-1' />
+      <simple-id uuid='{C73AFE67-B19A-4952-981C-46F9374EB8A9}' />
+    </window>
+  </windows>
+</workbook>

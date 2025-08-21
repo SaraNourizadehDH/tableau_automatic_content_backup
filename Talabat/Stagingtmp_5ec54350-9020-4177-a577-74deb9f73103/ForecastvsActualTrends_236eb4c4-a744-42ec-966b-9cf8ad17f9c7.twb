@@ -1,0 +1,1482 @@
+<?xml version='1.0' encoding='utf-8' ?>
+
+<!-- build 20221.22.1108.1355                               -->
+<workbook original-version='18.1' source-build='2022.1.9 (20221.22.1108.1355)' version='18.1' xml:base='https://tableau.deliveryhero.net' xmlns:user='http://www.tableausoftware.com/xml/user'>
+  <document-format-change-manifest>
+    <_.fcp.AccessibleZoneTabOrder.true...AccessibleZoneTabOrder />
+    <_.fcp.AnimationOnByDefault.true...AnimationOnByDefault />
+    <AutoCreateAndUpdateDSDPhoneLayouts />
+    <_.fcp.ExternalImageContentForZones.true...ExternalImageContentForZones />
+    <_.fcp.MarkAnimation.true...MarkAnimation />
+    <_.fcp.ObjectModelEncapsulateLegacy.true...ObjectModelEncapsulateLegacy />
+    <_.fcp.ObjectModelExtractV2.true...ObjectModelExtractV2 />
+    <_.fcp.ObjectModelTableType.true...ObjectModelTableType />
+    <_.fcp.SchemaViewerObjectModel.true...SchemaViewerObjectModel />
+    <SetMembershipControl />
+    <SheetIdentifierTracking />
+    <SortTagCleanup />
+    <WindowsPersistSimpleIdentifiers />
+    <WorksheetBackgroundTransparency />
+    <ZoneBackgroundTransparency />
+  </document-format-change-manifest>
+  <repository-location derived-from='https://tableau.deliveryhero.net/t/Talabat/workbooks/Forecastvs_ActualTrends?rev=1.0' id='Forecastvs_ActualTrends' path='/t/Talabat/workbooks' revision='1.1' site='Talabat' />
+  <preferences />
+  <_.fcp.AnimationOnByDefault.false...style>
+    <_.fcp.AnimationOnByDefault.false..._.fcp.MarkAnimation.true...style-rule element='animation'>
+      <_.fcp.AnimationOnByDefault.false...format attr='animation-on' value='ao-on' />
+    </_.fcp.AnimationOnByDefault.false..._.fcp.MarkAnimation.true...style-rule>
+  </_.fcp.AnimationOnByDefault.false...style>
+  <datasources>
+    <datasource caption='Forecast Validation' inline='true' name='federated.1mnctx404x8e0b1c1bnph0ytnq74' version='18.1'>
+      <connection class='federated'>
+        <named-connections>
+          <named-connection caption='BigQuery' name='bigquery.0joz59215u4f5v14n2nzn05f3rpc'>
+            <connection CATALOG='tlb-data-prod' EXECCATALOG='tlb-data-dev' authentication='oauth' bq-dataset-fetch-rows='' bq-fetch-rows='' bq-fetch-tasks='' bq-large-fetch-rows='' bq-project-fetch-rows='' bq-response-rows='' class='bigquery' connection-dialect='google-sql' project='tlb-data-prod' schema='data_platform' server-oauth='' username='manjunath.lonikar@talabat.com' workgroup-auth-mode='prompt' />
+          </named-connection>
+        </named-connections>
+        <_.fcp.ObjectModelEncapsulateLegacy.false...relation connection='bigquery.0joz59215u4f5v14n2nzn05f3rpc' name='Custom SQL Query' type='text'>with all_forecast as (
+  select
+    DISTINCT source_id,
+    case when rfo.country_iso = &apos;QAR&apos; then &apos;QA&apos; else rfo.country_iso end as country_code,
+    iso_date,
+    forecast_date,
+    &apos;nfv&apos; as vertical,
+    forecasted_orders as forecasted_succ_orders,
+    (
+      forecasted_aov * forecasted_orders
+    ) forecasted_gmv_lc --    ,0 as forecasted_acq
+    ,
+    forecasted_platform_acqns as forecasted_acq
+  from
+    `tlb-data-prod.data_platform.forecast_nfv_daily` rfo
+  union all
+  select
+    DISTINCT source_id,
+    case when country_iso = &apos;QAR&apos; then &apos;QA&apos; else country_iso end as country_code,
+    iso_date,
+    forecast_date,
+    &apos;tmart&apos; as vertical,
+    forecasted_orders as forecasted_succ_orders,
+    (
+      forecasted_aov * forecasted_orders
+    ) forecasted_gmv_lc --    ,0 as forecasted_acq
+    ,
+    forecasted_platform_acqns as forecasted_acq
+  from
+    `tlb-data-prod.data_platform.forecast_tmart_daily` ---where vertical = &apos;tmart&apos;
+  union all
+  select
+    DISTINCT source_id,
+    case when country_iso = &apos;QAR&apos; then &apos;QA&apos; else country_iso end as country_code,
+    iso_date,
+    forecast_date,
+    &apos;food&apos; as vertical,
+    forecasted_orders as forecasted_succ_orders,
+    (forecasted_aov*forecasted_orders) as forecasted_gmv_lc,
+    forecasted_acqns as forecasted_acq
+  from
+    `tlb-data-prod.data_platform.forecast_food_daily`
+
+),
+forecasted_orders as (
+  (
+    select
+      rfo.source_id,
+      &apos;TB_&apos; || trim(
+        upper(rfo.country_code)
+      ) as entity_code,
+      trim(
+        upper(rfo.country_code)
+      ) as country_code,
+      date_trunc(forecast_date, MONTH) forecast_month,
+      iso_date,
+      forecast_date,
+      vertical,
+      sum(rfo.forecasted_succ_orders) successful_orders,
+      sum(rfo.forecasted_gmv_lc) suc_gmv_lc,
+      sum(rfo.forecasted_acq) as acquisitions
+    from
+      all_forecast rfo
+    where
+      forecast_date &gt;&gt;= &apos;2023-12-01&apos;
+      and iso_date &gt;&gt;= forecast_date
+--       and date_trunc(iso_date, MONTH)= date_trunc(forecast_date, MONTH)
+    group by
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7
+  )
+  
+)
+
+
+,actuals as 
+(select
+  dd.day_of_Week_mena
+  ,o.country_code
+  ,o.order_date
+  ,case when ((not o.is_non_food and not coalesce(v.is_everyday_roastery,false)) or coalesce(v.is_dh_kitchen,false)) then &apos;food&apos;
+        when not coalesce(o.is_dsaas_vendor,false) and (o.is_darkstore or coalesce(v.is_everyday_roastery,false)) then &apos;tmart&apos;
+        else &apos;nfv&apos;
+    end as vertical
+
+  ,count(distinct case when o.is_successful then order_id end) as successful_order_count
+  ,sum(case when o.is_successful then gmv_amount_lc end) as successful_gmv_amount_lc
+  ,sum(case when o.is_successful then gmv_amount_eur end) as successful_gmv_amount_eur
+  ,count(distinct case when o.is_successful and is_acquisition then order_id end) as acquisition_count
+
+from `tlb-data-prod.data_platform.fct_order_info` o
+inner join `tlb-data-prod.data_platform.dim_date` dd
+  on o.order_date = dd.date
+left join `tlb-data-prod.data_platform.dim_vendor_info` v
+  on o.vendor_id = v.vendor_id
+
+where
+  o.order_date &gt;&gt;= &apos;2023-12-01&apos;
+
+group by 1,2,3,4)
+
+
+(select
+  entity_code,
+  t1.country_code as business_entity,
+  iso_date,
+  t1.forecast_date,
+  forecast_month,
+  t1.vertical ,
+  -- date_diff(t1.forecast_date, current_date(), DAY) as forecast_day_identifier,
+  t1.successful_orders as forecasted_orders,
+
+  t2.successful_order_count as actual_orders,
+
+  t1.suc_gmv_lc as forecasted_gmv_lc,
+  t2.successful_gmv_amount_lc as actual_gmv_lc,
+
+  t1.acquisitions as forecasted_acquisitions,
+  t2.acquisition_count as actual_acquisitions
+  
+from
+  forecasted_orders t1
+  left join actuals t2
+    on t1.iso_date = t2.order_date
+    and t1.country_code = t2.country_code
+    and t1.vertical = t2.vertical
+
+where iso_date&gt;&gt;=forecast_date
+and date_trunc(iso_date,month) = date_trunc(forecast_date,month)
+  
+  )</_.fcp.ObjectModelEncapsulateLegacy.false...relation>
+        <_.fcp.ObjectModelEncapsulateLegacy.true...relation connection='bigquery.0joz59215u4f5v14n2nzn05f3rpc' name='Custom SQL Query' type='text'>with all_forecast as (
+  select
+    DISTINCT source_id,
+    case when rfo.country_iso = &apos;QAR&apos; then &apos;QA&apos; else rfo.country_iso end as country_code,
+    iso_date,
+    forecast_date,
+    &apos;nfv&apos; as vertical,
+    forecasted_orders as forecasted_succ_orders,
+    (
+      forecasted_aov * forecasted_orders
+    ) forecasted_gmv_lc --    ,0 as forecasted_acq
+    ,
+    forecasted_platform_acqns as forecasted_acq
+  from
+    `tlb-data-prod.data_platform.forecast_nfv_daily` rfo
+  union all
+  select
+    DISTINCT source_id,
+    case when country_iso = &apos;QAR&apos; then &apos;QA&apos; else country_iso end as country_code,
+    iso_date,
+    forecast_date,
+    &apos;tmart&apos; as vertical,
+    forecasted_orders as forecasted_succ_orders,
+    (
+      forecasted_aov * forecasted_orders
+    ) forecasted_gmv_lc --    ,0 as forecasted_acq
+    ,
+    forecasted_platform_acqns as forecasted_acq
+  from
+    `tlb-data-prod.data_platform.forecast_tmart_daily` ---where vertical = &apos;tmart&apos;
+  union all
+  select
+    DISTINCT source_id,
+    case when country_iso = &apos;QAR&apos; then &apos;QA&apos; else country_iso end as country_code,
+    iso_date,
+    forecast_date,
+    &apos;food&apos; as vertical,
+    forecasted_orders as forecasted_succ_orders,
+    (forecasted_aov*forecasted_orders) as forecasted_gmv_lc,
+    forecasted_acqns as forecasted_acq
+  from
+    `tlb-data-prod.data_platform.forecast_food_daily`
+
+),
+forecasted_orders as (
+  (
+    select
+      rfo.source_id,
+      &apos;TB_&apos; || trim(
+        upper(rfo.country_code)
+      ) as entity_code,
+      trim(
+        upper(rfo.country_code)
+      ) as country_code,
+      date_trunc(forecast_date, MONTH) forecast_month,
+      iso_date,
+      forecast_date,
+      vertical,
+      sum(rfo.forecasted_succ_orders) successful_orders,
+      sum(rfo.forecasted_gmv_lc) suc_gmv_lc,
+      sum(rfo.forecasted_acq) as acquisitions
+    from
+      all_forecast rfo
+    where
+      forecast_date &gt;&gt;= &apos;2023-12-01&apos;
+      and iso_date &gt;&gt;= forecast_date
+--       and date_trunc(iso_date, MONTH)= date_trunc(forecast_date, MONTH)
+    group by
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7
+  )
+  
+)
+
+
+,actuals as 
+(select
+  dd.day_of_Week_mena
+  ,o.country_code
+  ,o.order_date
+  ,case when ((not o.is_non_food and not coalesce(v.is_everyday_roastery,false)) or coalesce(v.is_dh_kitchen,false)) then &apos;food&apos;
+        when not coalesce(o.is_dsaas_vendor,false) and (o.is_darkstore or coalesce(v.is_everyday_roastery,false)) then &apos;tmart&apos;
+        else &apos;nfv&apos;
+    end as vertical
+
+  ,count(distinct case when o.is_successful then order_id end) as successful_order_count
+  ,sum(case when o.is_successful then gmv_amount_lc end) as successful_gmv_amount_lc
+  ,sum(case when o.is_successful then gmv_amount_eur end) as successful_gmv_amount_eur
+  ,count(distinct case when o.is_successful and is_acquisition then order_id end) as acquisition_count
+
+from `tlb-data-prod.data_platform.fct_order_info` o
+inner join `tlb-data-prod.data_platform.dim_date` dd
+  on o.order_date = dd.date
+left join `tlb-data-prod.data_platform.dim_vendor_info` v
+  on o.vendor_id = v.vendor_id
+
+where
+  o.order_date &gt;&gt;= &apos;2023-12-01&apos;
+
+group by 1,2,3,4)
+
+
+(select
+  entity_code,
+  t1.country_code as business_entity,
+  iso_date,
+  t1.forecast_date,
+  forecast_month,
+  t1.vertical ,
+  -- date_diff(t1.forecast_date, current_date(), DAY) as forecast_day_identifier,
+  t1.successful_orders as forecasted_orders,
+
+  t2.successful_order_count as actual_orders,
+
+  t1.suc_gmv_lc as forecasted_gmv_lc,
+  t2.successful_gmv_amount_lc as actual_gmv_lc,
+
+  t1.acquisitions as forecasted_acquisitions,
+  t2.acquisition_count as actual_acquisitions
+  
+from
+  forecasted_orders t1
+  left join actuals t2
+    on t1.iso_date = t2.order_date
+    and t1.country_code = t2.country_code
+    and t1.vertical = t2.vertical
+
+where iso_date&gt;&gt;=forecast_date
+and date_trunc(iso_date,month) = date_trunc(forecast_date,month)
+  
+  )</_.fcp.ObjectModelEncapsulateLegacy.true...relation>
+        <metadata-records>
+          <metadata-record class='column'>
+            <remote-name>entity_code</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[entity_code]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>entity_code</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_570BD8FBFEEF4E24A1E57E6DF83B22AD]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>business_entity</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[business_entity]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>business_entity</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_570BD8FBFEEF4E24A1E57E6DF83B22AD]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>iso_date</remote-name>
+            <remote-type>7</remote-type>
+            <local-name>[iso_date]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>iso_date</remote-alias>
+            <local-type>date</local-type>
+            <aggregation>Year</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_570BD8FBFEEF4E24A1E57E6DF83B22AD]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>forecast_date</remote-name>
+            <remote-type>7</remote-type>
+            <local-name>[forecast_date]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>forecast_date</remote-alias>
+            <local-type>date</local-type>
+            <aggregation>Year</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_570BD8FBFEEF4E24A1E57E6DF83B22AD]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>forecast_month</remote-name>
+            <remote-type>7</remote-type>
+            <local-name>[forecast_month]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>forecast_month</remote-alias>
+            <local-type>date</local-type>
+            <aggregation>Year</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_570BD8FBFEEF4E24A1E57E6DF83B22AD]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>vertical</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[vertical]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>vertical</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_570BD8FBFEEF4E24A1E57E6DF83B22AD]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>forecasted_orders</remote-name>
+            <remote-type>5</remote-type>
+            <local-name>[forecasted_orders]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>forecasted_orders</remote-alias>
+            <local-type>real</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_570BD8FBFEEF4E24A1E57E6DF83B22AD]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>actual_orders</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[actual_orders]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>actual_orders</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_570BD8FBFEEF4E24A1E57E6DF83B22AD]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>forecasted_gmv_lc</remote-name>
+            <remote-type>5</remote-type>
+            <local-name>[forecasted_gmv_lc]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>forecasted_gmv_lc</remote-alias>
+            <local-type>real</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_570BD8FBFEEF4E24A1E57E6DF83B22AD]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>actual_gmv_lc</remote-name>
+            <remote-type>5</remote-type>
+            <local-name>[actual_gmv_lc]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>actual_gmv_lc</remote-alias>
+            <local-type>real</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_570BD8FBFEEF4E24A1E57E6DF83B22AD]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>forecasted_acquisitions</remote-name>
+            <remote-type>5</remote-type>
+            <local-name>[forecasted_acquisitions]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>forecasted_acquisitions</remote-alias>
+            <local-type>real</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_570BD8FBFEEF4E24A1E57E6DF83B22AD]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>actual_acquisitions</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[actual_acquisitions]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>actual_acquisitions</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_570BD8FBFEEF4E24A1E57E6DF83B22AD]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+        </metadata-records>
+      </connection>
+      <aliases enabled='yes' />
+      <column caption='Forecasted AOV (LC)' datatype='real' name='[Act AOV (LC) (copy)_1740993144419618817]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='sum([forecasted_gmv_lc]) / sum([forecasted_orders])' />
+      </column>
+      <column caption='Act AOV (LC)' datatype='real' name='[Calculation_1740993144419483648]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='sum([actual_gmv_lc]) / sum([actual_orders])' />
+      </column>
+      <_.fcp.ObjectModelTableType.true...column caption='Custom SQL Query' datatype='table' name='[__tableau_internal_object_id__].[_570BD8FBFEEF4E24A1E57E6DF83B22AD]' role='measure' type='quantitative' />
+      <column datatype='real' name='[actual_gmv_lc]' role='measure' type='quantitative' />
+      <column datatype='integer' name='[actual_orders]' role='measure' type='quantitative' />
+      <column datatype='real' name='[forecasted_gmv_lc]' role='measure' type='quantitative' />
+      <column datatype='real' name='[forecasted_orders]' role='measure' type='quantitative' />
+      <column datatype='date' default-format='*dd-mmm-yy' name='[iso_date]' role='dimension' type='ordinal' />
+      <column-instance column='[actual_gmv_lc]' derivation='Sum' name='[sum:actual_gmv_lc:qk]' pivot='key' type='quantitative' />
+      <column-instance column='[actual_orders]' derivation='Sum' name='[sum:actual_orders:qk]' pivot='key' type='quantitative' />
+      <column-instance column='[forecasted_gmv_lc]' derivation='Sum' name='[sum:forecasted_gmv_lc:qk]' pivot='key' type='quantitative' />
+      <column-instance column='[forecasted_orders]' derivation='Sum' name='[sum:forecasted_orders:qk]' pivot='key' type='quantitative' />
+      <column-instance column='[Act AOV (LC) (copy)_1740993144419618817]' derivation='User' name='[usr:Act AOV (LC) (copy)_1740993144419618817:qk]' pivot='key' type='quantitative' />
+      <column-instance column='[Calculation_1740993144419483648]' derivation='User' name='[usr:Calculation_1740993144419483648:qk]' pivot='key' type='quantitative' />
+      <extract _.fcp.ObjectModelExtractV2.true...object-id='' count='-1' enabled='true' units='records'>
+        <connection access_mode='readonly' author-locale='en_US' class='hyper' dbname='extract/97/9c/{4027B2BD-2095-42DD-8703-90DF73D3A7FE}/federated_1mnctx404x8e0b1c1bnph0.hyper' extract-engine='true' schema='Extract' sslmode='' tablename='Extract' update-time='02/07/2024 08:02:19 AM'>
+          <_.fcp.ObjectModelEncapsulateLegacy.false...relation name='Extract' table='[Extract].[Extract]' type='table' />
+          <_.fcp.ObjectModelEncapsulateLegacy.true...relation name='Extract' table='[Extract].[Extract]' type='table' />
+          <metadata-records>
+            <metadata-record class='column'>
+              <remote-name>entity_code</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[entity_code]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>entity_code</remote-alias>
+              <ordinal>0</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>9</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_570BD8FBFEEF4E24A1E57E6DF83B22AD]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>business_entity</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[business_entity]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>business_entity</remote-alias>
+              <ordinal>1</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>9</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_570BD8FBFEEF4E24A1E57E6DF83B22AD]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>iso_date</remote-name>
+              <remote-type>133</remote-type>
+              <local-name>[iso_date]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>iso_date</remote-alias>
+              <ordinal>2</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>date</local-type>
+              <aggregation>Year</aggregation>
+              <approx-count>105</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_570BD8FBFEEF4E24A1E57E6DF83B22AD]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>forecast_date</remote-name>
+              <remote-type>133</remote-type>
+              <local-name>[forecast_date]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>forecast_date</remote-alias>
+              <ordinal>3</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>date</local-type>
+              <aggregation>Year</aggregation>
+              <approx-count>59</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_570BD8FBFEEF4E24A1E57E6DF83B22AD]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>forecast_month</remote-name>
+              <remote-type>133</remote-type>
+              <local-name>[forecast_month]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>forecast_month</remote-alias>
+              <ordinal>4</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>date</local-type>
+              <aggregation>Year</aggregation>
+              <approx-count>3</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_570BD8FBFEEF4E24A1E57E6DF83B22AD]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>vertical</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[vertical]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>vertical</remote-alias>
+              <ordinal>5</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>3</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_570BD8FBFEEF4E24A1E57E6DF83B22AD]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>forecasted_orders</remote-name>
+              <remote-type>5</remote-type>
+              <local-name>[forecasted_orders]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>forecasted_orders</remote-alias>
+              <ordinal>6</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>real</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>15656</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_570BD8FBFEEF4E24A1E57E6DF83B22AD]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>actual_orders</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[actual_orders]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>actual_orders</remote-alias>
+              <ordinal>7</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>1749</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_570BD8FBFEEF4E24A1E57E6DF83B22AD]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>forecasted_gmv_lc</remote-name>
+              <remote-type>5</remote-type>
+              <local-name>[forecasted_gmv_lc]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>forecasted_gmv_lc</remote-alias>
+              <ordinal>8</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>real</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>17302</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_570BD8FBFEEF4E24A1E57E6DF83B22AD]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>actual_gmv_lc</remote-name>
+              <remote-type>5</remote-type>
+              <local-name>[actual_gmv_lc]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>actual_gmv_lc</remote-alias>
+              <ordinal>9</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>real</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>1797</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_570BD8FBFEEF4E24A1E57E6DF83B22AD]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>forecasted_acquisitions</remote-name>
+              <remote-type>5</remote-type>
+              <local-name>[forecasted_acquisitions]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>forecasted_acquisitions</remote-alias>
+              <ordinal>10</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>real</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>15013</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_570BD8FBFEEF4E24A1E57E6DF83B22AD]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>actual_acquisitions</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[actual_acquisitions]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>actual_acquisitions</remote-alias>
+              <ordinal>11</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>1073</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_570BD8FBFEEF4E24A1E57E6DF83B22AD]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+          </metadata-records>
+        </connection>
+      </extract>
+      <layout _.fcp.SchemaViewerObjectModel.false...dim-percentage='0.5' _.fcp.SchemaViewerObjectModel.false...measure-percentage='0.4' dim-ordering='alphabetic' measure-ordering='alphabetic' show-structure='true' />
+      <style>
+        <style-rule element='mark'>
+          <encoding attr='color' field='[:Measure Names]' type='palette'>
+            <map to='#4e79a7'>
+              <bucket>&quot;[federated.1mnctx404x8e0b1c1bnph0ytnq74].[sum:actual_gmv_lc:qk]&quot;</bucket>
+            </map>
+            <map to='#4e79a7'>
+              <bucket>&quot;[federated.1mnctx404x8e0b1c1bnph0ytnq74].[sum:actual_orders:qk]&quot;</bucket>
+            </map>
+            <map to='#4e79a7'>
+              <bucket>&quot;[federated.1mnctx404x8e0b1c1bnph0ytnq74].[usr:Calculation_1740993144419483648:qk]&quot;</bucket>
+            </map>
+            <map to='#f28e2b'>
+              <bucket>&quot;[federated.1mnctx404x8e0b1c1bnph0ytnq74].[sum:forecasted_gmv_lc:qk]&quot;</bucket>
+            </map>
+            <map to='#f28e2b'>
+              <bucket>&quot;[federated.1mnctx404x8e0b1c1bnph0ytnq74].[sum:forecasted_orders:qk]&quot;</bucket>
+            </map>
+            <map to='#f28e2b'>
+              <bucket>&quot;[federated.1mnctx404x8e0b1c1bnph0ytnq74].[usr:Act AOV (LC) (copy)_1740993144419618817:qk]&quot;</bucket>
+            </map>
+          </encoding>
+        </style-rule>
+      </style>
+      <semantic-values>
+        <semantic-value key='[Country].[Name]' value='&quot;United States&quot;' />
+      </semantic-values>
+      <field-sort-info field-sort-order-type='custom-order'>
+        <field-sort-custom-order field='entity_code' />
+        <field-sort-custom-order field='business_entity' />
+        <field-sort-custom-order field='iso_date' />
+        <field-sort-custom-order field='forecast_date' />
+        <field-sort-custom-order field='forecast_month' />
+        <field-sort-custom-order field='vertical' />
+        <field-sort-custom-order field='forecasted_orders' />
+        <field-sort-custom-order field='actual_orders' />
+        <field-sort-custom-order field='forecasted_gmv_lc' />
+        <field-sort-custom-order field='actual_gmv_lc' />
+        <field-sort-custom-order field='Calculation_1740993144419483648' />
+        <field-sort-custom-order field='Act AOV (LC) (copy)_1740993144419618817' />
+        <field-sort-custom-order field='forecasted_acquisitions' />
+        <field-sort-custom-order field='actual_acquisitions' />
+      </field-sort-info>
+      <_.fcp.ObjectModelEncapsulateLegacy.true...object-graph>
+        <objects>
+          <object caption='Custom SQL Query' id='_570BD8FBFEEF4E24A1E57E6DF83B22AD'>
+            <properties context=''>
+              <relation connection='bigquery.0joz59215u4f5v14n2nzn05f3rpc' name='Custom SQL Query' type='text'>with all_forecast as (
+  select
+    DISTINCT source_id,
+    case when rfo.country_iso = &apos;QAR&apos; then &apos;QA&apos; else rfo.country_iso end as country_code,
+    iso_date,
+    forecast_date,
+    &apos;nfv&apos; as vertical,
+    forecasted_orders as forecasted_succ_orders,
+    (
+      forecasted_aov * forecasted_orders
+    ) forecasted_gmv_lc --    ,0 as forecasted_acq
+    ,
+    forecasted_platform_acqns as forecasted_acq
+  from
+    `tlb-data-prod.data_platform.forecast_nfv_daily` rfo
+  union all
+  select
+    DISTINCT source_id,
+    case when country_iso = &apos;QAR&apos; then &apos;QA&apos; else country_iso end as country_code,
+    iso_date,
+    forecast_date,
+    &apos;tmart&apos; as vertical,
+    forecasted_orders as forecasted_succ_orders,
+    (
+      forecasted_aov * forecasted_orders
+    ) forecasted_gmv_lc --    ,0 as forecasted_acq
+    ,
+    forecasted_platform_acqns as forecasted_acq
+  from
+    `tlb-data-prod.data_platform.forecast_tmart_daily` ---where vertical = &apos;tmart&apos;
+  union all
+  select
+    DISTINCT source_id,
+    case when country_iso = &apos;QAR&apos; then &apos;QA&apos; else country_iso end as country_code,
+    iso_date,
+    forecast_date,
+    &apos;food&apos; as vertical,
+    forecasted_orders as forecasted_succ_orders,
+    (forecasted_aov*forecasted_orders) as forecasted_gmv_lc,
+    forecasted_acqns as forecasted_acq
+  from
+    `tlb-data-prod.data_platform.forecast_food_daily`
+
+),
+forecasted_orders as (
+  (
+    select
+      rfo.source_id,
+      &apos;TB_&apos; || trim(
+        upper(rfo.country_code)
+      ) as entity_code,
+      trim(
+        upper(rfo.country_code)
+      ) as country_code,
+      date_trunc(forecast_date, MONTH) forecast_month,
+      iso_date,
+      forecast_date,
+      vertical,
+      sum(rfo.forecasted_succ_orders) successful_orders,
+      sum(rfo.forecasted_gmv_lc) suc_gmv_lc,
+      sum(rfo.forecasted_acq) as acquisitions
+    from
+      all_forecast rfo
+    where
+      forecast_date &gt;&gt;= &apos;2023-12-01&apos;
+      and iso_date &gt;&gt;= forecast_date
+--       and date_trunc(iso_date, MONTH)= date_trunc(forecast_date, MONTH)
+    group by
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7
+  )
+  
+)
+
+
+,actuals as 
+(select
+  dd.day_of_Week_mena
+  ,o.country_code
+  ,o.order_date
+  ,case when ((not o.is_non_food and not coalesce(v.is_everyday_roastery,false)) or coalesce(v.is_dh_kitchen,false)) then &apos;food&apos;
+        when not coalesce(o.is_dsaas_vendor,false) and (o.is_darkstore or coalesce(v.is_everyday_roastery,false)) then &apos;tmart&apos;
+        else &apos;nfv&apos;
+    end as vertical
+
+  ,count(distinct case when o.is_successful then order_id end) as successful_order_count
+  ,sum(case when o.is_successful then gmv_amount_lc end) as successful_gmv_amount_lc
+  ,sum(case when o.is_successful then gmv_amount_eur end) as successful_gmv_amount_eur
+  ,count(distinct case when o.is_successful and is_acquisition then order_id end) as acquisition_count
+
+from `tlb-data-prod.data_platform.fct_order_info` o
+inner join `tlb-data-prod.data_platform.dim_date` dd
+  on o.order_date = dd.date
+left join `tlb-data-prod.data_platform.dim_vendor_info` v
+  on o.vendor_id = v.vendor_id
+
+where
+  o.order_date &gt;&gt;= &apos;2023-12-01&apos;
+
+group by 1,2,3,4)
+
+
+(select
+  entity_code,
+  t1.country_code as business_entity,
+  iso_date,
+  t1.forecast_date,
+  forecast_month,
+  t1.vertical ,
+  -- date_diff(t1.forecast_date, current_date(), DAY) as forecast_day_identifier,
+  t1.successful_orders as forecasted_orders,
+
+  t2.successful_order_count as actual_orders,
+
+  t1.suc_gmv_lc as forecasted_gmv_lc,
+  t2.successful_gmv_amount_lc as actual_gmv_lc,
+
+  t1.acquisitions as forecasted_acquisitions,
+  t2.acquisition_count as actual_acquisitions
+  
+from
+  forecasted_orders t1
+  left join actuals t2
+    on t1.iso_date = t2.order_date
+    and t1.country_code = t2.country_code
+    and t1.vertical = t2.vertical
+
+where iso_date&gt;&gt;=forecast_date
+and date_trunc(iso_date,month) = date_trunc(forecast_date,month)
+  
+  )</relation>
+            </properties>
+            <properties context='extract'>
+              <relation name='Extract' table='[Extract].[Extract]' type='table' />
+            </properties>
+          </object>
+        </objects>
+      </_.fcp.ObjectModelEncapsulateLegacy.true...object-graph>
+    </datasource>
+  </datasources>
+  <worksheets>
+    <worksheet name='AOV - LC'>
+      <layout-options>
+        <title>
+          <formatted-text>
+            <run fontname='Tableau Bold' fontsize='12'>&lt;Sheet Name&gt;</run>
+          </formatted-text>
+        </title>
+      </layout-options>
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='Forecast Validation' name='federated.1mnctx404x8e0b1c1bnph0ytnq74' />
+          </datasources>
+          <datasource-dependencies datasource='federated.1mnctx404x8e0b1c1bnph0ytnq74'>
+            <column caption='Forecasted AOV (LC)' datatype='real' name='[Act AOV (LC) (copy)_1740993144419618817]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='sum([forecasted_gmv_lc]) / sum([forecasted_orders])' />
+            </column>
+            <column caption='Act AOV (LC)' datatype='real' name='[Calculation_1740993144419483648]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='sum([actual_gmv_lc]) / sum([actual_orders])' />
+            </column>
+            <column datatype='real' name='[actual_gmv_lc]' role='measure' type='quantitative' />
+            <column datatype='integer' name='[actual_orders]' role='measure' type='quantitative' />
+            <column datatype='string' name='[business_entity]' role='dimension' type='nominal' />
+            <column datatype='date' name='[forecast_date]' role='dimension' type='ordinal' />
+            <column datatype='real' name='[forecasted_gmv_lc]' role='measure' type='quantitative' />
+            <column datatype='real' name='[forecasted_orders]' role='measure' type='quantitative' />
+            <column datatype='date' default-format='*dd-mmm-yy' name='[iso_date]' role='dimension' type='ordinal' />
+            <column-instance column='[forecast_date]' derivation='MDY' name='[md:forecast_date:ok]' pivot='key' type='ordinal' />
+            <column-instance column='[business_entity]' derivation='None' name='[none:business_entity:nk]' pivot='key' type='nominal' />
+            <column-instance column='[vertical]' derivation='None' name='[none:vertical:nk]' pivot='key' type='nominal' />
+            <column-instance column='[iso_date]' derivation='Day-Trunc' name='[tdy:iso_date:ok]' pivot='key' type='ordinal' />
+            <column-instance column='[Act AOV (LC) (copy)_1740993144419618817]' derivation='User' name='[usr:Act AOV (LC) (copy)_1740993144419618817:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[Calculation_1740993144419483648]' derivation='User' name='[usr:Calculation_1740993144419483648:qk]' pivot='key' type='quantitative' />
+            <column datatype='string' name='[vertical]' role='dimension' type='nominal' />
+          </datasource-dependencies>
+          <filter class='categorical' column='[federated.1mnctx404x8e0b1c1bnph0ytnq74].[:Measure Names]'>
+            <groupfilter function='union' user:op='manual'>
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.1mnctx404x8e0b1c1bnph0ytnq74].[usr:Calculation_1740993144419483648:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.1mnctx404x8e0b1c1bnph0ytnq74].[usr:Act AOV (LC) (copy)_1740993144419618817:qk]&quot;' />
+            </groupfilter>
+          </filter>
+          <manual-sort column='[federated.1mnctx404x8e0b1c1bnph0ytnq74].[:Measure Names]' direction='ASC'>
+            <dictionary>
+              <bucket>&quot;[federated.1mnctx404x8e0b1c1bnph0ytnq74].[usr:Calculation_1740993144419483648:qk]&quot;</bucket>
+              <bucket>&quot;[federated.1mnctx404x8e0b1c1bnph0ytnq74].[usr:Act AOV (LC) (copy)_1740993144419618817:qk]&quot;</bucket>
+            </dictionary>
+          </manual-sort>
+          <filter class='categorical' column='[federated.1mnctx404x8e0b1c1bnph0ytnq74].[md:forecast_date:ok]' filter-group='3'>
+            <groupfilter function='member' level='[md:forecast_date:ok]' member='20231201' user:ui-domain='database' user:ui-enumeration='inclusive' user:ui-marker='enumerate' />
+          </filter>
+          <filter class='categorical' column='[federated.1mnctx404x8e0b1c1bnph0ytnq74].[none:business_entity:nk]' filter-group='5'>
+            <groupfilter function='member' level='[none:business_entity:nk]' member='&quot;AE&quot;' user:ui-domain='database' user:ui-enumeration='inclusive' user:ui-marker='enumerate' />
+          </filter>
+          <filter class='categorical' column='[federated.1mnctx404x8e0b1c1bnph0ytnq74].[none:vertical:nk]' filter-group='6'>
+            <groupfilter function='level-members' level='[none:vertical:nk]' user:ui-enumeration='all' user:ui-marker='enumerate' />
+          </filter>
+          <filter class='categorical' column='[federated.1mnctx404x8e0b1c1bnph0ytnq74].[tdy:iso_date:ok]' filter-group='4'>
+            <groupfilter function='level-members' level='[tdy:iso_date:ok]' />
+          </filter>
+          <slices>
+            <column>[federated.1mnctx404x8e0b1c1bnph0ytnq74].[none:business_entity:nk]</column>
+            <column>[federated.1mnctx404x8e0b1c1bnph0ytnq74].[md:forecast_date:ok]</column>
+            <column>[federated.1mnctx404x8e0b1c1bnph0ytnq74].[:Measure Names]</column>
+            <column>[federated.1mnctx404x8e0b1c1bnph0ytnq74].[none:vertical:nk]</column>
+            <column>[federated.1mnctx404x8e0b1c1bnph0ytnq74].[tdy:iso_date:ok]</column>
+          </slices>
+          <aggregation value='true' />
+        </view>
+        <style>
+          <style-rule element='axis'>
+            <format attr='title' class='0' field='[federated.1mnctx404x8e0b1c1bnph0ytnq74].[Multiple Values]' scope='rows' value='AOV - LC' />
+            <encoding attr='space' class='0' domain-expand='false' field='[federated.1mnctx404x8e0b1c1bnph0ytnq74].[Multiple Values]' field-type='quantitative' scope='rows' type='space' />
+          </style-rule>
+          <style-rule element='table'>
+            <format attr='show-null-value-warning' value='false' />
+          </style-rule>
+          <style-rule element='worksheet'>
+            <format attr='display-field-labels' scope='cols' value='false' />
+          </style-rule>
+        </style>
+        <panes>
+          <pane id='2' selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Automatic' />
+            <encodings>
+              <color column='[federated.1mnctx404x8e0b1c1bnph0ytnq74].[:Measure Names]' />
+            </encodings>
+          </pane>
+        </panes>
+        <rows>[federated.1mnctx404x8e0b1c1bnph0ytnq74].[Multiple Values]</rows>
+        <cols>[federated.1mnctx404x8e0b1c1bnph0ytnq74].[tdy:iso_date:ok]</cols>
+      </table>
+      <simple-id uuid='{E23E5E9D-542F-428A-88D5-9F41C2974E52}' />
+    </worksheet>
+    <worksheet name='GMV - LC'>
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='Forecast Validation' name='federated.1mnctx404x8e0b1c1bnph0ytnq74' />
+          </datasources>
+          <datasource-dependencies datasource='federated.1mnctx404x8e0b1c1bnph0ytnq74'>
+            <column datatype='real' name='[actual_gmv_lc]' role='measure' type='quantitative' />
+            <column datatype='string' name='[business_entity]' role='dimension' type='nominal' />
+            <column datatype='date' name='[forecast_date]' role='dimension' type='ordinal' />
+            <column datatype='real' name='[forecasted_gmv_lc]' role='measure' type='quantitative' />
+            <column datatype='date' default-format='*dd-mmm-yy' name='[iso_date]' role='dimension' type='ordinal' />
+            <column-instance column='[forecast_date]' derivation='MDY' name='[md:forecast_date:ok]' pivot='key' type='ordinal' />
+            <column-instance column='[business_entity]' derivation='None' name='[none:business_entity:nk]' pivot='key' type='nominal' />
+            <column-instance column='[vertical]' derivation='None' name='[none:vertical:nk]' pivot='key' type='nominal' />
+            <column-instance column='[actual_gmv_lc]' derivation='Sum' name='[sum:actual_gmv_lc:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[forecasted_gmv_lc]' derivation='Sum' name='[sum:forecasted_gmv_lc:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[iso_date]' derivation='Day-Trunc' name='[tdy:iso_date:ok]' pivot='key' type='ordinal' />
+            <column datatype='string' name='[vertical]' role='dimension' type='nominal' />
+          </datasource-dependencies>
+          <filter class='categorical' column='[federated.1mnctx404x8e0b1c1bnph0ytnq74].[:Measure Names]'>
+            <groupfilter function='union' user:op='manual'>
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.1mnctx404x8e0b1c1bnph0ytnq74].[sum:actual_gmv_lc:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.1mnctx404x8e0b1c1bnph0ytnq74].[sum:forecasted_gmv_lc:qk]&quot;' />
+            </groupfilter>
+          </filter>
+          <filter class='categorical' column='[federated.1mnctx404x8e0b1c1bnph0ytnq74].[md:forecast_date:ok]'>
+            <groupfilter function='member' level='[md:forecast_date:ok]' member='20240101' user:ui-domain='database' user:ui-enumeration='inclusive' user:ui-marker='enumerate' />
+          </filter>
+          <filter class='categorical' column='[federated.1mnctx404x8e0b1c1bnph0ytnq74].[none:business_entity:nk]' filter-group='5'>
+            <groupfilter function='member' level='[none:business_entity:nk]' member='&quot;AE&quot;' user:ui-domain='database' user:ui-enumeration='inclusive' user:ui-marker='enumerate' />
+          </filter>
+          <filter class='categorical' column='[federated.1mnctx404x8e0b1c1bnph0ytnq74].[none:vertical:nk]' filter-group='6'>
+            <groupfilter function='level-members' level='[none:vertical:nk]' user:ui-enumeration='all' user:ui-marker='enumerate' />
+          </filter>
+          <slices>
+            <column>[federated.1mnctx404x8e0b1c1bnph0ytnq74].[none:business_entity:nk]</column>
+            <column>[federated.1mnctx404x8e0b1c1bnph0ytnq74].[md:forecast_date:ok]</column>
+            <column>[federated.1mnctx404x8e0b1c1bnph0ytnq74].[:Measure Names]</column>
+            <column>[federated.1mnctx404x8e0b1c1bnph0ytnq74].[none:vertical:nk]</column>
+          </slices>
+          <aggregation value='true' />
+        </view>
+        <style>
+          <style-rule element='table'>
+            <format attr='show-null-value-warning' value='false' />
+          </style-rule>
+        </style>
+        <panes>
+          <pane id='2' selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Automatic' />
+            <encodings>
+              <color column='[federated.1mnctx404x8e0b1c1bnph0ytnq74].[:Measure Names]' />
+            </encodings>
+          </pane>
+        </panes>
+        <rows>[federated.1mnctx404x8e0b1c1bnph0ytnq74].[Multiple Values]</rows>
+        <cols>[federated.1mnctx404x8e0b1c1bnph0ytnq74].[tdy:iso_date:ok]</cols>
+      </table>
+      <simple-id uuid='{B997F94C-B613-4077-86C9-04DCF0BC2A0A}' />
+    </worksheet>
+    <worksheet name='Orders'>
+      <layout-options>
+        <title>
+          <formatted-text>
+            <run fontname='Tableau Bold' fontsize='12'>&lt;Sheet Name&gt;</run>
+          </formatted-text>
+        </title>
+      </layout-options>
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='Forecast Validation' name='federated.1mnctx404x8e0b1c1bnph0ytnq74' />
+          </datasources>
+          <datasource-dependencies datasource='federated.1mnctx404x8e0b1c1bnph0ytnq74'>
+            <column datatype='integer' name='[actual_orders]' role='measure' type='quantitative' />
+            <column datatype='string' name='[business_entity]' role='dimension' type='nominal' />
+            <column datatype='date' name='[forecast_date]' role='dimension' type='ordinal' />
+            <column datatype='real' name='[forecasted_orders]' role='measure' type='quantitative' />
+            <column datatype='date' default-format='*dd-mmm-yy' name='[iso_date]' role='dimension' type='ordinal' />
+            <column-instance column='[forecast_date]' derivation='MDY' name='[md:forecast_date:ok]' pivot='key' type='ordinal' />
+            <column-instance column='[business_entity]' derivation='None' name='[none:business_entity:nk]' pivot='key' type='nominal' />
+            <column-instance column='[vertical]' derivation='None' name='[none:vertical:nk]' pivot='key' type='nominal' />
+            <column-instance column='[actual_orders]' derivation='Sum' name='[sum:actual_orders:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[forecasted_orders]' derivation='Sum' name='[sum:forecasted_orders:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[iso_date]' derivation='Day-Trunc' name='[tdy:iso_date:ok]' pivot='key' type='ordinal' />
+            <column datatype='string' name='[vertical]' role='dimension' type='nominal' />
+          </datasource-dependencies>
+          <filter class='categorical' column='[federated.1mnctx404x8e0b1c1bnph0ytnq74].[:Measure Names]'>
+            <groupfilter function='union' user:op='manual'>
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.1mnctx404x8e0b1c1bnph0ytnq74].[sum:actual_orders:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.1mnctx404x8e0b1c1bnph0ytnq74].[sum:forecasted_orders:qk]&quot;' />
+            </groupfilter>
+          </filter>
+          <filter class='categorical' column='[federated.1mnctx404x8e0b1c1bnph0ytnq74].[md:forecast_date:ok]' filter-group='3'>
+            <groupfilter function='member' level='[md:forecast_date:ok]' member='20231201' user:ui-domain='database' user:ui-enumeration='inclusive' user:ui-marker='enumerate' />
+          </filter>
+          <filter class='categorical' column='[federated.1mnctx404x8e0b1c1bnph0ytnq74].[none:business_entity:nk]' filter-group='5'>
+            <groupfilter function='member' level='[none:business_entity:nk]' member='&quot;AE&quot;' user:ui-domain='database' user:ui-enumeration='inclusive' user:ui-marker='enumerate' />
+          </filter>
+          <filter class='categorical' column='[federated.1mnctx404x8e0b1c1bnph0ytnq74].[none:vertical:nk]' filter-group='6'>
+            <groupfilter function='level-members' level='[none:vertical:nk]' user:ui-enumeration='all' user:ui-marker='enumerate' />
+          </filter>
+          <filter class='categorical' column='[federated.1mnctx404x8e0b1c1bnph0ytnq74].[tdy:iso_date:ok]' filter-group='4'>
+            <groupfilter function='level-members' level='[tdy:iso_date:ok]' />
+          </filter>
+          <slices>
+            <column>[federated.1mnctx404x8e0b1c1bnph0ytnq74].[none:business_entity:nk]</column>
+            <column>[federated.1mnctx404x8e0b1c1bnph0ytnq74].[md:forecast_date:ok]</column>
+            <column>[federated.1mnctx404x8e0b1c1bnph0ytnq74].[:Measure Names]</column>
+            <column>[federated.1mnctx404x8e0b1c1bnph0ytnq74].[none:vertical:nk]</column>
+            <column>[federated.1mnctx404x8e0b1c1bnph0ytnq74].[tdy:iso_date:ok]</column>
+          </slices>
+          <aggregation value='true' />
+        </view>
+        <style>
+          <style-rule element='axis'>
+            <format attr='title' class='0' field='[federated.1mnctx404x8e0b1c1bnph0ytnq74].[Multiple Values]' scope='rows' value='Orders' />
+            <encoding attr='space' class='0' domain-expand='false' field='[federated.1mnctx404x8e0b1c1bnph0ytnq74].[Multiple Values]' field-type='quantitative' scope='rows' type='space' />
+          </style-rule>
+          <style-rule element='table'>
+            <format attr='show-null-value-warning' value='false' />
+          </style-rule>
+          <style-rule element='worksheet'>
+            <format attr='display-field-labels' scope='cols' value='false' />
+          </style-rule>
+          <style-rule element='quick-filter'>
+            <format attr='title' field='[federated.1mnctx404x8e0b1c1bnph0ytnq74].[md:forecast_date:ok]' value='Forecast Date'>
+              <formatted-text>
+                <run>Forecast Date</run>
+              </formatted-text>
+            </format>
+            <format attr='title' field='[federated.1mnctx404x8e0b1c1bnph0ytnq74].[tdy:iso_date:ok]' value='Forecasted Dates'>
+              <formatted-text>
+                <run>Forecasted Dates</run>
+              </formatted-text>
+            </format>
+            <format attr='title' field='[federated.1mnctx404x8e0b1c1bnph0ytnq74].[none:vertical:nk]' value='Vertical'>
+              <formatted-text>
+                <run>Vertical</run>
+              </formatted-text>
+            </format>
+            <format attr='title' field='[federated.1mnctx404x8e0b1c1bnph0ytnq74].[none:business_entity:nk]' value='Country'>
+              <formatted-text>
+                <run>Country</run>
+              </formatted-text>
+            </format>
+          </style-rule>
+        </style>
+        <panes>
+          <pane id='2' selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Automatic' />
+            <encodings>
+              <color column='[federated.1mnctx404x8e0b1c1bnph0ytnq74].[:Measure Names]' />
+            </encodings>
+          </pane>
+        </panes>
+        <rows>[federated.1mnctx404x8e0b1c1bnph0ytnq74].[Multiple Values]</rows>
+        <cols>[federated.1mnctx404x8e0b1c1bnph0ytnq74].[tdy:iso_date:ok]</cols>
+      </table>
+      <simple-id uuid='{7A4D00C6-D8EC-4F30-BCFE-B030675DE406}' />
+    </worksheet>
+  </worksheets>
+  <dashboards>
+    <dashboard _.fcp.AccessibleZoneTabOrder.true...enable-sort-zone-taborder='true' name='Forecast vs. Actuals'>
+      <repository-location id='Forecastvs_Actuals' path='/t/Talabat/workbooks/Forecastvs_ActualTrends' revision='' site='Talabat' />
+      <style>
+        <style-rule element='dash-title'>
+          <format attr='background-color' value='#00000000' />
+        </style-rule>
+        <style-rule element='dash-subtitle'>
+          <format attr='background-color' value='#e6e6e6' />
+        </style-rule>
+      </style>
+      <size maxheight='800' maxwidth='1200' minheight='800' minwidth='1200' sizing-mode='fixed' />
+      <datasources>
+        <datasource caption='Forecast Validation' name='federated.1mnctx404x8e0b1c1bnph0ytnq74' />
+      </datasources>
+      <datasource-dependencies datasource='federated.1mnctx404x8e0b1c1bnph0ytnq74'>
+        <column datatype='string' name='[business_entity]' role='dimension' type='nominal' />
+        <column datatype='date' name='[forecast_date]' role='dimension' type='ordinal' />
+        <column datatype='date' default-format='*dd-mmm-yy' name='[iso_date]' role='dimension' type='ordinal' />
+        <column-instance column='[forecast_date]' derivation='MDY' name='[md:forecast_date:ok]' pivot='key' type='ordinal' />
+        <column-instance column='[business_entity]' derivation='None' name='[none:business_entity:nk]' pivot='key' type='nominal' />
+        <column-instance column='[vertical]' derivation='None' name='[none:vertical:nk]' pivot='key' type='nominal' />
+        <column-instance column='[iso_date]' derivation='Day-Trunc' name='[tdy:iso_date:ok]' pivot='key' type='ordinal' />
+        <column datatype='string' name='[vertical]' role='dimension' type='nominal' />
+      </datasource-dependencies>
+      <zones>
+        <zone h='100000' id='4' type-v2='layout-basic' w='100000' x='0' y='0'>
+          <zone h='89625' id='7' param='horz' type-v2='layout-flow' w='98666' x='667' y='9375'>
+            <zone h='89625' id='5' type-v2='layout-basic' w='85333' x='667' y='9375'>
+              <zone h='44813' id='3' name='Orders' w='85333' x='667' y='9375'>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+              <zone h='44812' id='12' name='AOV - LC' w='85333' x='667' y='54188'>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+            </zone>
+            <zone fixed-size='160' h='89625' id='6' is-fixed='true' param='vert' type-v2='layout-flow' w='13333' x='86000' y='9375'>
+              <zone h='6500' id='10' mode='dropdown' name='Orders' param='[federated.1mnctx404x8e0b1c1bnph0ytnq74].[md:forecast_date:ok]' show-all='false' type-v2='filter' w='13333' x='86000' y='9375'>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+              <zone h='6500' id='20' mode='checkdropdown' name='Orders' param='[federated.1mnctx404x8e0b1c1bnph0ytnq74].[tdy:iso_date:ok]' show-apply='true' type-v2='filter' values='relevant' w='13333' x='86000' y='15875'>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+              <zone h='6500' id='9' mode='checkdropdown' name='Orders' param='[federated.1mnctx404x8e0b1c1bnph0ytnq74].[none:business_entity:nk]' show-apply='true' type-v2='filter' w='13333' x='86000' y='22375'>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+              <zone h='6500' id='8' mode='checkdropdown' name='Orders' param='[federated.1mnctx404x8e0b1c1bnph0ytnq74].[none:vertical:nk]' show-apply='true' type-v2='filter' w='13333' x='86000' y='28875'>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+              <zone h='8250' id='11' name='Orders' pane-specification-id='2' param='[federated.1mnctx404x8e0b1c1bnph0ytnq74].[:Measure Names]' type-v2='color' w='13333' x='86000' y='35375'>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+              <zone-style>
+                <format attr='border-color' value='#000000' />
+                <format attr='border-style' value='none' />
+                <format attr='border-width' value='0' />
+                <format attr='background-color' value='#f5f5f5' />
+              </zone-style>
+            </zone>
+          </zone>
+          <zone forceUpdate='true' h='8375' id='13' type-v2='text' w='95457' x='667' y='1000'>
+            <formatted-text>
+              <run bold='true' fontalignment='2' fontcolor='#ffffff' fontname='Tableau Bold' fontsize='15'>Forecast vs. Actuals</run>
+            </formatted-text>
+            <zone-style>
+              <format attr='border-color' value='#000000' />
+              <format attr='border-style' value='none' />
+              <format attr='border-width' value='0' />
+              <format attr='margin' value='0' />
+              <format attr='background-color' value='#fd8e1f' />
+            </zone-style>
+          </zone>
+          <zone h='8375' id='14' type-v2='empty' w='3209' x='96124' y='1000'>
+            <zone-style>
+              <format attr='border-color' value='#000000' />
+              <format attr='border-style' value='none' />
+              <format attr='border-width' value='0' />
+              <format attr='margin' value='0' />
+              <format attr='background-color' value='#fd8e1f' />
+            </zone-style>
+          </zone>
+          <zone-style>
+            <format attr='border-color' value='#000000' />
+            <format attr='border-style' value='none' />
+            <format attr='border-width' value='0' />
+            <format attr='margin' value='8' />
+          </zone-style>
+        </zone>
+        <zone _.fcp.ExternalImageContentForZones.true...image-file-url='https://www.talabat.com/assets/images/logo.svg' h='6500' id='15' is-scaled='1' type-v2='bitmap' w='14667' x='1333' y='1750' />
+      </zones>
+      <devicelayouts>
+        <devicelayout auto-generated='true' name='Phone'>
+          <size maxheight='1050' minheight='1050' sizing-mode='vscroll' />
+          <zones>
+            <zone h='100000' id='40' type-v2='layout-basic' w='100000' x='0' y='0'>
+              <zone h='98000' id='39' param='vert' type-v2='layout-flow' w='98666' x='667' y='1000'>
+                <zone forceUpdate='true' h='8375' id='13' type-v2='text' w='95457' x='667' y='1000'>
+                  <formatted-text>
+                    <run bold='true' fontalignment='2' fontcolor='#ffffff' fontname='Tableau Bold' fontsize='15'>Forecast vs. Actuals</run>
+                  </formatted-text>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                    <format attr='background-color' value='#fd8e1f' />
+                  </zone-style>
+                </zone>
+                <zone _.fcp.ExternalImageContentForZones.true...image-file-url='https://www.talabat.com/assets/images/logo.svg' fixed-size='52' h='6500' id='15' is-fixed='true' is-scaled='1' type-v2='bitmap' w='14667' x='1333' y='1750'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone h='6500' id='10' mode='dropdown' name='Orders' param='[federated.1mnctx404x8e0b1c1bnph0ytnq74].[md:forecast_date:ok]' show-all='false' type-v2='filter' w='13333' x='86000' y='9375'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone h='6500' id='20' mode='checkdropdown' name='Orders' param='[federated.1mnctx404x8e0b1c1bnph0ytnq74].[tdy:iso_date:ok]' show-apply='true' type-v2='filter' values='relevant' w='13333' x='86000' y='15875'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone h='6500' id='9' mode='checkdropdown' name='Orders' param='[federated.1mnctx404x8e0b1c1bnph0ytnq74].[none:business_entity:nk]' show-apply='true' type-v2='filter' w='13333' x='86000' y='22375'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone h='6500' id='8' mode='checkdropdown' name='Orders' param='[federated.1mnctx404x8e0b1c1bnph0ytnq74].[none:vertical:nk]' show-apply='true' type-v2='filter' w='13333' x='86000' y='28875'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone fixed-size='280' h='44813' id='3' is-fixed='true' name='Orders' w='85333' x='667' y='9375'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone h='8250' id='11' name='Orders' pane-specification-id='2' param='[federated.1mnctx404x8e0b1c1bnph0ytnq74].[:Measure Names]' type-v2='color' w='13333' x='86000' y='35375'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone fixed-size='280' h='44812' id='12' is-fixed='true' name='AOV - LC' w='85333' x='667' y='54188'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+              </zone>
+              <zone-style>
+                <format attr='border-color' value='#000000' />
+                <format attr='border-style' value='none' />
+                <format attr='border-width' value='0' />
+                <format attr='margin' value='8' />
+              </zone-style>
+            </zone>
+          </zones>
+        </devicelayout>
+      </devicelayouts>
+      <simple-id uuid='{3E1CF506-16E0-4F16-B868-A31769DA467E}' />
+    </dashboard>
+  </dashboards>
+  <windows source-height='30'>
+    <window class='worksheet' name='Orders'>
+      <cards>
+        <edge name='left'>
+          <strip size='160'>
+            <card type='pages' />
+            <card type='filters' />
+            <card type='marks' />
+            <card type='measures' />
+          </strip>
+        </edge>
+        <edge name='top'>
+          <strip size='2147483647'>
+            <card type='columns' />
+          </strip>
+          <strip size='2147483647'>
+            <card type='rows' />
+          </strip>
+          <strip size='31'>
+            <card type='title' />
+          </strip>
+        </edge>
+        <edge name='right'>
+          <strip size='160'>
+            <card param='[federated.1mnctx404x8e0b1c1bnph0ytnq74].[none:vertical:nk]' type='filter' />
+            <card mode='checkdropdown' param='[federated.1mnctx404x8e0b1c1bnph0ytnq74].[none:business_entity:nk]' type='filter' />
+            <card mode='dropdown' param='[federated.1mnctx404x8e0b1c1bnph0ytnq74].[md:forecast_date:ok]' type='filter' />
+            <card pane-specification-id='2' param='[federated.1mnctx404x8e0b1c1bnph0ytnq74].[:Measure Names]' type='color' />
+          </strip>
+        </edge>
+      </cards>
+      <viewpoint>
+        <highlight>
+          <color-one-way>
+            <field>[federated.1mnctx404x8e0b1c1bnph0ytnq74].[:Measure Names]</field>
+            <field>[federated.1mnctx404x8e0b1c1bnph0ytnq74].[attr:forecast_date:ok]</field>
+            <field>[federated.1mnctx404x8e0b1c1bnph0ytnq74].[md:forecast_date:ok]</field>
+            <field>[federated.1mnctx404x8e0b1c1bnph0ytnq74].[none:business_entity:nk]</field>
+            <field>[federated.1mnctx404x8e0b1c1bnph0ytnq74].[none:vertical:nk]</field>
+            <field>[federated.1mnctx404x8e0b1c1bnph0ytnq74].[yr:iso_date:ok]</field>
+          </color-one-way>
+        </highlight>
+      </viewpoint>
+      <simple-id uuid='{2EFBF848-DE3E-441E-AA5C-7C7D7CEEAF14}' />
+    </window>
+    <window class='worksheet' name='AOV - LC'>
+      <cards>
+        <edge name='left'>
+          <strip size='160'>
+            <card type='pages' />
+            <card type='filters' />
+            <card type='marks' />
+            <card type='measures' />
+          </strip>
+        </edge>
+        <edge name='top'>
+          <strip size='2147483647'>
+            <card type='columns' />
+          </strip>
+          <strip size='2147483647'>
+            <card type='rows' />
+          </strip>
+          <strip size='31'>
+            <card type='title' />
+          </strip>
+        </edge>
+        <edge name='right'>
+          <strip size='160'>
+            <card param='[federated.1mnctx404x8e0b1c1bnph0ytnq74].[none:vertical:nk]' type='filter' />
+            <card mode='checkdropdown' param='[federated.1mnctx404x8e0b1c1bnph0ytnq74].[none:business_entity:nk]' type='filter' />
+            <card mode='dropdown' param='[federated.1mnctx404x8e0b1c1bnph0ytnq74].[md:forecast_date:ok]' type='filter' />
+            <card pane-specification-id='2' param='[federated.1mnctx404x8e0b1c1bnph0ytnq74].[:Measure Names]' type='color' />
+          </strip>
+        </edge>
+      </cards>
+      <viewpoint>
+        <highlight>
+          <color-one-way>
+            <field>[federated.1mnctx404x8e0b1c1bnph0ytnq74].[:Measure Names]</field>
+            <field>[federated.1mnctx404x8e0b1c1bnph0ytnq74].[attr:forecast_date:ok]</field>
+            <field>[federated.1mnctx404x8e0b1c1bnph0ytnq74].[md:forecast_date:ok]</field>
+            <field>[federated.1mnctx404x8e0b1c1bnph0ytnq74].[none:business_entity:nk]</field>
+            <field>[federated.1mnctx404x8e0b1c1bnph0ytnq74].[none:vertical:nk]</field>
+            <field>[federated.1mnctx404x8e0b1c1bnph0ytnq74].[yr:iso_date:ok]</field>
+          </color-one-way>
+        </highlight>
+      </viewpoint>
+      <simple-id uuid='{632D710F-5025-4EAB-BD7E-431142DD97E1}' />
+    </window>
+    <window class='worksheet' name='GMV - LC'>
+      <cards>
+        <edge name='left'>
+          <strip size='160'>
+            <card type='pages' />
+            <card type='filters' />
+            <card type='marks' />
+            <card type='measures' />
+          </strip>
+        </edge>
+        <edge name='top'>
+          <strip size='2147483647'>
+            <card type='columns' />
+          </strip>
+          <strip size='2147483647'>
+            <card type='rows' />
+          </strip>
+          <strip size='31'>
+            <card type='title' />
+          </strip>
+        </edge>
+        <edge name='right'>
+          <strip size='160'>
+            <card param='[federated.1mnctx404x8e0b1c1bnph0ytnq74].[none:vertical:nk]' type='filter' />
+            <card mode='checkdropdown' param='[federated.1mnctx404x8e0b1c1bnph0ytnq74].[none:business_entity:nk]' type='filter' />
+            <card mode='dropdown' param='[federated.1mnctx404x8e0b1c1bnph0ytnq74].[md:forecast_date:ok]' type='filter' />
+            <card pane-specification-id='2' param='[federated.1mnctx404x8e0b1c1bnph0ytnq74].[:Measure Names]' type='color' />
+          </strip>
+        </edge>
+      </cards>
+      <viewpoint>
+        <highlight>
+          <color-one-way>
+            <field>[federated.1mnctx404x8e0b1c1bnph0ytnq74].[:Measure Names]</field>
+            <field>[federated.1mnctx404x8e0b1c1bnph0ytnq74].[attr:forecast_date:ok]</field>
+            <field>[federated.1mnctx404x8e0b1c1bnph0ytnq74].[md:forecast_date:ok]</field>
+            <field>[federated.1mnctx404x8e0b1c1bnph0ytnq74].[none:business_entity:nk]</field>
+            <field>[federated.1mnctx404x8e0b1c1bnph0ytnq74].[none:vertical:nk]</field>
+            <field>[federated.1mnctx404x8e0b1c1bnph0ytnq74].[yr:iso_date:ok]</field>
+          </color-one-way>
+        </highlight>
+      </viewpoint>
+      <simple-id uuid='{DD6F75D6-483C-4A93-9548-8D1E9B913E33}' />
+    </window>
+    <window class='dashboard' maximized='true' name='Forecast vs. Actuals'>
+      <viewpoints>
+        <viewpoint name='AOV - LC'>
+          <zoom type='entire-view' />
+        </viewpoint>
+        <viewpoint name='Orders'>
+          <zoom type='entire-view' />
+          <highlight>
+            <color-one-way>
+              <field>[federated.1mnctx404x8e0b1c1bnph0ytnq74].[:Measure Names]</field>
+            </color-one-way>
+          </highlight>
+        </viewpoint>
+      </viewpoints>
+      <active id='12' />
+      <simple-id uuid='{67F1D225-1777-4F83-875A-9BAD2119CA1D}' />
+    </window>
+  </windows>
+</workbook>

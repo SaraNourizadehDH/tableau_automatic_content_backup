@@ -1,0 +1,2215 @@
+<?xml version='1.0' encoding='utf-8' ?>
+
+<!-- build 20233.24.0803.0344                               -->
+<workbook original-version='18.1' source-build='2023.3.8 (20233.24.0709.0401)' source-platform='mac' version='18.1' xml:base='https://tableau.deliveryhero.net' xmlns:user='http://www.tableausoftware.com/xml/user'>
+  <document-format-change-manifest>
+    <_.fcp.AccessibleZoneTabOrder.true...AccessibleZoneTabOrder />
+    <_.fcp.AnimationOnByDefault.true...AnimationOnByDefault />
+    <AutoCreateAndUpdateDSDPhoneLayouts />
+    <IntuitiveSorting />
+    <IntuitiveSorting_SP2 />
+    <_.fcp.MarkAnimation.true...MarkAnimation />
+    <_.fcp.ObjectModelEncapsulateLegacy.true...ObjectModelEncapsulateLegacy />
+    <_.fcp.ObjectModelExtractV2.true...ObjectModelExtractV2 />
+    <_.fcp.ObjectModelTableType.true...ObjectModelTableType />
+    <_.fcp.SchemaViewerObjectModel.true...SchemaViewerObjectModel />
+    <SetMembershipControl />
+    <SheetIdentifierTracking />
+    <SortTagCleanup />
+    <_.fcp.VConnDownstreamExtractsWithWarnings.true...VConnDownstreamExtractsWithWarnings />
+    <WindowsPersistSimpleIdentifiers />
+    <WorksheetBackgroundTransparency />
+    <ZoneBackgroundTransparency />
+  </document-format-change-manifest>
+  <repository-location derived-from='https://tableau.deliveryhero.net/t/Talabat/workbooks/KitchenCuisineAOVIndex?rev=1.5' id='KitchenCuisineAOVIndex' path='/t/Talabat/workbooks' revision='1.6' site='Talabat' />
+  <preferences>
+    <preference name='ui.encoding.shelf.height' value='24' />
+    <preference name='ui.shelf.height' value='26' />
+  </preferences>
+  <_.fcp.AnimationOnByDefault.false...style>
+    <_.fcp.AnimationOnByDefault.false..._.fcp.MarkAnimation.true...style-rule element='animation'>
+      <_.fcp.AnimationOnByDefault.false...format attr='animation-on' value='ao-on' />
+    </_.fcp.AnimationOnByDefault.false..._.fcp.MarkAnimation.true...style-rule>
+  </_.fcp.AnimationOnByDefault.false...style>
+  <datasources>
+    <datasource caption='Affordability Index' inline='true' name='federated.05bw1ub0dtm3si18io18f0hqjq6l' version='18.1'>
+      <connection class='federated'>
+        <named-connections>
+          <named-connection caption='BigQuery' name='bigquery.0ig48sx0a2x5hr10dhltr1lzcdo3'>
+            <connection CATALOG='tlb-data-prod' EXECCATALOG='tlb-datateam-analysis-6343' authentication='oauth' bq-dataset-fetch-rows='' bq-fetch-rows='' bq-fetch-tasks='' bq-large-fetch-rows='' bq-project-fetch-rows='' bq-response-rows='' class='bigquery' connection-dialect='google-sql' project='tlb-data-prod' schema='data_platform' server-oauth='' username='hari.vellamelli@talabat.com' workgroup-auth-mode='prompt' />
+          </named-connection>
+        </named-connections>
+        <_.fcp.ObjectModelEncapsulateLegacy.false...relation connection='bigquery.0ig48sx0a2x5hr10dhltr1lzcdo3' name='Custom SQL Query' type='text'>WITH
+    calculation 
+    as (
+        SELECT
+        DATE_TRUNC(order_date,MONTH) as month,
+        v.facility_short_name as kitchen_name,
+        v.vendor_id,
+        v.main_cuisine,
+        k.delivery_area_id,
+        SUM(successful_orders) as successful_orders,
+        SUM(s_orders_gmv_amount) as gmv_lc,
+        SUM(s_orders_gmv_amount_eur) as gmv_eur,
+        SUM(s_basket_amount_total) as gbv_lc,
+        SUM(s_basket_amount_total_eur) as gbv_eur
+        FROM `gfs-data-reporting.gfs_tlb_prod.talabat_gfs_order_kpis_reporting` k
+        LEFT JOIN `gfs-data-reporting.gfs_tlb_prod.talabat_dim_vendor_info` v on v.vendor_id = k.vendor_id
+        LEFT JOIN `tlb-data-prod.data_platform.dim_location_info` dl on dl.area_id = k.delivery_area_id
+        WHERE DATE_TRUNC(order_date,MONTH) = &quot;2024-09-01&quot;
+        AND is_dh_kitchen_gfs
+        AND v.country_code = &quot;AE&quot;
+        GROUP BY 1,2,3,4,5
+        HAVING successful_orders &gt;&gt;= 20),
+
+        filtered_areas AS 
+        (
+            SELECT
+            DISTINCT kitchen_name,delivery_area_id 
+            FROM calculation
+            -- WHERE kitchen_name IN (&quot;DSO&quot;,&quot;Mirdiff&quot;,&quot;Rashidiya&quot;,&quot;Business Bay SOL&quot;)
+        ),
+
+        all_data AS 
+        (
+            SELECT
+            DATE_TRUNC(o.order_date,month) as month,
+            o.vendor_id,
+            fa.kitchen_name,
+            COALESCE(v.is_dh_kitchen_gfs,FALSE) as is_dh_kitchen_gfs,
+            -- o.delivery_area_id,
+            COUNT(DISTINCT o.order_id) as no_of_orders,
+            SUM(o.gmv_amount_lc) as gmv_lc,
+            SUM(o.gmv_amount_eur) as gmv_eur,
+            -- COUNT(DISTINCT oi.item_id) as no_of_unique_items, 
+            -- SUM(oi.ordered_quantity) as no_of_quantity
+            FROM `tlb-data-prod.data_platform.fct_order_info` o
+            --  LEFT JOIN `tlb-data-prod.data_platform.fct_order_item` oi on oi.order_id = o.order_id
+            LEFT JOIN `gfs-data-reporting.gfs_tlb_prod.talabat_dim_vendor_info` v on v.vendor_id = o.vendor_id
+            LEFT JOIN filtered_areas fa on fa.delivery_area_id = o.delivery_area_id
+            WHERE DATE_TRUNC(o.order_date,month) = &quot;2024-11-01&quot;
+            AND o.country_Code = &quot;AE&quot;
+            AND o.is_successful
+            AND NOT o.is_test
+            AND v.vertical = &quot;food&quot;
+            AND o.delivery_arrangement IN (&quot;TMP&quot;,&quot;TGO&quot;)
+            AND o.delivery_area_id IN (SELECT DISTINCT delivery_area_id FROM filtered_areas)
+            AND v.main_cuisine IN (SELECT DISTINCT main_cuisine FROM filtered_areas)
+            GROUP BY 1,2,3,4
+        )
+
+        SELECT
+        a.*,
+        v.vendor_name,
+        v.main_cuisine,
+        a.kitchen_name as kitchen_location,
+        v.facility_short_name as facility_short_name,
+        dc.is_aaa_account,
+        dc.is_key_vip_account,
+        dc.is_regional_key_account,
+        dc.is_local_key_account,
+        CASE
+        WHEN a.kitchen_name = v.facility_short_name THEN &quot;Same Kitchen&quot;
+        WHEN v.facility_short_name IS NOT NULL THEN &quot;Other Kitchen&quot;
+        ELSE &quot;Non Kitchen&quot; END as vendor_type
+        FROM all_data a
+        LEFT JOIN `gfs-data-reporting.gfs_tlb_base_prod.talabat_dim_vendor_info` v on v.vendor_id = a.vendor_id
+        LEFT JOIN `tlb-data-prod.data_platform.dim_chain` dc on dc.chain_id = v.chain_id</_.fcp.ObjectModelEncapsulateLegacy.false...relation>
+        <_.fcp.ObjectModelEncapsulateLegacy.true...relation connection='bigquery.0ig48sx0a2x5hr10dhltr1lzcdo3' name='Custom SQL Query' type='text'>WITH
+    calculation 
+    as (
+        SELECT
+        DATE_TRUNC(order_date,MONTH) as month,
+        v.facility_short_name as kitchen_name,
+        v.vendor_id,
+        v.main_cuisine,
+        k.delivery_area_id,
+        SUM(successful_orders) as successful_orders,
+        SUM(s_orders_gmv_amount) as gmv_lc,
+        SUM(s_orders_gmv_amount_eur) as gmv_eur,
+        SUM(s_basket_amount_total) as gbv_lc,
+        SUM(s_basket_amount_total_eur) as gbv_eur
+        FROM `gfs-data-reporting.gfs_tlb_prod.talabat_gfs_order_kpis_reporting` k
+        LEFT JOIN `gfs-data-reporting.gfs_tlb_prod.talabat_dim_vendor_info` v on v.vendor_id = k.vendor_id
+        LEFT JOIN `tlb-data-prod.data_platform.dim_location_info` dl on dl.area_id = k.delivery_area_id
+        WHERE DATE_TRUNC(order_date,MONTH) = &quot;2024-09-01&quot;
+        AND is_dh_kitchen_gfs
+        AND v.country_code = &quot;AE&quot;
+        GROUP BY 1,2,3,4,5
+        HAVING successful_orders &gt;&gt;= 20),
+
+        filtered_areas AS 
+        (
+            SELECT
+            DISTINCT kitchen_name,delivery_area_id 
+            FROM calculation
+            -- WHERE kitchen_name IN (&quot;DSO&quot;,&quot;Mirdiff&quot;,&quot;Rashidiya&quot;,&quot;Business Bay SOL&quot;)
+        ),
+
+        all_data AS 
+        (
+            SELECT
+            DATE_TRUNC(o.order_date,month) as month,
+            o.vendor_id,
+            fa.kitchen_name,
+            COALESCE(v.is_dh_kitchen_gfs,FALSE) as is_dh_kitchen_gfs,
+            -- o.delivery_area_id,
+            COUNT(DISTINCT o.order_id) as no_of_orders,
+            SUM(o.gmv_amount_lc) as gmv_lc,
+            SUM(o.gmv_amount_eur) as gmv_eur,
+            -- COUNT(DISTINCT oi.item_id) as no_of_unique_items, 
+            -- SUM(oi.ordered_quantity) as no_of_quantity
+            FROM `tlb-data-prod.data_platform.fct_order_info` o
+            --  LEFT JOIN `tlb-data-prod.data_platform.fct_order_item` oi on oi.order_id = o.order_id
+            LEFT JOIN `gfs-data-reporting.gfs_tlb_prod.talabat_dim_vendor_info` v on v.vendor_id = o.vendor_id
+            LEFT JOIN filtered_areas fa on fa.delivery_area_id = o.delivery_area_id
+            WHERE DATE_TRUNC(o.order_date,month) = &quot;2024-11-01&quot;
+            AND o.country_Code = &quot;AE&quot;
+            AND o.is_successful
+            AND NOT o.is_test
+            AND v.vertical = &quot;food&quot;
+            AND o.delivery_arrangement IN (&quot;TMP&quot;,&quot;TGO&quot;)
+            AND o.delivery_area_id IN (SELECT DISTINCT delivery_area_id FROM filtered_areas)
+            AND v.main_cuisine IN (SELECT DISTINCT main_cuisine FROM filtered_areas)
+            GROUP BY 1,2,3,4
+        )
+
+        SELECT
+        a.*,
+        v.vendor_name,
+        v.main_cuisine,
+        a.kitchen_name as kitchen_location,
+        v.facility_short_name as facility_short_name,
+        dc.is_aaa_account,
+        dc.is_key_vip_account,
+        dc.is_regional_key_account,
+        dc.is_local_key_account,
+        CASE
+        WHEN a.kitchen_name = v.facility_short_name THEN &quot;Same Kitchen&quot;
+        WHEN v.facility_short_name IS NOT NULL THEN &quot;Other Kitchen&quot;
+        ELSE &quot;Non Kitchen&quot; END as vendor_type
+        FROM all_data a
+        LEFT JOIN `gfs-data-reporting.gfs_tlb_base_prod.talabat_dim_vendor_info` v on v.vendor_id = a.vendor_id
+        LEFT JOIN `tlb-data-prod.data_platform.dim_chain` dc on dc.chain_id = v.chain_id</_.fcp.ObjectModelEncapsulateLegacy.true...relation>
+        <metadata-records>
+          <metadata-record class='column'>
+            <remote-name>month</remote-name>
+            <remote-type>7</remote-type>
+            <local-name>[month]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>month</remote-alias>
+            <local-type>date</local-type>
+            <aggregation>Year</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_2BA9B7D71001439FBD5420EEC816EAE3]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>vendor_id</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[vendor_id]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>vendor_id</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_2BA9B7D71001439FBD5420EEC816EAE3]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>kitchen_name</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[kitchen_name]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>kitchen_name</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_2BA9B7D71001439FBD5420EEC816EAE3]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>is_dh_kitchen_gfs</remote-name>
+            <remote-type>11</remote-type>
+            <local-name>[is_dh_kitchen_gfs]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>is_dh_kitchen_gfs</remote-alias>
+            <local-type>boolean</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_2BA9B7D71001439FBD5420EEC816EAE3]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>no_of_orders</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[no_of_orders]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>no_of_orders</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_2BA9B7D71001439FBD5420EEC816EAE3]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>gmv_lc</remote-name>
+            <remote-type>5</remote-type>
+            <local-name>[gmv_lc]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>gmv_lc</remote-alias>
+            <local-type>real</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_2BA9B7D71001439FBD5420EEC816EAE3]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>gmv_eur</remote-name>
+            <remote-type>5</remote-type>
+            <local-name>[gmv_eur]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>gmv_eur</remote-alias>
+            <local-type>real</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_2BA9B7D71001439FBD5420EEC816EAE3]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>vendor_name</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[vendor_name]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>vendor_name</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_2BA9B7D71001439FBD5420EEC816EAE3]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>main_cuisine</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[main_cuisine]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>main_cuisine</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_2BA9B7D71001439FBD5420EEC816EAE3]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>kitchen_location</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[kitchen_location]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>kitchen_location</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_2BA9B7D71001439FBD5420EEC816EAE3]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>facility_short_name</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[facility_short_name]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>facility_short_name</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_2BA9B7D71001439FBD5420EEC816EAE3]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>is_aaa_account</remote-name>
+            <remote-type>11</remote-type>
+            <local-name>[is_aaa_account]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>is_aaa_account</remote-alias>
+            <local-type>boolean</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_2BA9B7D71001439FBD5420EEC816EAE3]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>is_key_vip_account</remote-name>
+            <remote-type>11</remote-type>
+            <local-name>[is_key_vip_account]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>is_key_vip_account</remote-alias>
+            <local-type>boolean</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_2BA9B7D71001439FBD5420EEC816EAE3]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>is_regional_key_account</remote-name>
+            <remote-type>11</remote-type>
+            <local-name>[is_regional_key_account]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>is_regional_key_account</remote-alias>
+            <local-type>boolean</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_2BA9B7D71001439FBD5420EEC816EAE3]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>is_local_key_account</remote-name>
+            <remote-type>11</remote-type>
+            <local-name>[is_local_key_account]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>is_local_key_account</remote-alias>
+            <local-type>boolean</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_2BA9B7D71001439FBD5420EEC816EAE3]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>vendor_type</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[vendor_type]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>vendor_type</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_2BA9B7D71001439FBD5420EEC816EAE3]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+        </metadata-records>
+      </connection>
+      <aliases enabled='yes' />
+      <column caption='AOV (EUR)' datatype='real' name='[AOV (LC) (copy)_4062246881142849540]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='[Calculation_4062246881139789827]/[Calculation_4062246881139679233]' />
+      </column>
+      <column caption='AOV (LC)' datatype='real' name='[Calculation_3297620104153833472]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='SUM([gmv_lc])/SUM([no_of_orders])' />
+      </column>
+      <column caption='Orders' datatype='integer' name='[Calculation_4062246881139679233]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='SUM([no_of_orders])' />
+      </column>
+      <column caption='GMV (LC)' datatype='real' name='[Calculation_4062246881139740674]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='SUM([gmv_lc])' />
+      </column>
+      <column caption='GMV (EUR)' datatype='real' name='[Calculation_4062246881139789827]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='SUM([gmv_eur])' />
+      </column>
+      <column caption='R.No' datatype='integer' name='[Calculation_5073234637266178048]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='INDEX()'>
+          <table-calc ordering-type='Rows' />
+        </calculation>
+      </column>
+      <column caption='Kitchen Orders' datatype='integer' name='[Calculation_5073234637283872769]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='SUM(if [vendor_type] = &quot;Same Kitchen&quot; THEN [no_of_orders] END)' />
+      </column>
+      <column caption='Kitchen Orders Penetration %' datatype='real' default-format='p0.00%' name='[Calculation_5073234637284569090]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='[Calculation_5073234637283872769]/[Calculation_4062246881139679233]' />
+      </column>
+      <_.fcp.ObjectModelTableType.true...column caption='Custom SQL Query' datatype='table' name='[__tableau_internal_object_id__].[_2BA9B7D71001439FBD5420EEC816EAE3]' role='measure' type='quantitative' />
+      <column caption='is AAA?' datatype='boolean' name='[is_aaa_account]' role='dimension' type='nominal' />
+      <column datatype='boolean' name='[is_dh_kitchen_gfs]' role='dimension' type='nominal' />
+      <column caption='Is key VIP Account? (KPP)' datatype='boolean' name='[is_key_vip_account]' role='dimension' type='nominal' />
+      <column caption='is Local KA?' datatype='boolean' name='[is_local_key_account]' role='dimension' type='nominal' />
+      <column caption='Is RKA?' datatype='boolean' name='[is_regional_key_account]' role='dimension' type='nominal' />
+      <column caption='Kitchen Name' datatype='string' name='[kitchen_location]' role='dimension' type='nominal' />
+      <column caption='Cuisine' datatype='string' name='[main_cuisine]' role='dimension' type='nominal' />
+      <column aggregation='Sum' caption='Vendor ID' datatype='integer' name='[vendor_id]' role='dimension' type='ordinal' />
+      <column caption='Vendor Name' datatype='string' name='[vendor_name]' role='dimension' type='nominal' />
+      <column caption='Vendor Type' datatype='string' name='[vendor_type]' role='dimension' type='nominal' />
+      <column-instance column='[is_dh_kitchen_gfs]' derivation='None' name='[none:is_dh_kitchen_gfs:nk]' pivot='key' type='nominal' />
+      <column-instance column='[vendor_type]' derivation='None' name='[none:vendor_type:nk]' pivot='key' type='nominal' />
+      <extract _.fcp.ObjectModelExtractV2.true...object-id='' _.fcp.VConnDownstreamExtractsWithWarnings.true...user-specific='false' count='-1' enabled='true' units='records'>
+        <connection class='hyper' dbname='extract/05/cc/{BDFD24C5-5788-442B-9051-41C99C64D256}/federated_05bw1ub0dtm3si18io18f0.hyper' default-settings='yes' extract-engine='true' schema='Extract' tablename='Extract' update-time='12/16/2024 01:59:32 PM'>
+          <_.fcp.ObjectModelEncapsulateLegacy.false...relation name='Extract' table='[Extract].[Extract]' type='table' />
+          <_.fcp.ObjectModelEncapsulateLegacy.true...relation name='Extract' table='[Extract].[Extract]' type='table' />
+          <refresh>
+            <refresh-event add-from-file-path='Affordability Index' increment-value='%null%' refresh-type='create' rows-inserted='81923' timestamp-start='2024-12-16 13:56:42.004' />
+          </refresh>
+          <metadata-records>
+            <metadata-record class='column'>
+              <remote-name>month</remote-name>
+              <remote-type>133</remote-type>
+              <local-name>[month]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>month</remote-alias>
+              <ordinal>0</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>date</local-type>
+              <aggregation>Year</aggregation>
+              <approx-count>1</approx-count>
+              <contains-null>true</contains-null>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>vendor_id</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[vendor_id]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>vendor_id</remote-alias>
+              <ordinal>1</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>21740</approx-count>
+              <contains-null>true</contains-null>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>kitchen_name</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[kitchen_name]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>kitchen_name</remote-alias>
+              <ordinal>2</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>18</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>is_dh_kitchen_gfs</remote-name>
+              <remote-type>11</remote-type>
+              <local-name>[is_dh_kitchen_gfs]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>is_dh_kitchen_gfs</remote-alias>
+              <ordinal>3</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>boolean</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>2</approx-count>
+              <contains-null>true</contains-null>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>no_of_orders</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[no_of_orders]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>no_of_orders</remote-alias>
+              <ordinal>4</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>2762</approx-count>
+              <contains-null>true</contains-null>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>gmv_lc</remote-name>
+              <remote-type>5</remote-type>
+              <local-name>[gmv_lc]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>gmv_lc</remote-alias>
+              <ordinal>5</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>real</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>56539</approx-count>
+              <contains-null>true</contains-null>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>gmv_eur</remote-name>
+              <remote-type>5</remote-type>
+              <local-name>[gmv_eur]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>gmv_eur</remote-alias>
+              <ordinal>6</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>real</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>69236</approx-count>
+              <contains-null>true</contains-null>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>vendor_name</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[vendor_name]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>vendor_name</remote-alias>
+              <ordinal>7</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>21740</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>main_cuisine</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[main_cuisine]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>main_cuisine</remote-alias>
+              <ordinal>8</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>203</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>kitchen_location</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[kitchen_location]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>kitchen_location</remote-alias>
+              <ordinal>9</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>18</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>facility_short_name</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[facility_short_name]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>facility_short_name</remote-alias>
+              <ordinal>10</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>27</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>is_aaa_account</remote-name>
+              <remote-type>11</remote-type>
+              <local-name>[is_aaa_account]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>is_aaa_account</remote-alias>
+              <ordinal>11</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>boolean</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>2</approx-count>
+              <contains-null>true</contains-null>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>is_key_vip_account</remote-name>
+              <remote-type>11</remote-type>
+              <local-name>[is_key_vip_account]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>is_key_vip_account</remote-alias>
+              <ordinal>12</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>boolean</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>2</approx-count>
+              <contains-null>true</contains-null>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>is_regional_key_account</remote-name>
+              <remote-type>11</remote-type>
+              <local-name>[is_regional_key_account]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>is_regional_key_account</remote-alias>
+              <ordinal>13</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>boolean</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>2</approx-count>
+              <contains-null>true</contains-null>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>is_local_key_account</remote-name>
+              <remote-type>11</remote-type>
+              <local-name>[is_local_key_account]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>is_local_key_account</remote-alias>
+              <ordinal>14</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>boolean</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>2</approx-count>
+              <contains-null>true</contains-null>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>vendor_type</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[vendor_type]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>vendor_type</remote-alias>
+              <ordinal>15</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>3</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+            </metadata-record>
+          </metadata-records>
+        </connection>
+      </extract>
+      <layout _.fcp.SchemaViewerObjectModel.false...dim-percentage='0.5' _.fcp.SchemaViewerObjectModel.false...measure-percentage='0.4' dim-ordering='alphabetic' measure-ordering='alphabetic' show-structure='true' />
+      <style>
+        <style-rule element='mark'>
+          <encoding attr='color' field='[none:is_dh_kitchen_gfs:nk]' type='palette'>
+            <map to='#bab0ac'>
+              <bucket>false</bucket>
+            </map>
+            <map to='#e15759'>
+              <bucket>true</bucket>
+            </map>
+          </encoding>
+          <encoding attr='color' field='[none:vendor_type:nk]' type='palette'>
+            <map to='#4e79a7'>
+              <bucket>&quot;Non Kitchen&quot;</bucket>
+            </map>
+            <map to='#e15759'>
+              <bucket>&quot;Same Kitchen&quot;</bucket>
+            </map>
+            <map to='#f28e2b'>
+              <bucket>&quot;Other Kitchen&quot;</bucket>
+            </map>
+          </encoding>
+        </style-rule>
+      </style>
+      <semantic-values>
+        <semantic-value key='[Country].[Name]' value='&quot;United States&quot;' />
+      </semantic-values>
+      <date-options start-of-week='saturday' />
+      <_.fcp.ObjectModelEncapsulateLegacy.true...object-graph>
+        <objects>
+          <object caption='Custom SQL Query' id='_2BA9B7D71001439FBD5420EEC816EAE3'>
+            <properties context=''>
+              <relation connection='bigquery.0ig48sx0a2x5hr10dhltr1lzcdo3' name='Custom SQL Query' type='text'>WITH
+    calculation 
+    as (
+        SELECT
+        DATE_TRUNC(order_date,MONTH) as month,
+        v.facility_short_name as kitchen_name,
+        v.vendor_id,
+        v.main_cuisine,
+        k.delivery_area_id,
+        SUM(successful_orders) as successful_orders,
+        SUM(s_orders_gmv_amount) as gmv_lc,
+        SUM(s_orders_gmv_amount_eur) as gmv_eur,
+        SUM(s_basket_amount_total) as gbv_lc,
+        SUM(s_basket_amount_total_eur) as gbv_eur
+        FROM `gfs-data-reporting.gfs_tlb_prod.talabat_gfs_order_kpis_reporting` k
+        LEFT JOIN `gfs-data-reporting.gfs_tlb_prod.talabat_dim_vendor_info` v on v.vendor_id = k.vendor_id
+        LEFT JOIN `tlb-data-prod.data_platform.dim_location_info` dl on dl.area_id = k.delivery_area_id
+        WHERE DATE_TRUNC(order_date,MONTH) = &quot;2024-09-01&quot;
+        AND is_dh_kitchen_gfs
+        AND v.country_code = &quot;AE&quot;
+        GROUP BY 1,2,3,4,5
+        HAVING successful_orders &gt;&gt;= 20),
+
+        filtered_areas AS 
+        (
+            SELECT
+            DISTINCT kitchen_name,delivery_area_id 
+            FROM calculation
+            -- WHERE kitchen_name IN (&quot;DSO&quot;,&quot;Mirdiff&quot;,&quot;Rashidiya&quot;,&quot;Business Bay SOL&quot;)
+        ),
+
+        all_data AS 
+        (
+            SELECT
+            DATE_TRUNC(o.order_date,month) as month,
+            o.vendor_id,
+            fa.kitchen_name,
+            COALESCE(v.is_dh_kitchen_gfs,FALSE) as is_dh_kitchen_gfs,
+            -- o.delivery_area_id,
+            COUNT(DISTINCT o.order_id) as no_of_orders,
+            SUM(o.gmv_amount_lc) as gmv_lc,
+            SUM(o.gmv_amount_eur) as gmv_eur,
+            -- COUNT(DISTINCT oi.item_id) as no_of_unique_items, 
+            -- SUM(oi.ordered_quantity) as no_of_quantity
+            FROM `tlb-data-prod.data_platform.fct_order_info` o
+            --  LEFT JOIN `tlb-data-prod.data_platform.fct_order_item` oi on oi.order_id = o.order_id
+            LEFT JOIN `gfs-data-reporting.gfs_tlb_prod.talabat_dim_vendor_info` v on v.vendor_id = o.vendor_id
+            LEFT JOIN filtered_areas fa on fa.delivery_area_id = o.delivery_area_id
+            WHERE DATE_TRUNC(o.order_date,month) = &quot;2024-11-01&quot;
+            AND o.country_Code = &quot;AE&quot;
+            AND o.is_successful
+            AND NOT o.is_test
+            AND v.vertical = &quot;food&quot;
+            AND o.delivery_arrangement IN (&quot;TMP&quot;,&quot;TGO&quot;)
+            AND o.delivery_area_id IN (SELECT DISTINCT delivery_area_id FROM filtered_areas)
+            AND v.main_cuisine IN (SELECT DISTINCT main_cuisine FROM filtered_areas)
+            GROUP BY 1,2,3,4
+        )
+
+        SELECT
+        a.*,
+        v.vendor_name,
+        v.main_cuisine,
+        a.kitchen_name as kitchen_location,
+        v.facility_short_name as facility_short_name,
+        dc.is_aaa_account,
+        dc.is_key_vip_account,
+        dc.is_regional_key_account,
+        dc.is_local_key_account,
+        CASE
+        WHEN a.kitchen_name = v.facility_short_name THEN &quot;Same Kitchen&quot;
+        WHEN v.facility_short_name IS NOT NULL THEN &quot;Other Kitchen&quot;
+        ELSE &quot;Non Kitchen&quot; END as vendor_type
+        FROM all_data a
+        LEFT JOIN `gfs-data-reporting.gfs_tlb_base_prod.talabat_dim_vendor_info` v on v.vendor_id = a.vendor_id
+        LEFT JOIN `tlb-data-prod.data_platform.dim_chain` dc on dc.chain_id = v.chain_id</relation>
+            </properties>
+            <properties context='extract'>
+              <relation name='Extract' table='[Extract].[Extract]' type='table' />
+            </properties>
+          </object>
+        </objects>
+      </_.fcp.ObjectModelEncapsulateLegacy.true...object-graph>
+    </datasource>
+  </datasources>
+  <worksheets>
+    <worksheet name='AOV x Orders'>
+      <layout-options>
+        <title>
+          <formatted-text>
+            <run>&lt;Sheet Name&gt;&#10;</run>
+            <run fontsize='10'>Æ </run>
+            <run>Æ&#10;</run>
+            <run fontsize='10'>Y axis - AOV | X axis - Orders</run>
+            <run>Æ&#10;</run>
+            <run fontsize='10'>Size of the circle represents Avg. Order Size, which is no of items per order. </run>
+            <run>Æ&#10;</run>
+            <run fontsize='10'>Color of the circle represents Non kitchen vendors, DH Vendors from other kitchen and DH vendors from same kitchen.</run>
+            <run>Æ&#10;</run>
+          </formatted-text>
+        </title>
+      </layout-options>
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='Affordability Index' name='federated.05bw1ub0dtm3si18io18f0hqjq6l' />
+          </datasources>
+          <datasource-dependencies datasource='federated.05bw1ub0dtm3si18io18f0hqjq6l'>
+            <column caption='AOV (LC)' datatype='real' name='[Calculation_3297620104153833472]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='SUM([gmv_lc])/SUM([no_of_orders])' />
+            </column>
+            <column caption='Orders' datatype='integer' name='[Calculation_4062246881139679233]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='SUM([no_of_orders])' />
+            </column>
+            <column-instance column='[vendor_name]' derivation='Attribute' name='[attr:vendor_name:nk]' pivot='key' type='nominal' />
+            <column datatype='real' name='[gmv_lc]' role='measure' type='quantitative' />
+            <column caption='is AAA?' datatype='boolean' name='[is_aaa_account]' role='dimension' type='nominal' />
+            <column caption='Is key VIP Account? (KPP)' datatype='boolean' name='[is_key_vip_account]' role='dimension' type='nominal' />
+            <column caption='is Local KA?' datatype='boolean' name='[is_local_key_account]' role='dimension' type='nominal' />
+            <column caption='Is RKA?' datatype='boolean' name='[is_regional_key_account]' role='dimension' type='nominal' />
+            <column caption='Kitchen Name' datatype='string' name='[kitchen_location]' role='dimension' type='nominal' />
+            <column caption='Cuisine' datatype='string' name='[main_cuisine]' role='dimension' type='nominal' />
+            <column datatype='integer' name='[no_of_orders]' role='measure' type='quantitative' />
+            <column-instance column='[is_aaa_account]' derivation='None' name='[none:is_aaa_account:nk]' pivot='key' type='nominal' />
+            <column-instance column='[is_key_vip_account]' derivation='None' name='[none:is_key_vip_account:nk]' pivot='key' type='nominal' />
+            <column-instance column='[is_local_key_account]' derivation='None' name='[none:is_local_key_account:nk]' pivot='key' type='nominal' />
+            <column-instance column='[is_regional_key_account]' derivation='None' name='[none:is_regional_key_account:nk]' pivot='key' type='nominal' />
+            <column-instance column='[kitchen_location]' derivation='None' name='[none:kitchen_location:nk]' pivot='key' type='nominal' />
+            <column-instance column='[main_cuisine]' derivation='None' name='[none:main_cuisine:nk]' pivot='key' type='nominal' />
+            <column-instance column='[vendor_id]' derivation='None' name='[none:vendor_id:ok]' pivot='key' type='ordinal' />
+            <column-instance column='[vendor_type]' derivation='None' name='[none:vendor_type:nk]' pivot='key' type='nominal' />
+            <column-instance column='[gmv_lc]' derivation='Sum' name='[sum:gmv_lc:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[no_of_orders]' derivation='Sum' name='[sum:no_of_orders:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[Calculation_3297620104153833472]' derivation='User' name='[usr:Calculation_3297620104153833472:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[Calculation_4062246881139679233]' derivation='User' name='[usr:Calculation_4062246881139679233:qk]' pivot='key' type='quantitative' />
+            <column aggregation='Sum' caption='Vendor ID' datatype='integer' name='[vendor_id]' role='dimension' type='ordinal' />
+            <column caption='Vendor Name' datatype='string' name='[vendor_name]' role='dimension' type='nominal' />
+            <column caption='Vendor Type' datatype='string' name='[vendor_type]' role='dimension' type='nominal' />
+          </datasource-dependencies>
+          <filter class='categorical' column='[federated.05bw1ub0dtm3si18io18f0hqjq6l].[none:is_aaa_account:nk]' filter-group='7'>
+            <groupfilter function='level-members' level='[none:is_aaa_account:nk]' user:ui-enumeration='all' user:ui-marker='enumerate' />
+          </filter>
+          <filter class='categorical' column='[federated.05bw1ub0dtm3si18io18f0hqjq6l].[none:is_key_vip_account:nk]' filter-group='4'>
+            <groupfilter function='level-members' level='[none:is_key_vip_account:nk]' />
+          </filter>
+          <filter class='categorical' column='[federated.05bw1ub0dtm3si18io18f0hqjq6l].[none:is_local_key_account:nk]' filter-group='8'>
+            <groupfilter function='level-members' level='[none:is_local_key_account:nk]' />
+          </filter>
+          <filter class='categorical' column='[federated.05bw1ub0dtm3si18io18f0hqjq6l].[none:is_regional_key_account:nk]' filter-group='9'>
+            <groupfilter function='level-members' level='[none:is_regional_key_account:nk]' />
+          </filter>
+          <filter class='categorical' column='[federated.05bw1ub0dtm3si18io18f0hqjq6l].[none:kitchen_location:nk]' filter-group='6'>
+            <groupfilter function='member' level='[none:kitchen_location:nk]' member='&quot;Arjan&quot;' user:ui-domain='database' user:ui-enumeration='inclusive' user:ui-marker='enumerate' />
+          </filter>
+          <filter class='categorical' column='[federated.05bw1ub0dtm3si18io18f0hqjq6l].[none:main_cuisine:nk]' filter-group='5'>
+            <groupfilter function='member' level='[none:main_cuisine:nk]' member='&quot;american&quot;' user:ui-domain='relevant' user:ui-enumeration='inclusive' user:ui-marker='enumerate' />
+          </filter>
+          <filter class='quantitative' column='[federated.05bw1ub0dtm3si18io18f0hqjq6l].[sum:no_of_orders:qk]' filter-group='3' included-values='in-range-or-null'>
+            <min>30</min>
+            <max>4098</max>
+          </filter>
+          <slices>
+            <column>[federated.05bw1ub0dtm3si18io18f0hqjq6l].[none:main_cuisine:nk]</column>
+            <column>[federated.05bw1ub0dtm3si18io18f0hqjq6l].[none:kitchen_location:nk]</column>
+            <column>[federated.05bw1ub0dtm3si18io18f0hqjq6l].[sum:no_of_orders:qk]</column>
+            <column>[federated.05bw1ub0dtm3si18io18f0hqjq6l].[none:is_key_vip_account:nk]</column>
+            <column>[federated.05bw1ub0dtm3si18io18f0hqjq6l].[none:is_aaa_account:nk]</column>
+            <column>[federated.05bw1ub0dtm3si18io18f0hqjq6l].[none:is_local_key_account:nk]</column>
+            <column>[federated.05bw1ub0dtm3si18io18f0hqjq6l].[none:is_regional_key_account:nk]</column>
+          </slices>
+          <aggregation value='true' />
+        </view>
+        <style>
+          <style-rule element='refline'>
+            <format attr='fill-above' id='refline0' value='#00000000' />
+            <format attr='fill-below' id='refline0' value='#00000000' />
+            <format attr='fill-above' id='refline1' value='#00000000' />
+            <format attr='fill-below' id='refline1' value='#00000000' />
+            <format attr='fill-above' id='refline2' value='#00000000' />
+            <format attr='fill-below' id='refline2' value='#00000000' />
+          </style-rule>
+          <style-rule element='title'>
+            <format attr='background-color' value='#e9f0f1' />
+          </style-rule>
+          <style-rule element='legend-title-text'>
+            <format attr='color' field='[federated.05bw1ub0dtm3si18io18f0hqjq6l].[none:vendor_type:nk]' value='Vendor Type'>
+              <formatted-text>
+                <run>Vendor Type</run>
+              </formatted-text>
+            </format>
+          </style-rule>
+          <style-rule element='quick-filter'>
+            <format attr='title' field='[federated.05bw1ub0dtm3si18io18f0hqjq6l].[sum:no_of_orders:qk]' value='No Of Orders' />
+            <format attr='title' field='[federated.05bw1ub0dtm3si18io18f0hqjq6l].[none:kitchen_location:nk]' value='Kitchen'>
+              <formatted-text>
+                <run>Kitchen</run>
+              </formatted-text>
+            </format>
+            <format attr='title' field='[federated.05bw1ub0dtm3si18io18f0hqjq6l].[none:main_cuisine:nk]' value='Cuisine'>
+              <formatted-text>
+                <run>Cuisine</run>
+              </formatted-text>
+            </format>
+          </style-rule>
+        </style>
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Automatic' />
+            <mark-sizing mark-sizing-setting='marks-scaling-off' />
+            <encodings>
+              <color column='[federated.05bw1ub0dtm3si18io18f0hqjq6l].[none:vendor_type:nk]' />
+              <size column='[federated.05bw1ub0dtm3si18io18f0hqjq6l].[sum:no_of_orders:qk]' />
+              <lod column='[federated.05bw1ub0dtm3si18io18f0hqjq6l].[none:vendor_id:ok]' />
+              <tooltip column='[federated.05bw1ub0dtm3si18io18f0hqjq6l].[attr:vendor_name:nk]' />
+              <tooltip column='[federated.05bw1ub0dtm3si18io18f0hqjq6l].[sum:no_of_orders:qk]' />
+              <tooltip column='[federated.05bw1ub0dtm3si18io18f0hqjq6l].[sum:gmv_lc:qk]' />
+            </encodings>
+            <reference-line axis-column='[federated.05bw1ub0dtm3si18io18f0hqjq6l].[usr:Calculation_3297620104153833472:qk]' enable-instant-analytics='true' formula='median' id='refline0' label='&lt;Computation&gt; - &lt;Value&gt;' label-type='custom' probability='95' scope='per-pane' value-column='[federated.05bw1ub0dtm3si18io18f0hqjq6l].[usr:Calculation_3297620104153833472:qk]' z-order='1' />
+            <reference-line axis-column='[federated.05bw1ub0dtm3si18io18f0hqjq6l].[usr:Calculation_4062246881139679233:qk]' enable-instant-analytics='true' formula='median' id='refline2' label='&lt;Computation&gt; &lt;Value&gt;' label-type='custom' probability='95' scope='per-pane' value-column='[federated.05bw1ub0dtm3si18io18f0hqjq6l].[usr:Calculation_4062246881139679233:qk]' z-order='2' />
+            <style>
+              <style-rule element='mark'>
+                <format attr='shape' value=':filled/circle' />
+                <format attr='size' value='1' />
+              </style-rule>
+            </style>
+          </pane>
+        </panes>
+        <rows>[federated.05bw1ub0dtm3si18io18f0hqjq6l].[usr:Calculation_3297620104153833472:qk]</rows>
+        <cols>[federated.05bw1ub0dtm3si18io18f0hqjq6l].[usr:Calculation_4062246881139679233:qk]</cols>
+      </table>
+      <simple-id uuid='{54FAE489-255B-4043-A103-443EA59DD98D}' />
+    </worksheet>
+    <worksheet name='AOV x Orders Compare View 1'>
+      <layout-options>
+        <title>
+          <formatted-text>
+            <run>&lt;Sheet Name&gt;&#10;</run>
+            <run fontsize='10'>Æ </run>
+            <run>Æ&#10;</run>
+            <run fontsize='10'>Y axis - AOV | X axis - Orders</run>
+            <run>Æ&#10;</run>
+            <run fontsize='10'>Size of the circle represents Avg. Order Size, which is no of items per order. </run>
+            <run>Æ&#10;</run>
+            <run fontsize='10'>Color of the circle represents Non kitchen vendors, DH Vendors from other kitchen and DH vendors from same kitchen.</run>
+            <run>Æ&#10;</run>
+            <run fontcolor='#e6e6e6' fontsize='10'>-</run>
+            <run>Æ&#10;</run>
+            <run fontcolor='#e6e6e6' fontsize='10'>-</run>
+            <run>Æ&#10;</run>
+            <run fontcolor='#e6e6e6' fontsize='10'>-</run>
+          </formatted-text>
+        </title>
+      </layout-options>
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='Affordability Index' name='federated.05bw1ub0dtm3si18io18f0hqjq6l' />
+          </datasources>
+          <datasource-dependencies datasource='federated.05bw1ub0dtm3si18io18f0hqjq6l'>
+            <column caption='AOV (LC)' datatype='real' name='[Calculation_3297620104153833472]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='SUM([gmv_lc])/SUM([no_of_orders])' />
+            </column>
+            <column caption='Orders' datatype='integer' name='[Calculation_4062246881139679233]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='SUM([no_of_orders])' />
+            </column>
+            <column-instance column='[vendor_name]' derivation='Attribute' name='[attr:vendor_name:nk]' pivot='key' type='nominal' />
+            <column datatype='real' name='[gmv_lc]' role='measure' type='quantitative' />
+            <column caption='Kitchen Name' datatype='string' name='[kitchen_location]' role='dimension' type='nominal' />
+            <column caption='Cuisine' datatype='string' name='[main_cuisine]' role='dimension' type='nominal' />
+            <column datatype='integer' name='[no_of_orders]' role='measure' type='quantitative' />
+            <column-instance column='[kitchen_location]' derivation='None' name='[none:kitchen_location:nk]' pivot='key' type='nominal' />
+            <column-instance column='[main_cuisine]' derivation='None' name='[none:main_cuisine:nk]' pivot='key' type='nominal' />
+            <column-instance column='[vendor_id]' derivation='None' name='[none:vendor_id:ok]' pivot='key' type='ordinal' />
+            <column-instance column='[vendor_type]' derivation='None' name='[none:vendor_type:nk]' pivot='key' type='nominal' />
+            <column-instance column='[gmv_lc]' derivation='Sum' name='[sum:gmv_lc:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[no_of_orders]' derivation='Sum' name='[sum:no_of_orders:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[Calculation_3297620104153833472]' derivation='User' name='[usr:Calculation_3297620104153833472:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[Calculation_4062246881139679233]' derivation='User' name='[usr:Calculation_4062246881139679233:qk]' pivot='key' type='quantitative' />
+            <column aggregation='Sum' caption='Vendor ID' datatype='integer' name='[vendor_id]' role='dimension' type='ordinal' />
+            <column caption='Vendor Name' datatype='string' name='[vendor_name]' role='dimension' type='nominal' />
+            <column caption='Vendor Type' datatype='string' name='[vendor_type]' role='dimension' type='nominal' />
+          </datasource-dependencies>
+          <filter class='categorical' column='[federated.05bw1ub0dtm3si18io18f0hqjq6l].[none:kitchen_location:nk]'>
+            <groupfilter function='member' level='[none:kitchen_location:nk]' member='&quot;Ajman&quot;' user:ui-domain='database' user:ui-enumeration='inclusive' user:ui-marker='enumerate' />
+          </filter>
+          <filter class='categorical' column='[federated.05bw1ub0dtm3si18io18f0hqjq6l].[none:main_cuisine:nk]'>
+            <groupfilter function='union' user:ui-domain='relevant' user:ui-enumeration='inclusive' user:ui-marker='enumerate'>
+              <groupfilter function='member' level='[none:main_cuisine:nk]' member='&quot;indian&quot;' />
+              <groupfilter function='member' level='[none:main_cuisine:nk]' member='&quot;north indian&quot;' />
+              <groupfilter function='member' level='[none:main_cuisine:nk]' member='&quot;south indian&quot;' />
+            </groupfilter>
+          </filter>
+          <filter class='quantitative' column='[federated.05bw1ub0dtm3si18io18f0hqjq6l].[sum:no_of_orders:qk]' included-values='in-range-or-null'>
+            <min>30</min>
+            <max>2544</max>
+          </filter>
+          <slices>
+            <column>[federated.05bw1ub0dtm3si18io18f0hqjq6l].[none:main_cuisine:nk]</column>
+            <column>[federated.05bw1ub0dtm3si18io18f0hqjq6l].[none:kitchen_location:nk]</column>
+            <column>[federated.05bw1ub0dtm3si18io18f0hqjq6l].[sum:no_of_orders:qk]</column>
+          </slices>
+          <aggregation value='true' />
+        </view>
+        <style>
+          <style-rule element='header'>
+            <format attr='background-color' field='[federated.05bw1ub0dtm3si18io18f0hqjq6l].[usr:Calculation_4062246881139679233:qk]' value='#faf5f4' />
+            <format attr='background-color' field='[federated.05bw1ub0dtm3si18io18f0hqjq6l].[usr:Calculation_3297620104153833472:qk]' value='#faf5f4' />
+          </style-rule>
+          <style-rule element='refline'>
+            <format attr='fill-above' id='refline0' value='#00000000' />
+            <format attr='fill-below' id='refline0' value='#00000000' />
+            <format attr='fill-above' id='refline1' value='#00000000' />
+            <format attr='fill-below' id='refline1' value='#00000000' />
+            <format attr='fill-above' id='refline2' value='#00000000' />
+            <format attr='fill-below' id='refline2' value='#00000000' />
+          </style-rule>
+          <style-rule element='title'>
+            <format attr='background-color' value='#e9f0f1' />
+          </style-rule>
+          <style-rule element='legend-title-text'>
+            <format attr='color' field='[federated.05bw1ub0dtm3si18io18f0hqjq6l].[none:vendor_type:nk]' value='Vendor Type' />
+          </style-rule>
+          <style-rule element='quick-filter'>
+            <format attr='title' field='[federated.05bw1ub0dtm3si18io18f0hqjq6l].[sum:no_of_orders:qk]' value='No Of Orders' />
+            <format attr='title' field='[federated.05bw1ub0dtm3si18io18f0hqjq6l].[none:kitchen_location:nk]' value='Kitchen' />
+            <format attr='title' field='[federated.05bw1ub0dtm3si18io18f0hqjq6l].[none:main_cuisine:nk]' value='Cuisine' />
+          </style-rule>
+        </style>
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Automatic' />
+            <mark-sizing mark-sizing-setting='marks-scaling-off' />
+            <encodings>
+              <color column='[federated.05bw1ub0dtm3si18io18f0hqjq6l].[none:vendor_type:nk]' />
+              <size column='[federated.05bw1ub0dtm3si18io18f0hqjq6l].[sum:no_of_orders:qk]' />
+              <lod column='[federated.05bw1ub0dtm3si18io18f0hqjq6l].[none:vendor_id:ok]' />
+              <tooltip column='[federated.05bw1ub0dtm3si18io18f0hqjq6l].[attr:vendor_name:nk]' />
+              <tooltip column='[federated.05bw1ub0dtm3si18io18f0hqjq6l].[sum:no_of_orders:qk]' />
+              <tooltip column='[federated.05bw1ub0dtm3si18io18f0hqjq6l].[sum:gmv_lc:qk]' />
+            </encodings>
+            <reference-line axis-column='[federated.05bw1ub0dtm3si18io18f0hqjq6l].[usr:Calculation_3297620104153833472:qk]' enable-instant-analytics='true' formula='median' id='refline0' label='&lt;Computation&gt; - &lt;Value&gt;' label-type='custom' probability='95' scope='per-pane' value-column='[federated.05bw1ub0dtm3si18io18f0hqjq6l].[usr:Calculation_3297620104153833472:qk]' z-order='1' />
+            <reference-line axis-column='[federated.05bw1ub0dtm3si18io18f0hqjq6l].[usr:Calculation_4062246881139679233:qk]' enable-instant-analytics='true' formula='median' id='refline2' label='&lt;Computation&gt; &lt;Value&gt;' label-type='custom' probability='95' scope='per-pane' value-column='[federated.05bw1ub0dtm3si18io18f0hqjq6l].[usr:Calculation_4062246881139679233:qk]' z-order='2' />
+            <style>
+              <style-rule element='mark'>
+                <format attr='shape' value=':filled/circle' />
+                <format attr='size' value='1' />
+              </style-rule>
+            </style>
+          </pane>
+        </panes>
+        <rows>[federated.05bw1ub0dtm3si18io18f0hqjq6l].[usr:Calculation_3297620104153833472:qk]</rows>
+        <cols>[federated.05bw1ub0dtm3si18io18f0hqjq6l].[usr:Calculation_4062246881139679233:qk]</cols>
+      </table>
+      <simple-id uuid='{8B63E53C-5C5E-4B04-8CD9-C4B12B273219}' />
+    </worksheet>
+    <worksheet name='AOV x Orders Compare View 2'>
+      <layout-options>
+        <title>
+          <formatted-text>
+            <run>&lt;Sheet Name&gt;&#10;</run>
+            <run fontsize='10'>Æ </run>
+            <run>Æ&#10;</run>
+            <run fontsize='10'>Y axis - AOV | X axis - Orders</run>
+            <run>Æ&#10;</run>
+            <run fontsize='10'>Size of the circle represents Avg. Order Size, which is no of items per order. </run>
+            <run>Æ&#10;</run>
+            <run fontsize='10'>Color of the circle represents Non kitchen vendors, DH Vendors from other kitchen and DH vendors from same kitchen.</run>
+            <run>Æ&#10;</run>
+            <run fontcolor='#e6e6e6' fontsize='10'>-</run>
+            <run>Æ&#10;</run>
+            <run fontcolor='#e6e6e6' fontsize='10'>-</run>
+            <run>Æ&#10;</run>
+            <run fontcolor='#e6e6e6' fontsize='10'>-</run>
+          </formatted-text>
+        </title>
+      </layout-options>
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='Affordability Index' name='federated.05bw1ub0dtm3si18io18f0hqjq6l' />
+          </datasources>
+          <datasource-dependencies datasource='federated.05bw1ub0dtm3si18io18f0hqjq6l'>
+            <column caption='AOV (LC)' datatype='real' name='[Calculation_3297620104153833472]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='SUM([gmv_lc])/SUM([no_of_orders])' />
+            </column>
+            <column caption='Orders' datatype='integer' name='[Calculation_4062246881139679233]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='SUM([no_of_orders])' />
+            </column>
+            <column-instance column='[vendor_name]' derivation='Attribute' name='[attr:vendor_name:nk]' pivot='key' type='nominal' />
+            <column datatype='real' name='[gmv_lc]' role='measure' type='quantitative' />
+            <column caption='Kitchen Name' datatype='string' name='[kitchen_location]' role='dimension' type='nominal' />
+            <column caption='Cuisine' datatype='string' name='[main_cuisine]' role='dimension' type='nominal' />
+            <column datatype='integer' name='[no_of_orders]' role='measure' type='quantitative' />
+            <column-instance column='[kitchen_location]' derivation='None' name='[none:kitchen_location:nk]' pivot='key' type='nominal' />
+            <column-instance column='[main_cuisine]' derivation='None' name='[none:main_cuisine:nk]' pivot='key' type='nominal' />
+            <column-instance column='[vendor_id]' derivation='None' name='[none:vendor_id:ok]' pivot='key' type='ordinal' />
+            <column-instance column='[vendor_type]' derivation='None' name='[none:vendor_type:nk]' pivot='key' type='nominal' />
+            <column-instance column='[gmv_lc]' derivation='Sum' name='[sum:gmv_lc:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[no_of_orders]' derivation='Sum' name='[sum:no_of_orders:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[Calculation_3297620104153833472]' derivation='User' name='[usr:Calculation_3297620104153833472:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[Calculation_4062246881139679233]' derivation='User' name='[usr:Calculation_4062246881139679233:qk]' pivot='key' type='quantitative' />
+            <column aggregation='Sum' caption='Vendor ID' datatype='integer' name='[vendor_id]' role='dimension' type='ordinal' />
+            <column caption='Vendor Name' datatype='string' name='[vendor_name]' role='dimension' type='nominal' />
+            <column caption='Vendor Type' datatype='string' name='[vendor_type]' role='dimension' type='nominal' />
+          </datasource-dependencies>
+          <filter class='categorical' column='[federated.05bw1ub0dtm3si18io18f0hqjq6l].[none:kitchen_location:nk]'>
+            <groupfilter function='member' level='[none:kitchen_location:nk]' member='&quot;Ajman&quot;' user:ui-domain='database' user:ui-enumeration='inclusive' user:ui-marker='enumerate' />
+          </filter>
+          <filter class='categorical' column='[federated.05bw1ub0dtm3si18io18f0hqjq6l].[none:main_cuisine:nk]'>
+            <groupfilter function='member' level='[none:main_cuisine:nk]' member='&quot;asian&quot;' user:ui-domain='relevant' user:ui-enumeration='inclusive' user:ui-marker='enumerate' />
+          </filter>
+          <filter class='quantitative' column='[federated.05bw1ub0dtm3si18io18f0hqjq6l].[sum:no_of_orders:qk]' included-values='in-range-or-null'>
+            <min>30</min>
+            <max>2544</max>
+          </filter>
+          <slices>
+            <column>[federated.05bw1ub0dtm3si18io18f0hqjq6l].[none:main_cuisine:nk]</column>
+            <column>[federated.05bw1ub0dtm3si18io18f0hqjq6l].[none:kitchen_location:nk]</column>
+            <column>[federated.05bw1ub0dtm3si18io18f0hqjq6l].[sum:no_of_orders:qk]</column>
+          </slices>
+          <aggregation value='true' />
+        </view>
+        <style>
+          <style-rule element='refline'>
+            <format attr='fill-above' id='refline0' value='#00000000' />
+            <format attr='fill-below' id='refline0' value='#00000000' />
+            <format attr='fill-above' id='refline1' value='#00000000' />
+            <format attr='fill-below' id='refline1' value='#00000000' />
+            <format attr='fill-above' id='refline2' value='#00000000' />
+            <format attr='fill-below' id='refline2' value='#00000000' />
+          </style-rule>
+          <style-rule element='title'>
+            <format attr='background-color' value='#e9f0f1' />
+          </style-rule>
+          <style-rule element='legend-title-text'>
+            <format attr='color' field='[federated.05bw1ub0dtm3si18io18f0hqjq6l].[none:vendor_type:nk]' value='Vendor Type'>
+              <formatted-text>
+                <run>Vendor Type</run>
+              </formatted-text>
+            </format>
+          </style-rule>
+          <style-rule element='quick-filter'>
+            <format attr='title' field='[federated.05bw1ub0dtm3si18io18f0hqjq6l].[sum:no_of_orders:qk]' value='No Of Orders' />
+            <format attr='title' field='[federated.05bw1ub0dtm3si18io18f0hqjq6l].[none:kitchen_location:nk]' value='Kitchen'>
+              <formatted-text>
+                <run>Kitchen</run>
+              </formatted-text>
+            </format>
+            <format attr='title' field='[federated.05bw1ub0dtm3si18io18f0hqjq6l].[none:main_cuisine:nk]' value='Cuisine'>
+              <formatted-text>
+                <run>Cuisine</run>
+              </formatted-text>
+            </format>
+          </style-rule>
+        </style>
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Automatic' />
+            <mark-sizing mark-sizing-setting='marks-scaling-off' />
+            <encodings>
+              <color column='[federated.05bw1ub0dtm3si18io18f0hqjq6l].[none:vendor_type:nk]' />
+              <size column='[federated.05bw1ub0dtm3si18io18f0hqjq6l].[sum:no_of_orders:qk]' />
+              <lod column='[federated.05bw1ub0dtm3si18io18f0hqjq6l].[none:vendor_id:ok]' />
+              <tooltip column='[federated.05bw1ub0dtm3si18io18f0hqjq6l].[attr:vendor_name:nk]' />
+              <tooltip column='[federated.05bw1ub0dtm3si18io18f0hqjq6l].[sum:no_of_orders:qk]' />
+              <tooltip column='[federated.05bw1ub0dtm3si18io18f0hqjq6l].[sum:gmv_lc:qk]' />
+            </encodings>
+            <reference-line axis-column='[federated.05bw1ub0dtm3si18io18f0hqjq6l].[usr:Calculation_3297620104153833472:qk]' enable-instant-analytics='true' formula='median' id='refline0' label='&lt;Computation&gt; - &lt;Value&gt;' label-type='custom' probability='95' scope='per-pane' value-column='[federated.05bw1ub0dtm3si18io18f0hqjq6l].[usr:Calculation_3297620104153833472:qk]' z-order='1' />
+            <reference-line axis-column='[federated.05bw1ub0dtm3si18io18f0hqjq6l].[usr:Calculation_4062246881139679233:qk]' enable-instant-analytics='true' formula='median' id='refline2' label='&lt;Computation&gt; &lt;Value&gt;' label-type='custom' probability='95' scope='per-pane' value-column='[federated.05bw1ub0dtm3si18io18f0hqjq6l].[usr:Calculation_4062246881139679233:qk]' z-order='2' />
+            <style>
+              <style-rule element='mark'>
+                <format attr='shape' value=':filled/circle' />
+                <format attr='size' value='1' />
+              </style-rule>
+            </style>
+          </pane>
+        </panes>
+        <rows>[federated.05bw1ub0dtm3si18io18f0hqjq6l].[usr:Calculation_3297620104153833472:qk]</rows>
+        <cols>[federated.05bw1ub0dtm3si18io18f0hqjq6l].[usr:Calculation_4062246881139679233:qk]</cols>
+      </table>
+      <simple-id uuid='{821BCB3B-8A0E-4790-8F47-A8E883B038FF}' />
+    </worksheet>
+    <worksheet name='AOV x Orders List View'>
+      <layout-options>
+        <title>
+          <formatted-text>
+            <run>&lt;Sheet Name&gt;</run>
+          </formatted-text>
+        </title>
+      </layout-options>
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='Affordability Index' name='federated.05bw1ub0dtm3si18io18f0hqjq6l' />
+          </datasources>
+          <datasource-dependencies datasource='federated.05bw1ub0dtm3si18io18f0hqjq6l'>
+            <column caption='AOV (EUR)' datatype='real' name='[AOV (LC) (copy)_4062246881142849540]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='[Calculation_4062246881139789827]/[Calculation_4062246881139679233]' />
+            </column>
+            <column caption='AOV (LC)' datatype='real' name='[Calculation_3297620104153833472]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='SUM([gmv_lc])/SUM([no_of_orders])' />
+            </column>
+            <column caption='Orders' datatype='integer' name='[Calculation_4062246881139679233]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='SUM([no_of_orders])' />
+            </column>
+            <column caption='GMV (LC)' datatype='real' name='[Calculation_4062246881139740674]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='SUM([gmv_lc])' />
+            </column>
+            <column caption='GMV (EUR)' datatype='real' name='[Calculation_4062246881139789827]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='SUM([gmv_eur])' />
+            </column>
+            <column datatype='real' name='[gmv_eur]' role='measure' type='quantitative' />
+            <column datatype='real' name='[gmv_lc]' role='measure' type='quantitative' />
+            <column caption='is AAA?' datatype='boolean' name='[is_aaa_account]' role='dimension' type='nominal' />
+            <column caption='Is key VIP Account? (KPP)' datatype='boolean' name='[is_key_vip_account]' role='dimension' type='nominal' />
+            <column caption='is Local KA?' datatype='boolean' name='[is_local_key_account]' role='dimension' type='nominal' />
+            <column caption='Is RKA?' datatype='boolean' name='[is_regional_key_account]' role='dimension' type='nominal' />
+            <column caption='Kitchen Name' datatype='string' name='[kitchen_location]' role='dimension' type='nominal' />
+            <column caption='Cuisine' datatype='string' name='[main_cuisine]' role='dimension' type='nominal' />
+            <column datatype='integer' name='[no_of_orders]' role='measure' type='quantitative' />
+            <column-instance column='[is_aaa_account]' derivation='None' name='[none:is_aaa_account:nk]' pivot='key' type='nominal' />
+            <column-instance column='[is_key_vip_account]' derivation='None' name='[none:is_key_vip_account:nk]' pivot='key' type='nominal' />
+            <column-instance column='[is_local_key_account]' derivation='None' name='[none:is_local_key_account:nk]' pivot='key' type='nominal' />
+            <column-instance column='[is_regional_key_account]' derivation='None' name='[none:is_regional_key_account:nk]' pivot='key' type='nominal' />
+            <column-instance column='[kitchen_location]' derivation='None' name='[none:kitchen_location:nk]' pivot='key' type='nominal' />
+            <column-instance column='[main_cuisine]' derivation='None' name='[none:main_cuisine:nk]' pivot='key' type='nominal' />
+            <column-instance column='[vendor_id]' derivation='None' name='[none:vendor_id:ok]' pivot='key' type='ordinal' />
+            <column-instance column='[vendor_name]' derivation='None' name='[none:vendor_name:nk]' pivot='key' type='nominal' />
+            <column-instance column='[vendor_type]' derivation='None' name='[none:vendor_type:nk]' pivot='key' type='nominal' />
+            <column-instance column='[no_of_orders]' derivation='Sum' name='[sum:no_of_orders:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[AOV (LC) (copy)_4062246881142849540]' derivation='User' name='[usr:AOV (LC) (copy)_4062246881142849540:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[Calculation_3297620104153833472]' derivation='User' name='[usr:Calculation_3297620104153833472:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[Calculation_4062246881139679233]' derivation='User' name='[usr:Calculation_4062246881139679233:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[Calculation_4062246881139740674]' derivation='User' name='[usr:Calculation_4062246881139740674:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[Calculation_4062246881139789827]' derivation='User' name='[usr:Calculation_4062246881139789827:qk]' pivot='key' type='quantitative' />
+            <column aggregation='Sum' caption='Vendor ID' datatype='integer' name='[vendor_id]' role='dimension' type='ordinal' />
+            <column caption='Vendor Name' datatype='string' name='[vendor_name]' role='dimension' type='nominal' />
+            <column caption='Vendor Type' datatype='string' name='[vendor_type]' role='dimension' type='nominal' />
+          </datasource-dependencies>
+          <filter class='categorical' column='[federated.05bw1ub0dtm3si18io18f0hqjq6l].[:Measure Names]'>
+            <groupfilter function='union' user:op='manual'>
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.05bw1ub0dtm3si18io18f0hqjq6l].[usr:Calculation_4062246881139679233:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.05bw1ub0dtm3si18io18f0hqjq6l].[usr:Calculation_4062246881139740674:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.05bw1ub0dtm3si18io18f0hqjq6l].[usr:Calculation_4062246881139789827:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.05bw1ub0dtm3si18io18f0hqjq6l].[usr:Calculation_3297620104153833472:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.05bw1ub0dtm3si18io18f0hqjq6l].[usr:AOV (LC) (copy)_4062246881142849540:qk]&quot;' />
+            </groupfilter>
+          </filter>
+          <manual-sort column='[federated.05bw1ub0dtm3si18io18f0hqjq6l].[:Measure Names]' direction='ASC'>
+            <dictionary>
+              <bucket>&quot;[federated.05bw1ub0dtm3si18io18f0hqjq6l].[usr:Calculation_4062246881139679233:qk]&quot;</bucket>
+              <bucket>&quot;[federated.05bw1ub0dtm3si18io18f0hqjq6l].[usr:Calculation_4062246881139740674:qk]&quot;</bucket>
+              <bucket>&quot;[federated.05bw1ub0dtm3si18io18f0hqjq6l].[usr:Calculation_4062246881139789827:qk]&quot;</bucket>
+              <bucket>&quot;[federated.05bw1ub0dtm3si18io18f0hqjq6l].[usr:Calculation_3297620104153833472:qk]&quot;</bucket>
+            </dictionary>
+          </manual-sort>
+          <filter class='categorical' column='[federated.05bw1ub0dtm3si18io18f0hqjq6l].[none:is_aaa_account:nk]' filter-group='7'>
+            <groupfilter function='level-members' level='[none:is_aaa_account:nk]' user:ui-enumeration='all' user:ui-marker='enumerate' />
+          </filter>
+          <filter class='categorical' column='[federated.05bw1ub0dtm3si18io18f0hqjq6l].[none:is_key_vip_account:nk]' filter-group='4'>
+            <groupfilter function='level-members' level='[none:is_key_vip_account:nk]' />
+          </filter>
+          <filter class='categorical' column='[federated.05bw1ub0dtm3si18io18f0hqjq6l].[none:is_local_key_account:nk]' filter-group='8'>
+            <groupfilter function='level-members' level='[none:is_local_key_account:nk]' />
+          </filter>
+          <filter class='categorical' column='[federated.05bw1ub0dtm3si18io18f0hqjq6l].[none:is_regional_key_account:nk]' filter-group='9'>
+            <groupfilter function='level-members' level='[none:is_regional_key_account:nk]' />
+          </filter>
+          <filter class='categorical' column='[federated.05bw1ub0dtm3si18io18f0hqjq6l].[none:kitchen_location:nk]' filter-group='6'>
+            <groupfilter function='member' level='[none:kitchen_location:nk]' member='&quot;Arjan&quot;' user:ui-domain='database' user:ui-enumeration='inclusive' user:ui-marker='enumerate' />
+          </filter>
+          <filter class='categorical' column='[federated.05bw1ub0dtm3si18io18f0hqjq6l].[none:main_cuisine:nk]' filter-group='5'>
+            <groupfilter function='member' level='[none:main_cuisine:nk]' member='&quot;american&quot;' user:ui-domain='relevant' user:ui-enumeration='inclusive' user:ui-marker='enumerate' />
+          </filter>
+          <filter class='quantitative' column='[federated.05bw1ub0dtm3si18io18f0hqjq6l].[sum:no_of_orders:qk]' filter-group='3' included-values='in-range-or-null'>
+            <min>30</min>
+            <max>4098</max>
+          </filter>
+          <shelf-sorts>
+            <shelf-sort-v2 dimension-to-sort='[federated.05bw1ub0dtm3si18io18f0hqjq6l].[none:vendor_id:ok]' direction='DESC' measure-to-sort-by='[federated.05bw1ub0dtm3si18io18f0hqjq6l].[usr:Calculation_4062246881139679233:qk]' shelf='rows' />
+          </shelf-sorts>
+          <slices>
+            <column>[federated.05bw1ub0dtm3si18io18f0hqjq6l].[none:main_cuisine:nk]</column>
+            <column>[federated.05bw1ub0dtm3si18io18f0hqjq6l].[none:kitchen_location:nk]</column>
+            <column>[federated.05bw1ub0dtm3si18io18f0hqjq6l].[sum:no_of_orders:qk]</column>
+            <column>[federated.05bw1ub0dtm3si18io18f0hqjq6l].[:Measure Names]</column>
+            <column>[federated.05bw1ub0dtm3si18io18f0hqjq6l].[none:is_aaa_account:nk]</column>
+            <column>[federated.05bw1ub0dtm3si18io18f0hqjq6l].[none:is_local_key_account:nk]</column>
+            <column>[federated.05bw1ub0dtm3si18io18f0hqjq6l].[none:is_regional_key_account:nk]</column>
+            <column>[federated.05bw1ub0dtm3si18io18f0hqjq6l].[none:is_key_vip_account:nk]</column>
+          </slices>
+          <aggregation value='true' />
+        </view>
+        <style>
+          <style-rule element='cell'>
+            <format attr='height' field='[federated.05bw1ub0dtm3si18io18f0hqjq6l].[none:vendor_name:nk]' value='23' />
+            <format attr='height' field='[federated.05bw1ub0dtm3si18io18f0hqjq6l].[none:vendor_type:nk]' value='27' />
+            <format attr='border-style' value='solid' />
+            <format attr='height' field='[federated.05bw1ub0dtm3si18io18f0hqjq6l].[none:is_key_vip_account:nk]' value='26' />
+            <format attr='height' field='[federated.05bw1ub0dtm3si18io18f0hqjq6l].[none:is_regional_key_account:nk]' value='31' />
+            <format attr='height' field='[federated.05bw1ub0dtm3si18io18f0hqjq6l].[none:is_aaa_account:nk]' value='24' />
+          </style-rule>
+          <style-rule element='header'>
+            <format attr='width' field='[federated.05bw1ub0dtm3si18io18f0hqjq6l].[none:vendor_name:nk]' value='240' />
+            <format attr='height' field='[federated.05bw1ub0dtm3si18io18f0hqjq6l].[:Measure Names]' value='49' />
+            <format attr='border-style' value='solid' />
+          </style-rule>
+          <style-rule element='pane'>
+            <format attr='border-style' value='solid' />
+          </style-rule>
+          <style-rule element='refline'>
+            <format attr='fill-above' id='refline0' value='#00000000' />
+            <format attr='fill-below' id='refline0' value='#00000000' />
+            <format attr='fill-above' id='refline1' value='#00000000' />
+            <format attr='fill-below' id='refline1' value='#00000000' />
+            <format attr='fill-above' id='refline2' value='#00000000' />
+            <format attr='fill-below' id='refline2' value='#00000000' />
+          </style-rule>
+          <style-rule element='table-div'>
+            <format attr='div-level' scope='cols' value='1' />
+            <format attr='div-level' scope='rows' value='4' />
+          </style-rule>
+          <style-rule element='title'>
+            <format attr='background-color' value='#e9f0f1' />
+          </style-rule>
+          <style-rule element='quick-filter'>
+            <format attr='title' field='[federated.05bw1ub0dtm3si18io18f0hqjq6l].[sum:no_of_orders:qk]' value='No Of Orders' />
+            <format attr='title' field='[federated.05bw1ub0dtm3si18io18f0hqjq6l].[none:kitchen_location:nk]' value='Kitchen' />
+            <format attr='title' field='[federated.05bw1ub0dtm3si18io18f0hqjq6l].[none:main_cuisine:nk]' value='Cuisine' />
+          </style-rule>
+        </style>
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Automatic' />
+            <mark-sizing mark-sizing-setting='marks-scaling-off' />
+            <encodings>
+              <text column='[federated.05bw1ub0dtm3si18io18f0hqjq6l].[Multiple Values]' />
+            </encodings>
+            <style>
+              <style-rule element='mark'>
+                <format attr='shape' value=':filled/circle' />
+                <format attr='size' value='1' />
+                <format attr='mark-labels-show' value='true' />
+                <format attr='mark-labels-cull' value='true' />
+              </style-rule>
+              <style-rule element='pane'>
+                <format attr='minheight' value='-1' />
+                <format attr='maxheight' value='-1' />
+              </style-rule>
+            </style>
+          </pane>
+        </panes>
+        <rows>([federated.05bw1ub0dtm3si18io18f0hqjq6l].[none:vendor_id:ok] / ([federated.05bw1ub0dtm3si18io18f0hqjq6l].[none:vendor_name:nk] / ([federated.05bw1ub0dtm3si18io18f0hqjq6l].[none:main_cuisine:nk] / ([federated.05bw1ub0dtm3si18io18f0hqjq6l].[none:vendor_type:nk] / ([federated.05bw1ub0dtm3si18io18f0hqjq6l].[none:is_local_key_account:nk] / ([federated.05bw1ub0dtm3si18io18f0hqjq6l].[none:is_key_vip_account:nk] / ([federated.05bw1ub0dtm3si18io18f0hqjq6l].[none:is_regional_key_account:nk] / [federated.05bw1ub0dtm3si18io18f0hqjq6l].[none:is_aaa_account:nk])))))))</rows>
+        <cols>[federated.05bw1ub0dtm3si18io18f0hqjq6l].[:Measure Names]</cols>
+      </table>
+      <simple-id uuid='{FE5CBC52-4218-432C-819E-B4AB1277E829}' />
+    </worksheet>
+    <worksheet name='Sheet 6'>
+      <table>
+        <view>
+          <datasources />
+          <aggregation value='true' />
+        </view>
+        <style />
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Automatic' />
+            <style>
+              <style-rule element='mark'>
+                <format attr='mark-labels-cull' value='true' />
+                <format attr='mark-labels-show' value='false' />
+              </style-rule>
+            </style>
+          </pane>
+        </panes>
+        <rows />
+        <cols />
+      </table>
+      <simple-id uuid='{E0FA9BA2-FCAF-4EA9-8107-439178437137}' />
+    </worksheet>
+    <worksheet name='Top 10 cuisines'>
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='Affordability Index' name='federated.05bw1ub0dtm3si18io18f0hqjq6l' />
+          </datasources>
+          <datasource-dependencies datasource='federated.05bw1ub0dtm3si18io18f0hqjq6l'>
+            <column caption='AOV (EUR)' datatype='real' name='[AOV (LC) (copy)_4062246881142849540]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='[Calculation_4062246881139789827]/[Calculation_4062246881139679233]' />
+            </column>
+            <column caption='AOV (LC)' datatype='real' name='[Calculation_3297620104153833472]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='SUM([gmv_lc])/SUM([no_of_orders])' />
+            </column>
+            <column caption='Orders' datatype='integer' name='[Calculation_4062246881139679233]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='SUM([no_of_orders])' />
+            </column>
+            <column caption='GMV (LC)' datatype='real' name='[Calculation_4062246881139740674]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='SUM([gmv_lc])' />
+            </column>
+            <column caption='GMV (EUR)' datatype='real' name='[Calculation_4062246881139789827]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='SUM([gmv_eur])' />
+            </column>
+            <column caption='R.No' datatype='integer' name='[Calculation_5073234637266178048]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='INDEX()'>
+                <table-calc ordering-type='Rows' />
+              </calculation>
+            </column>
+            <column caption='Kitchen Orders' datatype='integer' name='[Calculation_5073234637283872769]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='SUM(if [vendor_type] = &quot;Same Kitchen&quot; THEN [no_of_orders] END)' />
+            </column>
+            <column caption='Kitchen Orders Penetration %' datatype='real' default-format='p0.00%' name='[Calculation_5073234637284569090]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='[Calculation_5073234637283872769]/[Calculation_4062246881139679233]' />
+            </column>
+            <column datatype='real' name='[gmv_eur]' role='measure' type='quantitative' />
+            <column datatype='real' name='[gmv_lc]' role='measure' type='quantitative' />
+            <column caption='is AAA?' datatype='boolean' name='[is_aaa_account]' role='dimension' type='nominal' />
+            <column caption='Is key VIP Account? (KPP)' datatype='boolean' name='[is_key_vip_account]' role='dimension' type='nominal' />
+            <column caption='is Local KA?' datatype='boolean' name='[is_local_key_account]' role='dimension' type='nominal' />
+            <column caption='Is RKA?' datatype='boolean' name='[is_regional_key_account]' role='dimension' type='nominal' />
+            <column caption='Kitchen Name' datatype='string' name='[kitchen_location]' role='dimension' type='nominal' />
+            <column caption='Cuisine' datatype='string' name='[main_cuisine]' role='dimension' type='nominal' />
+            <column datatype='integer' name='[no_of_orders]' role='measure' type='quantitative' />
+            <column-instance column='[is_aaa_account]' derivation='None' name='[none:is_aaa_account:nk]' pivot='key' type='nominal' />
+            <column-instance column='[is_key_vip_account]' derivation='None' name='[none:is_key_vip_account:nk]' pivot='key' type='nominal' />
+            <column-instance column='[is_local_key_account]' derivation='None' name='[none:is_local_key_account:nk]' pivot='key' type='nominal' />
+            <column-instance column='[is_regional_key_account]' derivation='None' name='[none:is_regional_key_account:nk]' pivot='key' type='nominal' />
+            <column-instance column='[kitchen_location]' derivation='None' name='[none:kitchen_location:nk]' pivot='key' type='nominal' />
+            <column-instance column='[main_cuisine]' derivation='None' name='[none:main_cuisine:nk]' pivot='key' type='nominal' />
+            <column-instance column='[AOV (LC) (copy)_4062246881142849540]' derivation='User' name='[usr:AOV (LC) (copy)_4062246881142849540:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[Calculation_3297620104153833472]' derivation='User' name='[usr:Calculation_3297620104153833472:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[Calculation_4062246881139679233]' derivation='User' name='[usr:Calculation_4062246881139679233:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[Calculation_4062246881139740674]' derivation='User' name='[usr:Calculation_4062246881139740674:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[Calculation_4062246881139789827]' derivation='User' name='[usr:Calculation_4062246881139789827:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[Calculation_5073234637266178048]' derivation='User' name='[usr:Calculation_5073234637266178048:ok]' pivot='key' type='ordinal'>
+              <table-calc ordering-type='Columns' />
+            </column-instance>
+            <column-instance column='[Calculation_5073234637284569090]' derivation='User' name='[usr:Calculation_5073234637284569090:qk]' pivot='key' type='quantitative' />
+            <column caption='Vendor Type' datatype='string' name='[vendor_type]' role='dimension' type='nominal' />
+          </datasource-dependencies>
+          <filter class='categorical' column='[federated.05bw1ub0dtm3si18io18f0hqjq6l].[:Measure Names]'>
+            <groupfilter function='union' user:op='manual'>
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.05bw1ub0dtm3si18io18f0hqjq6l].[usr:Calculation_4062246881139679233:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.05bw1ub0dtm3si18io18f0hqjq6l].[usr:Calculation_4062246881139789827:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.05bw1ub0dtm3si18io18f0hqjq6l].[usr:Calculation_4062246881139740674:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.05bw1ub0dtm3si18io18f0hqjq6l].[usr:AOV (LC) (copy)_4062246881142849540:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.05bw1ub0dtm3si18io18f0hqjq6l].[usr:Calculation_3297620104153833472:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.05bw1ub0dtm3si18io18f0hqjq6l].[usr:Calculation_5073234637284569090:qk]&quot;' />
+            </groupfilter>
+          </filter>
+          <manual-sort column='[federated.05bw1ub0dtm3si18io18f0hqjq6l].[:Measure Names]' direction='ASC'>
+            <dictionary>
+              <bucket>&quot;[federated.05bw1ub0dtm3si18io18f0hqjq6l].[usr:Calculation_4062246881139679233:qk]&quot;</bucket>
+              <bucket>&quot;[federated.05bw1ub0dtm3si18io18f0hqjq6l].[usr:Calculation_4062246881139789827:qk]&quot;</bucket>
+              <bucket>&quot;[federated.05bw1ub0dtm3si18io18f0hqjq6l].[usr:Calculation_4062246881139740674:qk]&quot;</bucket>
+              <bucket>&quot;[federated.05bw1ub0dtm3si18io18f0hqjq6l].[usr:AOV (LC) (copy)_4062246881142849540:qk]&quot;</bucket>
+              <bucket>&quot;[federated.05bw1ub0dtm3si18io18f0hqjq6l].[usr:Calculation_3297620104153833472:qk]&quot;</bucket>
+            </dictionary>
+          </manual-sort>
+          <filter class='categorical' column='[federated.05bw1ub0dtm3si18io18f0hqjq6l].[none:is_aaa_account:nk]' filter-group='7'>
+            <groupfilter function='level-members' level='[none:is_aaa_account:nk]' user:ui-enumeration='all' user:ui-marker='enumerate' />
+          </filter>
+          <filter class='categorical' column='[federated.05bw1ub0dtm3si18io18f0hqjq6l].[none:is_key_vip_account:nk]' filter-group='4'>
+            <groupfilter function='level-members' level='[none:is_key_vip_account:nk]' />
+          </filter>
+          <filter class='categorical' column='[federated.05bw1ub0dtm3si18io18f0hqjq6l].[none:is_local_key_account:nk]' filter-group='8'>
+            <groupfilter function='level-members' level='[none:is_local_key_account:nk]' />
+          </filter>
+          <filter class='categorical' column='[federated.05bw1ub0dtm3si18io18f0hqjq6l].[none:is_regional_key_account:nk]' filter-group='9'>
+            <groupfilter function='level-members' level='[none:is_regional_key_account:nk]' />
+          </filter>
+          <filter class='categorical' column='[federated.05bw1ub0dtm3si18io18f0hqjq6l].[none:kitchen_location:nk]' filter-group='6'>
+            <groupfilter function='member' level='[none:kitchen_location:nk]' member='&quot;Arjan&quot;' user:ui-domain='database' user:ui-enumeration='inclusive' user:ui-marker='enumerate' />
+          </filter>
+          <filter class='categorical' column='[federated.05bw1ub0dtm3si18io18f0hqjq6l].[usr:Calculation_5073234637266178048:ok]'>
+            <groupfilter function='union' user:ui-domain='database' user:ui-enumeration='inclusive' user:ui-marker='enumerate'>
+              <groupfilter function='member' level='[usr:Calculation_5073234637266178048:ok]' member='1' />
+              <groupfilter function='member' level='[usr:Calculation_5073234637266178048:ok]' member='2' />
+              <groupfilter function='member' level='[usr:Calculation_5073234637266178048:ok]' member='3' />
+              <groupfilter function='member' level='[usr:Calculation_5073234637266178048:ok]' member='4' />
+              <groupfilter function='member' level='[usr:Calculation_5073234637266178048:ok]' member='5' />
+              <groupfilter function='member' level='[usr:Calculation_5073234637266178048:ok]' member='6' />
+              <groupfilter function='member' level='[usr:Calculation_5073234637266178048:ok]' member='7' />
+              <groupfilter function='member' level='[usr:Calculation_5073234637266178048:ok]' member='8' />
+              <groupfilter function='member' level='[usr:Calculation_5073234637266178048:ok]' member='9' />
+              <groupfilter function='member' level='[usr:Calculation_5073234637266178048:ok]' member='10' />
+            </groupfilter>
+          </filter>
+          <shelf-sorts>
+            <shelf-sort-v2 dimension-to-sort='[federated.05bw1ub0dtm3si18io18f0hqjq6l].[none:main_cuisine:nk]' direction='DESC' is-on-innermost-dimension='true' measure-to-sort-by='[federated.05bw1ub0dtm3si18io18f0hqjq6l].[usr:Calculation_4062246881139679233:qk]' shelf='rows' />
+          </shelf-sorts>
+          <slices>
+            <column>[federated.05bw1ub0dtm3si18io18f0hqjq6l].[:Measure Names]</column>
+            <column>[federated.05bw1ub0dtm3si18io18f0hqjq6l].[usr:Calculation_5073234637266178048:ok]</column>
+            <column>[federated.05bw1ub0dtm3si18io18f0hqjq6l].[none:kitchen_location:nk]</column>
+            <column>[federated.05bw1ub0dtm3si18io18f0hqjq6l].[none:is_key_vip_account:nk]</column>
+            <column>[federated.05bw1ub0dtm3si18io18f0hqjq6l].[none:is_aaa_account:nk]</column>
+            <column>[federated.05bw1ub0dtm3si18io18f0hqjq6l].[none:is_local_key_account:nk]</column>
+            <column>[federated.05bw1ub0dtm3si18io18f0hqjq6l].[none:is_regional_key_account:nk]</column>
+          </slices>
+          <aggregation value='true' />
+        </view>
+        <style>
+          <style-rule element='cell'>
+            <format attr='height' field='[federated.05bw1ub0dtm3si18io18f0hqjq6l].[none:main_cuisine:nk]' value='28' />
+            <format attr='border-style' value='solid' />
+          </style-rule>
+          <style-rule element='header'>
+            <format attr='width' field='[federated.05bw1ub0dtm3si18io18f0hqjq6l].[usr:Calculation_5073234637266178048:ok]' value='44' />
+            <format attr='height' field='[federated.05bw1ub0dtm3si18io18f0hqjq6l].[:Measure Names]' value='41' />
+            <format attr='width' field='[federated.05bw1ub0dtm3si18io18f0hqjq6l].[none:kitchen_location:nk]' value='104' />
+            <format attr='border-style' value='solid' />
+          </style-rule>
+          <style-rule element='mark'>
+            <encoding attr='color' center='0.0' field='[federated.05bw1ub0dtm3si18io18f0hqjq6l].[usr:Calculation_5073234637284569090:qk]' palette='red_blue_white_diverging_10_0' type='interpolated' />
+            <encoding attr='color' field='[federated.05bw1ub0dtm3si18io18f0hqjq6l].[usr:Calculation_4062246881139789827:qk]' num-steps='2' type='custom-interpolated'>
+              <color-palette custom='true' name='' type='ordered-diverging'>
+                <color>#ffffff</color>
+                <color>#f8f8f8</color>
+                <color>#f2f2f2</color>
+                <color>#ececec</color>
+                <color>#e5e5e5</color>
+                <color>#dfdfdf</color>
+                <color>#d9d9d9</color>
+                <color>#dfdfdf</color>
+                <color>#e5e5e5</color>
+                <color>#ececec</color>
+                <color>#f2f2f2</color>
+                <color>#f8f8f8</color>
+                <color>#ffffff</color>
+              </color-palette>
+            </encoding>
+            <encoding attr='color' field='[federated.05bw1ub0dtm3si18io18f0hqjq6l].[usr:Calculation_4062246881139740674:qk]' num-steps='2' type='custom-interpolated'>
+              <color-palette custom='true' name='' type='ordered-diverging'>
+                <color>#ffffff</color>
+                <color>#f8f8f8</color>
+                <color>#f2f2f2</color>
+                <color>#ececec</color>
+                <color>#e5e5e5</color>
+                <color>#dfdfdf</color>
+                <color>#d9d9d9</color>
+                <color>#dfdfdf</color>
+                <color>#e5e5e5</color>
+                <color>#ececec</color>
+                <color>#f2f2f2</color>
+                <color>#f8f8f8</color>
+                <color>#ffffff</color>
+              </color-palette>
+            </encoding>
+            <encoding attr='color' field='[federated.05bw1ub0dtm3si18io18f0hqjq6l].[usr:Calculation_3297620104153833472:qk]' num-steps='2' type='custom-interpolated'>
+              <color-palette custom='true' name='' type='ordered-diverging'>
+                <color>#ffffff</color>
+                <color>#f8f8f8</color>
+                <color>#f2f2f2</color>
+                <color>#ececec</color>
+                <color>#e5e5e5</color>
+                <color>#dfdfdf</color>
+                <color>#d9d9d9</color>
+                <color>#dfdfdf</color>
+                <color>#e5e5e5</color>
+                <color>#ececec</color>
+                <color>#f2f2f2</color>
+                <color>#f8f8f8</color>
+                <color>#ffffff</color>
+              </color-palette>
+            </encoding>
+            <encoding attr='color' field='[federated.05bw1ub0dtm3si18io18f0hqjq6l].[usr:AOV (LC) (copy)_4062246881142849540:qk]' num-steps='2' type='custom-interpolated'>
+              <color-palette custom='true' name='' type='ordered-diverging'>
+                <color>#ffffff</color>
+                <color>#f8f8f8</color>
+                <color>#f2f2f2</color>
+                <color>#ececec</color>
+                <color>#e5e5e5</color>
+                <color>#dfdfdf</color>
+                <color>#d9d9d9</color>
+                <color>#dfdfdf</color>
+                <color>#e5e5e5</color>
+                <color>#ececec</color>
+                <color>#f2f2f2</color>
+                <color>#f8f8f8</color>
+                <color>#ffffff</color>
+              </color-palette>
+            </encoding>
+          </style-rule>
+          <style-rule element='pane'>
+            <format attr='border-style' value='solid' />
+          </style-rule>
+          <style-rule element='table-div'>
+            <format attr='div-level' scope='rows' value='3' />
+            <format attr='div-level' scope='cols' value='1' />
+          </style-rule>
+          <style-rule element='title'>
+            <format attr='background-color' value='#e9f0f1' />
+          </style-rule>
+        </style>
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Square' />
+            <encodings>
+              <color column='[federated.05bw1ub0dtm3si18io18f0hqjq6l].[Multiple Values]' separate-domains='true' />
+              <text column='[federated.05bw1ub0dtm3si18io18f0hqjq6l].[Multiple Values]' separate-domains='true' />
+            </encodings>
+            <style>
+              <style-rule element='mark'>
+                <format attr='mark-labels-cull' value='true' />
+                <format attr='mark-labels-show' value='true' />
+              </style-rule>
+              <style-rule element='pane'>
+                <format attr='minheight' value='-1' />
+                <format attr='maxheight' value='-1' />
+              </style-rule>
+            </style>
+          </pane>
+        </panes>
+        <rows>([federated.05bw1ub0dtm3si18io18f0hqjq6l].[none:kitchen_location:nk] / ([federated.05bw1ub0dtm3si18io18f0hqjq6l].[usr:Calculation_5073234637266178048:ok] / [federated.05bw1ub0dtm3si18io18f0hqjq6l].[none:main_cuisine:nk]))</rows>
+        <cols>[federated.05bw1ub0dtm3si18io18f0hqjq6l].[:Measure Names]</cols>
+      </table>
+      <simple-id uuid='{5FD20262-D526-4C75-B9C9-CEC1F4FA3062}' />
+    </worksheet>
+  </worksheets>
+  <dashboards>
+    <dashboard _.fcp.AccessibleZoneTabOrder.true...enable-sort-zone-taborder='true' name=' DH Kitchen Affordability Index'>
+      <repository-location derived-from='https://tableau.deliveryhero.net/t/Talabat/workbooks/KitchenCuisineAOVIndex/DHKitchenAffordabilityIndex?rev=' id='DHKitchenAffordabilityIndex' path='/t/Talabat/workbooks/KitchenCuisineAOVIndex' revision='' site='Talabat' />
+      <style />
+      <size maxheight='3000' maxwidth='1500' minheight='3000' minwidth='1500' sizing-mode='fixed' />
+      <datasources>
+        <datasource caption='Affordability Index' name='federated.05bw1ub0dtm3si18io18f0hqjq6l' />
+      </datasources>
+      <datasource-dependencies datasource='federated.05bw1ub0dtm3si18io18f0hqjq6l'>
+        <column caption='is AAA?' datatype='boolean' name='[is_aaa_account]' role='dimension' type='nominal' />
+        <column caption='Is key VIP Account? (KPP)' datatype='boolean' name='[is_key_vip_account]' role='dimension' type='nominal' />
+        <column caption='is Local KA?' datatype='boolean' name='[is_local_key_account]' role='dimension' type='nominal' />
+        <column caption='Is RKA?' datatype='boolean' name='[is_regional_key_account]' role='dimension' type='nominal' />
+        <column caption='Kitchen Name' datatype='string' name='[kitchen_location]' role='dimension' type='nominal' />
+        <column caption='Cuisine' datatype='string' name='[main_cuisine]' role='dimension' type='nominal' />
+        <column datatype='integer' name='[no_of_orders]' role='measure' type='quantitative' />
+        <column-instance column='[is_aaa_account]' derivation='None' name='[none:is_aaa_account:nk]' pivot='key' type='nominal' />
+        <column-instance column='[is_key_vip_account]' derivation='None' name='[none:is_key_vip_account:nk]' pivot='key' type='nominal' />
+        <column-instance column='[is_local_key_account]' derivation='None' name='[none:is_local_key_account:nk]' pivot='key' type='nominal' />
+        <column-instance column='[is_regional_key_account]' derivation='None' name='[none:is_regional_key_account:nk]' pivot='key' type='nominal' />
+        <column-instance column='[kitchen_location]' derivation='None' name='[none:kitchen_location:nk]' pivot='key' type='nominal' />
+        <column-instance column='[main_cuisine]' derivation='None' name='[none:main_cuisine:nk]' pivot='key' type='nominal' />
+        <column-instance column='[no_of_orders]' derivation='Sum' name='[sum:no_of_orders:qk]' pivot='key' type='quantitative' />
+      </datasource-dependencies>
+      <zones>
+        <zone h='41333' id='10' type-v2='empty' w='11400' x='88067' y='1700'>
+          <zone-style>
+            <format attr='border-color' value='#000000' />
+            <format attr='border-style' value='none' />
+            <format attr='border-width' value='0' />
+            <format attr='background-color' value='#f5f5f5' />
+          </zone-style>
+        </zone>
+        <zone forceUpdate='true' h='1300' id='3' type-v2='text' w='99067' x='467' y='200'>
+          <formatted-text>
+            <run fontname='Tableau Regular' fontsize='15'> DH Kitchen Affordability Index</run>
+          </formatted-text>
+          <zone-style>
+            <format attr='border-color' value='#000000' />
+            <format attr='border-style' value='none' />
+            <format attr='border-width' value='0' />
+            <format attr='background-color' value='#e6e6e6' />
+          </zone-style>
+        </zone>
+        <zone h='29933' id='4' name='AOV x Orders' w='87067' x='467' y='14033' />
+        <zone h='2033' id='5' name='AOV x Orders' param='[federated.05bw1ub0dtm3si18io18f0hqjq6l].[sum:no_of_orders:qk]' show-domain='false' show-null-ctrls='false' type-v2='filter' w='10667' x='88733' y='19100' />
+        <zone h='1467' id='6' mode='checkdropdown' name='AOV x Orders' param='[federated.05bw1ub0dtm3si18io18f0hqjq6l].[none:kitchen_location:nk]' show-apply='true' type-v2='filter' w='10667' x='88533' y='16967' />
+        <zone h='1467' id='7' mode='checkdropdown' name='AOV x Orders' param='[federated.05bw1ub0dtm3si18io18f0hqjq6l].[none:main_cuisine:nk]' show-apply='true' type-v2='filter' values='relevant' w='10667' x='88800' y='21400' />
+        <zone h='2967' id='8' name='AOV x Orders' pane-specification-id='0' param='[federated.05bw1ub0dtm3si18io18f0hqjq6l].[none:vendor_type:nk]' type-v2='color' w='9333' x='77467' y='14533' />
+        <zone h='3933' id='9' name='AOV x Orders' pane-specification-id='0' param='[federated.05bw1ub0dtm3si18io18f0hqjq6l].[sum:no_of_orders:qk]' type-v2='size' w='9333' x='89000' y='23300' />
+        <zone h='24633' id='13' name='AOV x Orders List View' w='87000' x='467' y='44433' />
+        <zone h='28000' id='18' name='AOV x Orders Compare View 1' w='49333' x='533' y='71667' />
+        <zone h='2033' id='19' name='AOV x Orders Compare View 1' param='[federated.05bw1ub0dtm3si18io18f0hqjq6l].[sum:no_of_orders:qk]' show-domain='false' show-null-ctrls='false' type-v2='filter' w='10667' x='38733' y='75533' />
+        <zone h='1467' id='20' mode='checkdropdown' name='AOV x Orders Compare View 1' param='[federated.05bw1ub0dtm3si18io18f0hqjq6l].[none:kitchen_location:nk]' show-apply='true' type-v2='filter' w='10667' x='16467' y='75833' />
+        <zone h='1467' id='21' mode='checkdropdown' name='AOV x Orders Compare View 1' param='[federated.05bw1ub0dtm3si18io18f0hqjq6l].[none:main_cuisine:nk]' show-apply='true' type-v2='filter' values='relevant' w='10667' x='27667' y='75867' />
+        <zone h='28000' id='22' name='AOV x Orders Compare View 2' w='49333' x='50267' y='71633' />
+        <zone h='2033' id='23' name='AOV x Orders Compare View 2' param='[federated.05bw1ub0dtm3si18io18f0hqjq6l].[sum:no_of_orders:qk]' show-domain='false' show-null-ctrls='false' type-v2='filter' w='10667' x='88467' y='75533' />
+        <zone h='1467' id='24' mode='checkdropdown' name='AOV x Orders Compare View 2' param='[federated.05bw1ub0dtm3si18io18f0hqjq6l].[none:kitchen_location:nk]' show-apply='true' type-v2='filter' w='10667' x='66000' y='75867' />
+        <zone h='1467' id='25' mode='checkdropdown' name='AOV x Orders Compare View 2' param='[federated.05bw1ub0dtm3si18io18f0hqjq6l].[none:main_cuisine:nk]' show-apply='true' type-v2='filter' values='relevant' w='10667' x='77333' y='75867' />
+        <zone forceUpdate='true' h='1933' id='26' type-v2='text' w='98333' x='467' y='69367'>
+          <formatted-text>
+            <run fontcolor='#000000' fontname='Tableau Semibold' fontsize='16'>Comparison View</run>
+            <run>Æ&#10;</run>
+            <run fontsize='12'>Compare Kitchens or Cuisines within the same kitchen delivery area.</run>
+          </formatted-text>
+          <zone-style>
+            <format attr='border-color' value='#000000' />
+            <format attr='border-style' value='none' />
+            <format attr='border-width' value='0' />
+            <format attr='background-color' value='#f0eae8' />
+          </zone-style>
+        </zone>
+        <zone h='12133' id='31' name='Top 10 cuisines' w='59133' x='28333' y='1700' />
+        <zone forceUpdate='true' h='10333' id='32' type-v2='text' w='27333' x='467' y='1667'>
+          <formatted-text>
+            <run fontsize='12'>This is a detailed view to identify if our kitchen vendors provide affordable choice to customers in each cluster.</run>
+            <run>Æ&#10;&#10;</run>
+            <run fontsize='12'>Logic flow:</run>
+            <run>Æ&#10;</run>
+            <run fontsize='12'>1. Identify the top cuisines in a cluster/ region</run>
+            <run>Æ&#10;</run>
+            <run fontsize='12'>2. Compare AOV of available kitchen vendor to other platform vendors to conclude on gap</run>
+            <run>Æ&#10;</run>
+            <run fontsize='12'>3. Target affordable high performance vendors in cuisines with perceptible gap</run>
+          </formatted-text>
+        </zone>
+        <zone h='1500' id='41' mode='checkdropdown' name='AOV x Orders List View' param='[federated.05bw1ub0dtm3si18io18f0hqjq6l].[none:is_aaa_account:nk]' show-apply='true' type-v2='filter' values='database' w='10667' x='88667' y='29600' />
+        <zone h='1500' id='42' mode='checkdropdown' name='AOV x Orders List View' param='[federated.05bw1ub0dtm3si18io18f0hqjq6l].[none:is_local_key_account:nk]' show-apply='true' type-v2='filter' values='database' w='10667' x='88733' y='31433' />
+        <zone h='1500' id='43' mode='checkdropdown' name='AOV x Orders List View' param='[federated.05bw1ub0dtm3si18io18f0hqjq6l].[none:is_regional_key_account:nk]' show-apply='true' type-v2='filter' values='database' w='10667' x='88867' y='33300' />
+        <zone h='1500' id='44' mode='checkdropdown' name='AOV x Orders List View' param='[federated.05bw1ub0dtm3si18io18f0hqjq6l].[none:is_key_vip_account:nk]' type-v2='filter' values='database' w='10667' x='88467' y='27833' />
+      </zones>
+      <devicelayouts>
+        <devicelayout auto-generated='true' name='Phone'>
+          <size maxheight='2600' minheight='2600' sizing-mode='vscroll' />
+          <zones>
+            <zone h='100000' id='46' type-v2='layout-basic' w='100000' x='0' y='0'>
+              <zone h='99466' id='45' param='vert' type-v2='layout-flow' w='98934' x='533' y='267'>
+                <zone forceUpdate='true' h='1300' id='3' type-v2='text' w='99067' x='467' y='200'>
+                  <formatted-text>
+                    <run fontname='Tableau Regular' fontsize='15'> DH Kitchen Affordability Index</run>
+                  </formatted-text>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                    <format attr='background-color' value='#e6e6e6' />
+                  </zone-style>
+                </zone>
+                <zone forceUpdate='true' h='10333' id='32' type-v2='text' w='27333' x='467' y='1667'>
+                  <formatted-text>
+                    <run fontsize='12'>This is a detailed view to identify if our kitchen vendors provide affordable choice to customers in each cluster.</run>
+                    <run>Æ&#10;&#10;</run>
+                    <run fontsize='12'>Logic flow:</run>
+                    <run>Æ&#10;</run>
+                    <run fontsize='12'>1. Identify the top cuisines in a cluster/ region</run>
+                    <run>Æ&#10;</run>
+                    <run fontsize='12'>2. Compare AOV of available kitchen vendor to other platform vendors to conclude on gap</run>
+                    <run>Æ&#10;</run>
+                    <run fontsize='12'>3. Target affordable high performance vendors in cuisines with perceptible gap</run>
+                  </formatted-text>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone fixed-size='280' h='12133' id='31' is-fixed='true' name='Top 10 cuisines' w='59133' x='28333' y='1700'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone h='2033' id='5' name='AOV x Orders' param='[federated.05bw1ub0dtm3si18io18f0hqjq6l].[sum:no_of_orders:qk]' show-domain='false' show-null-ctrls='false' type-v2='filter' w='10667' x='88733' y='19100'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone h='1467' id='6' mode='checkdropdown' name='AOV x Orders' param='[federated.05bw1ub0dtm3si18io18f0hqjq6l].[none:kitchen_location:nk]' show-apply='true' type-v2='filter' w='10667' x='88533' y='16967'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone h='1467' id='7' mode='checkdropdown' name='AOV x Orders' param='[federated.05bw1ub0dtm3si18io18f0hqjq6l].[none:main_cuisine:nk]' show-apply='true' type-v2='filter' values='relevant' w='10667' x='88800' y='21400'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone fixed-size='280' h='29933' id='4' is-fixed='true' name='AOV x Orders' w='87067' x='467' y='14033'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone h='2967' id='8' name='AOV x Orders' pane-specification-id='0' param='[federated.05bw1ub0dtm3si18io18f0hqjq6l].[none:vendor_type:nk]' type-v2='color' w='9333' x='77467' y='14533'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone h='3933' id='9' name='AOV x Orders' pane-specification-id='0' param='[federated.05bw1ub0dtm3si18io18f0hqjq6l].[sum:no_of_orders:qk]' type-v2='size' w='9333' x='89000' y='23300'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone h='1500' id='41' mode='checkdropdown' name='AOV x Orders List View' param='[federated.05bw1ub0dtm3si18io18f0hqjq6l].[none:is_aaa_account:nk]' show-apply='true' type-v2='filter' values='database' w='10667' x='88667' y='29600'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone h='1500' id='42' mode='checkdropdown' name='AOV x Orders List View' param='[federated.05bw1ub0dtm3si18io18f0hqjq6l].[none:is_local_key_account:nk]' show-apply='true' type-v2='filter' values='database' w='10667' x='88733' y='31433'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone h='1500' id='43' mode='checkdropdown' name='AOV x Orders List View' param='[federated.05bw1ub0dtm3si18io18f0hqjq6l].[none:is_regional_key_account:nk]' show-apply='true' type-v2='filter' values='database' w='10667' x='88867' y='33300'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone h='1500' id='44' mode='checkdropdown' name='AOV x Orders List View' param='[federated.05bw1ub0dtm3si18io18f0hqjq6l].[none:is_key_vip_account:nk]' type-v2='filter' values='database' w='10667' x='88467' y='27833'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone fixed-size='280' h='24633' id='13' is-fixed='true' name='AOV x Orders List View' w='87000' x='467' y='44433'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone forceUpdate='true' h='1933' id='26' type-v2='text' w='98333' x='467' y='69367'>
+                  <formatted-text>
+                    <run fontcolor='#000000' fontname='Tableau Semibold' fontsize='16'>Comparison View</run>
+                    <run>Æ&#10;</run>
+                    <run fontsize='12'>Compare Kitchens or Cuisines within the same kitchen delivery area.</run>
+                  </formatted-text>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                    <format attr='background-color' value='#f0eae8' />
+                  </zone-style>
+                </zone>
+                <zone h='2033' id='23' name='AOV x Orders Compare View 2' param='[federated.05bw1ub0dtm3si18io18f0hqjq6l].[sum:no_of_orders:qk]' show-domain='false' show-null-ctrls='false' type-v2='filter' w='10667' x='88467' y='75533'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone h='1467' id='24' mode='checkdropdown' name='AOV x Orders Compare View 2' param='[federated.05bw1ub0dtm3si18io18f0hqjq6l].[none:kitchen_location:nk]' show-apply='true' type-v2='filter' w='10667' x='66000' y='75867'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone h='1467' id='25' mode='checkdropdown' name='AOV x Orders Compare View 2' param='[federated.05bw1ub0dtm3si18io18f0hqjq6l].[none:main_cuisine:nk]' show-apply='true' type-v2='filter' values='relevant' w='10667' x='77333' y='75867'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone fixed-size='280' h='28000' id='22' is-fixed='true' name='AOV x Orders Compare View 2' w='49333' x='50267' y='71633'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone h='2033' id='19' name='AOV x Orders Compare View 1' param='[federated.05bw1ub0dtm3si18io18f0hqjq6l].[sum:no_of_orders:qk]' show-domain='false' show-null-ctrls='false' type-v2='filter' w='10667' x='38733' y='75533'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone h='1467' id='20' mode='checkdropdown' name='AOV x Orders Compare View 1' param='[federated.05bw1ub0dtm3si18io18f0hqjq6l].[none:kitchen_location:nk]' show-apply='true' type-v2='filter' w='10667' x='16467' y='75833'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone h='1467' id='21' mode='checkdropdown' name='AOV x Orders Compare View 1' param='[federated.05bw1ub0dtm3si18io18f0hqjq6l].[none:main_cuisine:nk]' show-apply='true' type-v2='filter' values='relevant' w='10667' x='27667' y='75867'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone fixed-size='280' h='28000' id='18' is-fixed='true' name='AOV x Orders Compare View 1' w='49333' x='533' y='71667'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+              </zone>
+              <zone-style>
+                <format attr='border-color' value='#000000' />
+                <format attr='border-style' value='none' />
+                <format attr='border-width' value='0' />
+                <format attr='margin' value='8' />
+              </zone-style>
+            </zone>
+          </zones>
+        </devicelayout>
+      </devicelayouts>
+      <simple-id uuid='{B23B9E49-AEA1-442A-9F80-FF9706D6FA20}' />
+    </dashboard>
+  </dashboards>
+  <windows source-height='30'>
+    <window class='worksheet' name='AOV x Orders'>
+      <cards>
+        <edge name='left'>
+          <strip size='160'>
+            <card type='pages' />
+            <card type='filters' />
+            <card type='marks' />
+          </strip>
+        </edge>
+        <edge name='top'>
+          <strip size='2147483647'>
+            <card type='columns' />
+          </strip>
+          <strip size='2147483647'>
+            <card type='rows' />
+          </strip>
+          <strip size='31'>
+            <card type='title' />
+          </strip>
+        </edge>
+        <edge name='right'>
+          <strip size='160'>
+            <card param='[federated.05bw1ub0dtm3si18io18f0hqjq6l].[sum:no_of_orders:qk]' show-domain='false' show-null-ctrls='false' type='filter' />
+            <card mode='checkdropdown' param='[federated.05bw1ub0dtm3si18io18f0hqjq6l].[none:kitchen_location:nk]' show-apply='true' type='filter' />
+            <card mode='checkdropdown' param='[federated.05bw1ub0dtm3si18io18f0hqjq6l].[none:main_cuisine:nk]' show-apply='true' type='filter' values='relevant' />
+            <card pane-specification-id='0' param='[federated.05bw1ub0dtm3si18io18f0hqjq6l].[none:vendor_type:nk]' type='color' />
+            <card pane-specification-id='0' param='[federated.05bw1ub0dtm3si18io18f0hqjq6l].[sum:no_of_orders:qk]' type='size' />
+          </strip>
+        </edge>
+      </cards>
+      <viewpoint>
+        <highlight>
+          <color-one-way>
+            <field>[federated.05bw1ub0dtm3si18io18f0hqjq6l].[none:vendor_id:ok]</field>
+            <field>[federated.05bw1ub0dtm3si18io18f0hqjq6l].[none:vendor_name:nk]</field>
+            <field>[federated.05bw1ub0dtm3si18io18f0hqjq6l].[none:vendor_type:nk]</field>
+          </color-one-way>
+        </highlight>
+      </viewpoint>
+      <simple-id uuid='{B71B18E3-7E83-468C-AEDF-7AFFDE9049C5}' />
+    </window>
+    <window class='worksheet' name='AOV x Orders List View'>
+      <cards>
+        <edge name='left'>
+          <strip size='160'>
+            <card type='pages' />
+            <card type='filters' />
+            <card type='marks' />
+            <card type='measures' />
+          </strip>
+        </edge>
+        <edge name='top'>
+          <strip size='2147483647'>
+            <card type='columns' />
+          </strip>
+          <strip size='2147483647'>
+            <card type='rows' />
+          </strip>
+          <strip size='31'>
+            <card type='title' />
+          </strip>
+        </edge>
+        <edge name='right'>
+          <strip size='160'>
+            <card param='[federated.05bw1ub0dtm3si18io18f0hqjq6l].[sum:no_of_orders:qk]' show-domain='false' show-null-ctrls='false' type='filter' />
+            <card mode='checkdropdown' param='[federated.05bw1ub0dtm3si18io18f0hqjq6l].[none:kitchen_location:nk]' show-apply='true' type='filter' />
+            <card mode='checkdropdown' param='[federated.05bw1ub0dtm3si18io18f0hqjq6l].[none:main_cuisine:nk]' show-apply='true' type='filter' values='relevant' />
+          </strip>
+        </edge>
+      </cards>
+      <viewpoint>
+        <highlight>
+          <color-one-way>
+            <field>[federated.05bw1ub0dtm3si18io18f0hqjq6l].[:Measure Names]</field>
+            <field>[federated.05bw1ub0dtm3si18io18f0hqjq6l].[none:is_aaa_account:nk]</field>
+            <field>[federated.05bw1ub0dtm3si18io18f0hqjq6l].[none:is_key_vip_account:nk]</field>
+            <field>[federated.05bw1ub0dtm3si18io18f0hqjq6l].[none:is_local_key_account:nk]</field>
+            <field>[federated.05bw1ub0dtm3si18io18f0hqjq6l].[none:is_regional_key_account:nk]</field>
+            <field>[federated.05bw1ub0dtm3si18io18f0hqjq6l].[none:main_cuisine:nk]</field>
+            <field>[federated.05bw1ub0dtm3si18io18f0hqjq6l].[none:vendor_id:ok]</field>
+            <field>[federated.05bw1ub0dtm3si18io18f0hqjq6l].[none:vendor_name:nk]</field>
+            <field>[federated.05bw1ub0dtm3si18io18f0hqjq6l].[none:vendor_type:nk]</field>
+          </color-one-way>
+        </highlight>
+      </viewpoint>
+      <simple-id uuid='{9E390262-A2FC-446A-9FE5-05C15ACF7347}' />
+    </window>
+    <window class='worksheet' name='AOV x Orders Compare View 1'>
+      <cards>
+        <edge name='left'>
+          <strip size='160'>
+            <card type='pages' />
+            <card type='filters' />
+            <card type='marks' />
+          </strip>
+        </edge>
+        <edge name='top'>
+          <strip size='2147483647'>
+            <card type='columns' />
+          </strip>
+          <strip size='2147483647'>
+            <card type='rows' />
+          </strip>
+          <strip size='31'>
+            <card type='title' />
+          </strip>
+        </edge>
+        <edge name='right'>
+          <strip size='160'>
+            <card param='[federated.05bw1ub0dtm3si18io18f0hqjq6l].[sum:no_of_orders:qk]' show-domain='false' show-null-ctrls='false' type='filter' />
+            <card mode='checkdropdown' param='[federated.05bw1ub0dtm3si18io18f0hqjq6l].[none:kitchen_location:nk]' show-apply='true' type='filter' />
+            <card mode='checkdropdown' param='[federated.05bw1ub0dtm3si18io18f0hqjq6l].[none:main_cuisine:nk]' show-apply='true' type='filter' values='relevant' />
+            <card pane-specification-id='0' param='[federated.05bw1ub0dtm3si18io18f0hqjq6l].[none:vendor_type:nk]' type='color' />
+            <card pane-specification-id='0' param='[federated.05bw1ub0dtm3si18io18f0hqjq6l].[sum:no_of_orders:qk]' type='size' />
+          </strip>
+        </edge>
+      </cards>
+      <viewpoint>
+        <highlight>
+          <color-one-way>
+            <field>[federated.05bw1ub0dtm3si18io18f0hqjq6l].[none:vendor_id:ok]</field>
+            <field>[federated.05bw1ub0dtm3si18io18f0hqjq6l].[none:vendor_name:nk]</field>
+            <field>[federated.05bw1ub0dtm3si18io18f0hqjq6l].[none:vendor_type:nk]</field>
+          </color-one-way>
+        </highlight>
+      </viewpoint>
+      <simple-id uuid='{C5C2A2F5-1171-4A34-B142-B51D2E9F4669}' />
+    </window>
+    <window class='worksheet' name='AOV x Orders Compare View 2'>
+      <cards>
+        <edge name='left'>
+          <strip size='160'>
+            <card type='pages' />
+            <card type='filters' />
+            <card type='marks' />
+          </strip>
+        </edge>
+        <edge name='top'>
+          <strip size='2147483647'>
+            <card type='columns' />
+          </strip>
+          <strip size='2147483647'>
+            <card type='rows' />
+          </strip>
+          <strip size='31'>
+            <card type='title' />
+          </strip>
+        </edge>
+        <edge name='right'>
+          <strip size='160'>
+            <card param='[federated.05bw1ub0dtm3si18io18f0hqjq6l].[sum:no_of_orders:qk]' show-domain='false' show-null-ctrls='false' type='filter' />
+            <card mode='checkdropdown' param='[federated.05bw1ub0dtm3si18io18f0hqjq6l].[none:kitchen_location:nk]' show-apply='true' type='filter' />
+            <card mode='checkdropdown' param='[federated.05bw1ub0dtm3si18io18f0hqjq6l].[none:main_cuisine:nk]' show-apply='true' type='filter' values='relevant' />
+            <card pane-specification-id='0' param='[federated.05bw1ub0dtm3si18io18f0hqjq6l].[none:vendor_type:nk]' type='color' />
+            <card pane-specification-id='0' param='[federated.05bw1ub0dtm3si18io18f0hqjq6l].[sum:no_of_orders:qk]' type='size' />
+          </strip>
+        </edge>
+      </cards>
+      <viewpoint>
+        <highlight>
+          <color-one-way>
+            <field>[federated.05bw1ub0dtm3si18io18f0hqjq6l].[none:vendor_id:ok]</field>
+            <field>[federated.05bw1ub0dtm3si18io18f0hqjq6l].[none:vendor_name:nk]</field>
+            <field>[federated.05bw1ub0dtm3si18io18f0hqjq6l].[none:vendor_type:nk]</field>
+          </color-one-way>
+        </highlight>
+      </viewpoint>
+      <simple-id uuid='{48131BC5-912F-46B8-9A7D-2BCB9C8FB4F9}' />
+    </window>
+    <window class='dashboard' maximized='true' name=' DH Kitchen Affordability Index'>
+      <viewpoints>
+        <viewpoint name='AOV x Orders'>
+          <zoom type='entire-view' />
+        </viewpoint>
+        <viewpoint name='AOV x Orders Compare View 1'>
+          <zoom type='entire-view' />
+        </viewpoint>
+        <viewpoint name='AOV x Orders Compare View 2'>
+          <zoom type='entire-view' />
+        </viewpoint>
+        <viewpoint name='AOV x Orders List View'>
+          <zoom type='fit-width' />
+        </viewpoint>
+        <viewpoint name='Top 10 cuisines'>
+          <zoom type='fit-width' />
+        </viewpoint>
+      </viewpoints>
+      <active id='-1' />
+      <simple-id uuid='{F915AA69-AF63-46C6-97DB-A4589A1EED42}' />
+    </window>
+    <window class='worksheet' name='Top 10 cuisines'>
+      <cards>
+        <edge name='left'>
+          <strip size='160'>
+            <card type='pages' />
+            <card type='filters' />
+            <card type='marks' />
+            <card type='measures' />
+          </strip>
+        </edge>
+        <edge name='top'>
+          <strip size='2147483647'>
+            <card type='columns' />
+          </strip>
+          <strip size='2147483647'>
+            <card type='rows' />
+          </strip>
+          <strip size='31'>
+            <card type='title' />
+          </strip>
+        </edge>
+        <edge name='right'>
+          <strip size='160'>
+            <card param='[federated.05bw1ub0dtm3si18io18f0hqjq6l].[usr:Calculation_5073234637266178048:ok]' show-morefewerbutton='false' type='filter' />
+            <card pane-specification-id='0' param='[federated.05bw1ub0dtm3si18io18f0hqjq6l].[usr:Calculation_4062246881139679233:qk]' type='color' />
+            <card pane-specification-id='0' param='[federated.05bw1ub0dtm3si18io18f0hqjq6l].[usr:Calculation_4062246881139789827:qk]' type='color' />
+            <card pane-specification-id='0' param='[federated.05bw1ub0dtm3si18io18f0hqjq6l].[usr:Calculation_4062246881139740674:qk]' type='color' />
+            <card pane-specification-id='0' param='[federated.05bw1ub0dtm3si18io18f0hqjq6l].[usr:AOV (LC) (copy)_4062246881142849540:qk]' type='color' />
+            <card pane-specification-id='0' param='[federated.05bw1ub0dtm3si18io18f0hqjq6l].[usr:Calculation_3297620104153833472:qk]' type='color' />
+            <card pane-specification-id='0' param='[federated.05bw1ub0dtm3si18io18f0hqjq6l].[usr:Calculation_5073234637284569090:qk]' type='color' />
+          </strip>
+        </edge>
+      </cards>
+      <viewpoint>
+        <highlight>
+          <color-one-way>
+            <field>[federated.05bw1ub0dtm3si18io18f0hqjq6l].[:Measure Names]</field>
+            <field>[federated.05bw1ub0dtm3si18io18f0hqjq6l].[md:month:ok]</field>
+            <field>[federated.05bw1ub0dtm3si18io18f0hqjq6l].[none:kitchen_location:nk]</field>
+            <field>[federated.05bw1ub0dtm3si18io18f0hqjq6l].[none:kitchen_name:nk]</field>
+            <field>[federated.05bw1ub0dtm3si18io18f0hqjq6l].[none:main_cuisine:nk]</field>
+            <field>[federated.05bw1ub0dtm3si18io18f0hqjq6l].[usr:Calculation_5073234637266178048:ok]</field>
+          </color-one-way>
+        </highlight>
+      </viewpoint>
+      <simple-id uuid='{3B50DD01-6699-4141-B552-582A4C38BF7C}' />
+    </window>
+    <window class='worksheet' name='Sheet 6'>
+      <cards>
+        <edge name='left'>
+          <strip size='160'>
+            <card type='pages' />
+            <card type='filters' />
+            <card type='marks' />
+          </strip>
+        </edge>
+        <edge name='top'>
+          <strip size='2147483647'>
+            <card type='columns' />
+          </strip>
+          <strip size='2147483647'>
+            <card type='rows' />
+          </strip>
+          <strip size='31'>
+            <card type='title' />
+          </strip>
+        </edge>
+      </cards>
+      <viewpoint>
+        <highlight>
+          <color-one-way>
+            <field>[federated.05bw1ub0dtm3si18io18f0hqjq6l].[none:vendor_type:nk]</field>
+          </color-one-way>
+        </highlight>
+      </viewpoint>
+      <simple-id uuid='{7EA57DB8-5EFB-410E-9D5F-66E38D7599E3}' />
+    </window>
+  </windows>
+</workbook>

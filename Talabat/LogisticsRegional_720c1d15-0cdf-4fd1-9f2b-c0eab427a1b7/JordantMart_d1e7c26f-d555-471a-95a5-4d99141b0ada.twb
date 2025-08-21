@@ -1,0 +1,1622 @@
+<?xml version='1.0' encoding='utf-8' ?>
+
+<!-- build 20233.25.0106.1650                               -->
+<workbook original-version='18.1' source-build='2023.3.14 (20233.25.0106.1650)' version='18.1' xml:base='https://tableau.deliveryhero.net' xmlns:user='http://www.tableausoftware.com/xml/user'>
+  <document-format-change-manifest>
+    <_.fcp.AccessibleZoneTabOrder.true...AccessibleZoneTabOrder />
+    <_.fcp.AnimationOnByDefault.true...AnimationOnByDefault />
+    <AutoCreateAndUpdateDSDPhoneLayouts />
+    <CascadingFiltersHamburgerUI />
+    <_.fcp.MarkAnimation.true...MarkAnimation />
+    <_.fcp.ObjectModelEncapsulateLegacy.true...ObjectModelEncapsulateLegacy />
+    <_.fcp.ObjectModelExtractV2.true...ObjectModelExtractV2 />
+    <_.fcp.ObjectModelTableType.true...ObjectModelTableType />
+    <_.fcp.SchemaViewerObjectModel.true...SchemaViewerObjectModel />
+    <SetMembershipControl />
+    <SheetIdentifierTracking />
+    <SortTagCleanup />
+    <_.fcp.VConnDownstreamExtractsWithWarnings.true...VConnDownstreamExtractsWithWarnings />
+    <WindowsPersistSimpleIdentifiers />
+    <ZoneBackgroundTransparency />
+  </document-format-change-manifest>
+  <repository-location derived-from='https://tableau.deliveryhero.net/t/Talabat/workbooks/JordantMart?rev=1.2' id='JordantMart' path='/t/Talabat/workbooks' revision='1.3' site='Talabat' />
+  <preferences />
+  <_.fcp.AnimationOnByDefault.false...style>
+    <_.fcp.AnimationOnByDefault.false..._.fcp.MarkAnimation.true...style-rule element='animation'>
+      <_.fcp.AnimationOnByDefault.false...format attr='animation-on' value='ao-on' />
+    </_.fcp.AnimationOnByDefault.false..._.fcp.MarkAnimation.true...style-rule>
+  </_.fcp.AnimationOnByDefault.false...style>
+  <datasources>
+    <datasource caption='Jordan tMart ' inline='true' name='federated.09dtkvh0lz5d0l173dxvt1lw1dfc' version='18.1'>
+      <connection class='federated'>
+        <named-connections>
+          <named-connection caption='BigQuery' name='bigquery.0caf5ny1kooa951avvvxs1lgre8v'>
+            <connection CATALOG='tlb-data-dev' EXECCATALOG='tlb-data-dev' authentication='oauth' bq-dataset-fetch-rows='' bq-fetch-rows='' bq-fetch-tasks='' bq-large-fetch-rows='' bq-project-fetch-rows='' bq-response-rows='' class='bigquery' connection-dialect='google-sql' project='tlb-data-dev' schema='data_platform_logistics' server-oauth='' username='duygu.chaturvedi@talabat.com' workgroup-auth-mode='prompt' />
+          </named-connection>
+        </named-connections>
+        <_.fcp.ObjectModelEncapsulateLegacy.false...relation connection='bigquery.0caf5ny1kooa951avvvxs1lgre8v' name='Custom SQL Query' type='text'>------------------------------------------------------------------------------------------------
+---------------------Jordan tMart---------------------------------------------------
+------------------------------------------------------------------------------------------------
+WITH vendor_info AS 
+(
+  SELECT 
+    dvi.vendor_id,
+    dvi2.parent_vendor_id,
+    dvi2.vendor_name,
+    dvi.country_code,
+    dli.city_name as city,
+  FROM `tlb-data-prod.data_platform.dim_vendor_info` AS dvi
+  LEFT JOIN `tlb-data-prod.data_platform.dim_location_info` AS dli ON (dvi.location_id = dli.location_id)
+  LEFT JOIN ( SELECT 
+                parent_vendor_id,
+                vendor_name,
+                country_code
+            FROM `tlb-data-prod.data_platform.dim_vendor_info`
+            WHERE 1=1
+              AND is_darkstore
+              AND parent_vendor_id - vendor_id = 0
+              AND country_code = &apos;JO&apos;
+  )AS dvi2 ON dvi.parent_vendor_id = dvi2.parent_vendor_id AND dvi.country_code=dvi2.country_code
+  WHERE  dvi.country_code = &apos;JO&apos;
+    AND dvi.is_darkstore 
+),
+
+base AS 
+(
+  SELECT 
+  --order level data  
+    o.country_code,
+    o.city_id,
+    o.vendor.vendor_code,
+    o.vendor.vertical_type,
+    o.order_id,
+    o.platform_order_code,
+    date(o.created_at,o.timezone) AS order_date,
+    o.timings.to_vendor_time/60 AS tvt_mins,
+    o.timings.at_vendor_time/60 AS avt_mins,
+    o.timings.at_vendor_time_cleaned/60 AS avtc_mins,
+    o.timings.to_customer_time/60 AS tct_mins,
+    o.timings.promised_delivery_time/60 AS pdt_mins,
+    o.timings.actual_delivery_time/60 AS adt_mins,
+  --delivery level data
+    d.is_stacked_intravendor AS is_stacked,
+    timestamp_diff(d.rider_dispatched_at,o.created_at,second)/60 AS rdt_mins,
+    timestamp_diff(d.rider_accepted_at,d.rider_dispatched_at,second)/60 AS rat_mins,
+    timestamp_diff(d.rider_picked_up_at,o.created_at,second)/60 AS pickup_mins,
+    (timestamp_diff(d.rider_dispatched_at,o.created_at,second)+timestamp_diff(d.rider_accepted_at,d.rider_dispatched_at,second)+o.timings.to_vendor_time)/60 AS rrv_mins,
+    v.vendor_name,
+    city
+  FROM `fulfillment-dwh-production.curated_data_shared.orders` o
+  LEFT JOIN UNNEST(deliveries) d
+  INNER JOIN vendor_info v ON cast(v.vendor_id as string)= o.vendor.vendor_code AND lower(v.country_code)=o.country_code
+  WHERE o.created_date &gt;&gt;= &apos;2023-12-31&apos;
+    AND o.entity.id = &apos;TB_JO&apos;
+    AND d.is_primary
+    AND d.is_returning IS FALSE
+    AND d.is_redelivery IS FALSE
+    AND o.order_status=&apos;completed&apos;
+    AND d.delivery_status=&apos;completed&apos;
+),
+
+
+picking_data as 
+(
+  SELECT DISTINCT
+    pickers.order_id,
+    lower(pickers.country_code) AS country_code,
+    (assignment_time_seconds + picking_time_seconds + packaging_time_seconds)/60 as total_prep_time,
+    store_dispatch_time_seconds/60 AS store_dispatch_time
+  FROM `tlb-data-prod.data_platform.fct_picker_order` as pickers
+  WHERE created_date&gt;&gt;=&apos;2023-12-31&apos;
+    AND global_entity_id = &apos;TB_JO&apos;
+)
+
+  SELECT 
+    rd.country_code,
+    rd.city,
+    vendor_name,
+    date_trunc(order_date,month) order_month,
+    count(DISTINCT rd.order_id) AS order_count_d,
+    count(rd.order_id) AS order_count,
+    count(CASE WHEN is_stacked THEN rd.order_id END) AS stacked_order_count,
+    sum(rd.tvt_mins) AS tvt_mins,
+    sum(rd.avt_mins) AS avt_mins,
+    sum(rd.avtc_mins) AS avtc_mins,
+    sum(rd.tct_mins) AS tct_mins,
+    sum(rd.pdt_mins) AS pdt_mins,
+    sum(rd.adt_mins) AS adt_mins,
+    sum(rd.rdt_mins) AS rdt_mins, 
+    sum(rd.rat_mins) AS rat_mins, 
+    sum(rd.rrv_mins) AS rrv_mins, 
+    sum(rd.pickup_mins) AS pickup_mins, 
+    count(p.order_id) AS picking_order_count,
+    sum(total_prep_time) AS total_prep_time,
+    sum(store_dispatch_time) AS store_dispatch_time
+  FROM base rd
+    LEFT JOIN picking_data p ON rd.country_code=p.country_code AND rd.platform_order_code=cast(p.order_id AS string)
+      WHERE order_date BETWEEN &apos;2024-01-01&apos; AND (current_date()-1)
+        GROUP BY ALL</_.fcp.ObjectModelEncapsulateLegacy.false...relation>
+        <_.fcp.ObjectModelEncapsulateLegacy.true...relation connection='bigquery.0caf5ny1kooa951avvvxs1lgre8v' name='Custom SQL Query' type='text'>------------------------------------------------------------------------------------------------
+---------------------Jordan tMart---------------------------------------------------
+------------------------------------------------------------------------------------------------
+WITH vendor_info AS 
+(
+  SELECT 
+    dvi.vendor_id,
+    dvi2.parent_vendor_id,
+    dvi2.vendor_name,
+    dvi.country_code,
+    dli.city_name as city,
+  FROM `tlb-data-prod.data_platform.dim_vendor_info` AS dvi
+  LEFT JOIN `tlb-data-prod.data_platform.dim_location_info` AS dli ON (dvi.location_id = dli.location_id)
+  LEFT JOIN ( SELECT 
+                parent_vendor_id,
+                vendor_name,
+                country_code
+            FROM `tlb-data-prod.data_platform.dim_vendor_info`
+            WHERE 1=1
+              AND is_darkstore
+              AND parent_vendor_id - vendor_id = 0
+              AND country_code = &apos;JO&apos;
+  )AS dvi2 ON dvi.parent_vendor_id = dvi2.parent_vendor_id AND dvi.country_code=dvi2.country_code
+  WHERE  dvi.country_code = &apos;JO&apos;
+    AND dvi.is_darkstore 
+),
+
+base AS 
+(
+  SELECT 
+  --order level data  
+    o.country_code,
+    o.city_id,
+    o.vendor.vendor_code,
+    o.vendor.vertical_type,
+    o.order_id,
+    o.platform_order_code,
+    date(o.created_at,o.timezone) AS order_date,
+    o.timings.to_vendor_time/60 AS tvt_mins,
+    o.timings.at_vendor_time/60 AS avt_mins,
+    o.timings.at_vendor_time_cleaned/60 AS avtc_mins,
+    o.timings.to_customer_time/60 AS tct_mins,
+    o.timings.promised_delivery_time/60 AS pdt_mins,
+    o.timings.actual_delivery_time/60 AS adt_mins,
+  --delivery level data
+    d.is_stacked_intravendor AS is_stacked,
+    timestamp_diff(d.rider_dispatched_at,o.created_at,second)/60 AS rdt_mins,
+    timestamp_diff(d.rider_accepted_at,d.rider_dispatched_at,second)/60 AS rat_mins,
+    timestamp_diff(d.rider_picked_up_at,o.created_at,second)/60 AS pickup_mins,
+    (timestamp_diff(d.rider_dispatched_at,o.created_at,second)+timestamp_diff(d.rider_accepted_at,d.rider_dispatched_at,second)+o.timings.to_vendor_time)/60 AS rrv_mins,
+    v.vendor_name,
+    city
+  FROM `fulfillment-dwh-production.curated_data_shared.orders` o
+  LEFT JOIN UNNEST(deliveries) d
+  INNER JOIN vendor_info v ON cast(v.vendor_id as string)= o.vendor.vendor_code AND lower(v.country_code)=o.country_code
+  WHERE o.created_date &gt;&gt;= &apos;2023-12-31&apos;
+    AND o.entity.id = &apos;TB_JO&apos;
+    AND d.is_primary
+    AND d.is_returning IS FALSE
+    AND d.is_redelivery IS FALSE
+    AND o.order_status=&apos;completed&apos;
+    AND d.delivery_status=&apos;completed&apos;
+),
+
+
+picking_data as 
+(
+  SELECT DISTINCT
+    pickers.order_id,
+    lower(pickers.country_code) AS country_code,
+    (assignment_time_seconds + picking_time_seconds + packaging_time_seconds)/60 as total_prep_time,
+    store_dispatch_time_seconds/60 AS store_dispatch_time
+  FROM `tlb-data-prod.data_platform.fct_picker_order` as pickers
+  WHERE created_date&gt;&gt;=&apos;2023-12-31&apos;
+    AND global_entity_id = &apos;TB_JO&apos;
+)
+
+  SELECT 
+    rd.country_code,
+    rd.city,
+    vendor_name,
+    date_trunc(order_date,month) order_month,
+    count(DISTINCT rd.order_id) AS order_count_d,
+    count(rd.order_id) AS order_count,
+    count(CASE WHEN is_stacked THEN rd.order_id END) AS stacked_order_count,
+    sum(rd.tvt_mins) AS tvt_mins,
+    sum(rd.avt_mins) AS avt_mins,
+    sum(rd.avtc_mins) AS avtc_mins,
+    sum(rd.tct_mins) AS tct_mins,
+    sum(rd.pdt_mins) AS pdt_mins,
+    sum(rd.adt_mins) AS adt_mins,
+    sum(rd.rdt_mins) AS rdt_mins, 
+    sum(rd.rat_mins) AS rat_mins, 
+    sum(rd.rrv_mins) AS rrv_mins, 
+    sum(rd.pickup_mins) AS pickup_mins, 
+    count(p.order_id) AS picking_order_count,
+    sum(total_prep_time) AS total_prep_time,
+    sum(store_dispatch_time) AS store_dispatch_time
+  FROM base rd
+    LEFT JOIN picking_data p ON rd.country_code=p.country_code AND rd.platform_order_code=cast(p.order_id AS string)
+      WHERE order_date BETWEEN &apos;2024-01-01&apos; AND (current_date()-1)
+        GROUP BY ALL</_.fcp.ObjectModelEncapsulateLegacy.true...relation>
+        <metadata-records>
+          <metadata-record class='column'>
+            <remote-name>country_code</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[country_code]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>country_code</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_78E4815895784AE0825B6010EB53F6EE]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>city</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[city]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>city</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_78E4815895784AE0825B6010EB53F6EE]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>vendor_name</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[vendor_name]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>vendor_name</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_78E4815895784AE0825B6010EB53F6EE]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>order_month</remote-name>
+            <remote-type>7</remote-type>
+            <local-name>[order_month]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>order_month</remote-alias>
+            <local-type>date</local-type>
+            <aggregation>Year</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_78E4815895784AE0825B6010EB53F6EE]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>order_count_d</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[order_count_d]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>order_count_d</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_78E4815895784AE0825B6010EB53F6EE]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>order_count</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[order_count]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>order_count</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_78E4815895784AE0825B6010EB53F6EE]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>stacked_order_count</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[stacked_order_count]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>stacked_order_count</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_78E4815895784AE0825B6010EB53F6EE]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>tvt_mins</remote-name>
+            <remote-type>5</remote-type>
+            <local-name>[tvt_mins]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>tvt_mins</remote-alias>
+            <local-type>real</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_78E4815895784AE0825B6010EB53F6EE]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>avt_mins</remote-name>
+            <remote-type>5</remote-type>
+            <local-name>[avt_mins]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>avt_mins</remote-alias>
+            <local-type>real</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_78E4815895784AE0825B6010EB53F6EE]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>avtc_mins</remote-name>
+            <remote-type>5</remote-type>
+            <local-name>[avtc_mins]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>avtc_mins</remote-alias>
+            <local-type>real</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_78E4815895784AE0825B6010EB53F6EE]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>tct_mins</remote-name>
+            <remote-type>5</remote-type>
+            <local-name>[tct_mins]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>tct_mins</remote-alias>
+            <local-type>real</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_78E4815895784AE0825B6010EB53F6EE]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>pdt_mins</remote-name>
+            <remote-type>5</remote-type>
+            <local-name>[pdt_mins]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>pdt_mins</remote-alias>
+            <local-type>real</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_78E4815895784AE0825B6010EB53F6EE]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>adt_mins</remote-name>
+            <remote-type>5</remote-type>
+            <local-name>[adt_mins]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>adt_mins</remote-alias>
+            <local-type>real</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_78E4815895784AE0825B6010EB53F6EE]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>rdt_mins</remote-name>
+            <remote-type>5</remote-type>
+            <local-name>[rdt_mins]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>rdt_mins</remote-alias>
+            <local-type>real</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_78E4815895784AE0825B6010EB53F6EE]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>rat_mins</remote-name>
+            <remote-type>5</remote-type>
+            <local-name>[rat_mins]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>rat_mins</remote-alias>
+            <local-type>real</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_78E4815895784AE0825B6010EB53F6EE]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>rrv_mins</remote-name>
+            <remote-type>5</remote-type>
+            <local-name>[rrv_mins]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>rrv_mins</remote-alias>
+            <local-type>real</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_78E4815895784AE0825B6010EB53F6EE]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>pickup_mins</remote-name>
+            <remote-type>5</remote-type>
+            <local-name>[pickup_mins]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>pickup_mins</remote-alias>
+            <local-type>real</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_78E4815895784AE0825B6010EB53F6EE]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>picking_order_count</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[picking_order_count]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>picking_order_count</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_78E4815895784AE0825B6010EB53F6EE]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>total_prep_time</remote-name>
+            <remote-type>5</remote-type>
+            <local-name>[total_prep_time]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>total_prep_time</remote-alias>
+            <local-type>real</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_78E4815895784AE0825B6010EB53F6EE]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>store_dispatch_time</remote-name>
+            <remote-type>5</remote-type>
+            <local-name>[store_dispatch_time]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>store_dispatch_time</remote-alias>
+            <local-type>real</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_78E4815895784AE0825B6010EB53F6EE]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+        </metadata-records>
+      </connection>
+      <aliases enabled='yes' />
+      <column caption='# Orders - YoY Change' datatype='real' name='[# Orders - YoY Change (copy 2)_307229948609048595]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='(SUM([order_count]) - LOOKUP(SUM([order_count]), -12)) / LOOKUP(SUM([order_count]), -12)'>
+          <table-calc ordering-type='Rows' />
+        </calculation>
+      </column>
+      <column caption='Preparation Time - YoY Change' datatype='real' name='[% Stacked Orders - YoY Change (copy 2)_307229948609622038]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='([Store Dispatch Time (copy)_307229948601778186] - LOOKUP([Store Dispatch Time (copy)_307229948601778186], -12)) / LOOKUP([Store Dispatch Time (copy)_307229948601778186], -12)'>
+          <table-calc ordering-type='Rows' />
+        </calculation>
+      </column>
+      <column caption='Rider Acceptance Time - YoY Change' datatype='real' name='[% Stacked Orders - YoY Change (copy) (copy 2) (copy)_307229948609830937]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='([TVT (copy)_307229948601323525] - LOOKUP([TVT (copy)_307229948601323525], -12)) / LOOKUP([TVT (copy)_307229948601323525], -12)'>
+          <table-calc ordering-type='Rows' />
+        </calculation>
+      </column>
+      <column caption='Rider Dispatch Time - YoY Change' datatype='real' name='[% Stacked Orders - YoY Change (copy) (copy 2)_307229948609818648]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='([Rider Acceptance Time (copy)_307229948601458694] - LOOKUP([Rider Acceptance Time (copy)_307229948601458694], -12)) / LOOKUP([Rider Acceptance Time (copy)_307229948601458694], -12)'>
+          <table-calc ordering-type='Rows' />
+        </calculation>
+      </column>
+      <column caption='TCT - YoY Change' datatype='real' name='[% Stacked Orders - YoY Change (copy) (copy) (copy) (copy 2) (copy) (copy)_307229948610981919]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='([DT (copy)_307229948601225219] - LOOKUP([DT (copy)_307229948601225219], -12)) / LOOKUP([DT (copy)_307229948601225219], -12)'>
+          <table-calc ordering-type='Rows' />
+        </calculation>
+      </column>
+      <column caption='AVTC - YoY Change' datatype='real' name='[% Stacked Orders - YoY Change (copy) (copy) (copy) (copy 2) (copy)_307229948610687005]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='([AVT (copy)_307229948601139201] - LOOKUP([AVT (copy)_307229948601139201], -12)) / LOOKUP([AVT (copy)_307229948601139201], -12)'>
+          <table-calc ordering-type='Rows' />
+        </calculation>
+      </column>
+      <column caption='AVT - YoY Change' datatype='real' name='[% Stacked Orders - YoY Change (copy) (copy) (copy) (copy 2)_307229948610674716]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='([Calculation_307229948601016320] - LOOKUP([Calculation_307229948601016320], -12)) / LOOKUP([Calculation_307229948601016320], -12)'>
+          <table-calc ordering-type='Rows' />
+        </calculation>
+      </column>
+      <column caption='PDT - YoY Change' datatype='real' name='[% Stacked Orders - YoY Change (copy) (copy) (copy) (copy) (copy) (copy)_307229948610687006]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='([RRV (copy)_307229948601573384] - LOOKUP([RRV (copy)_307229948601573384], -12)) / LOOKUP([RRV (copy)_307229948601573384], -12)'>
+          <table-calc ordering-type='Rows' />
+        </calculation>
+      </column>
+      <column caption='DT - YoY Change' datatype='real' name='[% Stacked Orders - YoY Change (copy) (copy) (copy) (copy)_307229948609830938]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='([AVTC (copy)_307229948601180162] - LOOKUP([AVTC (copy)_307229948601180162], -12)) / LOOKUP([AVTC (copy)_307229948601180162], -12)'>
+          <table-calc ordering-type='Rows' />
+        </calculation>
+      </column>
+      <column caption='RRV - YoY Change' datatype='real' name='[% Stacked Orders - YoY Change (copy) (copy) (copy)_307229948609818647]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='([Rider Dispatch Time (copy)_307229948601520135] - LOOKUP([Rider Dispatch Time (copy)_307229948601520135], -12)) / LOOKUP([Rider Dispatch Time (copy)_307229948601520135], -12)'>
+          <table-calc ordering-type='Rows' />
+        </calculation>
+      </column>
+      <column caption='TVT - YoY Change' datatype='real' name='[% Stacked Orders - YoY Change (copy) (copy)_307229948609622037]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='([DT (copy)_307229948601274372] - LOOKUP([DT (copy)_307229948601274372], -12)) / LOOKUP([DT (copy)_307229948601274372], -12)'>
+          <table-calc ordering-type='Rows' />
+        </calculation>
+      </column>
+      <column caption='Store Dispatch Time - YoY Change' datatype='real' name='[% Stacked Orders - YoY Change (copy)_307229948609609748]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='([Calculation_307229948601675785] - LOOKUP([Calculation_307229948601675785], -12)) / LOOKUP([Calculation_307229948601675785], -12)'>
+          <table-calc ordering-type='Rows' />
+        </calculation>
+      </column>
+      <column caption='AVTC' datatype='real' name='[AVT (copy)_307229948601139201]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='SUM([avtc_mins])/SUM([order_count])' />
+      </column>
+      <column caption='DT' datatype='real' name='[AVTC (copy)_307229948601180162]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='SUM([adt_mins])/SUM([order_count])' />
+      </column>
+      <column caption='AVT' datatype='real' name='[Calculation_307229948601016320]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='SUM([avt_mins])/SUM([order_count])' />
+      </column>
+      <column caption='Store Dispatch Time' datatype='real' name='[Calculation_307229948601675785]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='SUM([store_dispatch_time])/SUM([picking_order_count])' />
+      </column>
+      <column caption='% Stacked Orders' datatype='real' name='[Calculation_307229948601958411]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='SUM([stacked_order_count])/SUM([order_count])' />
+      </column>
+      <column caption='% Stacked Orders - YoY Change' datatype='real' name='[Calculation_307229948607586316]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='([Calculation_307229948601958411] - LOOKUP([Calculation_307229948601958411], -12)) / LOOKUP([Calculation_307229948601958411], -12)'>
+          <table-calc ordering-type='Rows' />
+        </calculation>
+      </column>
+      <column caption='Pickup Time (From Order Created)' datatype='real' name='[Calculation_420664364233510912]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='SUM([pickup_mins])/SUM([order_count])' />
+      </column>
+      <column caption='TCT' datatype='real' name='[DT (copy)_307229948601225219]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='SUM([tct_mins])/SUM([order_count])' />
+      </column>
+      <column caption='TVT' datatype='real' name='[DT (copy)_307229948601274372]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='SUM([tvt_mins])/SUM([order_count])' />
+      </column>
+      <column caption='Pickup Time (From Order Created) - YoY Change' datatype='real' name='[PDT - YoY Change (copy)_420664364233801729]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='([Calculation_420664364233510912] - LOOKUP([Calculation_420664364233510912], -12)) / LOOKUP([Calculation_420664364233510912], -12)'>
+          <table-calc ordering-type='Rows' />
+        </calculation>
+      </column>
+      <column caption='PDT' datatype='real' name='[RRV (copy)_307229948601573384]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='SUM([pdt_mins])/SUM([order_count])' />
+      </column>
+      <column caption='Rider Dispatch Time' datatype='real' name='[Rider Acceptance Time (copy)_307229948601458694]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='SUM([rdt_mins])/SUM([order_count])' />
+      </column>
+      <column caption='RRV' datatype='real' name='[Rider Dispatch Time (copy)_307229948601520135]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='SUM([rrv_mins])/SUM([order_count])' />
+      </column>
+      <column caption='Preparation Time' datatype='real' name='[Store Dispatch Time (copy)_307229948601778186]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='SUM([total_prep_time])/SUM([picking_order_count])' />
+      </column>
+      <column caption='Rider Acceptance Time' datatype='real' name='[TVT (copy)_307229948601323525]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='SUM([rat_mins])/SUM([order_count])' />
+      </column>
+      <_.fcp.ObjectModelTableType.true...column caption='Custom SQL Query' datatype='table' name='[__tableau_internal_object_id__].[_78E4815895784AE0825B6010EB53F6EE]' role='measure' type='quantitative' />
+      <column caption='City' datatype='string' name='[city]' role='dimension' semantic-role='[City].[Name]' type='nominal' />
+      <column caption='Country' datatype='string' name='[country_code]' role='dimension' semantic-role='[Country].[ISO3166_2]' type='nominal' />
+      <column caption='# Orders' datatype='integer' name='[order_count]' role='measure' type='quantitative' />
+      <column caption='Order Month' datatype='date' name='[order_month]' role='dimension' type='ordinal' />
+      <column caption='Store' datatype='string' name='[vendor_name]' role='dimension' type='nominal' />
+      <drill-paths>
+        <drill-path name='country_code, city'>
+          <field>[country_code]</field>
+          <field>[city]</field>
+          <field>[vendor_name]</field>
+        </drill-path>
+      </drill-paths>
+      <extract _.fcp.ObjectModelExtractV2.true...object-id='' _.fcp.VConnDownstreamExtractsWithWarnings.true...user-specific='false' count='-1' enabled='true' units='records'>
+        <connection access_mode='readonly' author-locale='en_US' class='hyper' dbname='extract/e4/ee/{AE0EA495-6AF3-4550-856D-00B2A3E2C0AF}/federated_09dtkvh0lz5d0l173dxvt1.hyper' extract-engine='true' schema='Extract' sslmode='' tablename='Extract' update-time='05/26/2025 06:52:30 AM'>
+          <_.fcp.ObjectModelEncapsulateLegacy.false...relation name='Extract' table='[Extract].[Extract]' type='table' />
+          <_.fcp.ObjectModelEncapsulateLegacy.true...relation name='Extract' table='[Extract].[Extract]' type='table' />
+          <metadata-records>
+            <metadata-record class='column'>
+              <remote-name>country_code</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[country_code]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>country_code</remote-alias>
+              <ordinal>0</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>1</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_78E4815895784AE0825B6010EB53F6EE]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>city</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[city]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>city</remote-alias>
+              <ordinal>1</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>5</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_78E4815895784AE0825B6010EB53F6EE]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>vendor_name</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[vendor_name]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>vendor_name</remote-alias>
+              <ordinal>2</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>13</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_78E4815895784AE0825B6010EB53F6EE]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>order_month</remote-name>
+              <remote-type>133</remote-type>
+              <local-name>[order_month]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>order_month</remote-alias>
+              <ordinal>3</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>date</local-type>
+              <aggregation>Year</aggregation>
+              <approx-count>17</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_78E4815895784AE0825B6010EB53F6EE]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>order_count_d</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[order_count_d]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>order_count_d</remote-alias>
+              <ordinal>4</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>221</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_78E4815895784AE0825B6010EB53F6EE]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>order_count</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[order_count]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>order_count</remote-alias>
+              <ordinal>5</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>221</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_78E4815895784AE0825B6010EB53F6EE]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>stacked_order_count</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[stacked_order_count]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>stacked_order_count</remote-alias>
+              <ordinal>6</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>203</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_78E4815895784AE0825B6010EB53F6EE]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>tvt_mins</remote-name>
+              <remote-type>5</remote-type>
+              <local-name>[tvt_mins]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>tvt_mins</remote-alias>
+              <ordinal>7</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>real</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>221</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_78E4815895784AE0825B6010EB53F6EE]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>avt_mins</remote-name>
+              <remote-type>5</remote-type>
+              <local-name>[avt_mins]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>avt_mins</remote-alias>
+              <ordinal>8</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>real</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>221</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_78E4815895784AE0825B6010EB53F6EE]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>avtc_mins</remote-name>
+              <remote-type>5</remote-type>
+              <local-name>[avtc_mins]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>avtc_mins</remote-alias>
+              <ordinal>9</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>real</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>221</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_78E4815895784AE0825B6010EB53F6EE]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>tct_mins</remote-name>
+              <remote-type>5</remote-type>
+              <local-name>[tct_mins]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>tct_mins</remote-alias>
+              <ordinal>10</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>real</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>221</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_78E4815895784AE0825B6010EB53F6EE]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>pdt_mins</remote-name>
+              <remote-type>5</remote-type>
+              <local-name>[pdt_mins]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>pdt_mins</remote-alias>
+              <ordinal>11</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>real</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>221</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_78E4815895784AE0825B6010EB53F6EE]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>adt_mins</remote-name>
+              <remote-type>5</remote-type>
+              <local-name>[adt_mins]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>adt_mins</remote-alias>
+              <ordinal>12</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>real</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>221</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_78E4815895784AE0825B6010EB53F6EE]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>rdt_mins</remote-name>
+              <remote-type>5</remote-type>
+              <local-name>[rdt_mins]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>rdt_mins</remote-alias>
+              <ordinal>13</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>real</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>221</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_78E4815895784AE0825B6010EB53F6EE]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>rat_mins</remote-name>
+              <remote-type>5</remote-type>
+              <local-name>[rat_mins]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>rat_mins</remote-alias>
+              <ordinal>14</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>real</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>221</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_78E4815895784AE0825B6010EB53F6EE]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>rrv_mins</remote-name>
+              <remote-type>5</remote-type>
+              <local-name>[rrv_mins]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>rrv_mins</remote-alias>
+              <ordinal>15</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>real</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>221</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_78E4815895784AE0825B6010EB53F6EE]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>pickup_mins</remote-name>
+              <remote-type>5</remote-type>
+              <local-name>[pickup_mins]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>pickup_mins</remote-alias>
+              <ordinal>16</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>real</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>221</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_78E4815895784AE0825B6010EB53F6EE]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>picking_order_count</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[picking_order_count]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>picking_order_count</remote-alias>
+              <ordinal>17</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>220</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_78E4815895784AE0825B6010EB53F6EE]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>total_prep_time</remote-name>
+              <remote-type>5</remote-type>
+              <local-name>[total_prep_time]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>total_prep_time</remote-alias>
+              <ordinal>18</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>real</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>221</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_78E4815895784AE0825B6010EB53F6EE]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>store_dispatch_time</remote-name>
+              <remote-type>5</remote-type>
+              <local-name>[store_dispatch_time]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>store_dispatch_time</remote-alias>
+              <ordinal>19</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>real</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>221</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_78E4815895784AE0825B6010EB53F6EE]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+          </metadata-records>
+        </connection>
+      </extract>
+      <layout _.fcp.SchemaViewerObjectModel.false...dim-percentage='0.5' _.fcp.SchemaViewerObjectModel.false...measure-percentage='0.4' dim-ordering='alphabetic' measure-ordering='alphabetic' show-structure='true' />
+      <semantic-values>
+        <semantic-value key='[Country].[Name]' value='&quot;United States&quot;' />
+      </semantic-values>
+      <date-options start-of-week='saturday' />
+      <field-sort-info field-sort-order-type='custom-order'>
+        <field-sort-custom-order field='country_code' />
+        <field-sort-custom-order field='vendor_name' />
+        <field-sort-custom-order field='order_month' />
+        <field-sort-custom-order field='order_count_d' />
+        <field-sort-custom-order field='order_count' />
+        <field-sort-custom-order field='Calculation_307229948601016320' />
+        <field-sort-custom-order field='AVT (copy)_307229948601139201' />
+        <field-sort-custom-order field='Calculation_307229948607586316' />
+        <field-sort-custom-order field='% Stacked Orders - YoY Change (copy 2)_307229948609622038' />
+        <field-sort-custom-order field='% Stacked Orders - YoY Change (copy)_307229948609609748' />
+        <field-sort-custom-order field='% Stacked Orders - YoY Change (copy) (copy 2)_307229948609818648' />
+        <field-sort-custom-order field='% Stacked Orders - YoY Change (copy) (copy 2) (copy)_307229948609830937' />
+        <field-sort-custom-order field='% Stacked Orders - YoY Change (copy) (copy)_307229948609622037' />
+        <field-sort-custom-order field='% Stacked Orders - YoY Change (copy) (copy) (copy)_307229948609818647' />
+        <field-sort-custom-order field='% Stacked Orders - YoY Change (copy) (copy) (copy) (copy 2)_307229948610674716' />
+        <field-sort-custom-order field='% Stacked Orders - YoY Change (copy) (copy) (copy) (copy 2) (copy)_307229948610687005' />
+        <field-sort-custom-order field='% Stacked Orders - YoY Change (copy) (copy) (copy) (copy 2) (copy) (copy)_307229948610981919' />
+        <field-sort-custom-order field='% Stacked Orders - YoY Change (copy) (copy) (copy) (copy)_307229948609830938' />
+        <field-sort-custom-order field='% Stacked Orders - YoY Change (copy) (copy) (copy) (copy) (copy)_307229948610674715' />
+        <field-sort-custom-order field='% Stacked Orders - YoY Change (copy) (copy) (copy) (copy) (copy) (copy)_307229948610687006' />
+        <field-sort-custom-order field='PDT - YoY Change (copy)_420664364233801729' />
+        <field-sort-custom-order field='# Orders - YoY Change (copy 2)_307229948609048595' />
+        <field-sort-custom-order field='# Orders - YoY Change (copy)_307229948608987149' />
+        <field-sort-custom-order field='# Orders - YoY Change (copy) (copy 3)_307229948609048594' />
+        <field-sort-custom-order field='# Orders - YoY Change (copy) (copy 2)_307229948609036303' />
+        <field-sort-custom-order field='# Orders - YoY Change (copy) (copy 2) (copy)_307229948609048592' />
+        <field-sort-custom-order field='# Orders - YoY Change (copy) (copy)_307229948609024014' />
+        <field-sort-custom-order field='# Orders - YoY Change (copy) (copy) (copy)_307229948609048593' />
+        <field-sort-custom-order field='AVTC (copy)_307229948601180162' />
+        <field-sort-custom-order field='DT (copy)_307229948601274372' />
+        <field-sort-custom-order field='TVT (copy)_307229948601323525' />
+        <field-sort-custom-order field='Rider Acceptance Time (copy)_307229948601458694' />
+        <field-sort-custom-order field='Rider Dispatch Time (copy)_307229948601520135' />
+        <field-sort-custom-order field='RRV (copy)_307229948601573384' />
+        <field-sort-custom-order field='DT (copy)_307229948601225219' />
+        <field-sort-custom-order field='stacked_order_count' />
+        <field-sort-custom-order field='tvt_mins' />
+        <field-sort-custom-order field='avt_mins' />
+        <field-sort-custom-order field='avtc_mins' />
+        <field-sort-custom-order field='tct_mins' />
+        <field-sort-custom-order field='pdt_mins' />
+        <field-sort-custom-order field='adt_mins' />
+        <field-sort-custom-order field='rdt_mins' />
+        <field-sort-custom-order field='rat_mins' />
+        <field-sort-custom-order field='Calculation_307229948601958411' />
+        <field-sort-custom-order field='rrv_mins' />
+        <field-sort-custom-order field='picking_order_count' />
+        <field-sort-custom-order field='total_prep_time' />
+        <field-sort-custom-order field='store_dispatch_time' />
+        <field-sort-custom-order field='Calculation_307229948601675785' />
+        <field-sort-custom-order field='Store Dispatch Time (copy)_307229948601778186' />
+        <field-sort-custom-order field='Geometry (generated)' />
+        <field-sort-custom-order field='Latitude (generated)' />
+        <field-sort-custom-order field='Longitude (generated)' />
+        <field-sort-custom-order field=':Measure Names' />
+        <field-sort-custom-order field='Multiple Values' />
+      </field-sort-info>
+      <_.fcp.ObjectModelEncapsulateLegacy.true...object-graph>
+        <objects>
+          <object caption='Custom SQL Query' id='_78E4815895784AE0825B6010EB53F6EE'>
+            <properties context=''>
+              <relation connection='bigquery.0caf5ny1kooa951avvvxs1lgre8v' name='Custom SQL Query' type='text'>------------------------------------------------------------------------------------------------
+---------------------Jordan tMart---------------------------------------------------
+------------------------------------------------------------------------------------------------
+WITH vendor_info AS 
+(
+  SELECT 
+    dvi.vendor_id,
+    dvi2.parent_vendor_id,
+    dvi2.vendor_name,
+    dvi.country_code,
+    dli.city_name as city,
+  FROM `tlb-data-prod.data_platform.dim_vendor_info` AS dvi
+  LEFT JOIN `tlb-data-prod.data_platform.dim_location_info` AS dli ON (dvi.location_id = dli.location_id)
+  LEFT JOIN ( SELECT 
+                parent_vendor_id,
+                vendor_name,
+                country_code
+            FROM `tlb-data-prod.data_platform.dim_vendor_info`
+            WHERE 1=1
+              AND is_darkstore
+              AND parent_vendor_id - vendor_id = 0
+              AND country_code = &apos;JO&apos;
+  )AS dvi2 ON dvi.parent_vendor_id = dvi2.parent_vendor_id AND dvi.country_code=dvi2.country_code
+  WHERE  dvi.country_code = &apos;JO&apos;
+    AND dvi.is_darkstore 
+),
+
+base AS 
+(
+  SELECT 
+  --order level data  
+    o.country_code,
+    o.city_id,
+    o.vendor.vendor_code,
+    o.vendor.vertical_type,
+    o.order_id,
+    o.platform_order_code,
+    date(o.created_at,o.timezone) AS order_date,
+    o.timings.to_vendor_time/60 AS tvt_mins,
+    o.timings.at_vendor_time/60 AS avt_mins,
+    o.timings.at_vendor_time_cleaned/60 AS avtc_mins,
+    o.timings.to_customer_time/60 AS tct_mins,
+    o.timings.promised_delivery_time/60 AS pdt_mins,
+    o.timings.actual_delivery_time/60 AS adt_mins,
+  --delivery level data
+    d.is_stacked_intravendor AS is_stacked,
+    timestamp_diff(d.rider_dispatched_at,o.created_at,second)/60 AS rdt_mins,
+    timestamp_diff(d.rider_accepted_at,d.rider_dispatched_at,second)/60 AS rat_mins,
+    timestamp_diff(d.rider_picked_up_at,o.created_at,second)/60 AS pickup_mins,
+    (timestamp_diff(d.rider_dispatched_at,o.created_at,second)+timestamp_diff(d.rider_accepted_at,d.rider_dispatched_at,second)+o.timings.to_vendor_time)/60 AS rrv_mins,
+    v.vendor_name,
+    city
+  FROM `fulfillment-dwh-production.curated_data_shared.orders` o
+  LEFT JOIN UNNEST(deliveries) d
+  INNER JOIN vendor_info v ON cast(v.vendor_id as string)= o.vendor.vendor_code AND lower(v.country_code)=o.country_code
+  WHERE o.created_date &gt;&gt;= &apos;2023-12-31&apos;
+    AND o.entity.id = &apos;TB_JO&apos;
+    AND d.is_primary
+    AND d.is_returning IS FALSE
+    AND d.is_redelivery IS FALSE
+    AND o.order_status=&apos;completed&apos;
+    AND d.delivery_status=&apos;completed&apos;
+),
+
+
+picking_data as 
+(
+  SELECT DISTINCT
+    pickers.order_id,
+    lower(pickers.country_code) AS country_code,
+    (assignment_time_seconds + picking_time_seconds + packaging_time_seconds)/60 as total_prep_time,
+    store_dispatch_time_seconds/60 AS store_dispatch_time
+  FROM `tlb-data-prod.data_platform.fct_picker_order` as pickers
+  WHERE created_date&gt;&gt;=&apos;2023-12-31&apos;
+    AND global_entity_id = &apos;TB_JO&apos;
+)
+
+  SELECT 
+    rd.country_code,
+    rd.city,
+    vendor_name,
+    date_trunc(order_date,month) order_month,
+    count(DISTINCT rd.order_id) AS order_count_d,
+    count(rd.order_id) AS order_count,
+    count(CASE WHEN is_stacked THEN rd.order_id END) AS stacked_order_count,
+    sum(rd.tvt_mins) AS tvt_mins,
+    sum(rd.avt_mins) AS avt_mins,
+    sum(rd.avtc_mins) AS avtc_mins,
+    sum(rd.tct_mins) AS tct_mins,
+    sum(rd.pdt_mins) AS pdt_mins,
+    sum(rd.adt_mins) AS adt_mins,
+    sum(rd.rdt_mins) AS rdt_mins, 
+    sum(rd.rat_mins) AS rat_mins, 
+    sum(rd.rrv_mins) AS rrv_mins, 
+    sum(rd.pickup_mins) AS pickup_mins, 
+    count(p.order_id) AS picking_order_count,
+    sum(total_prep_time) AS total_prep_time,
+    sum(store_dispatch_time) AS store_dispatch_time
+  FROM base rd
+    LEFT JOIN picking_data p ON rd.country_code=p.country_code AND rd.platform_order_code=cast(p.order_id AS string)
+      WHERE order_date BETWEEN &apos;2024-01-01&apos; AND (current_date()-1)
+        GROUP BY ALL</relation>
+            </properties>
+            <properties context='extract'>
+              <relation name='Extract' table='[Extract].[Extract]' type='table' />
+            </properties>
+          </object>
+        </objects>
+      </_.fcp.ObjectModelEncapsulateLegacy.true...object-graph>
+    </datasource>
+  </datasources>
+  <worksheets>
+    <worksheet name='Sheet 3'>
+      <layout-options>
+        <title>
+          <formatted-text>
+            <run fontcolor='#000000' fontname='Benton Sans Book' fontsize='8'>You can expand the view at the Country/City/Vendor level. Please hover over Country and click on the &apos;+&apos; button to expand it.</run>
+          </formatted-text>
+        </title>
+      </layout-options>
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='Jordan tMart ' name='federated.09dtkvh0lz5d0l173dxvt1lw1dfc' />
+          </datasources>
+          <datasource-dependencies datasource='federated.09dtkvh0lz5d0l173dxvt1lw1dfc'>
+            <column caption='# Orders - YoY Change' datatype='real' name='[# Orders - YoY Change (copy 2)_307229948609048595]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='(SUM([order_count]) - LOOKUP(SUM([order_count]), -12)) / LOOKUP(SUM([order_count]), -12)'>
+                <table-calc ordering-type='Rows' />
+              </calculation>
+            </column>
+            <column caption='Preparation Time - YoY Change' datatype='real' name='[% Stacked Orders - YoY Change (copy 2)_307229948609622038]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='([Store Dispatch Time (copy)_307229948601778186] - LOOKUP([Store Dispatch Time (copy)_307229948601778186], -12)) / LOOKUP([Store Dispatch Time (copy)_307229948601778186], -12)'>
+                <table-calc ordering-type='Rows' />
+              </calculation>
+            </column>
+            <column caption='Rider Acceptance Time - YoY Change' datatype='real' name='[% Stacked Orders - YoY Change (copy) (copy 2) (copy)_307229948609830937]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='([TVT (copy)_307229948601323525] - LOOKUP([TVT (copy)_307229948601323525], -12)) / LOOKUP([TVT (copy)_307229948601323525], -12)'>
+                <table-calc ordering-type='Rows' />
+              </calculation>
+            </column>
+            <column caption='Rider Dispatch Time - YoY Change' datatype='real' name='[% Stacked Orders - YoY Change (copy) (copy 2)_307229948609818648]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='([Rider Acceptance Time (copy)_307229948601458694] - LOOKUP([Rider Acceptance Time (copy)_307229948601458694], -12)) / LOOKUP([Rider Acceptance Time (copy)_307229948601458694], -12)'>
+                <table-calc ordering-type='Rows' />
+              </calculation>
+            </column>
+            <column caption='TCT - YoY Change' datatype='real' name='[% Stacked Orders - YoY Change (copy) (copy) (copy) (copy 2) (copy) (copy)_307229948610981919]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='([DT (copy)_307229948601225219] - LOOKUP([DT (copy)_307229948601225219], -12)) / LOOKUP([DT (copy)_307229948601225219], -12)'>
+                <table-calc ordering-type='Rows' />
+              </calculation>
+            </column>
+            <column caption='AVTC - YoY Change' datatype='real' name='[% Stacked Orders - YoY Change (copy) (copy) (copy) (copy 2) (copy)_307229948610687005]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='([AVT (copy)_307229948601139201] - LOOKUP([AVT (copy)_307229948601139201], -12)) / LOOKUP([AVT (copy)_307229948601139201], -12)'>
+                <table-calc ordering-type='Rows' />
+              </calculation>
+            </column>
+            <column caption='AVT - YoY Change' datatype='real' name='[% Stacked Orders - YoY Change (copy) (copy) (copy) (copy 2)_307229948610674716]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='([Calculation_307229948601016320] - LOOKUP([Calculation_307229948601016320], -12)) / LOOKUP([Calculation_307229948601016320], -12)'>
+                <table-calc ordering-type='Rows' />
+              </calculation>
+            </column>
+            <column caption='DT - YoY Change' datatype='real' name='[% Stacked Orders - YoY Change (copy) (copy) (copy) (copy)_307229948609830938]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='([AVTC (copy)_307229948601180162] - LOOKUP([AVTC (copy)_307229948601180162], -12)) / LOOKUP([AVTC (copy)_307229948601180162], -12)'>
+                <table-calc ordering-type='Rows' />
+              </calculation>
+            </column>
+            <column caption='RRV - YoY Change' datatype='real' name='[% Stacked Orders - YoY Change (copy) (copy) (copy)_307229948609818647]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='([Rider Dispatch Time (copy)_307229948601520135] - LOOKUP([Rider Dispatch Time (copy)_307229948601520135], -12)) / LOOKUP([Rider Dispatch Time (copy)_307229948601520135], -12)'>
+                <table-calc ordering-type='Rows' />
+              </calculation>
+            </column>
+            <column caption='TVT - YoY Change' datatype='real' name='[% Stacked Orders - YoY Change (copy) (copy)_307229948609622037]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='([DT (copy)_307229948601274372] - LOOKUP([DT (copy)_307229948601274372], -12)) / LOOKUP([DT (copy)_307229948601274372], -12)'>
+                <table-calc ordering-type='Rows' />
+              </calculation>
+            </column>
+            <column caption='Store Dispatch Time - YoY Change' datatype='real' name='[% Stacked Orders - YoY Change (copy)_307229948609609748]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='([Calculation_307229948601675785] - LOOKUP([Calculation_307229948601675785], -12)) / LOOKUP([Calculation_307229948601675785], -12)'>
+                <table-calc ordering-type='Rows' />
+              </calculation>
+            </column>
+            <column caption='AVTC' datatype='real' name='[AVT (copy)_307229948601139201]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='SUM([avtc_mins])/SUM([order_count])' />
+            </column>
+            <column caption='DT' datatype='real' name='[AVTC (copy)_307229948601180162]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='SUM([adt_mins])/SUM([order_count])' />
+            </column>
+            <column caption='AVT' datatype='real' name='[Calculation_307229948601016320]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='SUM([avt_mins])/SUM([order_count])' />
+            </column>
+            <column caption='Store Dispatch Time' datatype='real' name='[Calculation_307229948601675785]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='SUM([store_dispatch_time])/SUM([picking_order_count])' />
+            </column>
+            <column caption='% Stacked Orders' datatype='real' name='[Calculation_307229948601958411]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='SUM([stacked_order_count])/SUM([order_count])' />
+            </column>
+            <column caption='% Stacked Orders - YoY Change' datatype='real' name='[Calculation_307229948607586316]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='([Calculation_307229948601958411] - LOOKUP([Calculation_307229948601958411], -12)) / LOOKUP([Calculation_307229948601958411], -12)'>
+                <table-calc ordering-type='Rows' />
+              </calculation>
+            </column>
+            <column caption='Pickup Time (From Order Created)' datatype='real' name='[Calculation_420664364233510912]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='SUM([pickup_mins])/SUM([order_count])' />
+            </column>
+            <column caption='TCT' datatype='real' name='[DT (copy)_307229948601225219]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='SUM([tct_mins])/SUM([order_count])' />
+            </column>
+            <column caption='TVT' datatype='real' name='[DT (copy)_307229948601274372]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='SUM([tvt_mins])/SUM([order_count])' />
+            </column>
+            <column caption='Pickup Time (From Order Created) - YoY Change' datatype='real' name='[PDT - YoY Change (copy)_420664364233801729]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='([Calculation_420664364233510912] - LOOKUP([Calculation_420664364233510912], -12)) / LOOKUP([Calculation_420664364233510912], -12)'>
+                <table-calc ordering-type='Rows' />
+              </calculation>
+            </column>
+            <column caption='PDT' datatype='real' name='[RRV (copy)_307229948601573384]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='SUM([pdt_mins])/SUM([order_count])' />
+            </column>
+            <column caption='Rider Dispatch Time' datatype='real' name='[Rider Acceptance Time (copy)_307229948601458694]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='SUM([rdt_mins])/SUM([order_count])' />
+            </column>
+            <column caption='RRV' datatype='real' name='[Rider Dispatch Time (copy)_307229948601520135]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='SUM([rrv_mins])/SUM([order_count])' />
+            </column>
+            <column caption='Preparation Time' datatype='real' name='[Store Dispatch Time (copy)_307229948601778186]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='SUM([total_prep_time])/SUM([picking_order_count])' />
+            </column>
+            <column caption='Rider Acceptance Time' datatype='real' name='[TVT (copy)_307229948601323525]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='SUM([rat_mins])/SUM([order_count])' />
+            </column>
+            <column datatype='real' name='[adt_mins]' role='measure' type='quantitative' />
+            <column datatype='real' name='[avt_mins]' role='measure' type='quantitative' />
+            <column datatype='real' name='[avtc_mins]' role='measure' type='quantitative' />
+            <column caption='City' datatype='string' name='[city]' role='dimension' semantic-role='[City].[Name]' type='nominal' />
+            <column caption='Country' datatype='string' name='[country_code]' role='dimension' semantic-role='[Country].[ISO3166_2]' type='nominal' />
+            <column-instance column='[order_month]' derivation='MY' name='[my:order_month:ok]' pivot='key' type='ordinal' />
+            <column-instance column='[city]' derivation='None' name='[none:city:nk]' pivot='key' type='nominal' />
+            <column-instance column='[country_code]' derivation='None' name='[none:country_code:nk]' pivot='key' type='nominal' />
+            <column-instance column='[vendor_name]' derivation='None' name='[none:vendor_name:nk]' pivot='key' type='nominal' />
+            <column caption='# Orders' datatype='integer' name='[order_count]' role='measure' type='quantitative' />
+            <column caption='Order Month' datatype='date' name='[order_month]' role='dimension' type='ordinal' />
+            <column datatype='real' name='[pdt_mins]' role='measure' type='quantitative' />
+            <column datatype='integer' name='[picking_order_count]' role='measure' type='quantitative' />
+            <column datatype='real' name='[pickup_mins]' role='measure' type='quantitative' />
+            <column datatype='real' name='[rat_mins]' role='measure' type='quantitative' />
+            <column datatype='real' name='[rdt_mins]' role='measure' type='quantitative' />
+            <column datatype='real' name='[rrv_mins]' role='measure' type='quantitative' />
+            <column datatype='integer' name='[stacked_order_count]' role='measure' type='quantitative' />
+            <column datatype='real' name='[store_dispatch_time]' role='measure' type='quantitative' />
+            <column-instance column='[order_count]' derivation='Sum' name='[sum:order_count:qk]' pivot='key' type='quantitative' />
+            <column datatype='real' name='[tct_mins]' role='measure' type='quantitative' />
+            <column-instance column='[order_month]' derivation='Month-Trunc' name='[tmn:order_month:ok]' pivot='key' type='ordinal' />
+            <column datatype='real' name='[total_prep_time]' role='measure' type='quantitative' />
+            <column datatype='real' name='[tvt_mins]' role='measure' type='quantitative' />
+            <column-instance column='[# Orders - YoY Change (copy 2)_307229948609048595]' derivation='User' name='[usr:# Orders - YoY Change (copy 2)_307229948609048595:qk]' pivot='key' type='quantitative'>
+              <table-calc ordering-type='Rows' />
+            </column-instance>
+            <column-instance column='[% Stacked Orders - YoY Change (copy 2)_307229948609622038]' derivation='User' name='[usr:% Stacked Orders - YoY Change (copy 2)_307229948609622038:qk]' pivot='key' type='quantitative'>
+              <table-calc ordering-type='Rows' />
+            </column-instance>
+            <column-instance column='[% Stacked Orders - YoY Change (copy) (copy 2) (copy)_307229948609830937]' derivation='User' name='[usr:% Stacked Orders - YoY Change (copy) (copy 2) (copy)_307229948609830937:qk]' pivot='key' type='quantitative'>
+              <table-calc ordering-type='Rows' />
+            </column-instance>
+            <column-instance column='[% Stacked Orders - YoY Change (copy) (copy 2)_307229948609818648]' derivation='User' name='[usr:% Stacked Orders - YoY Change (copy) (copy 2)_307229948609818648:qk]' pivot='key' type='quantitative'>
+              <table-calc ordering-type='Rows' />
+            </column-instance>
+            <column-instance column='[% Stacked Orders - YoY Change (copy) (copy) (copy) (copy 2) (copy) (copy)_307229948610981919]' derivation='User' name='[usr:% Stacked Orders - YoY Change (copy) (copy) (copy) (copy 2) (copy) (copy)_307229948610981919:qk]' pivot='key' type='quantitative'>
+              <table-calc ordering-type='Rows' />
+            </column-instance>
+            <column-instance column='[% Stacked Orders - YoY Change (copy) (copy) (copy) (copy 2) (copy)_307229948610687005]' derivation='User' name='[usr:% Stacked Orders - YoY Change (copy) (copy) (copy) (copy 2) (copy)_307229948610687005:qk]' pivot='key' type='quantitative'>
+              <table-calc ordering-type='Rows' />
+            </column-instance>
+            <column-instance column='[% Stacked Orders - YoY Change (copy) (copy) (copy) (copy 2)_307229948610674716]' derivation='User' name='[usr:% Stacked Orders - YoY Change (copy) (copy) (copy) (copy 2)_307229948610674716:qk]' pivot='key' type='quantitative'>
+              <table-calc ordering-type='Rows' />
+            </column-instance>
+            <column-instance column='[% Stacked Orders - YoY Change (copy) (copy) (copy) (copy)_307229948609830938]' derivation='User' name='[usr:% Stacked Orders - YoY Change (copy) (copy) (copy) (copy)_307229948609830938:qk]' pivot='key' type='quantitative'>
+              <table-calc ordering-type='Rows' />
+            </column-instance>
+            <column-instance column='[% Stacked Orders - YoY Change (copy) (copy) (copy)_307229948609818647]' derivation='User' name='[usr:% Stacked Orders - YoY Change (copy) (copy) (copy)_307229948609818647:qk]' pivot='key' type='quantitative'>
+              <table-calc ordering-type='Rows' />
+            </column-instance>
+            <column-instance column='[% Stacked Orders - YoY Change (copy) (copy)_307229948609622037]' derivation='User' name='[usr:% Stacked Orders - YoY Change (copy) (copy)_307229948609622037:qk]' pivot='key' type='quantitative'>
+              <table-calc ordering-type='Rows' />
+            </column-instance>
+            <column-instance column='[% Stacked Orders - YoY Change (copy)_307229948609609748]' derivation='User' name='[usr:% Stacked Orders - YoY Change (copy)_307229948609609748:qk]' pivot='key' type='quantitative'>
+              <table-calc ordering-type='Rows' />
+            </column-instance>
+            <column-instance column='[AVT (copy)_307229948601139201]' derivation='User' name='[usr:AVT (copy)_307229948601139201:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[AVTC (copy)_307229948601180162]' derivation='User' name='[usr:AVTC (copy)_307229948601180162:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[Calculation_307229948601016320]' derivation='User' name='[usr:Calculation_307229948601016320:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[Calculation_307229948601675785]' derivation='User' name='[usr:Calculation_307229948601675785:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[Calculation_307229948601958411]' derivation='User' name='[usr:Calculation_307229948601958411:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[Calculation_307229948607586316]' derivation='User' name='[usr:Calculation_307229948607586316:qk]' pivot='key' type='quantitative'>
+              <table-calc ordering-type='Rows' />
+            </column-instance>
+            <column-instance column='[Calculation_420664364233510912]' derivation='User' name='[usr:Calculation_420664364233510912:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[DT (copy)_307229948601225219]' derivation='User' name='[usr:DT (copy)_307229948601225219:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[DT (copy)_307229948601274372]' derivation='User' name='[usr:DT (copy)_307229948601274372:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[PDT - YoY Change (copy)_420664364233801729]' derivation='User' name='[usr:PDT - YoY Change (copy)_420664364233801729:qk]' pivot='key' type='quantitative'>
+              <table-calc ordering-type='Rows' />
+            </column-instance>
+            <column-instance column='[RRV (copy)_307229948601573384]' derivation='User' name='[usr:RRV (copy)_307229948601573384:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[Rider Acceptance Time (copy)_307229948601458694]' derivation='User' name='[usr:Rider Acceptance Time (copy)_307229948601458694:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[Rider Dispatch Time (copy)_307229948601520135]' derivation='User' name='[usr:Rider Dispatch Time (copy)_307229948601520135:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[Store Dispatch Time (copy)_307229948601778186]' derivation='User' name='[usr:Store Dispatch Time (copy)_307229948601778186:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[TVT (copy)_307229948601323525]' derivation='User' name='[usr:TVT (copy)_307229948601323525:qk]' pivot='key' type='quantitative' />
+            <column caption='Store' datatype='string' name='[vendor_name]' role='dimension' type='nominal' />
+          </datasource-dependencies>
+          <filter class='categorical' column='[federated.09dtkvh0lz5d0l173dxvt1lw1dfc].[:Measure Names]'>
+            <groupfilter function='union' user:op='manual'>
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.09dtkvh0lz5d0l173dxvt1lw1dfc].[sum:order_count:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.09dtkvh0lz5d0l173dxvt1lw1dfc].[usr:\# Orders - YoY Change (copy 2)_307229948609048595:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.09dtkvh0lz5d0l173dxvt1lw1dfc].[usr:Calculation_307229948601958411:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.09dtkvh0lz5d0l173dxvt1lw1dfc].[usr:Calculation_307229948607586316:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.09dtkvh0lz5d0l173dxvt1lw1dfc].[usr:Store Dispatch Time (copy)_307229948601778186:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.09dtkvh0lz5d0l173dxvt1lw1dfc].[usr:\% Stacked Orders - YoY Change (copy 2)_307229948609622038:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.09dtkvh0lz5d0l173dxvt1lw1dfc].[usr:Calculation_307229948601675785:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.09dtkvh0lz5d0l173dxvt1lw1dfc].[usr:\% Stacked Orders - YoY Change (copy)_307229948609609748:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.09dtkvh0lz5d0l173dxvt1lw1dfc].[usr:Rider Acceptance Time (copy)_307229948601458694:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.09dtkvh0lz5d0l173dxvt1lw1dfc].[usr:\% Stacked Orders - YoY Change (copy) (copy 2)_307229948609818648:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.09dtkvh0lz5d0l173dxvt1lw1dfc].[usr:TVT (copy)_307229948601323525:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.09dtkvh0lz5d0l173dxvt1lw1dfc].[usr:\% Stacked Orders - YoY Change (copy) (copy 2) (copy)_307229948609830937:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.09dtkvh0lz5d0l173dxvt1lw1dfc].[usr:Calculation_420664364233510912:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.09dtkvh0lz5d0l173dxvt1lw1dfc].[usr:PDT - YoY Change (copy)_420664364233801729:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.09dtkvh0lz5d0l173dxvt1lw1dfc].[usr:DT (copy)_307229948601274372:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.09dtkvh0lz5d0l173dxvt1lw1dfc].[usr:\% Stacked Orders - YoY Change (copy) (copy)_307229948609622037:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.09dtkvh0lz5d0l173dxvt1lw1dfc].[usr:Rider Dispatch Time (copy)_307229948601520135:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.09dtkvh0lz5d0l173dxvt1lw1dfc].[usr:\% Stacked Orders - YoY Change (copy) (copy) (copy)_307229948609818647:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.09dtkvh0lz5d0l173dxvt1lw1dfc].[usr:Calculation_307229948601016320:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.09dtkvh0lz5d0l173dxvt1lw1dfc].[usr:\% Stacked Orders - YoY Change (copy) (copy) (copy) (copy 2)_307229948610674716:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.09dtkvh0lz5d0l173dxvt1lw1dfc].[usr:AVT (copy)_307229948601139201:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.09dtkvh0lz5d0l173dxvt1lw1dfc].[usr:\% Stacked Orders - YoY Change (copy) (copy) (copy) (copy 2) (copy)_307229948610687005:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.09dtkvh0lz5d0l173dxvt1lw1dfc].[usr:DT (copy)_307229948601225219:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.09dtkvh0lz5d0l173dxvt1lw1dfc].[usr:\% Stacked Orders - YoY Change (copy) (copy) (copy) (copy 2) (copy) (copy)_307229948610981919:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.09dtkvh0lz5d0l173dxvt1lw1dfc].[usr:AVTC (copy)_307229948601180162:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.09dtkvh0lz5d0l173dxvt1lw1dfc].[usr:\% Stacked Orders - YoY Change (copy) (copy) (copy) (copy)_307229948609830938:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.09dtkvh0lz5d0l173dxvt1lw1dfc].[usr:RRV (copy)_307229948601573384:qk]&quot;' />
+            </groupfilter>
+          </filter>
+          <manual-sort column='[federated.09dtkvh0lz5d0l173dxvt1lw1dfc].[:Measure Names]' direction='ASC'>
+            <dictionary>
+              <bucket>&quot;[federated.09dtkvh0lz5d0l173dxvt1lw1dfc].[sum:order_count:qk]&quot;</bucket>
+              <bucket>&quot;[federated.09dtkvh0lz5d0l173dxvt1lw1dfc].[usr:\# Orders - YoY Change (copy 2)_307229948609048595:qk]&quot;</bucket>
+              <bucket>&quot;[federated.09dtkvh0lz5d0l173dxvt1lw1dfc].[usr:Calculation_307229948601958411:qk]&quot;</bucket>
+              <bucket>&quot;[federated.09dtkvh0lz5d0l173dxvt1lw1dfc].[usr:Calculation_307229948607586316:qk]&quot;</bucket>
+              <bucket>&quot;[federated.09dtkvh0lz5d0l173dxvt1lw1dfc].[usr:Store Dispatch Time (copy)_307229948601778186:qk]&quot;</bucket>
+              <bucket>&quot;[federated.09dtkvh0lz5d0l173dxvt1lw1dfc].[usr:\% Stacked Orders - YoY Change (copy 2)_307229948609622038:qk]&quot;</bucket>
+              <bucket>&quot;[federated.09dtkvh0lz5d0l173dxvt1lw1dfc].[usr:Calculation_307229948601675785:qk]&quot;</bucket>
+              <bucket>&quot;[federated.09dtkvh0lz5d0l173dxvt1lw1dfc].[usr:\% Stacked Orders - YoY Change (copy)_307229948609609748:qk]&quot;</bucket>
+              <bucket>&quot;[federated.09dtkvh0lz5d0l173dxvt1lw1dfc].[usr:Rider Acceptance Time (copy)_307229948601458694:qk]&quot;</bucket>
+              <bucket>&quot;[federated.09dtkvh0lz5d0l173dxvt1lw1dfc].[usr:\% Stacked Orders - YoY Change (copy) (copy 2)_307229948609818648:qk]&quot;</bucket>
+              <bucket>&quot;[federated.09dtkvh0lz5d0l173dxvt1lw1dfc].[usr:TVT (copy)_307229948601323525:qk]&quot;</bucket>
+              <bucket>&quot;[federated.09dtkvh0lz5d0l173dxvt1lw1dfc].[usr:\% Stacked Orders - YoY Change (copy) (copy 2) (copy)_307229948609830937:qk]&quot;</bucket>
+              <bucket>&quot;[federated.09dtkvh0lz5d0l173dxvt1lw1dfc].[usr:Calculation_420664364233510912:qk]&quot;</bucket>
+              <bucket>&quot;[federated.09dtkvh0lz5d0l173dxvt1lw1dfc].[usr:PDT - YoY Change (copy)_420664364233801729:qk]&quot;</bucket>
+              <bucket>&quot;[federated.09dtkvh0lz5d0l173dxvt1lw1dfc].[usr:DT (copy)_307229948601274372:qk]&quot;</bucket>
+              <bucket>&quot;[federated.09dtkvh0lz5d0l173dxvt1lw1dfc].[usr:\% Stacked Orders - YoY Change (copy) (copy)_307229948609622037:qk]&quot;</bucket>
+              <bucket>&quot;[federated.09dtkvh0lz5d0l173dxvt1lw1dfc].[usr:Rider Dispatch Time (copy)_307229948601520135:qk]&quot;</bucket>
+              <bucket>&quot;[federated.09dtkvh0lz5d0l173dxvt1lw1dfc].[usr:\% Stacked Orders - YoY Change (copy) (copy) (copy)_307229948609818647:qk]&quot;</bucket>
+              <bucket>&quot;[federated.09dtkvh0lz5d0l173dxvt1lw1dfc].[usr:Calculation_307229948601016320:qk]&quot;</bucket>
+              <bucket>&quot;[federated.09dtkvh0lz5d0l173dxvt1lw1dfc].[usr:\% Stacked Orders - YoY Change (copy) (copy) (copy) (copy 2)_307229948610674716:qk]&quot;</bucket>
+              <bucket>&quot;[federated.09dtkvh0lz5d0l173dxvt1lw1dfc].[usr:AVT (copy)_307229948601139201:qk]&quot;</bucket>
+              <bucket>&quot;[federated.09dtkvh0lz5d0l173dxvt1lw1dfc].[usr:\% Stacked Orders - YoY Change (copy) (copy) (copy) (copy 2) (copy)_307229948610687005:qk]&quot;</bucket>
+              <bucket>&quot;[federated.09dtkvh0lz5d0l173dxvt1lw1dfc].[usr:DT (copy)_307229948601225219:qk]&quot;</bucket>
+              <bucket>&quot;[federated.09dtkvh0lz5d0l173dxvt1lw1dfc].[usr:\% Stacked Orders - YoY Change (copy) (copy) (copy) (copy 2) (copy) (copy)_307229948610981919:qk]&quot;</bucket>
+              <bucket>&quot;[federated.09dtkvh0lz5d0l173dxvt1lw1dfc].[usr:AVTC (copy)_307229948601180162:qk]&quot;</bucket>
+              <bucket>&quot;[federated.09dtkvh0lz5d0l173dxvt1lw1dfc].[usr:\% Stacked Orders - YoY Change (copy) (copy) (copy) (copy)_307229948609830938:qk]&quot;</bucket>
+              <bucket>&quot;[federated.09dtkvh0lz5d0l173dxvt1lw1dfc].[usr:RRV (copy)_307229948601573384:qk]&quot;</bucket>
+            </dictionary>
+          </manual-sort>
+          <filter class='categorical' column='[federated.09dtkvh0lz5d0l173dxvt1lw1dfc].[my:order_month:ok]'>
+            <groupfilter function='level-members' level='[my:order_month:ok]' user:ui-enumeration='all' user:ui-marker='enumerate' />
+          </filter>
+          <filter class='categorical' column='[federated.09dtkvh0lz5d0l173dxvt1lw1dfc].[none:city:nk]'>
+            <groupfilter function='union' user:ui-domain='cascading' user:ui-enumeration='inclusive' user:ui-marker='enumerate'>
+              <groupfilter function='member' level='[none:city:nk]' member='&quot;Amman&quot;' />
+              <groupfilter function='member' level='[none:city:nk]' member='&quot;Aqaba&quot;' />
+              <groupfilter function='member' level='[none:city:nk]' member='&quot;Irbid&quot;' />
+              <groupfilter function='member' level='[none:city:nk]' member='&quot;Salt&quot;' />
+              <groupfilter function='member' level='[none:city:nk]' member='&quot;Zarqa&quot;' />
+            </groupfilter>
+          </filter>
+          <filter class='categorical' column='[federated.09dtkvh0lz5d0l173dxvt1lw1dfc].[none:vendor_name:nk]'>
+            <groupfilter function='level-members' level='[none:vendor_name:nk]' user:ui-enumeration='all' user:ui-marker='enumerate' />
+          </filter>
+          <slices>
+            <column>[federated.09dtkvh0lz5d0l173dxvt1lw1dfc].[:Measure Names]</column>
+            <column>[federated.09dtkvh0lz5d0l173dxvt1lw1dfc].[my:order_month:ok]</column>
+            <column>[federated.09dtkvh0lz5d0l173dxvt1lw1dfc].[none:city:nk]</column>
+            <column>[federated.09dtkvh0lz5d0l173dxvt1lw1dfc].[none:vendor_name:nk]</column>
+          </slices>
+          <aggregation value='true' />
+        </view>
+        <style>
+          <style-rule element='cell'>
+            <format attr='text-format' field='[federated.09dtkvh0lz5d0l173dxvt1lw1dfc].[usr:Store Dispatch Time (copy)_307229948601778186:qk]' value='n#,##0.0;-#,##0.0' />
+            <format attr='text-format' field='[federated.09dtkvh0lz5d0l173dxvt1lw1dfc].[usr:Calculation_307229948601675785:qk]' value='n#,##0.0;-#,##0.0' />
+            <format attr='text-format' field='[federated.09dtkvh0lz5d0l173dxvt1lw1dfc].[usr:Calculation_307229948601958411:qk]' value='p0%' />
+            <format attr='text-format' field='[federated.09dtkvh0lz5d0l173dxvt1lw1dfc].[usr:RRV (copy)_307229948601573384:qk]' value='n#,##0.0;-#,##0.0' />
+            <format attr='text-format' field='[federated.09dtkvh0lz5d0l173dxvt1lw1dfc].[usr:AVTC (copy)_307229948601180162:qk]' value='n#,##0.0;-#,##0.0' />
+            <format attr='text-format' field='[federated.09dtkvh0lz5d0l173dxvt1lw1dfc].[usr:DT (copy)_307229948601225219:qk]' value='n#,##0.0;-#,##0.0' />
+            <format attr='text-format' field='[federated.09dtkvh0lz5d0l173dxvt1lw1dfc].[usr:Calculation_307229948601016320:qk]' value='n#,##0.0;-#,##0.0' />
+            <format attr='text-format' field='[federated.09dtkvh0lz5d0l173dxvt1lw1dfc].[usr:AVT (copy)_307229948601139201:qk]' value='n#,##0.0;-#,##0.0' />
+            <format attr='text-format' field='[federated.09dtkvh0lz5d0l173dxvt1lw1dfc].[usr:Rider Acceptance Time (copy)_307229948601458694:qk]' value='n#,##0.0;-#,##0.0' />
+            <format attr='text-format' field='[federated.09dtkvh0lz5d0l173dxvt1lw1dfc].[usr:TVT (copy)_307229948601323525:qk]' value='n#,##0.0;-#,##0.0' />
+            <format attr='text-format' field='[federated.09dtkvh0lz5d0l173dxvt1lw1dfc].[usr:DT (copy)_307229948601274372:qk]' value='n#,##0.0;-#,##0.0' />
+            <format attr='text-format' field='[federated.09dtkvh0lz5d0l173dxvt1lw1dfc].[usr:Rider Dispatch Time (copy)_307229948601520135:qk]' value='n#,##0.0;-#,##0.0' />
+            <format attr='text-format' field='[federated.09dtkvh0lz5d0l173dxvt1lw1dfc].[usr:% Stacked Orders - YoY Change (copy) (copy) (copy)_307229948609818647:qk]' value='p0%' />
+            <format attr='text-format' field='[federated.09dtkvh0lz5d0l173dxvt1lw1dfc].[usr:% Stacked Orders - YoY Change (copy) (copy) (copy) (copy 2)_307229948610674716:qk]' value='p0%' />
+            <format attr='text-format' field='[federated.09dtkvh0lz5d0l173dxvt1lw1dfc].[usr:% Stacked Orders - YoY Change (copy 2)_307229948609622038:qk]' value='p0%' />
+            <format attr='text-format' field='[federated.09dtkvh0lz5d0l173dxvt1lw1dfc].[usr:Calculation_307229948607586316:qk]' value='p0%' />
+            <format attr='text-format' field='[federated.09dtkvh0lz5d0l173dxvt1lw1dfc].[usr:# Orders - YoY Change (copy 2)_307229948609048595:qk]' value='p0%' />
+            <format attr='text-format' field='[federated.09dtkvh0lz5d0l173dxvt1lw1dfc].[usr:% Stacked Orders - YoY Change (copy)_307229948609609748:qk]' value='p0%' />
+            <format attr='text-format' field='[federated.09dtkvh0lz5d0l173dxvt1lw1dfc].[usr:% Stacked Orders - YoY Change (copy) (copy 2)_307229948609818648:qk]' value='p0%' />
+            <format attr='text-format' field='[federated.09dtkvh0lz5d0l173dxvt1lw1dfc].[usr:% Stacked Orders - YoY Change (copy) (copy 2) (copy)_307229948609830937:qk]' value='p0%' />
+            <format attr='text-format' field='[federated.09dtkvh0lz5d0l173dxvt1lw1dfc].[usr:% Stacked Orders - YoY Change (copy) (copy)_307229948609622037:qk]' value='p0%' />
+            <format attr='text-format' field='[federated.09dtkvh0lz5d0l173dxvt1lw1dfc].[usr:% Stacked Orders - YoY Change (copy) (copy) (copy) (copy 2) (copy)_307229948610687005:qk]' value='p0%' />
+            <format attr='text-format' field='[federated.09dtkvh0lz5d0l173dxvt1lw1dfc].[usr:% Stacked Orders - YoY Change (copy) (copy) (copy) (copy 2) (copy) (copy)_307229948610981919:qk]' value='p0%' />
+            <format attr='text-format' field='[federated.09dtkvh0lz5d0l173dxvt1lw1dfc].[usr:% Stacked Orders - YoY Change (copy) (copy) (copy) (copy)_307229948609830938:qk]' value='p0%' />
+            <format attr='text-format' field='[federated.09dtkvh0lz5d0l173dxvt1lw1dfc].[usr:Calculation_420664364233510912:qk]' value='n#,##0.0;-#,##0.0' />
+            <format attr='text-format' field='[federated.09dtkvh0lz5d0l173dxvt1lw1dfc].[usr:PDT - YoY Change (copy)_420664364233801729:qk]' value='p0%' />
+          </style-rule>
+          <style-rule element='header'>
+            <format attr='width' field='[federated.09dtkvh0lz5d0l173dxvt1lw1dfc].[:Measure Names]' value='144' />
+            <format attr='height' field='[federated.09dtkvh0lz5d0l173dxvt1lw1dfc].[tmn:order_month:ok]' value='44' />
+          </style-rule>
+          <style-rule element='mark'>
+            <encoding attr='color' center='0.0' field='[federated.09dtkvh0lz5d0l173dxvt1lw1dfc].[usr:Calculation_307229948607586316:qk]' num-steps='2' palette='red_green_diverging_10_0' type='interpolated' />
+            <encoding attr='color' center='0.0' field='[federated.09dtkvh0lz5d0l173dxvt1lw1dfc].[usr:# Orders - YoY Change (copy 2)_307229948609048595:qk]' min='-0.10000000000000001' num-steps='2' palette='red_green_diverging_10_0' symmetric='false' type='interpolated' />
+            <encoding attr='color' center='0.0' field='[federated.09dtkvh0lz5d0l173dxvt1lw1dfc].[usr:% Stacked Orders - YoY Change (copy 2)_307229948609622038:qk]' max='1.0' min='-1.0' num-steps='2' palette='red_green_gold_diverging_10_0' symmetric='false' type='interpolated' />
+            <encoding attr='color' center='0.0' field='[federated.09dtkvh0lz5d0l173dxvt1lw1dfc].[usr:% Stacked Orders - YoY Change (copy)_307229948609609748:qk]' num-steps='2' palette='red_green_gold_diverging_10_0' symmetric='false' type='interpolated' />
+            <encoding attr='color' center='0.0' field='[federated.09dtkvh0lz5d0l173dxvt1lw1dfc].[usr:% Stacked Orders - YoY Change (copy) (copy 2)_307229948609818648:qk]' num-steps='2' palette='red_green_gold_diverging_10_0' symmetric='false' type='interpolated' />
+            <encoding attr='color' center='0.0' field='[federated.09dtkvh0lz5d0l173dxvt1lw1dfc].[usr:% Stacked Orders - YoY Change (copy) (copy 2) (copy)_307229948609830937:qk]' num-steps='2' palette='red_green_gold_diverging_10_0' type='interpolated' />
+            <encoding attr='color' center='0.0' field='[federated.09dtkvh0lz5d0l173dxvt1lw1dfc].[usr:% Stacked Orders - YoY Change (copy) (copy)_307229948609622037:qk]' num-steps='2' palette='red_green_gold_diverging_10_0' symmetric='false' type='interpolated' />
+            <encoding attr='color' center='0.0' field='[federated.09dtkvh0lz5d0l173dxvt1lw1dfc].[usr:% Stacked Orders - YoY Change (copy) (copy) (copy)_307229948609818647:qk]' num-steps='2' palette='red_green_gold_diverging_10_0' symmetric='false' type='interpolated' />
+            <encoding attr='color' center='0.0' field='[federated.09dtkvh0lz5d0l173dxvt1lw1dfc].[usr:% Stacked Orders - YoY Change (copy) (copy) (copy) (copy 2)_307229948610674716:qk]' num-steps='2' palette='red_green_diverging_10_0' type='interpolated' />
+            <encoding attr='color' center='0.0' field='[federated.09dtkvh0lz5d0l173dxvt1lw1dfc].[usr:% Stacked Orders - YoY Change (copy) (copy) (copy) (copy 2) (copy)_307229948610687005:qk]' num-steps='2' palette='red_green_diverging_10_0' type='interpolated' />
+            <encoding attr='color' field='[federated.09dtkvh0lz5d0l173dxvt1lw1dfc].[usr:% Stacked Orders - YoY Change (copy) (copy) (copy) (copy 2) (copy) (copy)_307229948610981919:qk]' num-steps='2' palette='red_green_diverging_10_0' type='interpolated' />
+            <encoding attr='color' center='0.0' field='[federated.09dtkvh0lz5d0l173dxvt1lw1dfc].[usr:% Stacked Orders - YoY Change (copy) (copy) (copy) (copy)_307229948609830938:qk]' num-steps='2' palette='red_green_diverging_10_0' type='interpolated' />
+            <encoding attr='color' center='0.0' field='[federated.09dtkvh0lz5d0l173dxvt1lw1dfc].[usr:PDT - YoY Change (copy)_420664364233801729:qk]' num-steps='2' palette='red_green_diverging_10_0' type='interpolated' />
+          </style-rule>
+          <style-rule element='worksheet'>
+            <format attr='display-field-labels' scope='cols' value='false' />
+          </style-rule>
+        </style>
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Square' />
+            <encodings>
+              <color column='[federated.09dtkvh0lz5d0l173dxvt1lw1dfc].[Multiple Values]' separate-domains='true' />
+              <text column='[federated.09dtkvh0lz5d0l173dxvt1lw1dfc].[Multiple Values]' separate-domains='true' />
+              <lod column='[federated.09dtkvh0lz5d0l173dxvt1lw1dfc].[:Measure Names]' separate-domains='true' />
+            </encodings>
+            <style>
+              <style-rule element='mark'>
+                <format attr='mark-labels-show' value='true' />
+                <format attr='mark-labels-cull' value='true' />
+              </style-rule>
+            </style>
+          </pane>
+        </panes>
+        <rows>([federated.09dtkvh0lz5d0l173dxvt1lw1dfc].[none:country_code:nk] / [federated.09dtkvh0lz5d0l173dxvt1lw1dfc].[:Measure Names])</rows>
+        <cols>[federated.09dtkvh0lz5d0l173dxvt1lw1dfc].[tmn:order_month:ok]</cols>
+      </table>
+      <simple-id uuid='{B70716A6-C402-4BB1-B33C-33B62B1147C1}' />
+    </worksheet>
+  </worksheets>
+  <dashboards>
+    <dashboard _.fcp.AccessibleZoneTabOrder.true...enable-sort-zone-taborder='true' name='tMart - Jordan'>
+      <repository-location id='tMart-Jordan' path='/t/Talabat/workbooks/JordantMart' revision='' site='Talabat' />
+      <style />
+      <size maxheight='800' maxwidth='1300' minheight='800' minwidth='1300' sizing-mode='fixed' />
+      <datasources>
+        <datasource caption='Jordan tMart ' name='federated.09dtkvh0lz5d0l173dxvt1lw1dfc' />
+      </datasources>
+      <datasource-dependencies datasource='federated.09dtkvh0lz5d0l173dxvt1lw1dfc'>
+        <column caption='City' datatype='string' name='[city]' role='dimension' semantic-role='[City].[Name]' type='nominal' />
+        <column-instance column='[order_month]' derivation='MY' name='[my:order_month:ok]' pivot='key' type='ordinal' />
+        <column-instance column='[city]' derivation='None' name='[none:city:nk]' pivot='key' type='nominal' />
+        <column-instance column='[vendor_name]' derivation='None' name='[none:vendor_name:nk]' pivot='key' type='nominal' />
+        <column caption='Order Month' datatype='date' name='[order_month]' role='dimension' type='ordinal' />
+        <column caption='Store' datatype='string' name='[vendor_name]' role='dimension' type='nominal' />
+      </datasource-dependencies>
+      <zones>
+        <zone h='100000' id='4' type-v2='layout-basic' w='100000' x='0' y='0'>
+          <zone h='8125' id='3' param='horz' type-v2='layout-flow' w='98770' x='615' y='9625'>
+            <zone h='8125' id='6' mode='checkdropdown' name='Sheet 3' param='[federated.09dtkvh0lz5d0l173dxvt1lw1dfc].[my:order_month:ok]' type-v2='filter' w='12923' x='615' y='9625'>
+              <zone-style>
+                <format attr='border-color' value='#000000' />
+                <format attr='border-style' value='none' />
+                <format attr='border-width' value='0' />
+                <format attr='margin' value='4' />
+              </zone-style>
+            </zone>
+            <zone h='8125' id='7' mode='checkdropdown' name='Sheet 3' param='[federated.09dtkvh0lz5d0l173dxvt1lw1dfc].[none:city:nk]' type-v2='filter' values='all' w='12923' x='13538' y='9625'>
+              <zone-style>
+                <format attr='border-color' value='#000000' />
+                <format attr='border-style' value='none' />
+                <format attr='border-width' value='0' />
+                <format attr='margin' value='4' />
+              </zone-style>
+            </zone>
+            <zone h='8125' id='8' mode='checkdropdown' name='Sheet 3' param='[federated.09dtkvh0lz5d0l173dxvt1lw1dfc].[none:vendor_name:nk]' type-v2='filter' values='relevant' w='12923' x='26461' y='9625'>
+              <zone-style>
+                <format attr='border-color' value='#000000' />
+                <format attr='border-style' value='none' />
+                <format attr='border-width' value='0' />
+                <format attr='margin' value='4' />
+              </zone-style>
+            </zone>
+          </zone>
+          <zone h='81250' id='5' name='Sheet 3' w='98770' x='615' y='17750'>
+            <zone-style>
+              <format attr='border-color' value='#000000' />
+              <format attr='border-style' value='none' />
+              <format attr='border-width' value='0' />
+              <format attr='margin' value='4' />
+            </zone-style>
+          </zone>
+          <zone forceUpdate='true' h='8625' id='9' type-v2='text' w='98770' x='615' y='1000'>
+            <formatted-text>
+              <run bold='true' fontalignment='1' fontcolor='#ffffff' fontsize='14'>tMart - Jordan</run>
+            </formatted-text>
+            <zone-style>
+              <format attr='border-color' value='#000000' />
+              <format attr='border-style' value='none' />
+              <format attr='border-width' value='0' />
+              <format attr='margin' value='4' />
+              <format attr='background-color' value='#e9652b' />
+            </zone-style>
+          </zone>
+          <zone-style>
+            <format attr='border-color' value='#000000' />
+            <format attr='border-style' value='none' />
+            <format attr='border-width' value='0' />
+            <format attr='margin' value='8' />
+          </zone-style>
+        </zone>
+      </zones>
+      <devicelayouts>
+        <devicelayout auto-generated='true' name='Phone'>
+          <size maxheight='700' minheight='700' sizing-mode='vscroll' />
+          <zones>
+            <zone h='100000' id='27' type-v2='layout-basic' w='100000' x='0' y='0'>
+              <zone h='98000' id='26' param='vert' type-v2='layout-flow' w='98770' x='615' y='1000'>
+                <zone forceUpdate='true' h='8625' id='9' type-v2='text' w='98770' x='615' y='1000'>
+                  <formatted-text>
+                    <run bold='true' fontalignment='1' fontcolor='#ffffff' fontsize='14'>tMart - Jordan</run>
+                  </formatted-text>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                    <format attr='background-color' value='#e9652b' />
+                  </zone-style>
+                </zone>
+                <zone h='8125' id='6' mode='checkdropdown' name='Sheet 3' param='[federated.09dtkvh0lz5d0l173dxvt1lw1dfc].[my:order_month:ok]' type-v2='filter' w='12923' x='615' y='9625'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone h='8125' id='7' mode='checkdropdown' name='Sheet 3' param='[federated.09dtkvh0lz5d0l173dxvt1lw1dfc].[none:city:nk]' type-v2='filter' values='all' w='12923' x='13538' y='9625'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone h='8125' id='8' mode='checkdropdown' name='Sheet 3' param='[federated.09dtkvh0lz5d0l173dxvt1lw1dfc].[none:vendor_name:nk]' type-v2='filter' values='relevant' w='12923' x='26461' y='9625'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone fixed-size='280' h='81250' id='5' is-fixed='true' name='Sheet 3' w='98770' x='615' y='17750'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+              </zone>
+              <zone-style>
+                <format attr='border-color' value='#000000' />
+                <format attr='border-style' value='none' />
+                <format attr='border-width' value='0' />
+                <format attr='margin' value='8' />
+              </zone-style>
+            </zone>
+          </zones>
+        </devicelayout>
+      </devicelayouts>
+      <simple-id uuid='{E35B3174-B952-4D29-A0EF-7902E089BAEF}' />
+    </dashboard>
+  </dashboards>
+  <windows show-side-pane='false' source-height='30'>
+    <window class='worksheet' name='Sheet 3'>
+      <cards>
+        <edge name='left'>
+          <strip size='160'>
+            <card type='pages' />
+            <card type='filters' />
+            <card type='marks' />
+            <card type='measures' />
+          </strip>
+        </edge>
+        <edge name='top'>
+          <strip size='2147483647'>
+            <card type='columns' />
+          </strip>
+          <strip size='2147483647'>
+            <card type='rows' />
+          </strip>
+          <strip size='31'>
+            <card type='title' />
+          </strip>
+        </edge>
+        <edge name='right'>
+          <strip size='296'>
+            <card param='[federated.09dtkvh0lz5d0l173dxvt1lw1dfc].[my:order_month:ok]' type='filter' />
+            <card pane-specification-id='0' param='[federated.09dtkvh0lz5d0l173dxvt1lw1dfc].[usr:Calculation_307229948607586316:qk]' type='color' />
+            <card pane-specification-id='0' param='[federated.09dtkvh0lz5d0l173dxvt1lw1dfc].[usr:# Orders - YoY Change (copy 2)_307229948609048595:qk]' type='color' />
+            <card pane-specification-id='0' param='[federated.09dtkvh0lz5d0l173dxvt1lw1dfc].[usr:% Stacked Orders - YoY Change (copy 2)_307229948609622038:qk]' type='color' />
+            <card pane-specification-id='0' param='[federated.09dtkvh0lz5d0l173dxvt1lw1dfc].[usr:% Stacked Orders - YoY Change (copy)_307229948609609748:qk]' type='color' />
+            <card pane-specification-id='0' param='[federated.09dtkvh0lz5d0l173dxvt1lw1dfc].[usr:% Stacked Orders - YoY Change (copy) (copy 2)_307229948609818648:qk]' type='color' />
+            <card pane-specification-id='0' param='[federated.09dtkvh0lz5d0l173dxvt1lw1dfc].[usr:% Stacked Orders - YoY Change (copy) (copy 2) (copy)_307229948609830937:qk]' type='color' />
+            <card pane-specification-id='0' param='[federated.09dtkvh0lz5d0l173dxvt1lw1dfc].[usr:% Stacked Orders - YoY Change (copy) (copy)_307229948609622037:qk]' type='color' />
+            <card pane-specification-id='0' param='[federated.09dtkvh0lz5d0l173dxvt1lw1dfc].[usr:% Stacked Orders - YoY Change (copy) (copy) (copy)_307229948609818647:qk]' type='color' />
+            <card pane-specification-id='0' param='[federated.09dtkvh0lz5d0l173dxvt1lw1dfc].[usr:% Stacked Orders - YoY Change (copy) (copy) (copy) (copy 2)_307229948610674716:qk]' type='color' />
+            <card pane-specification-id='0' param='[federated.09dtkvh0lz5d0l173dxvt1lw1dfc].[usr:% Stacked Orders - YoY Change (copy) (copy) (copy) (copy 2) (copy)_307229948610687005:qk]' type='color' />
+            <card pane-specification-id='0' param='[federated.09dtkvh0lz5d0l173dxvt1lw1dfc].[usr:% Stacked Orders - YoY Change (copy) (copy) (copy) (copy 2) (copy) (copy)_307229948610981919:qk]' type='color' />
+            <card pane-specification-id='0' param='[federated.09dtkvh0lz5d0l173dxvt1lw1dfc].[usr:% Stacked Orders - YoY Change (copy) (copy) (copy) (copy)_307229948609830938:qk]' type='color' />
+            <card pane-specification-id='0' param='[federated.09dtkvh0lz5d0l173dxvt1lw1dfc].[usr:PDT - YoY Change (copy)_420664364233801729:qk]' type='color' />
+            <card pane-specification-id='0' param='[federated.09dtkvh0lz5d0l173dxvt1lw1dfc].[usr:Calculation_420664364233510912:qk]' type='color' />
+          </strip>
+        </edge>
+      </cards>
+      <viewpoint>
+        <highlight>
+          <color-one-way>
+            <field>[federated.09dtkvh0lz5d0l173dxvt1lw1dfc].[:Measure Names]</field>
+            <field>[federated.09dtkvh0lz5d0l173dxvt1lw1dfc].[my:order_month:ok]</field>
+            <field>[federated.09dtkvh0lz5d0l173dxvt1lw1dfc].[none:city:nk]</field>
+            <field>[federated.09dtkvh0lz5d0l173dxvt1lw1dfc].[none:country_code:nk]</field>
+            <field>[federated.09dtkvh0lz5d0l173dxvt1lw1dfc].[none:vendor_name:nk]</field>
+            <field>[federated.09dtkvh0lz5d0l173dxvt1lw1dfc].[usr:PDT - YoY Change (copy)_420664364233801729:qk]</field>
+            <field>[federated.09dtkvh0lz5d0l173dxvt1lw1dfc].[usr:Rider Acceptance Time (copy)_307229948601458694:qk]</field>
+            <field>[federated.09dtkvh0lz5d0l173dxvt1lw1dfc].[yr:order_month:ok]</field>
+          </color-one-way>
+        </highlight>
+      </viewpoint>
+      <simple-id uuid='{E00FB7B4-84B4-4507-B191-2568381505FD}' />
+    </window>
+    <window class='dashboard' maximized='true' name='tMart - Jordan'>
+      <viewpoints>
+        <viewpoint name='Sheet 3' />
+      </viewpoints>
+      <active id='-1' />
+      <simple-id uuid='{1858D2A7-870F-49D5-83AA-17FEE60154B3}' />
+    </window>
+  </windows>
+</workbook>

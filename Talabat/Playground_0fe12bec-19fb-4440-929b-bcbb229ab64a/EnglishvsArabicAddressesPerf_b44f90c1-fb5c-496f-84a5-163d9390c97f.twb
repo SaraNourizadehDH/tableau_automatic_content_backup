@@ -1,0 +1,2039 @@
+<?xml version='1.0' encoding='utf-8' ?>
+
+<!-- build 20233.24.0803.0344                               -->
+<workbook original-version='18.1' source-build='2023.3.9 (20233.24.0803.0344)' version='18.1' xml:base='http://ip-172-31-0-201:8967' xmlns:user='http://www.tableausoftware.com/xml/user'>
+  <document-format-change-manifest>
+    <_.fcp.AccessibleZoneTabOrder.true...AccessibleZoneTabOrder />
+    <_.fcp.AnimationOnByDefault.true...AnimationOnByDefault />
+    <AutoCreateAndUpdateDSDPhoneLayouts />
+    <_.fcp.MarkAnimation.true...MarkAnimation />
+    <_.fcp.ObjectModelEncapsulateLegacy.true...ObjectModelEncapsulateLegacy />
+    <_.fcp.ObjectModelExtractV2.true...ObjectModelExtractV2 />
+    <_.fcp.ObjectModelTableType.true...ObjectModelTableType />
+    <_.fcp.SchemaViewerObjectModel.true...SchemaViewerObjectModel />
+    <SetMembershipControl />
+    <SheetIdentifierTracking />
+    <SortTagCleanup />
+    <_.fcp.VConnDownstreamExtractsWithWarnings.true...VConnDownstreamExtractsWithWarnings />
+    <WindowsPersistSimpleIdentifiers />
+  </document-format-change-manifest>
+  <repository-location derived-from='https://tableau.deliveryhero.net/t/Talabat/workbooks/EnglishvsArabicAddressesPerf?rev=1.0' id='EnglishvsArabicAddressesPerf' path='/t/Talabat/workbooks' revision='1.1' site='Talabat' />
+  <preferences />
+  <_.fcp.AnimationOnByDefault.false...style>
+    <_.fcp.AnimationOnByDefault.false..._.fcp.MarkAnimation.true...style-rule element='animation'>
+      <_.fcp.AnimationOnByDefault.false...format attr='animation-on' value='ao-on' />
+    </_.fcp.AnimationOnByDefault.false..._.fcp.MarkAnimation.true...style-rule>
+  </_.fcp.AnimationOnByDefault.false...style>
+  <datasources>
+    <datasource caption='Custom SQL Query (data_platform)' inline='true' name='federated.0cwdu081mhu46m17xanql16zm5yj' version='18.1'>
+      <connection class='federated'>
+        <named-connections>
+          <named-connection caption='BigQuery' name='bigquery.013qaus0d5glt311a7p9u014thga'>
+            <connection CATALOG='tlb-data-prod' EXECCATALOG='tlb-data-dev' authentication='oauth' bq-dataset-fetch-rows='' bq-fetch-rows='' bq-fetch-tasks='' bq-large-fetch-rows='' bq-project-fetch-rows='' bq-response-rows='' class='bigquery' connection-dialect='google-sql' project='tlb-data-prod' schema='data_platform' server-oauth='' username='hoda.tomoum@talabat.com' workgroup-auth-mode='prompt' />
+          </named-connection>
+        </named-connections>
+        <_.fcp.ObjectModelEncapsulateLegacy.false...relation connection='bigquery.013qaus0d5glt311a7p9u014thga' name='Custom SQL Query' type='text'><![CDATA[WITH address AS (select *,
+  case when percentage_of_arabic<<=0.35 then true else false end eng_35, --english address more than 35%, arabic less than or equal 35% 
+  case when percentage_of_arabic<<=0.60 then true else false end eng_60,
+  case when percentage_of_arabic<<=0.85 then true else false end eng_85,
+  from(
+    select *,
+      length(trim(no_eng_num_addr)) addr_len, 
+      length(trim(arabic))+length(eng_num) ar_len,
+      SAFE_DIVIDE(IFNULL(length(trim(arabic)),0)+length(eng_num), length(trim(addr))) percentage_of_arabic
+    from(
+      select order_id, addr, 
+        REGEXP_REPLACE(addr, '[0-9]+', '') no_eng_num_addr, 
+        array_to_string(REGEXP_EXTRACT_All(addr, r'([\p{Arabic}]+)'), ' ') arabic,
+        regexp_replace(addr, '[^0-9]', '') eng_num
+      from(
+        select distinct order_id,
+          concat(delivery_building_no, " ", delivery_floor, " ", delivery_street, " ", delivery_suite) addr, 
+          
+        from `tlb-data-prod.data_platform.fct_order_info` o
+        where o.country_id=9 and not o.is_test and lower(delivery_arrangement)!='pickup'
+          and o.order_date>>=date_sub(current_date(), INTERVAL 3 month)
+        order by 1)))
+        )
+
+, eng_35 as(
+  select case when eng_35 then 'Arabic <<= 35%'
+  when not eng_35 then 'Arabic >> 35%'
+  -- when eng_60 then 'Arabic <<= 60%'
+  -- when not eng_60 then 'Arabic >> 60%'
+  -- when eng_85 then 'Arabic <<= 85%'
+  -- when not eng_85 then 'Arabic >> 85%' 
+  end Address
+  ,delivery_arrangement
+  ,count(distinct case when o.is_successful then o.order_id end) successful_o
+  ,count(distinct case when s.is_net then o.order_id end) as net_total 
+  ,count(distinct case when s.is_net and not o.is_successful then o.order_id end) as net_failed
+  ,count(if(g.order_delay>>=-600 and g.order_delay<<=600 and g.is_rider_order, o.order_id, null)) on_time_n
+  ,count(case when g.is_rider_order then g.order_delay end) on_time_d
+  ,count(distinct o.order_date) days
+
+from `tlb-data-prod.data_platform.fct_order_info` o
+right join address a using(order_id)
+left join (SELECT *, ROW_NUMBER() OVER(PARTITION BY order_id order by COALESCE(DATE(primary_rider_dropped_off_at, timezone), DATE(created_at, timezone)) desc) AS RN  
+  FROM `tlb-data-prod.data_platform.fct_logistics_order`) g on o.order_id = g.order_id and is_rider_order and RN=1 
+left join `tlb-data-prod.data_platform.dim_order_status` s on o.order_status_id = s.order_status_id 
+
+where o.country_id=9 and not o.is_test and lower(delivery_arrangement)!='pickup'
+  and o.order_date>>=date_sub(current_date(), INTERVAL 3 month)
+group by 1,2
+)
+
+, eng_60 as(
+  select case 
+  -- when eng_35 then 'Arabic <<= 35%'
+  -- when not eng_35 then 'Arabic >> 35%'
+  when eng_60 then 'Arabic <<= 60%'
+  when not eng_60 then 'Arabic >> 60%'
+  -- when eng_85 then 'Arabic <<= 85%'
+  -- when not eng_85 then 'Arabic >> 85%' 
+  end Address_60
+  ,delivery_arrangement
+  ,count(distinct case when o.is_successful then o.order_id end) successful_o
+  ,count(distinct case when s.is_net then o.order_id end) as net_total 
+  ,count(distinct case when s.is_net and not o.is_successful then o.order_id end) as net_failed
+  ,count(if(g.order_delay>>=-600 and g.order_delay<<=600 and g.is_rider_order, o.order_id, null)) on_time_n
+  ,count(case when g.is_rider_order then g.order_delay end) on_time_d
+  ,count(distinct o.order_date) days
+
+from `tlb-data-prod.data_platform.fct_order_info` o
+right join address a using(order_id)
+left join (SELECT *, ROW_NUMBER() OVER(PARTITION BY order_id order by COALESCE(DATE(primary_rider_dropped_off_at, timezone), DATE(created_at, timezone)) desc) AS RN  
+  FROM `tlb-data-prod.data_platform.fct_logistics_order`) g on o.order_id = g.order_id and is_rider_order and RN=1 
+left join `tlb-data-prod.data_platform.dim_order_status` s on o.order_status_id = s.order_status_id 
+
+where o.country_id=9 and not o.is_test and lower(delivery_arrangement)!='pickup'
+  and o.order_date>>=date_sub(current_date(), INTERVAL 3 month)
+group by 1,2
+)
+
+, eng_85 as(
+  select case 
+  -- when eng_35 then 'Arabic <<= 35%'
+  -- when not eng_35 then 'Arabic >> 35%'
+  -- when eng_60 then 'Arabic <<= 60%'
+  -- when not eng_60 then 'Arabic >> 60%'
+  when eng_85 then 'Arabic <<= 85%'
+  when not eng_85 then 'Arabic >> 85%' 
+  end Address_85
+  ,delivery_arrangement
+  ,count(distinct case when o.is_successful then o.order_id end) successful_o
+  ,count(distinct case when s.is_net then o.order_id end) as net_total 
+  ,count(distinct case when s.is_net and not o.is_successful then o.order_id end) as net_failed
+  ,count(if(g.order_delay>>=-600 and g.order_delay<<=600 and g.is_rider_order, o.order_id, null)) on_time_n
+  ,count(case when g.is_rider_order then g.order_delay end) on_time_d
+  ,count(distinct o.order_date) days
+
+from `tlb-data-prod.data_platform.fct_order_info` o
+right join address a using(order_id)
+left join (SELECT *, ROW_NUMBER() OVER(PARTITION BY order_id order by COALESCE(DATE(primary_rider_dropped_off_at, timezone), DATE(created_at, timezone)) desc) AS RN  
+  FROM `tlb-data-prod.data_platform.fct_logistics_order`) g on o.order_id = g.order_id and is_rider_order and RN=1 
+left join `tlb-data-prod.data_platform.dim_order_status` s on o.order_status_id = s.order_status_id 
+
+where o.country_id=9 and not o.is_test and lower(delivery_arrangement)!='pickup'
+  and o.order_date>>=date_sub(current_date(), INTERVAL 3 month)
+group by 1,2
+)
+
+
+select * from eng_35
+union all
+select * from eng_60
+union all
+select * from eng_85]]></_.fcp.ObjectModelEncapsulateLegacy.false...relation>
+        <_.fcp.ObjectModelEncapsulateLegacy.true...relation connection='bigquery.013qaus0d5glt311a7p9u014thga' name='Custom SQL Query' type='text'><![CDATA[WITH address AS (select *,
+  case when percentage_of_arabic<<=0.35 then true else false end eng_35, --english address more than 35%, arabic less than or equal 35% 
+  case when percentage_of_arabic<<=0.60 then true else false end eng_60,
+  case when percentage_of_arabic<<=0.85 then true else false end eng_85,
+  from(
+    select *,
+      length(trim(no_eng_num_addr)) addr_len, 
+      length(trim(arabic))+length(eng_num) ar_len,
+      SAFE_DIVIDE(IFNULL(length(trim(arabic)),0)+length(eng_num), length(trim(addr))) percentage_of_arabic
+    from(
+      select order_id, addr, 
+        REGEXP_REPLACE(addr, '[0-9]+', '') no_eng_num_addr, 
+        array_to_string(REGEXP_EXTRACT_All(addr, r'([\p{Arabic}]+)'), ' ') arabic,
+        regexp_replace(addr, '[^0-9]', '') eng_num
+      from(
+        select distinct order_id,
+          concat(delivery_building_no, " ", delivery_floor, " ", delivery_street, " ", delivery_suite) addr, 
+          
+        from `tlb-data-prod.data_platform.fct_order_info` o
+        where o.country_id=9 and not o.is_test and lower(delivery_arrangement)!='pickup'
+          and o.order_date>>=date_sub(current_date(), INTERVAL 3 month)
+        order by 1)))
+        )
+
+, eng_35 as(
+  select case when eng_35 then 'Arabic <<= 35%'
+  when not eng_35 then 'Arabic >> 35%'
+  -- when eng_60 then 'Arabic <<= 60%'
+  -- when not eng_60 then 'Arabic >> 60%'
+  -- when eng_85 then 'Arabic <<= 85%'
+  -- when not eng_85 then 'Arabic >> 85%' 
+  end Address
+  ,delivery_arrangement
+  ,count(distinct case when o.is_successful then o.order_id end) successful_o
+  ,count(distinct case when s.is_net then o.order_id end) as net_total 
+  ,count(distinct case when s.is_net and not o.is_successful then o.order_id end) as net_failed
+  ,count(if(g.order_delay>>=-600 and g.order_delay<<=600 and g.is_rider_order, o.order_id, null)) on_time_n
+  ,count(case when g.is_rider_order then g.order_delay end) on_time_d
+  ,count(distinct o.order_date) days
+
+from `tlb-data-prod.data_platform.fct_order_info` o
+right join address a using(order_id)
+left join (SELECT *, ROW_NUMBER() OVER(PARTITION BY order_id order by COALESCE(DATE(primary_rider_dropped_off_at, timezone), DATE(created_at, timezone)) desc) AS RN  
+  FROM `tlb-data-prod.data_platform.fct_logistics_order`) g on o.order_id = g.order_id and is_rider_order and RN=1 
+left join `tlb-data-prod.data_platform.dim_order_status` s on o.order_status_id = s.order_status_id 
+
+where o.country_id=9 and not o.is_test and lower(delivery_arrangement)!='pickup'
+  and o.order_date>>=date_sub(current_date(), INTERVAL 3 month)
+group by 1,2
+)
+
+, eng_60 as(
+  select case 
+  -- when eng_35 then 'Arabic <<= 35%'
+  -- when not eng_35 then 'Arabic >> 35%'
+  when eng_60 then 'Arabic <<= 60%'
+  when not eng_60 then 'Arabic >> 60%'
+  -- when eng_85 then 'Arabic <<= 85%'
+  -- when not eng_85 then 'Arabic >> 85%' 
+  end Address_60
+  ,delivery_arrangement
+  ,count(distinct case when o.is_successful then o.order_id end) successful_o
+  ,count(distinct case when s.is_net then o.order_id end) as net_total 
+  ,count(distinct case when s.is_net and not o.is_successful then o.order_id end) as net_failed
+  ,count(if(g.order_delay>>=-600 and g.order_delay<<=600 and g.is_rider_order, o.order_id, null)) on_time_n
+  ,count(case when g.is_rider_order then g.order_delay end) on_time_d
+  ,count(distinct o.order_date) days
+
+from `tlb-data-prod.data_platform.fct_order_info` o
+right join address a using(order_id)
+left join (SELECT *, ROW_NUMBER() OVER(PARTITION BY order_id order by COALESCE(DATE(primary_rider_dropped_off_at, timezone), DATE(created_at, timezone)) desc) AS RN  
+  FROM `tlb-data-prod.data_platform.fct_logistics_order`) g on o.order_id = g.order_id and is_rider_order and RN=1 
+left join `tlb-data-prod.data_platform.dim_order_status` s on o.order_status_id = s.order_status_id 
+
+where o.country_id=9 and not o.is_test and lower(delivery_arrangement)!='pickup'
+  and o.order_date>>=date_sub(current_date(), INTERVAL 3 month)
+group by 1,2
+)
+
+, eng_85 as(
+  select case 
+  -- when eng_35 then 'Arabic <<= 35%'
+  -- when not eng_35 then 'Arabic >> 35%'
+  -- when eng_60 then 'Arabic <<= 60%'
+  -- when not eng_60 then 'Arabic >> 60%'
+  when eng_85 then 'Arabic <<= 85%'
+  when not eng_85 then 'Arabic >> 85%' 
+  end Address_85
+  ,delivery_arrangement
+  ,count(distinct case when o.is_successful then o.order_id end) successful_o
+  ,count(distinct case when s.is_net then o.order_id end) as net_total 
+  ,count(distinct case when s.is_net and not o.is_successful then o.order_id end) as net_failed
+  ,count(if(g.order_delay>>=-600 and g.order_delay<<=600 and g.is_rider_order, o.order_id, null)) on_time_n
+  ,count(case when g.is_rider_order then g.order_delay end) on_time_d
+  ,count(distinct o.order_date) days
+
+from `tlb-data-prod.data_platform.fct_order_info` o
+right join address a using(order_id)
+left join (SELECT *, ROW_NUMBER() OVER(PARTITION BY order_id order by COALESCE(DATE(primary_rider_dropped_off_at, timezone), DATE(created_at, timezone)) desc) AS RN  
+  FROM `tlb-data-prod.data_platform.fct_logistics_order`) g on o.order_id = g.order_id and is_rider_order and RN=1 
+left join `tlb-data-prod.data_platform.dim_order_status` s on o.order_status_id = s.order_status_id 
+
+where o.country_id=9 and not o.is_test and lower(delivery_arrangement)!='pickup'
+  and o.order_date>>=date_sub(current_date(), INTERVAL 3 month)
+group by 1,2
+)
+
+
+select * from eng_35
+union all
+select * from eng_60
+union all
+select * from eng_85]]></_.fcp.ObjectModelEncapsulateLegacy.true...relation>
+        <metadata-records>
+          <metadata-record class='column'>
+            <remote-name>Address</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[Address]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>Address</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_61BB23DD30224BDE93F732F5A518ED75]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>delivery_arrangement</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[delivery_arrangement]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>delivery_arrangement</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_61BB23DD30224BDE93F732F5A518ED75]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>successful_o</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[successful_o]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>successful_o</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_61BB23DD30224BDE93F732F5A518ED75]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>net_total</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[net_total]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>net_total</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_61BB23DD30224BDE93F732F5A518ED75]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>net_failed</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[net_failed]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>net_failed</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_61BB23DD30224BDE93F732F5A518ED75]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>on_time_n</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[on_time_n]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>on_time_n</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_61BB23DD30224BDE93F732F5A518ED75]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>on_time_d</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[on_time_d]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>on_time_d</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_61BB23DD30224BDE93F732F5A518ED75]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>days</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[days]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>days</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_61BB23DD30224BDE93F732F5A518ED75]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+        </metadata-records>
+      </connection>
+      <aliases enabled='yes' />
+      <column caption='NFR%' datatype='real' default-format='p0.0%' name='[Calculation_74027961642590208]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='sum([net_failed])/sum([net_total])' />
+      </column>
+      <column caption='OOT%' datatype='real' default-format='p0.0%' name='[Calculation_74027961642950657]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='sum([on_time_n])/sum([on_time_d])' />
+      </column>
+      <column caption='AVG. Daily Successful' datatype='real' name='[Calculation_74027961644105730]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='sum([successful_o])/MIN([days])' />
+      </column>
+      <column caption='no. of days' datatype='integer' name='[Calculation_74027961645035523]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='DAY(DATEADD(&apos;day&apos;, -1,DATEADD(&apos;month&apos;, -3,DATETRUNC(&apos;month&apos;, today()))))' />
+      </column>
+      <_.fcp.ObjectModelTableType.true...column caption='Custom SQL Query' datatype='table' name='[__tableau_internal_object_id__].[_61BB23DD30224BDE93F732F5A518ED75]' role='measure' type='quantitative' />
+      <extract _.fcp.ObjectModelExtractV2.true...object-id='' _.fcp.VConnDownstreamExtractsWithWarnings.true...user-specific='false' count='-1' enabled='true' units='records'>
+        <connection author-locale='en_US' class='hyper' dbname='extract/df/fa/{F080DDFF-17B3-407D-8137-FBF477555F42}/federated_0cwdu081mhu46m17xanql1.hyper' default-settings='yes' extract-engine='true' schema='Extract' sslmode='' tablename='Extract' update-time='02/02/2025 03:10:57 PM' username=''>
+          <_.fcp.ObjectModelEncapsulateLegacy.false...relation name='Extract' table='[Extract].[Extract]' type='table' />
+          <_.fcp.ObjectModelEncapsulateLegacy.true...relation name='Extract' table='[Extract].[Extract]' type='table' />
+          <refresh>
+            <refresh-event add-from-file-path='Custom SQL Query (data_platform)' increment-value='%null%' refresh-type='create' rows-inserted='12' timestamp-start='2025-02-02 15:09:28.727' />
+          </refresh>
+          <metadata-records>
+            <metadata-record class='column'>
+              <remote-name>Address</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[Address]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>Address</remote-alias>
+              <ordinal>0</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>6</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_61BB23DD30224BDE93F732F5A518ED75]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>delivery_arrangement</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[delivery_arrangement]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>delivery_arrangement</remote-alias>
+              <ordinal>1</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>2</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_61BB23DD30224BDE93F732F5A518ED75]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>successful_o</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[successful_o]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>successful_o</remote-alias>
+              <ordinal>2</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>12</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_61BB23DD30224BDE93F732F5A518ED75]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>net_total</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[net_total]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>net_total</remote-alias>
+              <ordinal>3</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>12</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_61BB23DD30224BDE93F732F5A518ED75]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>net_failed</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[net_failed]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>net_failed</remote-alias>
+              <ordinal>4</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>12</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_61BB23DD30224BDE93F732F5A518ED75]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>on_time_n</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[on_time_n]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>on_time_n</remote-alias>
+              <ordinal>5</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>12</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_61BB23DD30224BDE93F732F5A518ED75]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>on_time_d</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[on_time_d]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>on_time_d</remote-alias>
+              <ordinal>6</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>12</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_61BB23DD30224BDE93F732F5A518ED75]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>days</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[days]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>days</remote-alias>
+              <ordinal>7</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>1</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_61BB23DD30224BDE93F732F5A518ED75]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+          </metadata-records>
+        </connection>
+      </extract>
+      <layout _.fcp.SchemaViewerObjectModel.false...dim-percentage='0.5' _.fcp.SchemaViewerObjectModel.false...measure-percentage='0.4' dim-ordering='alphabetic' measure-ordering='alphabetic' show-structure='true' />
+      <semantic-values>
+        <semantic-value key='[Country].[Name]' value='&quot;Egypt&quot;' />
+      </semantic-values>
+      <field-sort-info field-sort-order-type='custom-order'>
+        <field-sort-custom-order field='eng_35' />
+        <field-sort-custom-order field='eng_60' />
+        <field-sort-custom-order field='eng_85' />
+        <field-sort-custom-order field='delivery_arrangement' />
+        <field-sort-custom-order field='successful_o' />
+        <field-sort-custom-order field='Calculation_74027961644105730' />
+        <field-sort-custom-order field='net_total' />
+        <field-sort-custom-order field='net_failed' />
+        <field-sort-custom-order field='Calculation_74027961642590208' />
+        <field-sort-custom-order field='on_time_n' />
+        <field-sort-custom-order field='Calculation_74027961642950657' />
+        <field-sort-custom-order field='on_time_d' />
+      </field-sort-info>
+      <_.fcp.ObjectModelEncapsulateLegacy.true...object-graph>
+        <objects>
+          <object caption='Custom SQL Query' id='_61BB23DD30224BDE93F732F5A518ED75'>
+            <properties context=''>
+              <relation connection='bigquery.013qaus0d5glt311a7p9u014thga' name='Custom SQL Query' type='text'><![CDATA[WITH address AS (select *,
+  case when percentage_of_arabic<<=0.35 then true else false end eng_35, --english address more than 35%, arabic less than or equal 35% 
+  case when percentage_of_arabic<<=0.60 then true else false end eng_60,
+  case when percentage_of_arabic<<=0.85 then true else false end eng_85,
+  from(
+    select *,
+      length(trim(no_eng_num_addr)) addr_len, 
+      length(trim(arabic))+length(eng_num) ar_len,
+      SAFE_DIVIDE(IFNULL(length(trim(arabic)),0)+length(eng_num), length(trim(addr))) percentage_of_arabic
+    from(
+      select order_id, addr, 
+        REGEXP_REPLACE(addr, '[0-9]+', '') no_eng_num_addr, 
+        array_to_string(REGEXP_EXTRACT_All(addr, r'([\p{Arabic}]+)'), ' ') arabic,
+        regexp_replace(addr, '[^0-9]', '') eng_num
+      from(
+        select distinct order_id,
+          concat(delivery_building_no, " ", delivery_floor, " ", delivery_street, " ", delivery_suite) addr, 
+          
+        from `tlb-data-prod.data_platform.fct_order_info` o
+        where o.country_id=9 and not o.is_test and lower(delivery_arrangement)!='pickup'
+          and o.order_date>>=date_sub(current_date(), INTERVAL 3 month)
+        order by 1)))
+        )
+
+, eng_35 as(
+  select case when eng_35 then 'Arabic <<= 35%'
+  when not eng_35 then 'Arabic >> 35%'
+  -- when eng_60 then 'Arabic <<= 60%'
+  -- when not eng_60 then 'Arabic >> 60%'
+  -- when eng_85 then 'Arabic <<= 85%'
+  -- when not eng_85 then 'Arabic >> 85%' 
+  end Address
+  ,delivery_arrangement
+  ,count(distinct case when o.is_successful then o.order_id end) successful_o
+  ,count(distinct case when s.is_net then o.order_id end) as net_total 
+  ,count(distinct case when s.is_net and not o.is_successful then o.order_id end) as net_failed
+  ,count(if(g.order_delay>>=-600 and g.order_delay<<=600 and g.is_rider_order, o.order_id, null)) on_time_n
+  ,count(case when g.is_rider_order then g.order_delay end) on_time_d
+  ,count(distinct o.order_date) days
+
+from `tlb-data-prod.data_platform.fct_order_info` o
+right join address a using(order_id)
+left join (SELECT *, ROW_NUMBER() OVER(PARTITION BY order_id order by COALESCE(DATE(primary_rider_dropped_off_at, timezone), DATE(created_at, timezone)) desc) AS RN  
+  FROM `tlb-data-prod.data_platform.fct_logistics_order`) g on o.order_id = g.order_id and is_rider_order and RN=1 
+left join `tlb-data-prod.data_platform.dim_order_status` s on o.order_status_id = s.order_status_id 
+
+where o.country_id=9 and not o.is_test and lower(delivery_arrangement)!='pickup'
+  and o.order_date>>=date_sub(current_date(), INTERVAL 3 month)
+group by 1,2
+)
+
+, eng_60 as(
+  select case 
+  -- when eng_35 then 'Arabic <<= 35%'
+  -- when not eng_35 then 'Arabic >> 35%'
+  when eng_60 then 'Arabic <<= 60%'
+  when not eng_60 then 'Arabic >> 60%'
+  -- when eng_85 then 'Arabic <<= 85%'
+  -- when not eng_85 then 'Arabic >> 85%' 
+  end Address_60
+  ,delivery_arrangement
+  ,count(distinct case when o.is_successful then o.order_id end) successful_o
+  ,count(distinct case when s.is_net then o.order_id end) as net_total 
+  ,count(distinct case when s.is_net and not o.is_successful then o.order_id end) as net_failed
+  ,count(if(g.order_delay>>=-600 and g.order_delay<<=600 and g.is_rider_order, o.order_id, null)) on_time_n
+  ,count(case when g.is_rider_order then g.order_delay end) on_time_d
+  ,count(distinct o.order_date) days
+
+from `tlb-data-prod.data_platform.fct_order_info` o
+right join address a using(order_id)
+left join (SELECT *, ROW_NUMBER() OVER(PARTITION BY order_id order by COALESCE(DATE(primary_rider_dropped_off_at, timezone), DATE(created_at, timezone)) desc) AS RN  
+  FROM `tlb-data-prod.data_platform.fct_logistics_order`) g on o.order_id = g.order_id and is_rider_order and RN=1 
+left join `tlb-data-prod.data_platform.dim_order_status` s on o.order_status_id = s.order_status_id 
+
+where o.country_id=9 and not o.is_test and lower(delivery_arrangement)!='pickup'
+  and o.order_date>>=date_sub(current_date(), INTERVAL 3 month)
+group by 1,2
+)
+
+, eng_85 as(
+  select case 
+  -- when eng_35 then 'Arabic <<= 35%'
+  -- when not eng_35 then 'Arabic >> 35%'
+  -- when eng_60 then 'Arabic <<= 60%'
+  -- when not eng_60 then 'Arabic >> 60%'
+  when eng_85 then 'Arabic <<= 85%'
+  when not eng_85 then 'Arabic >> 85%' 
+  end Address_85
+  ,delivery_arrangement
+  ,count(distinct case when o.is_successful then o.order_id end) successful_o
+  ,count(distinct case when s.is_net then o.order_id end) as net_total 
+  ,count(distinct case when s.is_net and not o.is_successful then o.order_id end) as net_failed
+  ,count(if(g.order_delay>>=-600 and g.order_delay<<=600 and g.is_rider_order, o.order_id, null)) on_time_n
+  ,count(case when g.is_rider_order then g.order_delay end) on_time_d
+  ,count(distinct o.order_date) days
+
+from `tlb-data-prod.data_platform.fct_order_info` o
+right join address a using(order_id)
+left join (SELECT *, ROW_NUMBER() OVER(PARTITION BY order_id order by COALESCE(DATE(primary_rider_dropped_off_at, timezone), DATE(created_at, timezone)) desc) AS RN  
+  FROM `tlb-data-prod.data_platform.fct_logistics_order`) g on o.order_id = g.order_id and is_rider_order and RN=1 
+left join `tlb-data-prod.data_platform.dim_order_status` s on o.order_status_id = s.order_status_id 
+
+where o.country_id=9 and not o.is_test and lower(delivery_arrangement)!='pickup'
+  and o.order_date>>=date_sub(current_date(), INTERVAL 3 month)
+group by 1,2
+)
+
+
+select * from eng_35
+union all
+select * from eng_60
+union all
+select * from eng_85]]></relation>
+            </properties>
+            <properties context='extract'>
+              <relation name='Extract' table='[Extract].[Extract]' type='table' />
+            </properties>
+          </object>
+        </objects>
+      </_.fcp.ObjectModelEncapsulateLegacy.true...object-graph>
+    </datasource>
+  </datasources>
+  <worksheets>
+    <worksheet name='35_avg orders'>
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='Custom SQL Query (data_platform)' name='federated.0cwdu081mhu46m17xanql16zm5yj' />
+          </datasources>
+          <datasource-dependencies datasource='federated.0cwdu081mhu46m17xanql16zm5yj'>
+            <column datatype='string' name='[Address]' role='dimension' type='nominal' />
+            <column caption='AVG. Daily Successful' datatype='real' name='[Calculation_74027961644105730]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='sum([successful_o])/MIN([days])' />
+            </column>
+            <column datatype='integer' name='[days]' role='measure' type='quantitative' />
+            <column datatype='string' name='[delivery_arrangement]' role='dimension' type='nominal' />
+            <column-instance column='[Address]' derivation='None' name='[none:Address:nk]' pivot='key' type='nominal' />
+            <column-instance column='[delivery_arrangement]' derivation='None' name='[none:delivery_arrangement:nk]' pivot='key' type='nominal' />
+            <column datatype='integer' name='[successful_o]' role='measure' type='quantitative' />
+            <column-instance column='[Calculation_74027961644105730]' derivation='User' name='[usr:Calculation_74027961644105730:qk]' pivot='key' type='quantitative' />
+          </datasource-dependencies>
+          <filter class='categorical' column='[federated.0cwdu081mhu46m17xanql16zm5yj].[none:Address:nk]'>
+            <groupfilter function='union' user:ui-domain='database' user:ui-enumeration='inclusive' user:ui-marker='enumerate'>
+              <groupfilter function='member' level='[none:Address:nk]' member='&quot;Arabic &lt;= 35\%&quot;' />
+              <groupfilter function='member' level='[none:Address:nk]' member='&quot;Arabic &gt; 35\%&quot;' />
+            </groupfilter>
+          </filter>
+          <manual-sort column='[federated.0cwdu081mhu46m17xanql16zm5yj].[none:Address:nk]' direction='ASC'>
+            <dictionary>
+              <bucket>&quot;Arabic &lt;= 35\%&quot;</bucket>
+              <bucket>&quot;Arabic &gt; 35\%&quot;</bucket>
+              <bucket>&quot;Arabic &lt;= 60\%&quot;</bucket>
+              <bucket>&quot;Arabic &gt; 60\%&quot;</bucket>
+              <bucket>&quot;Arabic &lt;= 85\%&quot;</bucket>
+              <bucket>&quot;Arabic &gt; 85\%&quot;</bucket>
+            </dictionary>
+          </manual-sort>
+          <slices>
+            <column>[federated.0cwdu081mhu46m17xanql16zm5yj].[none:Address:nk]</column>
+          </slices>
+          <aggregation value='true' />
+        </view>
+        <style />
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Automatic' />
+            <encodings>
+              <text column='[federated.0cwdu081mhu46m17xanql16zm5yj].[usr:Calculation_74027961644105730:qk]' />
+            </encodings>
+            <style>
+              <style-rule element='mark'>
+                <format attr='mark-labels-show' value='true' />
+              </style-rule>
+            </style>
+          </pane>
+        </panes>
+        <rows total='true'>[federated.0cwdu081mhu46m17xanql16zm5yj].[none:Address:nk]</rows>
+        <cols total='true'>[federated.0cwdu081mhu46m17xanql16zm5yj].[none:delivery_arrangement:nk]</cols>
+      </table>
+      <simple-id uuid='{AA56EFD9-E687-455E-BC4D-47FD718829AC}' />
+    </worksheet>
+    <worksheet name='35_nfr'>
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='Custom SQL Query (data_platform)' name='federated.0cwdu081mhu46m17xanql16zm5yj' />
+          </datasources>
+          <datasource-dependencies datasource='federated.0cwdu081mhu46m17xanql16zm5yj'>
+            <column datatype='string' name='[Address]' role='dimension' type='nominal' />
+            <column caption='NFR%' datatype='real' default-format='p0.0%' name='[Calculation_74027961642590208]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='sum([net_failed])/sum([net_total])' />
+            </column>
+            <column datatype='string' name='[delivery_arrangement]' role='dimension' type='nominal' />
+            <column datatype='integer' name='[net_failed]' role='measure' type='quantitative' />
+            <column datatype='integer' name='[net_total]' role='measure' type='quantitative' />
+            <column-instance column='[Address]' derivation='None' name='[none:Address:nk]' pivot='key' type='nominal' />
+            <column-instance column='[delivery_arrangement]' derivation='None' name='[none:delivery_arrangement:nk]' pivot='key' type='nominal' />
+            <column-instance column='[Calculation_74027961642590208]' derivation='User' name='[usr:Calculation_74027961642590208:qk]' pivot='key' type='quantitative' />
+          </datasource-dependencies>
+          <filter class='categorical' column='[federated.0cwdu081mhu46m17xanql16zm5yj].[none:Address:nk]'>
+            <groupfilter function='union' user:ui-domain='database' user:ui-enumeration='inclusive' user:ui-marker='enumerate'>
+              <groupfilter function='member' level='[none:Address:nk]' member='&quot;Arabic &lt;= 35\%&quot;' />
+              <groupfilter function='member' level='[none:Address:nk]' member='&quot;Arabic &gt; 35\%&quot;' />
+            </groupfilter>
+          </filter>
+          <manual-sort column='[federated.0cwdu081mhu46m17xanql16zm5yj].[none:Address:nk]' direction='ASC'>
+            <dictionary>
+              <bucket>&quot;Arabic &lt;= 35\%&quot;</bucket>
+              <bucket>&quot;Arabic &gt; 35\%&quot;</bucket>
+              <bucket>&quot;Arabic &lt;= 60\%&quot;</bucket>
+              <bucket>&quot;Arabic &gt; 60\%&quot;</bucket>
+              <bucket>&quot;Arabic &lt;= 85\%&quot;</bucket>
+              <bucket>&quot;Arabic &gt; 85\%&quot;</bucket>
+            </dictionary>
+          </manual-sort>
+          <slices>
+            <column>[federated.0cwdu081mhu46m17xanql16zm5yj].[none:Address:nk]</column>
+          </slices>
+          <aggregation value='true' />
+        </view>
+        <style />
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Automatic' />
+            <encodings>
+              <text column='[federated.0cwdu081mhu46m17xanql16zm5yj].[usr:Calculation_74027961642590208:qk]' />
+            </encodings>
+            <style>
+              <style-rule element='mark'>
+                <format attr='mark-labels-show' value='true' />
+              </style-rule>
+            </style>
+          </pane>
+        </panes>
+        <rows total='true'>[federated.0cwdu081mhu46m17xanql16zm5yj].[none:Address:nk]</rows>
+        <cols total='true'>[federated.0cwdu081mhu46m17xanql16zm5yj].[none:delivery_arrangement:nk]</cols>
+      </table>
+      <simple-id uuid='{5FCF51AF-BD85-40C6-BCD8-5F330AD9893F}' />
+    </worksheet>
+    <worksheet name='35_oot'>
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='Custom SQL Query (data_platform)' name='federated.0cwdu081mhu46m17xanql16zm5yj' />
+          </datasources>
+          <datasource-dependencies datasource='federated.0cwdu081mhu46m17xanql16zm5yj'>
+            <column datatype='string' name='[Address]' role='dimension' type='nominal' />
+            <column caption='OOT%' datatype='real' default-format='p0.0%' name='[Calculation_74027961642950657]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='sum([on_time_n])/sum([on_time_d])' />
+            </column>
+            <column datatype='string' name='[delivery_arrangement]' role='dimension' type='nominal' />
+            <column-instance column='[Address]' derivation='None' name='[none:Address:nk]' pivot='key' type='nominal' />
+            <column-instance column='[delivery_arrangement]' derivation='None' name='[none:delivery_arrangement:nk]' pivot='key' type='nominal' />
+            <column datatype='integer' name='[on_time_d]' role='measure' type='quantitative' />
+            <column datatype='integer' name='[on_time_n]' role='measure' type='quantitative' />
+            <column-instance column='[Calculation_74027961642950657]' derivation='User' name='[usr:Calculation_74027961642950657:qk]' pivot='key' type='quantitative' />
+          </datasource-dependencies>
+          <filter class='categorical' column='[federated.0cwdu081mhu46m17xanql16zm5yj].[none:Address:nk]'>
+            <groupfilter function='union' user:ui-domain='database' user:ui-enumeration='inclusive' user:ui-marker='enumerate'>
+              <groupfilter function='member' level='[none:Address:nk]' member='&quot;Arabic &lt;= 35\%&quot;' />
+              <groupfilter function='member' level='[none:Address:nk]' member='&quot;Arabic &gt; 35\%&quot;' />
+            </groupfilter>
+          </filter>
+          <manual-sort column='[federated.0cwdu081mhu46m17xanql16zm5yj].[none:Address:nk]' direction='ASC'>
+            <dictionary>
+              <bucket>&quot;Arabic &lt;= 35\%&quot;</bucket>
+              <bucket>&quot;Arabic &gt; 35\%&quot;</bucket>
+              <bucket>&quot;Arabic &lt;= 60\%&quot;</bucket>
+              <bucket>&quot;Arabic &gt; 60\%&quot;</bucket>
+              <bucket>&quot;Arabic &lt;= 85\%&quot;</bucket>
+              <bucket>&quot;Arabic &gt; 85\%&quot;</bucket>
+            </dictionary>
+          </manual-sort>
+          <slices>
+            <column>[federated.0cwdu081mhu46m17xanql16zm5yj].[none:Address:nk]</column>
+          </slices>
+          <aggregation value='true' />
+        </view>
+        <style />
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Automatic' />
+            <encodings>
+              <text column='[federated.0cwdu081mhu46m17xanql16zm5yj].[usr:Calculation_74027961642950657:qk]' />
+            </encodings>
+            <style>
+              <style-rule element='mark'>
+                <format attr='mark-labels-show' value='true' />
+              </style-rule>
+            </style>
+          </pane>
+        </panes>
+        <rows total='true'>[federated.0cwdu081mhu46m17xanql16zm5yj].[none:Address:nk]</rows>
+        <cols total='true'>[federated.0cwdu081mhu46m17xanql16zm5yj].[none:delivery_arrangement:nk]</cols>
+      </table>
+      <simple-id uuid='{4B65D621-4277-4182-A7A5-DA84450953F0}' />
+    </worksheet>
+    <worksheet name='60_avg orders'>
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='Custom SQL Query (data_platform)' name='federated.0cwdu081mhu46m17xanql16zm5yj' />
+          </datasources>
+          <datasource-dependencies datasource='federated.0cwdu081mhu46m17xanql16zm5yj'>
+            <column datatype='string' name='[Address]' role='dimension' type='nominal' />
+            <column caption='AVG. Daily Successful' datatype='real' name='[Calculation_74027961644105730]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='sum([successful_o])/MIN([days])' />
+            </column>
+            <column datatype='integer' name='[days]' role='measure' type='quantitative' />
+            <column datatype='string' name='[delivery_arrangement]' role='dimension' type='nominal' />
+            <column-instance column='[Address]' derivation='None' name='[none:Address:nk]' pivot='key' type='nominal' />
+            <column-instance column='[delivery_arrangement]' derivation='None' name='[none:delivery_arrangement:nk]' pivot='key' type='nominal' />
+            <column datatype='integer' name='[successful_o]' role='measure' type='quantitative' />
+            <column-instance column='[Calculation_74027961644105730]' derivation='User' name='[usr:Calculation_74027961644105730:qk]' pivot='key' type='quantitative' />
+          </datasource-dependencies>
+          <filter class='categorical' column='[federated.0cwdu081mhu46m17xanql16zm5yj].[none:Address:nk]' filter-group='3'>
+            <groupfilter function='union' user:ui-domain='database' user:ui-enumeration='inclusive' user:ui-marker='enumerate'>
+              <groupfilter function='member' level='[none:Address:nk]' member='&quot;Arabic &lt;= 60\%&quot;' />
+              <groupfilter function='member' level='[none:Address:nk]' member='&quot;Arabic &gt; 60\%&quot;' />
+            </groupfilter>
+          </filter>
+          <manual-sort column='[federated.0cwdu081mhu46m17xanql16zm5yj].[none:Address:nk]' direction='ASC'>
+            <dictionary>
+              <bucket>&quot;Arabic &lt;= 35\%&quot;</bucket>
+              <bucket>&quot;Arabic &gt; 35\%&quot;</bucket>
+              <bucket>&quot;Arabic &lt;= 60\%&quot;</bucket>
+              <bucket>&quot;Arabic &gt; 60\%&quot;</bucket>
+              <bucket>&quot;Arabic &lt;= 85\%&quot;</bucket>
+              <bucket>&quot;Arabic &gt; 85\%&quot;</bucket>
+            </dictionary>
+          </manual-sort>
+          <slices>
+            <column>[federated.0cwdu081mhu46m17xanql16zm5yj].[none:Address:nk]</column>
+          </slices>
+          <aggregation value='true' />
+        </view>
+        <style />
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Automatic' />
+            <encodings>
+              <text column='[federated.0cwdu081mhu46m17xanql16zm5yj].[usr:Calculation_74027961644105730:qk]' />
+            </encodings>
+            <style>
+              <style-rule element='mark'>
+                <format attr='mark-labels-show' value='true' />
+              </style-rule>
+            </style>
+          </pane>
+        </panes>
+        <rows total='true'>[federated.0cwdu081mhu46m17xanql16zm5yj].[none:Address:nk]</rows>
+        <cols total='true'>[federated.0cwdu081mhu46m17xanql16zm5yj].[none:delivery_arrangement:nk]</cols>
+      </table>
+      <simple-id uuid='{26A3C071-A48B-4EC0-8DBB-FDB6BD210AFA}' />
+    </worksheet>
+    <worksheet name='60_nfr'>
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='Custom SQL Query (data_platform)' name='federated.0cwdu081mhu46m17xanql16zm5yj' />
+          </datasources>
+          <datasource-dependencies datasource='federated.0cwdu081mhu46m17xanql16zm5yj'>
+            <column datatype='string' name='[Address]' role='dimension' type='nominal' />
+            <column caption='NFR%' datatype='real' default-format='p0.0%' name='[Calculation_74027961642590208]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='sum([net_failed])/sum([net_total])' />
+            </column>
+            <column datatype='string' name='[delivery_arrangement]' role='dimension' type='nominal' />
+            <column datatype='integer' name='[net_failed]' role='measure' type='quantitative' />
+            <column datatype='integer' name='[net_total]' role='measure' type='quantitative' />
+            <column-instance column='[Address]' derivation='None' name='[none:Address:nk]' pivot='key' type='nominal' />
+            <column-instance column='[delivery_arrangement]' derivation='None' name='[none:delivery_arrangement:nk]' pivot='key' type='nominal' />
+            <column-instance column='[Calculation_74027961642590208]' derivation='User' name='[usr:Calculation_74027961642590208:qk]' pivot='key' type='quantitative' />
+          </datasource-dependencies>
+          <filter class='categorical' column='[federated.0cwdu081mhu46m17xanql16zm5yj].[none:Address:nk]' filter-group='3'>
+            <groupfilter function='union' user:ui-domain='database' user:ui-enumeration='inclusive' user:ui-marker='enumerate'>
+              <groupfilter function='member' level='[none:Address:nk]' member='&quot;Arabic &lt;= 60\%&quot;' />
+              <groupfilter function='member' level='[none:Address:nk]' member='&quot;Arabic &gt; 60\%&quot;' />
+            </groupfilter>
+          </filter>
+          <manual-sort column='[federated.0cwdu081mhu46m17xanql16zm5yj].[none:Address:nk]' direction='ASC'>
+            <dictionary>
+              <bucket>&quot;Arabic &lt;= 35\%&quot;</bucket>
+              <bucket>&quot;Arabic &gt; 35\%&quot;</bucket>
+              <bucket>&quot;Arabic &lt;= 60\%&quot;</bucket>
+              <bucket>&quot;Arabic &gt; 60\%&quot;</bucket>
+              <bucket>&quot;Arabic &lt;= 85\%&quot;</bucket>
+              <bucket>&quot;Arabic &gt; 85\%&quot;</bucket>
+            </dictionary>
+          </manual-sort>
+          <slices>
+            <column>[federated.0cwdu081mhu46m17xanql16zm5yj].[none:Address:nk]</column>
+          </slices>
+          <aggregation value='true' />
+        </view>
+        <style />
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Automatic' />
+            <encodings>
+              <text column='[federated.0cwdu081mhu46m17xanql16zm5yj].[usr:Calculation_74027961642590208:qk]' />
+            </encodings>
+            <style>
+              <style-rule element='mark'>
+                <format attr='mark-labels-show' value='true' />
+              </style-rule>
+            </style>
+          </pane>
+        </panes>
+        <rows total='true'>[federated.0cwdu081mhu46m17xanql16zm5yj].[none:Address:nk]</rows>
+        <cols total='true'>[federated.0cwdu081mhu46m17xanql16zm5yj].[none:delivery_arrangement:nk]</cols>
+      </table>
+      <simple-id uuid='{320A7A09-0BBB-4E37-96F7-D7B28C905653}' />
+    </worksheet>
+    <worksheet name='60_oot'>
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='Custom SQL Query (data_platform)' name='federated.0cwdu081mhu46m17xanql16zm5yj' />
+          </datasources>
+          <datasource-dependencies datasource='federated.0cwdu081mhu46m17xanql16zm5yj'>
+            <column datatype='string' name='[Address]' role='dimension' type='nominal' />
+            <column caption='OOT%' datatype='real' default-format='p0.0%' name='[Calculation_74027961642950657]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='sum([on_time_n])/sum([on_time_d])' />
+            </column>
+            <column datatype='string' name='[delivery_arrangement]' role='dimension' type='nominal' />
+            <column-instance column='[Address]' derivation='None' name='[none:Address:nk]' pivot='key' type='nominal' />
+            <column-instance column='[delivery_arrangement]' derivation='None' name='[none:delivery_arrangement:nk]' pivot='key' type='nominal' />
+            <column datatype='integer' name='[on_time_d]' role='measure' type='quantitative' />
+            <column datatype='integer' name='[on_time_n]' role='measure' type='quantitative' />
+            <column-instance column='[Calculation_74027961642950657]' derivation='User' name='[usr:Calculation_74027961642950657:qk]' pivot='key' type='quantitative' />
+          </datasource-dependencies>
+          <filter class='categorical' column='[federated.0cwdu081mhu46m17xanql16zm5yj].[none:Address:nk]' filter-group='3'>
+            <groupfilter function='union' user:ui-domain='database' user:ui-enumeration='inclusive' user:ui-marker='enumerate'>
+              <groupfilter function='member' level='[none:Address:nk]' member='&quot;Arabic &lt;= 60\%&quot;' />
+              <groupfilter function='member' level='[none:Address:nk]' member='&quot;Arabic &gt; 60\%&quot;' />
+            </groupfilter>
+          </filter>
+          <manual-sort column='[federated.0cwdu081mhu46m17xanql16zm5yj].[none:Address:nk]' direction='ASC'>
+            <dictionary>
+              <bucket>&quot;Arabic &lt;= 35\%&quot;</bucket>
+              <bucket>&quot;Arabic &gt; 35\%&quot;</bucket>
+              <bucket>&quot;Arabic &lt;= 60\%&quot;</bucket>
+              <bucket>&quot;Arabic &gt; 60\%&quot;</bucket>
+              <bucket>&quot;Arabic &lt;= 85\%&quot;</bucket>
+              <bucket>&quot;Arabic &gt; 85\%&quot;</bucket>
+            </dictionary>
+          </manual-sort>
+          <slices>
+            <column>[federated.0cwdu081mhu46m17xanql16zm5yj].[none:Address:nk]</column>
+          </slices>
+          <aggregation value='true' />
+        </view>
+        <style />
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Automatic' />
+            <encodings>
+              <text column='[federated.0cwdu081mhu46m17xanql16zm5yj].[usr:Calculation_74027961642950657:qk]' />
+            </encodings>
+            <style>
+              <style-rule element='mark'>
+                <format attr='mark-labels-show' value='true' />
+              </style-rule>
+            </style>
+          </pane>
+        </panes>
+        <rows total='true'>[federated.0cwdu081mhu46m17xanql16zm5yj].[none:Address:nk]</rows>
+        <cols total='true'>[federated.0cwdu081mhu46m17xanql16zm5yj].[none:delivery_arrangement:nk]</cols>
+      </table>
+      <simple-id uuid='{822B6BBA-32FB-4FC8-B886-72FBAA3040B1}' />
+    </worksheet>
+    <worksheet name='85_avg orders'>
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='Custom SQL Query (data_platform)' name='federated.0cwdu081mhu46m17xanql16zm5yj' />
+          </datasources>
+          <datasource-dependencies datasource='federated.0cwdu081mhu46m17xanql16zm5yj'>
+            <column datatype='string' name='[Address]' role='dimension' type='nominal' />
+            <column caption='AVG. Daily Successful' datatype='real' name='[Calculation_74027961644105730]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='sum([successful_o])/MIN([days])' />
+            </column>
+            <column datatype='integer' name='[days]' role='measure' type='quantitative' />
+            <column datatype='string' name='[delivery_arrangement]' role='dimension' type='nominal' />
+            <column-instance column='[Address]' derivation='None' name='[none:Address:nk]' pivot='key' type='nominal' />
+            <column-instance column='[delivery_arrangement]' derivation='None' name='[none:delivery_arrangement:nk]' pivot='key' type='nominal' />
+            <column datatype='integer' name='[successful_o]' role='measure' type='quantitative' />
+            <column-instance column='[Calculation_74027961644105730]' derivation='User' name='[usr:Calculation_74027961644105730:qk]' pivot='key' type='quantitative' />
+          </datasource-dependencies>
+          <filter class='categorical' column='[federated.0cwdu081mhu46m17xanql16zm5yj].[none:Address:nk]' filter-group='4'>
+            <groupfilter function='union' user:ui-domain='database' user:ui-enumeration='inclusive' user:ui-marker='enumerate'>
+              <groupfilter function='member' level='[none:Address:nk]' member='&quot;Arabic &lt;= 85\%&quot;' />
+              <groupfilter function='member' level='[none:Address:nk]' member='&quot;Arabic &gt; 85\%&quot;' />
+            </groupfilter>
+          </filter>
+          <manual-sort column='[federated.0cwdu081mhu46m17xanql16zm5yj].[none:Address:nk]' direction='ASC'>
+            <dictionary>
+              <bucket>&quot;Arabic &lt;= 35\%&quot;</bucket>
+              <bucket>&quot;Arabic &gt; 35\%&quot;</bucket>
+              <bucket>&quot;Arabic &lt;= 60\%&quot;</bucket>
+              <bucket>&quot;Arabic &gt; 60\%&quot;</bucket>
+              <bucket>&quot;Arabic &lt;= 85\%&quot;</bucket>
+              <bucket>&quot;Arabic &gt; 85\%&quot;</bucket>
+            </dictionary>
+          </manual-sort>
+          <slices>
+            <column>[federated.0cwdu081mhu46m17xanql16zm5yj].[none:Address:nk]</column>
+          </slices>
+          <aggregation value='true' />
+        </view>
+        <style />
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Automatic' />
+            <encodings>
+              <text column='[federated.0cwdu081mhu46m17xanql16zm5yj].[usr:Calculation_74027961644105730:qk]' />
+            </encodings>
+            <style>
+              <style-rule element='mark'>
+                <format attr='mark-labels-show' value='true' />
+              </style-rule>
+            </style>
+          </pane>
+        </panes>
+        <rows total='true'>[federated.0cwdu081mhu46m17xanql16zm5yj].[none:Address:nk]</rows>
+        <cols total='true'>[federated.0cwdu081mhu46m17xanql16zm5yj].[none:delivery_arrangement:nk]</cols>
+      </table>
+      <simple-id uuid='{561CA452-DE0F-4D53-8D26-9929F5E08308}' />
+    </worksheet>
+    <worksheet name='85_nfr'>
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='Custom SQL Query (data_platform)' name='federated.0cwdu081mhu46m17xanql16zm5yj' />
+          </datasources>
+          <datasource-dependencies datasource='federated.0cwdu081mhu46m17xanql16zm5yj'>
+            <column datatype='string' name='[Address]' role='dimension' type='nominal' />
+            <column caption='NFR%' datatype='real' default-format='p0.0%' name='[Calculation_74027961642590208]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='sum([net_failed])/sum([net_total])' />
+            </column>
+            <column datatype='string' name='[delivery_arrangement]' role='dimension' type='nominal' />
+            <column datatype='integer' name='[net_failed]' role='measure' type='quantitative' />
+            <column datatype='integer' name='[net_total]' role='measure' type='quantitative' />
+            <column-instance column='[Address]' derivation='None' name='[none:Address:nk]' pivot='key' type='nominal' />
+            <column-instance column='[delivery_arrangement]' derivation='None' name='[none:delivery_arrangement:nk]' pivot='key' type='nominal' />
+            <column-instance column='[Calculation_74027961642590208]' derivation='User' name='[usr:Calculation_74027961642590208:qk]' pivot='key' type='quantitative' />
+          </datasource-dependencies>
+          <filter class='categorical' column='[federated.0cwdu081mhu46m17xanql16zm5yj].[none:Address:nk]' filter-group='4'>
+            <groupfilter function='union' user:ui-domain='database' user:ui-enumeration='inclusive' user:ui-marker='enumerate'>
+              <groupfilter function='member' level='[none:Address:nk]' member='&quot;Arabic &lt;= 85\%&quot;' />
+              <groupfilter function='member' level='[none:Address:nk]' member='&quot;Arabic &gt; 85\%&quot;' />
+            </groupfilter>
+          </filter>
+          <manual-sort column='[federated.0cwdu081mhu46m17xanql16zm5yj].[none:Address:nk]' direction='ASC'>
+            <dictionary>
+              <bucket>&quot;Arabic &lt;= 35\%&quot;</bucket>
+              <bucket>&quot;Arabic &gt; 35\%&quot;</bucket>
+              <bucket>&quot;Arabic &lt;= 60\%&quot;</bucket>
+              <bucket>&quot;Arabic &gt; 60\%&quot;</bucket>
+              <bucket>&quot;Arabic &lt;= 85\%&quot;</bucket>
+              <bucket>&quot;Arabic &gt; 85\%&quot;</bucket>
+            </dictionary>
+          </manual-sort>
+          <slices>
+            <column>[federated.0cwdu081mhu46m17xanql16zm5yj].[none:Address:nk]</column>
+          </slices>
+          <aggregation value='true' />
+        </view>
+        <style />
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Automatic' />
+            <encodings>
+              <text column='[federated.0cwdu081mhu46m17xanql16zm5yj].[usr:Calculation_74027961642590208:qk]' />
+            </encodings>
+            <style>
+              <style-rule element='mark'>
+                <format attr='mark-labels-show' value='true' />
+              </style-rule>
+            </style>
+          </pane>
+        </panes>
+        <rows total='true'>[federated.0cwdu081mhu46m17xanql16zm5yj].[none:Address:nk]</rows>
+        <cols total='true'>[federated.0cwdu081mhu46m17xanql16zm5yj].[none:delivery_arrangement:nk]</cols>
+      </table>
+      <simple-id uuid='{1C51FE5F-7074-4613-BCEB-6AB1302E8ACE}' />
+    </worksheet>
+    <worksheet name='85_oot'>
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='Custom SQL Query (data_platform)' name='federated.0cwdu081mhu46m17xanql16zm5yj' />
+          </datasources>
+          <datasource-dependencies datasource='federated.0cwdu081mhu46m17xanql16zm5yj'>
+            <column datatype='string' name='[Address]' role='dimension' type='nominal' />
+            <column caption='OOT%' datatype='real' default-format='p0.0%' name='[Calculation_74027961642950657]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='sum([on_time_n])/sum([on_time_d])' />
+            </column>
+            <column datatype='string' name='[delivery_arrangement]' role='dimension' type='nominal' />
+            <column-instance column='[Address]' derivation='None' name='[none:Address:nk]' pivot='key' type='nominal' />
+            <column-instance column='[delivery_arrangement]' derivation='None' name='[none:delivery_arrangement:nk]' pivot='key' type='nominal' />
+            <column datatype='integer' name='[on_time_d]' role='measure' type='quantitative' />
+            <column datatype='integer' name='[on_time_n]' role='measure' type='quantitative' />
+            <column-instance column='[Calculation_74027961642950657]' derivation='User' name='[usr:Calculation_74027961642950657:qk]' pivot='key' type='quantitative' />
+          </datasource-dependencies>
+          <filter class='categorical' column='[federated.0cwdu081mhu46m17xanql16zm5yj].[none:Address:nk]' filter-group='4'>
+            <groupfilter function='union' user:ui-domain='database' user:ui-enumeration='inclusive' user:ui-marker='enumerate'>
+              <groupfilter function='member' level='[none:Address:nk]' member='&quot;Arabic &lt;= 85\%&quot;' />
+              <groupfilter function='member' level='[none:Address:nk]' member='&quot;Arabic &gt; 85\%&quot;' />
+            </groupfilter>
+          </filter>
+          <manual-sort column='[federated.0cwdu081mhu46m17xanql16zm5yj].[none:Address:nk]' direction='ASC'>
+            <dictionary>
+              <bucket>&quot;Arabic &lt;= 35\%&quot;</bucket>
+              <bucket>&quot;Arabic &gt; 35\%&quot;</bucket>
+              <bucket>&quot;Arabic &lt;= 60\%&quot;</bucket>
+              <bucket>&quot;Arabic &gt; 60\%&quot;</bucket>
+              <bucket>&quot;Arabic &lt;= 85\%&quot;</bucket>
+              <bucket>&quot;Arabic &gt; 85\%&quot;</bucket>
+            </dictionary>
+          </manual-sort>
+          <slices>
+            <column>[federated.0cwdu081mhu46m17xanql16zm5yj].[none:Address:nk]</column>
+          </slices>
+          <aggregation value='true' />
+        </view>
+        <style />
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Automatic' />
+            <encodings>
+              <text column='[federated.0cwdu081mhu46m17xanql16zm5yj].[usr:Calculation_74027961642950657:qk]' />
+            </encodings>
+            <style>
+              <style-rule element='mark'>
+                <format attr='mark-labels-show' value='true' />
+              </style-rule>
+            </style>
+          </pane>
+        </panes>
+        <rows total='true'>[federated.0cwdu081mhu46m17xanql16zm5yj].[none:Address:nk]</rows>
+        <cols total='true'>[federated.0cwdu081mhu46m17xanql16zm5yj].[none:delivery_arrangement:nk]</cols>
+      </table>
+      <simple-id uuid='{739555FB-37C1-45F9-8AAC-32DD49519F2B}' />
+    </worksheet>
+  </worksheets>
+  <dashboards>
+    <dashboard _.fcp.AccessibleZoneTabOrder.true...enable-sort-zone-taborder='true' name='Addresses Buckets'>
+      <repository-location derived-from='https://tableau.deliveryhero.net/t/Talabat/workbooks/EnglishvsArabicAddressesPerf/Dashboard1?rev=' id='Dashboard1' path='/t/Talabat/workbooks/EnglishvsArabicAddressesPerf' revision='' site='Talabat' />
+      <style />
+      <size maxheight='800' maxwidth='1000' minheight='800' minwidth='1000' />
+      <zones>
+        <zone h='100000' id='4' type-v2='layout-basic' w='100000' x='0' y='0'>
+          <zone h='98000' id='3' param='vert' type-v2='layout-flow' w='98400' x='800' y='1000'>
+            <zone forceUpdate='true' h='3875' id='5' type-v2='text' w='98400' x='800' y='1000'>
+              <formatted-text>
+                <run bold='true' fontalignment='1' fontcolor='#f5f5f5' fontname='Tableau Semibold' fontsize='12'>Threshold 35%</run>
+              </formatted-text>
+              <zone-style>
+                <format attr='border-color' value='#000000' />
+                <format attr='border-style' value='none' />
+                <format attr='border-width' value='0' />
+                <format attr='margin' value='4' />
+                <format attr='background-color' value='#411517' />
+              </zone-style>
+            </zone>
+            <zone h='4875' id='29' layout-strategy-id='distribute-evenly' param='horz' type-v2='layout-flow' w='98400' x='800' y='4875'>
+              <zone forceUpdate='true' h='3875' id='26' type-v2='text' w='32600' x='1200' y='5375'>
+                <formatted-text>
+                  <run bold='true' fontalignment='1' fontcolor='#ff5900' fontsize='12'>NFR</run>
+                </formatted-text>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                  <format attr='background-color' value='#f4ede3' />
+                </zone-style>
+              </zone>
+              <zone forceUpdate='true' h='3875' id='27' type-v2='text' w='32500' x='33800' y='5375'>
+                <formatted-text>
+                  <run bold='true' fontalignment='1' fontcolor='#ff5900' fontsize='12'>OOT</run>
+                </formatted-text>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                  <format attr='background-color' value='#f4ede3' />
+                </zone-style>
+              </zone>
+              <zone forceUpdate='true' h='3875' id='28' type-v2='text' w='32500' x='66300' y='5375'>
+                <formatted-text>
+                  <run bold='true' fontalignment='1' fontcolor='#ff5900' fontsize='12'>AVG Daily Successful</run>
+                </formatted-text>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                  <format attr='background-color' value='#f4ede3' />
+                </zone-style>
+              </zone>
+              <zone-style>
+                <format attr='border-color' value='#000000' />
+                <format attr='border-style' value='none' />
+                <format attr='border-width' value='0' />
+                <format attr='margin' value='4' />
+              </zone-style>
+            </zone>
+            <zone h='13625' id='8' layout-strategy-id='distribute-evenly' param='horz' type-v2='layout-flow' w='98400' x='800' y='9750'>
+              <zone h='13625' id='9' name='35_nfr' show-title='false' w='32800' x='800' y='9750'>
+                <layout-cache fixed-size-h='101' fixed-size-w='281' type-h='fixed' type-w='fixed' />
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+              <zone h='13625' id='10' name='35_oot' show-title='false' w='32800' x='33600' y='9750'>
+                <layout-cache fixed-size-h='101' fixed-size-w='281' type-h='fixed' type-w='fixed' />
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+              <zone h='13625' id='11' name='35_avg orders' show-title='false' w='32800' x='66400' y='9750'>
+                <layout-cache fixed-size-h='101' fixed-size-w='281' type-h='fixed' type-w='fixed' />
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+            </zone>
+            <zone fixed-size='24' h='4000' id='34' is-fixed='true' type-v2='empty' w='98400' x='800' y='23375'>
+              <zone-style>
+                <format attr='border-color' value='#000000' />
+                <format attr='border-style' value='none' />
+                <format attr='border-width' value='0' />
+                <format attr='margin' value='4' />
+              </zone-style>
+            </zone>
+            <zone forceUpdate='true' h='3875' id='20' type-v2='text' w='98400' x='800' y='27375'>
+              <formatted-text>
+                <run bold='true' fontalignment='1' fontcolor='#f5f5f5' fontname='Tableau Semibold' fontsize='12'>Threshold 60%</run>
+              </formatted-text>
+              <zone-style>
+                <format attr='border-color' value='#000000' />
+                <format attr='border-style' value='none' />
+                <format attr='border-width' value='0' />
+                <format attr='margin' value='4' />
+                <format attr='background-color' value='#411517' />
+              </zone-style>
+            </zone>
+            <zone h='4875' id='33' layout-strategy-id='distribute-evenly' param='horz' type-v2='layout-flow' w='98400' x='800' y='31250'>
+              <zone forceUpdate='true' h='3875' id='30' type-v2='text' w='32600' x='1200' y='31750'>
+                <formatted-text>
+                  <run bold='true' fontalignment='1' fontcolor='#ff5900' fontsize='12'>NFR</run>
+                </formatted-text>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                  <format attr='background-color' value='#f4ede3' />
+                </zone-style>
+              </zone>
+              <zone forceUpdate='true' h='3875' id='31' type-v2='text' w='32500' x='33800' y='31750'>
+                <formatted-text>
+                  <run bold='true' fontalignment='1' fontcolor='#ff5900' fontsize='12'>OOT</run>
+                </formatted-text>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                  <format attr='background-color' value='#f4ede3' />
+                </zone-style>
+              </zone>
+              <zone forceUpdate='true' h='3875' id='32' type-v2='text' w='32500' x='66300' y='31750'>
+                <formatted-text>
+                  <run bold='true' fontalignment='1' fontcolor='#ff5900' fontsize='12'>AVG Daily Successful</run>
+                </formatted-text>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                  <format attr='background-color' value='#f4ede3' />
+                </zone-style>
+              </zone>
+              <zone-style>
+                <format attr='border-color' value='#000000' />
+                <format attr='border-style' value='none' />
+                <format attr='border-width' value='0' />
+                <format attr='margin' value='4' />
+              </zone-style>
+            </zone>
+            <zone h='13625' id='12' layout-strategy-id='distribute-evenly' param='horz' type-v2='layout-flow' w='98400' x='800' y='36125'>
+              <zone h='13625' id='13' name='60_nfr' show-title='false' w='32800' x='800' y='36125'>
+                <layout-cache fixed-size-h='101' fixed-size-w='281' type-h='fixed' type-w='fixed' />
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+              <zone h='13625' id='14' name='60_oot' show-title='false' w='32800' x='33600' y='36125'>
+                <layout-cache fixed-size-h='101' fixed-size-w='281' type-h='fixed' type-w='fixed' />
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+              <zone h='13625' id='15' name='60_avg orders' show-title='false' w='32800' x='66400' y='36125'>
+                <layout-cache fixed-size-h='101' fixed-size-w='281' type-h='fixed' type-w='fixed' />
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+            </zone>
+            <zone fixed-size='24' h='4000' id='35' is-fixed='true' type-v2='empty' w='98400' x='800' y='49750'>
+              <zone-style>
+                <format attr='border-color' value='#000000' />
+                <format attr='border-style' value='none' />
+                <format attr='border-width' value='0' />
+                <format attr='margin' value='4' />
+              </zone-style>
+            </zone>
+            <zone forceUpdate='true' h='3875' id='21' type-v2='text' w='98400' x='800' y='53750'>
+              <formatted-text>
+                <run bold='true' fontalignment='1' fontcolor='#f5f5f5' fontname='Tableau Semibold' fontsize='12'>Threshold 85%</run>
+              </formatted-text>
+              <zone-style>
+                <format attr='border-color' value='#000000' />
+                <format attr='border-style' value='none' />
+                <format attr='border-width' value='0' />
+                <format attr='margin' value='4' />
+                <format attr='background-color' value='#411517' />
+              </zone-style>
+            </zone>
+            <zone h='3875' id='22' layout-strategy-id='distribute-evenly' param='horz' type-v2='layout-flow' w='98400' x='800' y='57625'>
+              <zone forceUpdate='true' h='3875' id='23' type-v2='text' w='32800' x='800' y='57625'>
+                <formatted-text>
+                  <run bold='true' fontalignment='1' fontcolor='#ff5900' fontsize='12'>NFR</run>
+                </formatted-text>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                  <format attr='background-color' value='#f4ede3' />
+                </zone-style>
+              </zone>
+              <zone forceUpdate='true' h='3875' id='24' type-v2='text' w='32800' x='33600' y='57625'>
+                <formatted-text>
+                  <run bold='true' fontalignment='1' fontcolor='#ff5900' fontsize='12'>OOT</run>
+                </formatted-text>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                  <format attr='background-color' value='#f4ede3' />
+                </zone-style>
+              </zone>
+              <zone forceUpdate='true' h='3875' id='25' type-v2='text' w='32800' x='66400' y='57625'>
+                <formatted-text>
+                  <run bold='true' fontalignment='1' fontcolor='#ff5900' fontsize='12'>AVG Daily Successful</run>
+                </formatted-text>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                  <format attr='background-color' value='#f4ede3' />
+                </zone-style>
+              </zone>
+            </zone>
+            <zone h='13625' id='16' layout-strategy-id='distribute-evenly' param='horz' type-v2='layout-flow' w='98400' x='800' y='61500'>
+              <zone h='13625' id='17' name='85_nfr' show-title='false' w='32800' x='800' y='61500'>
+                <layout-cache fixed-size-h='101' fixed-size-w='281' type-h='fixed' type-w='fixed' />
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+              <zone h='13625' id='18' name='85_oot' show-title='false' w='32800' x='33600' y='61500'>
+                <layout-cache fixed-size-h='101' fixed-size-w='281' type-h='fixed' type-w='fixed' />
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+              <zone h='13625' id='19' name='85_avg orders' show-title='false' w='32800' x='66400' y='61500'>
+                <layout-cache fixed-size-h='101' fixed-size-w='281' type-h='fixed' type-w='fixed' />
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+            </zone>
+          </zone>
+          <zone-style>
+            <format attr='border-color' value='#000000' />
+            <format attr='border-style' value='none' />
+            <format attr='border-width' value='0' />
+            <format attr='margin' value='8' />
+          </zone-style>
+        </zone>
+      </zones>
+      <devicelayouts>
+        <devicelayout auto-generated='true' name='Phone'>
+          <size maxheight='1800' minheight='1800' sizing-mode='vscroll' />
+          <zones>
+            <zone h='100000' id='39' type-v2='layout-basic' w='100000' x='0' y='0'>
+              <zone h='98000' id='38' param='vert' type-v2='layout-flow' w='98400' x='800' y='1000'>
+                <zone forceUpdate='true' h='3875' id='5' type-v2='text' w='98400' x='800' y='1000'>
+                  <formatted-text>
+                    <run bold='true' fontalignment='1' fontcolor='#f5f5f5' fontname='Tableau Semibold' fontsize='12'>Threshold 35%</run>
+                  </formatted-text>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                    <format attr='background-color' value='#411517' />
+                  </zone-style>
+                </zone>
+                <zone forceUpdate='true' h='3875' id='26' type-v2='text' w='32600' x='1200' y='5375'>
+                  <formatted-text>
+                    <run bold='true' fontalignment='1' fontcolor='#ff5900' fontsize='12'>NFR</run>
+                  </formatted-text>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                    <format attr='background-color' value='#f4ede3' />
+                  </zone-style>
+                </zone>
+                <zone forceUpdate='true' h='3875' id='27' type-v2='text' w='32500' x='33800' y='5375'>
+                  <formatted-text>
+                    <run bold='true' fontalignment='1' fontcolor='#ff5900' fontsize='12'>OOT</run>
+                  </formatted-text>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                    <format attr='background-color' value='#f4ede3' />
+                  </zone-style>
+                </zone>
+                <zone forceUpdate='true' h='3875' id='28' type-v2='text' w='32500' x='66300' y='5375'>
+                  <formatted-text>
+                    <run bold='true' fontalignment='1' fontcolor='#ff5900' fontsize='12'>AVG Daily Successful</run>
+                  </formatted-text>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                    <format attr='background-color' value='#f4ede3' />
+                  </zone-style>
+                </zone>
+                <zone fixed-size='101' h='13625' id='9' is-fixed='true' name='35_nfr' show-title='false' w='32800' x='800' y='9750'>
+                  <layout-cache fixed-size-h='101' fixed-size-w='281' type-h='fixed' type-w='fixed' />
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone fixed-size='101' h='13625' id='10' is-fixed='true' name='35_oot' show-title='false' w='32800' x='33600' y='9750'>
+                  <layout-cache fixed-size-h='101' fixed-size-w='281' type-h='fixed' type-w='fixed' />
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone fixed-size='101' h='13625' id='11' is-fixed='true' name='35_avg orders' show-title='false' w='32800' x='66400' y='9750'>
+                  <layout-cache fixed-size-h='101' fixed-size-w='281' type-h='fixed' type-w='fixed' />
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone forceUpdate='true' h='3875' id='20' type-v2='text' w='98400' x='800' y='27375'>
+                  <formatted-text>
+                    <run bold='true' fontalignment='1' fontcolor='#f5f5f5' fontname='Tableau Semibold' fontsize='12'>Threshold 60%</run>
+                  </formatted-text>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                    <format attr='background-color' value='#411517' />
+                  </zone-style>
+                </zone>
+                <zone forceUpdate='true' h='3875' id='30' type-v2='text' w='32600' x='1200' y='31750'>
+                  <formatted-text>
+                    <run bold='true' fontalignment='1' fontcolor='#ff5900' fontsize='12'>NFR</run>
+                  </formatted-text>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                    <format attr='background-color' value='#f4ede3' />
+                  </zone-style>
+                </zone>
+                <zone forceUpdate='true' h='3875' id='31' type-v2='text' w='32500' x='33800' y='31750'>
+                  <formatted-text>
+                    <run bold='true' fontalignment='1' fontcolor='#ff5900' fontsize='12'>OOT</run>
+                  </formatted-text>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                    <format attr='background-color' value='#f4ede3' />
+                  </zone-style>
+                </zone>
+                <zone forceUpdate='true' h='3875' id='32' type-v2='text' w='32500' x='66300' y='31750'>
+                  <formatted-text>
+                    <run bold='true' fontalignment='1' fontcolor='#ff5900' fontsize='12'>AVG Daily Successful</run>
+                  </formatted-text>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                    <format attr='background-color' value='#f4ede3' />
+                  </zone-style>
+                </zone>
+                <zone fixed-size='101' h='13625' id='13' is-fixed='true' name='60_nfr' show-title='false' w='32800' x='800' y='36125'>
+                  <layout-cache fixed-size-h='101' fixed-size-w='281' type-h='fixed' type-w='fixed' />
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone fixed-size='101' h='13625' id='14' is-fixed='true' name='60_oot' show-title='false' w='32800' x='33600' y='36125'>
+                  <layout-cache fixed-size-h='101' fixed-size-w='281' type-h='fixed' type-w='fixed' />
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone fixed-size='101' h='13625' id='15' is-fixed='true' name='60_avg orders' show-title='false' w='32800' x='66400' y='36125'>
+                  <layout-cache fixed-size-h='101' fixed-size-w='281' type-h='fixed' type-w='fixed' />
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone forceUpdate='true' h='3875' id='21' type-v2='text' w='98400' x='800' y='53750'>
+                  <formatted-text>
+                    <run bold='true' fontalignment='1' fontcolor='#f5f5f5' fontname='Tableau Semibold' fontsize='12'>Threshold 85%</run>
+                  </formatted-text>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                    <format attr='background-color' value='#411517' />
+                  </zone-style>
+                </zone>
+                <zone forceUpdate='true' h='3875' id='23' type-v2='text' w='32800' x='800' y='57625'>
+                  <formatted-text>
+                    <run bold='true' fontalignment='1' fontcolor='#ff5900' fontsize='12'>NFR</run>
+                  </formatted-text>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                    <format attr='background-color' value='#f4ede3' />
+                  </zone-style>
+                </zone>
+                <zone forceUpdate='true' h='3875' id='24' type-v2='text' w='32800' x='33600' y='57625'>
+                  <formatted-text>
+                    <run bold='true' fontalignment='1' fontcolor='#ff5900' fontsize='12'>OOT</run>
+                  </formatted-text>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                    <format attr='background-color' value='#f4ede3' />
+                  </zone-style>
+                </zone>
+                <zone forceUpdate='true' h='3875' id='25' type-v2='text' w='32800' x='66400' y='57625'>
+                  <formatted-text>
+                    <run bold='true' fontalignment='1' fontcolor='#ff5900' fontsize='12'>AVG Daily Successful</run>
+                  </formatted-text>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                    <format attr='background-color' value='#f4ede3' />
+                  </zone-style>
+                </zone>
+                <zone fixed-size='101' h='13625' id='17' is-fixed='true' name='85_nfr' show-title='false' w='32800' x='800' y='61500'>
+                  <layout-cache fixed-size-h='101' fixed-size-w='281' type-h='fixed' type-w='fixed' />
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone fixed-size='101' h='13625' id='18' is-fixed='true' name='85_oot' show-title='false' w='32800' x='33600' y='61500'>
+                  <layout-cache fixed-size-h='101' fixed-size-w='281' type-h='fixed' type-w='fixed' />
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone fixed-size='101' h='13625' id='19' is-fixed='true' name='85_avg orders' show-title='false' w='32800' x='66400' y='61500'>
+                  <layout-cache fixed-size-h='101' fixed-size-w='281' type-h='fixed' type-w='fixed' />
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+              </zone>
+              <zone-style>
+                <format attr='border-color' value='#000000' />
+                <format attr='border-style' value='none' />
+                <format attr='border-width' value='0' />
+                <format attr='margin' value='8' />
+              </zone-style>
+            </zone>
+          </zones>
+        </devicelayout>
+      </devicelayouts>
+      <simple-id uuid='{71FDB309-44D5-4A00-A8F2-7970746FA1C8}' />
+    </dashboard>
+  </dashboards>
+  <windows source-height='44'>
+    <window class='worksheet' name='35_nfr'>
+      <cards>
+        <edge name='left'>
+          <strip size='160'>
+            <card type='pages' />
+            <card type='filters' />
+            <card type='marks' />
+          </strip>
+        </edge>
+        <edge name='top'>
+          <strip size='2147483647'>
+            <card type='columns' />
+          </strip>
+          <strip size='2147483647'>
+            <card type='rows' />
+          </strip>
+          <strip size='30'>
+            <card type='title' />
+          </strip>
+        </edge>
+      </cards>
+      <viewpoint>
+        <highlight>
+          <color-one-way>
+            <field>[federated.0cwdu081mhu46m17xanql16zm5yj].[none:Address:nk]</field>
+          </color-one-way>
+        </highlight>
+      </viewpoint>
+      <simple-id uuid='{5700E439-E88A-449B-94AB-3F647802AC2D}' />
+    </window>
+    <window class='worksheet' name='35_oot'>
+      <cards>
+        <edge name='left'>
+          <strip size='160'>
+            <card type='pages' />
+            <card type='filters' />
+            <card type='marks' />
+          </strip>
+        </edge>
+        <edge name='top'>
+          <strip size='2147483647'>
+            <card type='columns' />
+          </strip>
+          <strip size='2147483647'>
+            <card type='rows' />
+          </strip>
+          <strip size='30'>
+            <card type='title' />
+          </strip>
+        </edge>
+      </cards>
+      <viewpoint>
+        <highlight>
+          <color-one-way>
+            <field>[federated.0cwdu081mhu46m17xanql16zm5yj].[none:Address:nk]</field>
+          </color-one-way>
+        </highlight>
+      </viewpoint>
+      <simple-id uuid='{B7F51FDD-D724-41FE-86F2-7421EB8DD4D6}' />
+    </window>
+    <window class='worksheet' name='35_avg orders'>
+      <cards>
+        <edge name='left'>
+          <strip size='160'>
+            <card type='pages' />
+            <card type='filters' />
+            <card type='marks' />
+          </strip>
+        </edge>
+        <edge name='top'>
+          <strip size='2147483647'>
+            <card type='columns' />
+          </strip>
+          <strip size='2147483647'>
+            <card type='rows' />
+          </strip>
+          <strip size='30'>
+            <card type='title' />
+          </strip>
+        </edge>
+      </cards>
+      <viewpoint>
+        <highlight>
+          <color-one-way>
+            <field>[federated.0cwdu081mhu46m17xanql16zm5yj].[none:Address:nk]</field>
+          </color-one-way>
+        </highlight>
+      </viewpoint>
+      <simple-id uuid='{58833399-126C-426C-8013-CB07C98D2EC4}' />
+    </window>
+    <window class='worksheet' name='60_nfr'>
+      <cards>
+        <edge name='left'>
+          <strip size='160'>
+            <card type='pages' />
+            <card type='filters' />
+            <card type='marks' />
+          </strip>
+        </edge>
+        <edge name='top'>
+          <strip size='2147483647'>
+            <card type='columns' />
+          </strip>
+          <strip size='2147483647'>
+            <card type='rows' />
+          </strip>
+          <strip size='30'>
+            <card type='title' />
+          </strip>
+        </edge>
+      </cards>
+      <viewpoint>
+        <highlight>
+          <color-one-way>
+            <field>[federated.0cwdu081mhu46m17xanql16zm5yj].[none:Address:nk]</field>
+          </color-one-way>
+        </highlight>
+      </viewpoint>
+      <simple-id uuid='{AF7926DF-7C9B-414A-A02E-729A46812BFA}' />
+    </window>
+    <window class='worksheet' name='60_oot'>
+      <cards>
+        <edge name='left'>
+          <strip size='160'>
+            <card type='pages' />
+            <card type='filters' />
+            <card type='marks' />
+          </strip>
+        </edge>
+        <edge name='top'>
+          <strip size='2147483647'>
+            <card type='columns' />
+          </strip>
+          <strip size='2147483647'>
+            <card type='rows' />
+          </strip>
+          <strip size='30'>
+            <card type='title' />
+          </strip>
+        </edge>
+      </cards>
+      <viewpoint>
+        <highlight>
+          <color-one-way>
+            <field>[federated.0cwdu081mhu46m17xanql16zm5yj].[none:Address:nk]</field>
+          </color-one-way>
+        </highlight>
+      </viewpoint>
+      <simple-id uuid='{01CC953E-E22C-4E9F-A3B7-673A7217A9F9}' />
+    </window>
+    <window class='worksheet' name='60_avg orders'>
+      <cards>
+        <edge name='left'>
+          <strip size='160'>
+            <card type='pages' />
+            <card type='filters' />
+            <card type='marks' />
+          </strip>
+        </edge>
+        <edge name='top'>
+          <strip size='2147483647'>
+            <card type='columns' />
+          </strip>
+          <strip size='2147483647'>
+            <card type='rows' />
+          </strip>
+          <strip size='30'>
+            <card type='title' />
+          </strip>
+        </edge>
+      </cards>
+      <viewpoint>
+        <highlight>
+          <color-one-way>
+            <field>[federated.0cwdu081mhu46m17xanql16zm5yj].[none:Address:nk]</field>
+          </color-one-way>
+        </highlight>
+      </viewpoint>
+      <simple-id uuid='{130B55E4-A11B-4579-B6D9-55C75DF31F17}' />
+    </window>
+    <window class='worksheet' name='85_nfr'>
+      <cards>
+        <edge name='left'>
+          <strip size='160'>
+            <card type='pages' />
+            <card type='filters' />
+            <card type='marks' />
+          </strip>
+        </edge>
+        <edge name='top'>
+          <strip size='2147483647'>
+            <card type='columns' />
+          </strip>
+          <strip size='2147483647'>
+            <card type='rows' />
+          </strip>
+          <strip size='30'>
+            <card type='title' />
+          </strip>
+        </edge>
+      </cards>
+      <viewpoint>
+        <highlight>
+          <color-one-way>
+            <field>[federated.0cwdu081mhu46m17xanql16zm5yj].[none:Address:nk]</field>
+          </color-one-way>
+        </highlight>
+      </viewpoint>
+      <simple-id uuid='{0DB4BDB6-8945-47C5-86FD-E3B88607E194}' />
+    </window>
+    <window class='worksheet' name='85_oot'>
+      <cards>
+        <edge name='left'>
+          <strip size='160'>
+            <card type='pages' />
+            <card type='filters' />
+            <card type='marks' />
+          </strip>
+        </edge>
+        <edge name='top'>
+          <strip size='2147483647'>
+            <card type='columns' />
+          </strip>
+          <strip size='2147483647'>
+            <card type='rows' />
+          </strip>
+          <strip size='30'>
+            <card type='title' />
+          </strip>
+        </edge>
+      </cards>
+      <viewpoint>
+        <highlight>
+          <color-one-way>
+            <field>[federated.0cwdu081mhu46m17xanql16zm5yj].[none:Address:nk]</field>
+          </color-one-way>
+        </highlight>
+      </viewpoint>
+      <simple-id uuid='{43280629-576C-4967-B682-741046172562}' />
+    </window>
+    <window class='worksheet' name='85_avg orders'>
+      <cards>
+        <edge name='left'>
+          <strip size='160'>
+            <card type='pages' />
+            <card type='filters' />
+            <card type='marks' />
+          </strip>
+        </edge>
+        <edge name='top'>
+          <strip size='2147483647'>
+            <card type='columns' />
+          </strip>
+          <strip size='2147483647'>
+            <card type='rows' />
+          </strip>
+          <strip size='30'>
+            <card type='title' />
+          </strip>
+        </edge>
+      </cards>
+      <viewpoint>
+        <highlight>
+          <color-one-way>
+            <field>[federated.0cwdu081mhu46m17xanql16zm5yj].[none:Address:nk]</field>
+          </color-one-way>
+        </highlight>
+      </viewpoint>
+      <simple-id uuid='{9C1BE1D5-5224-488A-9B8D-BCB59B6FA664}' />
+    </window>
+    <window class='dashboard' maximized='true' name='Addresses Buckets'>
+      <viewpoints>
+        <viewpoint name='35_avg orders'>
+          <zoom type='fit-width' />
+        </viewpoint>
+        <viewpoint name='35_nfr'>
+          <zoom type='fit-width' />
+        </viewpoint>
+        <viewpoint name='35_oot'>
+          <zoom type='fit-width' />
+        </viewpoint>
+        <viewpoint name='60_avg orders'>
+          <zoom type='fit-width' />
+        </viewpoint>
+        <viewpoint name='60_nfr'>
+          <zoom type='fit-width' />
+        </viewpoint>
+        <viewpoint name='60_oot'>
+          <zoom type='fit-width' />
+        </viewpoint>
+        <viewpoint name='85_avg orders'>
+          <zoom type='fit-width' />
+        </viewpoint>
+        <viewpoint name='85_nfr'>
+          <zoom type='fit-width' />
+        </viewpoint>
+        <viewpoint name='85_oot'>
+          <zoom type='fit-width' />
+        </viewpoint>
+      </viewpoints>
+      <active id='-1' />
+      <simple-id uuid='{56881AFF-6466-4932-9D65-A71D5E40CFBF}' />
+    </window>
+  </windows>
+</workbook>
