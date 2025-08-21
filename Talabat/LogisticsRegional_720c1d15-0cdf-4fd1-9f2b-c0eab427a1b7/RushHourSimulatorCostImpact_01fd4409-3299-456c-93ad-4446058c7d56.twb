@@ -1,0 +1,1481 @@
+<?xml version='1.0' encoding='utf-8' ?>
+
+<!-- build 20233.25.0106.1650                               -->
+<workbook original-version='18.1' source-build='2023.3.14 (20233.25.0106.1650)' version='18.1' xml:base='https://tableau.deliveryhero.net' xmlns:user='http://www.tableausoftware.com/xml/user'>
+  <document-format-change-manifest>
+    <_.fcp.AccessibleZoneTabOrder.true...AccessibleZoneTabOrder />
+    <_.fcp.AnimationOnByDefault.true...AnimationOnByDefault />
+    <AutoCreateAndUpdateDSDPhoneLayouts />
+    <_.fcp.MarkAnimation.true...MarkAnimation />
+    <_.fcp.ObjectModelEncapsulateLegacy.true...ObjectModelEncapsulateLegacy />
+    <_.fcp.ObjectModelExtractV2.true...ObjectModelExtractV2 />
+    <_.fcp.ObjectModelTableType.true...ObjectModelTableType />
+    <_.fcp.SchemaViewerObjectModel.true...SchemaViewerObjectModel />
+    <SetMembershipControl />
+    <SheetIdentifierTracking />
+    <SortTagCleanup />
+    <_.fcp.VConnDownstreamExtractsWithWarnings.true...VConnDownstreamExtractsWithWarnings />
+    <WindowsPersistSimpleIdentifiers />
+    <ZoneBackgroundTransparency />
+  </document-format-change-manifest>
+  <repository-location derived-from='https://tableau.deliveryhero.net/t/Talabat/workbooks/RushHourSimulatorCostImpact?rev=1.2' id='RushHourSimulatorCostImpact' path='/t/Talabat/workbooks' revision='1.3' site='Talabat' />
+  <preferences />
+  <_.fcp.AnimationOnByDefault.false...style>
+    <_.fcp.AnimationOnByDefault.false..._.fcp.MarkAnimation.true...style-rule element='animation'>
+      <_.fcp.AnimationOnByDefault.false...format attr='animation-on' value='ao-on' />
+    </_.fcp.AnimationOnByDefault.false..._.fcp.MarkAnimation.true...style-rule>
+  </_.fcp.AnimationOnByDefault.false...style>
+  <datasources>
+    <datasource hasconnection='false' inline='true' name='Parameters' version='18.1'>
+      <aliases enabled='yes' />
+      <column caption='Date Granularity' datatype='string' name='[Parameter 1]' param-domain-type='list' role='measure' type='nominal' value='&quot;Day&quot;'>
+        <calculation class='tableau' formula='&quot;Day&quot;' />
+        <members>
+          <member value='&quot;Day&quot;' />
+          <member value='&quot;Month&quot;' />
+        </members>
+      </column>
+      <column caption='UTR Input (Future)' datatype='real' name='[Parameter 2]' param-domain-type='any' role='measure' type='quantitative' value='1.4'>
+        <calculation class='tableau' formula='1.4' />
+      </column>
+      <column caption='Rush Input (Future &amp; Past)' datatype='real' name='[Parameter 3]' param-domain-type='any' role='measure' type='quantitative' value='1.1'>
+        <calculation class='tableau' formula='1.1' />
+      </column>
+      <column caption='Earnings Input (Delivery + Distance)' datatype='real' name='[Parameter 4]' param-domain-type='any' role='measure' type='quantitative' value='0.85'>
+        <calculation class='tableau' formula='0.85' />
+      </column>
+    </datasource>
+    <datasource caption='Custom SQL Query (data_platform_logistics)' inline='true' name='federated.06s2ud51jhfxc51fu7wyh10h88rc' version='18.1'>
+      <connection class='federated'>
+        <named-connections>
+          <named-connection caption='BigQuery' name='bigquery.1456cgv0vhatys164i82k116nxgp'>
+            <connection CATALOG='tlb-data-dev' EXECCATALOG='tlb-data-dev' authentication='oauth' class='bigquery' connection-dialect='google-sql' project='tlb-data-dev' schema='data_platform_logistics' server-oauth='server-custom' username='siddhant.farwaha@talabat.com' workgroup-auth-mode='prompt' />
+          </named-connection>
+        </named-connections>
+        <_.fcp.ObjectModelEncapsulateLegacy.false...relation connection='bigquery.1456cgv0vhatys164i82k116nxgp' name='Custom SQL Query' type='text'>WITH future_data AS 
+(
+WITH RankedForecasts AS (
+  -- First, select the raw data and rank it to find the most recent entry for each time
+  SELECT
+    o.country_code,
+    c.zone_name,
+    f.forecast_for_local,
+    SUM(CASE WHEN o.model_name = &apos;rooster_adjusted&apos; THEN f.orders ELSE 0 END) AS adjusted_forecast,
+    ROW_NUMBER() OVER(
+      PARTITION BY o.country_code, c.zone_name, f.forecast_for_local
+      ORDER BY f.created_at DESC
+    ) AS rn
+  FROM
+    `fulfillment-dwh-production.curated_data_shared.order_forecasts` AS o
+  LEFT JOIN
+    UNNEST(o.forecasts) AS f
+  LEFT JOIN (
+    SELECT
+      country_code,
+      zo.id AS zone_id,
+      zo.name AS zone_name
+    FROM
+      `fulfillment-dwh-production.curated_data_shared.countries` AS co
+    LEFT JOIN
+      UNNEST(co.cities) AS ci
+    LEFT JOIN
+      UNNEST(ci.zones) AS zo
+    WHERE
+      zo.name IS NOT NULL
+  ) AS c ON o.country_code = c.country_code AND o.zone_id = c.zone_id
+  WHERE
+    -- 1. Date range is now from the current date to 14 days in the future
+    DATE(f.forecast_for_local) BETWEEN CURRENT_DATE() AND DATE_ADD(CURRENT_DATE(), INTERVAL 14 DAY)
+    AND o.model_name IN (&apos;rooster&apos;, &apos;rooster_adjusted&apos;)
+    -- 2. Country code is now in the specified list
+    AND o.country_code IN (&apos;ae&apos;, &apos;bh&apos;, &apos;eg&apos;, &apos;iq&apos;, &apos;jo&apos;, &apos;kw&apos;, &apos;om&apos;, &apos;qa&apos;)
+  GROUP BY
+    1, 2, 3, f.created_at
+)
+-- Then, select from the ranked data to build the final table
+SELECT
+  country_code AS Country,
+  DATE(forecast_for_local) AS Date,
+  zone_name AS Zone,
+  CONCAT(
+    FORMAT_TIME(&apos;%R&apos;, TIME(forecast_for_local)),
+    &apos; - &apos;,
+    FORMAT_TIME(&apos;%R&apos;, TIME_ADD(TIME(forecast_for_local), INTERVAL 30 MINUTE))
+  ) AS Hour_Minute,
+  adjusted_forecast AS order_forecast
+FROM
+  RankedForecasts
+WHERE
+  rn = 1
+ORDER BY 1,2,3,4
+)
+
+,past_data AS (
+WITH
+
+a AS (
+  SELECT
+    created_date,
+    country_code,
+    rider_id,
+    shift_id,
+    delivery_id,
+    SUM(total) AS total, -- accurate pay per delivery
+    MIN(DATETIME(rider_accepted_at,timezone)) AS rider_accepted_at -- earliest time for interval bucketing
+  FROM
+    `tlb-data-prod.data_platform.fct_logistics_delivery_payment_mapping`
+  WHERE
+    created_date BETWEEN DATE_SUB(CURRENT_DATE(), INTERVAL 15 DAY) AND DATE_SUB(CURRENT_DATE(), INTERVAL 1 DAY)
+    AND payment_category = &apos;basic&apos;
+    AND order_status = &apos;completed&apos;
+    AND total &gt;&gt; 0
+  GROUP BY created_date, country_code, rider_id, shift_id, delivery_id
+),
+
+b AS (
+  SELECT DISTINCT
+    DATE(DATETIME(shift_start_at, s.timezone)) AS shift_date,
+    s.country_code,
+    s.rider_id,
+    c.city_name,
+    z.zone_name,
+    s.shift_id
+  FROM
+    `fulfillment-dwh-production.curated_data_shared.shifts` AS s
+  LEFT JOIN `tlb-data-prod.data_platform.dim_logistics_city` AS c 
+    ON c.country_code = s.country_code AND c.city_id = s.city_id
+  LEFT JOIN `tlb-data-prod.data_platform.dim_logistics_zone` AS z 
+    ON z.country_code = s.country_code AND z.zone_id = s.zone_id
+  WHERE
+    shift_state IN (&apos;EVALUATED&apos;)
+    AND DATE(DATETIME(shift_start_at, s.timezone)) BETWEEN DATE_SUB(CURRENT_DATE(), INTERVAL 15 DAY) AND DATE_SUB(CURRENT_DATE(), INTERVAL 1 DAY)
+)
+
+SELECT
+  a.country_code AS Country,
+  a.created_date AS Date,
+  IFNULL(b.zone_name, &apos;Unknown&apos;) AS Zone,
+
+  -- 30-minute interval
+  CONCAT(
+    FORMAT_TIMESTAMP(&apos;%R&apos;, TIMESTAMP_BUCKET(a.rider_accepted_at, INTERVAL 30 MINUTE)),
+    &apos; - &apos;,
+    FORMAT_TIMESTAMP(&apos;%R&apos;, TIMESTAMP_ADD(TIMESTAMP_BUCKET(a.rider_accepted_at, INTERVAL 30 MINUTE), INTERVAL 30 MINUTE))
+  ) AS Hour_Minute,
+
+  COUNT(DISTINCT a.rider_id) AS rider_count_historical,
+  COUNT(DISTINCT a.delivery_id) AS orders_historical,
+  ROUND(SUM(a.total), 0) AS basic_pay
+
+FROM a
+
+LEFT JOIN b 
+  ON a.created_date = b.shift_date 
+  AND a.country_code = b.country_code 
+  AND a.rider_id = b.rider_id 
+  AND a.shift_id = b.shift_id
+
+WHERE a.country_code IN (&apos;ae&apos;, &apos;bh&apos;, &apos;eg&apos;, &apos;iq&apos;, &apos;jo&apos;, &apos;kw&apos;, &apos;om&apos;, &apos;qa&apos;)
+
+GROUP BY ALL
+ORDER BY 1,2,3,4,5
+)  
+
+SELECT
+    Country,
+    Date,
+    Zone,
+    Hour_Minute,
+    order_forecast,
+    NULL AS rider_count_historical,
+    NULL AS orders_historical,
+    NULL AS basic_pay
+FROM
+    future_data
+
+UNION ALL
+
+SELECT
+    Country,
+    Date,
+    Zone,
+    Hour_Minute,
+    NULL AS order_forecast,
+    rider_count_historical,
+    orders_historical,
+    basic_pay
+FROM
+    past_data
+
+ORDER BY
+    Country,
+    Date,
+    Zone,
+    Hour_Minute</_.fcp.ObjectModelEncapsulateLegacy.false...relation>
+        <_.fcp.ObjectModelEncapsulateLegacy.true...relation connection='bigquery.1456cgv0vhatys164i82k116nxgp' name='Custom SQL Query' type='text'>WITH future_data AS 
+(
+WITH RankedForecasts AS (
+  -- First, select the raw data and rank it to find the most recent entry for each time
+  SELECT
+    o.country_code,
+    c.zone_name,
+    f.forecast_for_local,
+    SUM(CASE WHEN o.model_name = &apos;rooster_adjusted&apos; THEN f.orders ELSE 0 END) AS adjusted_forecast,
+    ROW_NUMBER() OVER(
+      PARTITION BY o.country_code, c.zone_name, f.forecast_for_local
+      ORDER BY f.created_at DESC
+    ) AS rn
+  FROM
+    `fulfillment-dwh-production.curated_data_shared.order_forecasts` AS o
+  LEFT JOIN
+    UNNEST(o.forecasts) AS f
+  LEFT JOIN (
+    SELECT
+      country_code,
+      zo.id AS zone_id,
+      zo.name AS zone_name
+    FROM
+      `fulfillment-dwh-production.curated_data_shared.countries` AS co
+    LEFT JOIN
+      UNNEST(co.cities) AS ci
+    LEFT JOIN
+      UNNEST(ci.zones) AS zo
+    WHERE
+      zo.name IS NOT NULL
+  ) AS c ON o.country_code = c.country_code AND o.zone_id = c.zone_id
+  WHERE
+    -- 1. Date range is now from the current date to 14 days in the future
+    DATE(f.forecast_for_local) BETWEEN CURRENT_DATE() AND DATE_ADD(CURRENT_DATE(), INTERVAL 14 DAY)
+    AND o.model_name IN (&apos;rooster&apos;, &apos;rooster_adjusted&apos;)
+    -- 2. Country code is now in the specified list
+    AND o.country_code IN (&apos;ae&apos;, &apos;bh&apos;, &apos;eg&apos;, &apos;iq&apos;, &apos;jo&apos;, &apos;kw&apos;, &apos;om&apos;, &apos;qa&apos;)
+  GROUP BY
+    1, 2, 3, f.created_at
+)
+-- Then, select from the ranked data to build the final table
+SELECT
+  country_code AS Country,
+  DATE(forecast_for_local) AS Date,
+  zone_name AS Zone,
+  CONCAT(
+    FORMAT_TIME(&apos;%R&apos;, TIME(forecast_for_local)),
+    &apos; - &apos;,
+    FORMAT_TIME(&apos;%R&apos;, TIME_ADD(TIME(forecast_for_local), INTERVAL 30 MINUTE))
+  ) AS Hour_Minute,
+  adjusted_forecast AS order_forecast
+FROM
+  RankedForecasts
+WHERE
+  rn = 1
+ORDER BY 1,2,3,4
+)
+
+,past_data AS (
+WITH
+
+a AS (
+  SELECT
+    created_date,
+    country_code,
+    rider_id,
+    shift_id,
+    delivery_id,
+    SUM(total) AS total, -- accurate pay per delivery
+    MIN(DATETIME(rider_accepted_at,timezone)) AS rider_accepted_at -- earliest time for interval bucketing
+  FROM
+    `tlb-data-prod.data_platform.fct_logistics_delivery_payment_mapping`
+  WHERE
+    created_date BETWEEN DATE_SUB(CURRENT_DATE(), INTERVAL 15 DAY) AND DATE_SUB(CURRENT_DATE(), INTERVAL 1 DAY)
+    AND payment_category = &apos;basic&apos;
+    AND order_status = &apos;completed&apos;
+    AND total &gt;&gt; 0
+  GROUP BY created_date, country_code, rider_id, shift_id, delivery_id
+),
+
+b AS (
+  SELECT DISTINCT
+    DATE(DATETIME(shift_start_at, s.timezone)) AS shift_date,
+    s.country_code,
+    s.rider_id,
+    c.city_name,
+    z.zone_name,
+    s.shift_id
+  FROM
+    `fulfillment-dwh-production.curated_data_shared.shifts` AS s
+  LEFT JOIN `tlb-data-prod.data_platform.dim_logistics_city` AS c 
+    ON c.country_code = s.country_code AND c.city_id = s.city_id
+  LEFT JOIN `tlb-data-prod.data_platform.dim_logistics_zone` AS z 
+    ON z.country_code = s.country_code AND z.zone_id = s.zone_id
+  WHERE
+    shift_state IN (&apos;EVALUATED&apos;)
+    AND DATE(DATETIME(shift_start_at, s.timezone)) BETWEEN DATE_SUB(CURRENT_DATE(), INTERVAL 15 DAY) AND DATE_SUB(CURRENT_DATE(), INTERVAL 1 DAY)
+)
+
+SELECT
+  a.country_code AS Country,
+  a.created_date AS Date,
+  IFNULL(b.zone_name, &apos;Unknown&apos;) AS Zone,
+
+  -- 30-minute interval
+  CONCAT(
+    FORMAT_TIMESTAMP(&apos;%R&apos;, TIMESTAMP_BUCKET(a.rider_accepted_at, INTERVAL 30 MINUTE)),
+    &apos; - &apos;,
+    FORMAT_TIMESTAMP(&apos;%R&apos;, TIMESTAMP_ADD(TIMESTAMP_BUCKET(a.rider_accepted_at, INTERVAL 30 MINUTE), INTERVAL 30 MINUTE))
+  ) AS Hour_Minute,
+
+  COUNT(DISTINCT a.rider_id) AS rider_count_historical,
+  COUNT(DISTINCT a.delivery_id) AS orders_historical,
+  ROUND(SUM(a.total), 0) AS basic_pay
+
+FROM a
+
+LEFT JOIN b 
+  ON a.created_date = b.shift_date 
+  AND a.country_code = b.country_code 
+  AND a.rider_id = b.rider_id 
+  AND a.shift_id = b.shift_id
+
+WHERE a.country_code IN (&apos;ae&apos;, &apos;bh&apos;, &apos;eg&apos;, &apos;iq&apos;, &apos;jo&apos;, &apos;kw&apos;, &apos;om&apos;, &apos;qa&apos;)
+
+GROUP BY ALL
+ORDER BY 1,2,3,4,5
+)  
+
+SELECT
+    Country,
+    Date,
+    Zone,
+    Hour_Minute,
+    order_forecast,
+    NULL AS rider_count_historical,
+    NULL AS orders_historical,
+    NULL AS basic_pay
+FROM
+    future_data
+
+UNION ALL
+
+SELECT
+    Country,
+    Date,
+    Zone,
+    Hour_Minute,
+    NULL AS order_forecast,
+    rider_count_historical,
+    orders_historical,
+    basic_pay
+FROM
+    past_data
+
+ORDER BY
+    Country,
+    Date,
+    Zone,
+    Hour_Minute</_.fcp.ObjectModelEncapsulateLegacy.true...relation>
+        <metadata-records>
+          <metadata-record class='column'>
+            <remote-name>Country</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[Country]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>Country</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_C4EE53CE98264DD9A82509D73461919E]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>Date</remote-name>
+            <remote-type>7</remote-type>
+            <local-name>[Date]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>Date</remote-alias>
+            <local-type>date</local-type>
+            <aggregation>Year</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_C4EE53CE98264DD9A82509D73461919E]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>Zone</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[Zone]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>Zone</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_C4EE53CE98264DD9A82509D73461919E]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>Hour_Minute</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[Hour_Minute]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>Hour_Minute</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_C4EE53CE98264DD9A82509D73461919E]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>order_forecast</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[order_forecast]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>order_forecast</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_C4EE53CE98264DD9A82509D73461919E]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>rider_count_historical</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[rider_count_historical]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>rider_count_historical</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_C4EE53CE98264DD9A82509D73461919E]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>orders_historical</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[orders_historical]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>orders_historical</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_C4EE53CE98264DD9A82509D73461919E]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>basic_pay</remote-name>
+            <remote-type>5</remote-type>
+            <local-name>[basic_pay]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>basic_pay</remote-alias>
+            <local-type>real</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_C4EE53CE98264DD9A82509D73461919E]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+        </metadata-records>
+      </connection>
+      <aliases enabled='yes' />
+      <column caption='Dynamic Column Date' datatype='string' name='[Calculation_195836256969748481]' role='dimension' type='nominal'>
+        <calculation class='tableau' formula='CASE [Parameters].[Parameter 1]&#10;    WHEN &quot;Day&quot; THEN STR([Date])&#10;    WHEN &quot;Month&quot; THEN DATENAME(&apos;month&apos;, [Date]) + &quot; &quot; + STR(YEAR([Date]))&#10;END' />
+      </column>
+      <column caption='Expected Riders' datatype='real' name='[Calculation_195836256971411460]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='SUM([order_forecast])/[Parameters].[Parameter 2]' />
+      </column>
+      <column caption='Expected Cost' datatype='real' name='[Calculation_195836256974041094]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='SUM([order_forecast])*[Parameters].[Parameter 4]' />
+      </column>
+      <column caption='Expected CPO' datatype='real' name='[Calculation_195836256974475271]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='[Calculation_195836256974041094]/SUM([order_forecast])' />
+      </column>
+      <column caption='Expected Cost     (After Rush Bonus)' datatype='real' name='[Calculation_195836256975122440]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='SUM([order_forecast])*[Parameters].[Parameter 4]*[Parameters].[Parameter 3]' />
+      </column>
+      <column caption='Expected CPO     (After Rush Bonus)' datatype='real' name='[Calculation_195836256975552521]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='[Calculation_195836256975122440]/SUM([order_forecast])' />
+      </column>
+      <column caption='Historical CPO' datatype='real' name='[Calculation_195836256983924746]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='SUM([basic_pay])/SUM([orders_historical])' />
+      </column>
+      <column caption='Historical Cost    (After Rush Bonus)' datatype='real' name='[Calculation_195836256984436747]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='SUM([basic_pay])*[Parameters].[Parameter 3]' />
+      </column>
+      <column caption='Historical CPO    (After Rush Bonus)' datatype='real' name='[Calculation_195836256984686604]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='[Calculation_195836256984436747]/SUM([orders_historical])' />
+      </column>
+      <column datatype='string' name='[Country]' role='dimension' semantic-role='[Country].[ISO3166_2]' type='nominal' />
+      <column caption='Time Interval' datatype='string' name='[Hour_Minute]' role='dimension' type='nominal' />
+      <_.fcp.ObjectModelTableType.true...column caption='Custom SQL Query' datatype='table' name='[__tableau_internal_object_id__].[_C4EE53CE98264DD9A82509D73461919E]' role='measure' type='quantitative' />
+      <column caption='Historical Cost (Delivery + Distance)' datatype='real' name='[basic_pay]' role='measure' type='quantitative' />
+      <column caption='Order Forecast' datatype='integer' name='[order_forecast]' role='measure' type='quantitative' />
+      <column caption='Historical Orders' datatype='integer' name='[orders_historical]' role='measure' type='quantitative' />
+      <column caption='Historical Rider Count' datatype='integer' name='[rider_count_historical]' role='measure' type='quantitative' />
+      <extract _.fcp.ObjectModelExtractV2.true...object-id='' _.fcp.VConnDownstreamExtractsWithWarnings.true...user-specific='false' count='-1' enabled='true' units='records'>
+        <connection access_mode='readonly' author-locale='en_US' class='hyper' dbname='extract/ba/84/{D303C97A-B33D-4049-958E-5DA46ACEAB68}/federated_06s2ud51jhfxc51fu7wyh1.hyper' extract-engine='true' schema='Extract' sslmode='' tablename='Extract' update-time='08/21/2025 06:04:29 AM'>
+          <_.fcp.ObjectModelEncapsulateLegacy.false...relation name='Extract' table='[Extract].[Extract]' type='table' />
+          <_.fcp.ObjectModelEncapsulateLegacy.true...relation name='Extract' table='[Extract].[Extract]' type='table' />
+          <metadata-records>
+            <metadata-record class='column'>
+              <remote-name>Country</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[Country]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>Country</remote-alias>
+              <ordinal>0</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>8</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_C4EE53CE98264DD9A82509D73461919E]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>Date</remote-name>
+              <remote-type>133</remote-type>
+              <local-name>[Date]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>Date</remote-alias>
+              <ordinal>1</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>date</local-type>
+              <aggregation>Year</aggregation>
+              <approx-count>30</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_C4EE53CE98264DD9A82509D73461919E]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>Zone</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[Zone]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>Zone</remote-alias>
+              <ordinal>2</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>167</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_C4EE53CE98264DD9A82509D73461919E]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>Hour_Minute</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[Hour_Minute]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>Hour_Minute</remote-alias>
+              <ordinal>3</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>48</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_C4EE53CE98264DD9A82509D73461919E]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>order_forecast</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[order_forecast]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>order_forecast</remote-alias>
+              <ordinal>4</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>3245</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_C4EE53CE98264DD9A82509D73461919E]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>rider_count_historical</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[rider_count_historical]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>rider_count_historical</remote-alias>
+              <ordinal>5</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>3310</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_C4EE53CE98264DD9A82509D73461919E]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>orders_historical</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[orders_historical]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>orders_historical</remote-alias>
+              <ordinal>6</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>2407</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_C4EE53CE98264DD9A82509D73461919E]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>basic_pay</remote-name>
+              <remote-type>5</remote-type>
+              <local-name>[basic_pay]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>basic_pay</remote-alias>
+              <ordinal>7</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>real</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>8692</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_C4EE53CE98264DD9A82509D73461919E]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+          </metadata-records>
+        </connection>
+      </extract>
+      <layout _.fcp.SchemaViewerObjectModel.false...dim-percentage='0.5' _.fcp.SchemaViewerObjectModel.false...measure-percentage='0.4' dim-ordering='alphabetic' measure-ordering='alphabetic' show-structure='true' />
+      <semantic-values>
+        <semantic-value key='[Country].[Name]' value='&quot;United States&quot;' />
+      </semantic-values>
+      <date-options start-of-week='saturday' />
+      <datasource-dependencies datasource='Parameters'>
+        <column caption='Date Granularity' datatype='string' name='[Parameter 1]' param-domain-type='list' role='measure' type='nominal' value='&quot;Day&quot;'>
+          <calculation class='tableau' formula='&quot;Day&quot;' />
+        </column>
+        <column caption='UTR Input (Future)' datatype='real' name='[Parameter 2]' param-domain-type='any' role='measure' type='quantitative' value='1.4'>
+          <calculation class='tableau' formula='1.4' />
+        </column>
+        <column caption='Rush Input (Future &amp; Past)' datatype='real' name='[Parameter 3]' param-domain-type='any' role='measure' type='quantitative' value='1.1'>
+          <calculation class='tableau' formula='1.1' />
+        </column>
+        <column caption='Earnings Input (Delivery + Distance)' datatype='real' name='[Parameter 4]' param-domain-type='any' role='measure' type='quantitative' value='0.85'>
+          <calculation class='tableau' formula='0.85' />
+        </column>
+      </datasource-dependencies>
+      <_.fcp.ObjectModelEncapsulateLegacy.true...object-graph>
+        <objects>
+          <object caption='Custom SQL Query' id='_C4EE53CE98264DD9A82509D73461919E'>
+            <properties context=''>
+              <relation connection='bigquery.1456cgv0vhatys164i82k116nxgp' name='Custom SQL Query' type='text'>WITH future_data AS 
+(
+WITH RankedForecasts AS (
+  -- First, select the raw data and rank it to find the most recent entry for each time
+  SELECT
+    o.country_code,
+    c.zone_name,
+    f.forecast_for_local,
+    SUM(CASE WHEN o.model_name = &apos;rooster_adjusted&apos; THEN f.orders ELSE 0 END) AS adjusted_forecast,
+    ROW_NUMBER() OVER(
+      PARTITION BY o.country_code, c.zone_name, f.forecast_for_local
+      ORDER BY f.created_at DESC
+    ) AS rn
+  FROM
+    `fulfillment-dwh-production.curated_data_shared.order_forecasts` AS o
+  LEFT JOIN
+    UNNEST(o.forecasts) AS f
+  LEFT JOIN (
+    SELECT
+      country_code,
+      zo.id AS zone_id,
+      zo.name AS zone_name
+    FROM
+      `fulfillment-dwh-production.curated_data_shared.countries` AS co
+    LEFT JOIN
+      UNNEST(co.cities) AS ci
+    LEFT JOIN
+      UNNEST(ci.zones) AS zo
+    WHERE
+      zo.name IS NOT NULL
+  ) AS c ON o.country_code = c.country_code AND o.zone_id = c.zone_id
+  WHERE
+    -- 1. Date range is now from the current date to 14 days in the future
+    DATE(f.forecast_for_local) BETWEEN CURRENT_DATE() AND DATE_ADD(CURRENT_DATE(), INTERVAL 14 DAY)
+    AND o.model_name IN (&apos;rooster&apos;, &apos;rooster_adjusted&apos;)
+    -- 2. Country code is now in the specified list
+    AND o.country_code IN (&apos;ae&apos;, &apos;bh&apos;, &apos;eg&apos;, &apos;iq&apos;, &apos;jo&apos;, &apos;kw&apos;, &apos;om&apos;, &apos;qa&apos;)
+  GROUP BY
+    1, 2, 3, f.created_at
+)
+-- Then, select from the ranked data to build the final table
+SELECT
+  country_code AS Country,
+  DATE(forecast_for_local) AS Date,
+  zone_name AS Zone,
+  CONCAT(
+    FORMAT_TIME(&apos;%R&apos;, TIME(forecast_for_local)),
+    &apos; - &apos;,
+    FORMAT_TIME(&apos;%R&apos;, TIME_ADD(TIME(forecast_for_local), INTERVAL 30 MINUTE))
+  ) AS Hour_Minute,
+  adjusted_forecast AS order_forecast
+FROM
+  RankedForecasts
+WHERE
+  rn = 1
+ORDER BY 1,2,3,4
+)
+
+,past_data AS (
+WITH
+
+a AS (
+  SELECT
+    created_date,
+    country_code,
+    rider_id,
+    shift_id,
+    delivery_id,
+    SUM(total) AS total, -- accurate pay per delivery
+    MIN(DATETIME(rider_accepted_at,timezone)) AS rider_accepted_at -- earliest time for interval bucketing
+  FROM
+    `tlb-data-prod.data_platform.fct_logistics_delivery_payment_mapping`
+  WHERE
+    created_date BETWEEN DATE_SUB(CURRENT_DATE(), INTERVAL 15 DAY) AND DATE_SUB(CURRENT_DATE(), INTERVAL 1 DAY)
+    AND payment_category = &apos;basic&apos;
+    AND order_status = &apos;completed&apos;
+    AND total &gt;&gt; 0
+  GROUP BY created_date, country_code, rider_id, shift_id, delivery_id
+),
+
+b AS (
+  SELECT DISTINCT
+    DATE(DATETIME(shift_start_at, s.timezone)) AS shift_date,
+    s.country_code,
+    s.rider_id,
+    c.city_name,
+    z.zone_name,
+    s.shift_id
+  FROM
+    `fulfillment-dwh-production.curated_data_shared.shifts` AS s
+  LEFT JOIN `tlb-data-prod.data_platform.dim_logistics_city` AS c 
+    ON c.country_code = s.country_code AND c.city_id = s.city_id
+  LEFT JOIN `tlb-data-prod.data_platform.dim_logistics_zone` AS z 
+    ON z.country_code = s.country_code AND z.zone_id = s.zone_id
+  WHERE
+    shift_state IN (&apos;EVALUATED&apos;)
+    AND DATE(DATETIME(shift_start_at, s.timezone)) BETWEEN DATE_SUB(CURRENT_DATE(), INTERVAL 15 DAY) AND DATE_SUB(CURRENT_DATE(), INTERVAL 1 DAY)
+)
+
+SELECT
+  a.country_code AS Country,
+  a.created_date AS Date,
+  IFNULL(b.zone_name, &apos;Unknown&apos;) AS Zone,
+
+  -- 30-minute interval
+  CONCAT(
+    FORMAT_TIMESTAMP(&apos;%R&apos;, TIMESTAMP_BUCKET(a.rider_accepted_at, INTERVAL 30 MINUTE)),
+    &apos; - &apos;,
+    FORMAT_TIMESTAMP(&apos;%R&apos;, TIMESTAMP_ADD(TIMESTAMP_BUCKET(a.rider_accepted_at, INTERVAL 30 MINUTE), INTERVAL 30 MINUTE))
+  ) AS Hour_Minute,
+
+  COUNT(DISTINCT a.rider_id) AS rider_count_historical,
+  COUNT(DISTINCT a.delivery_id) AS orders_historical,
+  ROUND(SUM(a.total), 0) AS basic_pay
+
+FROM a
+
+LEFT JOIN b 
+  ON a.created_date = b.shift_date 
+  AND a.country_code = b.country_code 
+  AND a.rider_id = b.rider_id 
+  AND a.shift_id = b.shift_id
+
+WHERE a.country_code IN (&apos;ae&apos;, &apos;bh&apos;, &apos;eg&apos;, &apos;iq&apos;, &apos;jo&apos;, &apos;kw&apos;, &apos;om&apos;, &apos;qa&apos;)
+
+GROUP BY ALL
+ORDER BY 1,2,3,4,5
+)  
+
+SELECT
+    Country,
+    Date,
+    Zone,
+    Hour_Minute,
+    order_forecast,
+    NULL AS rider_count_historical,
+    NULL AS orders_historical,
+    NULL AS basic_pay
+FROM
+    future_data
+
+UNION ALL
+
+SELECT
+    Country,
+    Date,
+    Zone,
+    Hour_Minute,
+    NULL AS order_forecast,
+    rider_count_historical,
+    orders_historical,
+    basic_pay
+FROM
+    past_data
+
+ORDER BY
+    Country,
+    Date,
+    Zone,
+    Hour_Minute</relation>
+            </properties>
+            <properties context='extract'>
+              <relation name='Extract' table='[Extract].[Extract]' type='table' />
+            </properties>
+          </object>
+        </objects>
+      </_.fcp.ObjectModelEncapsulateLegacy.true...object-graph>
+    </datasource>
+  </datasources>
+  <shared-views>
+    <shared-view name='federated.06s2ud51jhfxc51fu7wyh10h88rc'>
+      <datasources>
+        <datasource caption='Custom SQL Query (data_platform_logistics)' name='federated.06s2ud51jhfxc51fu7wyh10h88rc' />
+      </datasources>
+      <datasource-dependencies datasource='federated.06s2ud51jhfxc51fu7wyh10h88rc'>
+        <column caption='Dynamic Column Date' datatype='string' name='[Calculation_195836256969748481]' role='dimension' type='nominal'>
+          <calculation class='tableau' formula='CASE [Parameters].[Parameter 1]&#10;    WHEN &quot;Day&quot; THEN STR([Date])&#10;    WHEN &quot;Month&quot; THEN DATENAME(&apos;month&apos;, [Date]) + &quot; &quot; + STR(YEAR([Date]))&#10;END' />
+        </column>
+        <column datatype='string' name='[Country]' role='dimension' semantic-role='[Country].[ISO3166_2]' type='nominal' />
+        <column caption='Time Interval' datatype='string' name='[Hour_Minute]' role='dimension' type='nominal' />
+        <column datatype='string' name='[Zone]' role='dimension' type='nominal' />
+        <column-instance column='[Calculation_195836256969748481]' derivation='None' name='[none:Calculation_195836256969748481:nk]' pivot='key' type='nominal' />
+        <column-instance column='[Country]' derivation='None' name='[none:Country:nk]' pivot='key' type='nominal' />
+        <column-instance column='[Hour_Minute]' derivation='None' name='[none:Hour_Minute:nk]' pivot='key' type='nominal' />
+        <column-instance column='[Zone]' derivation='None' name='[none:Zone:nk]' pivot='key' type='nominal' />
+      </datasource-dependencies>
+      <filter class='categorical' column='[federated.06s2ud51jhfxc51fu7wyh10h88rc].[none:Calculation_195836256969748481:nk]'>
+        <groupfilter function='level-members' level='[none:Calculation_195836256969748481:nk]' user:ui-enumeration='all' user:ui-marker='enumerate' />
+        <target field='[federated.06s2ud51jhfxc51fu7wyh10h88rc].[none:Calculation_195836256969748481:nk]' />
+      </filter>
+      <filter class='categorical' column='[federated.06s2ud51jhfxc51fu7wyh10h88rc].[none:Country:nk]'>
+        <groupfilter function='level-members' level='[none:Country:nk]' user:ui-enumeration='all' user:ui-marker='enumerate' />
+        <target field='[federated.06s2ud51jhfxc51fu7wyh10h88rc].[none:Country:nk]' />
+      </filter>
+      <filter class='categorical' column='[federated.06s2ud51jhfxc51fu7wyh10h88rc].[none:Hour_Minute:nk]'>
+        <groupfilter function='level-members' level='[none:Hour_Minute:nk]' user:ui-enumeration='all' user:ui-marker='enumerate' />
+        <target field='[federated.06s2ud51jhfxc51fu7wyh10h88rc].[none:Hour_Minute:nk]' />
+      </filter>
+      <filter class='categorical' column='[federated.06s2ud51jhfxc51fu7wyh10h88rc].[none:Zone:nk]'>
+        <groupfilter function='level-members' level='[none:Zone:nk]' user:ui-enumeration='all' user:ui-marker='enumerate' />
+        <target field='[federated.06s2ud51jhfxc51fu7wyh10h88rc].[none:Zone:nk]' />
+      </filter>
+    </shared-view>
+  </shared-views>
+  <worksheets>
+    <worksheet name='Future'>
+      <layout-options>
+        <title>
+          <formatted-text>
+            <run bold='true' fontcolor='#ff9300' fontname='Benton Sans Book'>Projected Cost using the most recent Rooster Forecasted orders</run>
+          </formatted-text>
+        </title>
+      </layout-options>
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='Custom SQL Query (data_platform_logistics)' name='federated.06s2ud51jhfxc51fu7wyh10h88rc' />
+            <datasource name='Parameters' />
+          </datasources>
+          <datasource-dependencies datasource='Parameters'>
+            <column caption='Date Granularity' datatype='string' name='[Parameter 1]' param-domain-type='list' role='measure' type='nominal' value='&quot;Day&quot;'>
+              <calculation class='tableau' formula='&quot;Day&quot;' />
+            </column>
+            <column caption='UTR Input (Future)' datatype='real' name='[Parameter 2]' param-domain-type='any' role='measure' type='quantitative' value='1.4'>
+              <calculation class='tableau' formula='1.4' />
+            </column>
+            <column caption='Rush Input (Future &amp; Past)' datatype='real' name='[Parameter 3]' param-domain-type='any' role='measure' type='quantitative' value='1.1'>
+              <calculation class='tableau' formula='1.1' />
+            </column>
+            <column caption='Earnings Input (Delivery + Distance)' datatype='real' name='[Parameter 4]' param-domain-type='any' role='measure' type='quantitative' value='0.85'>
+              <calculation class='tableau' formula='0.85' />
+            </column>
+          </datasource-dependencies>
+          <datasource-dependencies datasource='federated.06s2ud51jhfxc51fu7wyh10h88rc'>
+            <column caption='Dynamic Column Date' datatype='string' name='[Calculation_195836256969748481]' role='dimension' type='nominal'>
+              <calculation class='tableau' formula='CASE [Parameters].[Parameter 1]&#10;    WHEN &quot;Day&quot; THEN STR([Date])&#10;    WHEN &quot;Month&quot; THEN DATENAME(&apos;month&apos;, [Date]) + &quot; &quot; + STR(YEAR([Date]))&#10;END' />
+            </column>
+            <column caption='Expected Riders' datatype='real' name='[Calculation_195836256971411460]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='SUM([order_forecast])/[Parameters].[Parameter 2]' />
+            </column>
+            <column caption='Expected Cost' datatype='real' name='[Calculation_195836256974041094]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='SUM([order_forecast])*[Parameters].[Parameter 4]' />
+            </column>
+            <column caption='Expected CPO' datatype='real' name='[Calculation_195836256974475271]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='[Calculation_195836256974041094]/SUM([order_forecast])' />
+            </column>
+            <column caption='Expected Cost     (After Rush Bonus)' datatype='real' name='[Calculation_195836256975122440]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='SUM([order_forecast])*[Parameters].[Parameter 4]*[Parameters].[Parameter 3]' />
+            </column>
+            <column caption='Expected CPO     (After Rush Bonus)' datatype='real' name='[Calculation_195836256975552521]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='[Calculation_195836256975122440]/SUM([order_forecast])' />
+            </column>
+            <column datatype='string' name='[Country]' role='dimension' semantic-role='[Country].[ISO3166_2]' type='nominal' />
+            <column datatype='date' name='[Date]' role='dimension' type='ordinal' />
+            <column caption='Time Interval' datatype='string' name='[Hour_Minute]' role='dimension' type='nominal' />
+            <column datatype='string' name='[Zone]' role='dimension' type='nominal' />
+            <column-instance column='[Calculation_195836256969748481]' derivation='None' name='[none:Calculation_195836256969748481:nk]' pivot='key' type='nominal' />
+            <column-instance column='[Country]' derivation='None' name='[none:Country:nk]' pivot='key' type='nominal' />
+            <column-instance column='[Hour_Minute]' derivation='None' name='[none:Hour_Minute:nk]' pivot='key' type='nominal' />
+            <column-instance column='[Zone]' derivation='None' name='[none:Zone:nk]' pivot='key' type='nominal' />
+            <column caption='Order Forecast' datatype='integer' name='[order_forecast]' role='measure' type='quantitative' />
+            <column-instance column='[order_forecast]' derivation='Sum' name='[sum:order_forecast:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[Calculation_195836256971411460]' derivation='User' name='[usr:Calculation_195836256971411460:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[Calculation_195836256974041094]' derivation='User' name='[usr:Calculation_195836256974041094:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[Calculation_195836256974475271]' derivation='User' name='[usr:Calculation_195836256974475271:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[Calculation_195836256975122440]' derivation='User' name='[usr:Calculation_195836256975122440:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[Calculation_195836256975552521]' derivation='User' name='[usr:Calculation_195836256975552521:qk]' pivot='key' type='quantitative' />
+          </datasource-dependencies>
+          <filter class='categorical' column='[federated.06s2ud51jhfxc51fu7wyh10h88rc].[:Measure Names]'>
+            <groupfilter function='union' user:op='manual'>
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.06s2ud51jhfxc51fu7wyh10h88rc].[sum:order_forecast:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.06s2ud51jhfxc51fu7wyh10h88rc].[usr:Calculation_195836256971411460:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.06s2ud51jhfxc51fu7wyh10h88rc].[usr:Calculation_195836256974041094:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.06s2ud51jhfxc51fu7wyh10h88rc].[usr:Calculation_195836256974475271:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.06s2ud51jhfxc51fu7wyh10h88rc].[usr:Calculation_195836256975122440:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.06s2ud51jhfxc51fu7wyh10h88rc].[usr:Calculation_195836256975552521:qk]&quot;' />
+            </groupfilter>
+          </filter>
+          <manual-sort column='[federated.06s2ud51jhfxc51fu7wyh10h88rc].[:Measure Names]' direction='ASC'>
+            <dictionary>
+              <bucket>&quot;[federated.06s2ud51jhfxc51fu7wyh10h88rc].[sum:order_forecast:qk]&quot;</bucket>
+              <bucket>&quot;[federated.06s2ud51jhfxc51fu7wyh10h88rc].[usr:Calculation_195836256971411460:qk]&quot;</bucket>
+              <bucket>&quot;[federated.06s2ud51jhfxc51fu7wyh10h88rc].[usr:Calculation_195836256974041094:qk]&quot;</bucket>
+              <bucket>&quot;[federated.06s2ud51jhfxc51fu7wyh10h88rc].[usr:Calculation_195836256974475271:qk]&quot;</bucket>
+              <bucket>&quot;[federated.06s2ud51jhfxc51fu7wyh10h88rc].[usr:Calculation_195836256975122440:qk]&quot;</bucket>
+              <bucket>&quot;[federated.06s2ud51jhfxc51fu7wyh10h88rc].[usr:Calculation_195836256975552521:qk]&quot;</bucket>
+            </dictionary>
+          </manual-sort>
+          <natural-sort column='[federated.06s2ud51jhfxc51fu7wyh10h88rc].[none:Calculation_195836256969748481:nk]' direction='DESC' />
+          <slices>
+            <column>[federated.06s2ud51jhfxc51fu7wyh10h88rc].[none:Country:nk]</column>
+            <column>[federated.06s2ud51jhfxc51fu7wyh10h88rc].[none:Zone:nk]</column>
+            <column>[federated.06s2ud51jhfxc51fu7wyh10h88rc].[none:Hour_Minute:nk]</column>
+            <column>[federated.06s2ud51jhfxc51fu7wyh10h88rc].[:Measure Names]</column>
+            <column>[federated.06s2ud51jhfxc51fu7wyh10h88rc].[none:Calculation_195836256969748481:nk]</column>
+          </slices>
+          <aggregation value='true' />
+        </view>
+        <style>
+          <style-rule element='cell'>
+            <format attr='width' field='[federated.06s2ud51jhfxc51fu7wyh10h88rc].[:Measure Names]' value='125' />
+            <format attr='wrap' value='on' />
+            <format attr='text-align' value='center' />
+            <format attr='text-format' field='[federated.06s2ud51jhfxc51fu7wyh10h88rc].[usr:Calculation_195836256974475271:qk]' value='n#,##0.00;-#,##0.00' />
+            <format attr='text-format' field='[federated.06s2ud51jhfxc51fu7wyh10h88rc].[usr:Calculation_195836256975552521:qk]' value='n#,##0.00;-#,##0.00' />
+            <format attr='color' data-class='total' value='#fe3000' />
+            <format attr='font-weight' data-class='total' value='bold' />
+            <format attr='font-size' data-class='total' value='10' />
+            <format attr='font-weight' data-class='subtotal' value='bold' />
+            <format attr='font-weight' data-class='subtotal' scope='rows' value='bold' />
+            <format attr='font-weight' data-class='total' scope='rows' value='bold' />
+          </style-rule>
+          <style-rule element='header'>
+            <format attr='width' field='[federated.06s2ud51jhfxc51fu7wyh10h88rc].[none:Hour_Minute:nk]' value='92' />
+            <format attr='font-weight' data-class='total' scope='cols' value='normal' />
+            <format attr='font-weight' data-class='subtotal' scope='cols' value='normal' />
+            <format attr='color' data-class='total' scope='rows' value='#fe3000' />
+            <format attr='font-weight' data-class='total' scope='rows' value='bold' />
+          </style-rule>
+          <style-rule element='label'>
+            <format attr='wrap' value='on' />
+            <format attr='text-align' value='center' />
+            <format attr='font-weight' field='[federated.06s2ud51jhfxc51fu7wyh10h88rc].[none:Hour_Minute:nk]' value='normal' />
+            <format attr='font-weight' scope='cols' value='normal' />
+          </style-rule>
+        </style>
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Automatic' />
+            <encodings>
+              <text column='[federated.06s2ud51jhfxc51fu7wyh10h88rc].[Multiple Values]' />
+            </encodings>
+            <style>
+              <style-rule element='mark'>
+                <format attr='mark-labels-show' value='true' />
+              </style-rule>
+              <style-rule element='pane'>
+                <format attr='minwidth' value='-1' />
+                <format attr='maxwidth' value='-1' />
+              </style-rule>
+            </style>
+          </pane>
+        </panes>
+        <rows total='true'>[federated.06s2ud51jhfxc51fu7wyh10h88rc].[none:Hour_Minute:nk]</rows>
+        <cols>([federated.06s2ud51jhfxc51fu7wyh10h88rc].[none:Calculation_195836256969748481:nk] / [federated.06s2ud51jhfxc51fu7wyh10h88rc].[:Measure Names])</cols>
+      </table>
+      <simple-id uuid='{4EAAC36C-710F-47D7-A91F-FFE300C9637D}' />
+    </worksheet>
+    <worksheet name='Past'>
+      <layout-options>
+        <title>
+          <formatted-text>
+            <run bold='true' fontcolor='#0433ff' fontname='Benton Sans Book'>Actual Cost calculated using Completed Shifts and Orders</run>
+          </formatted-text>
+        </title>
+      </layout-options>
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='Custom SQL Query (data_platform_logistics)' name='federated.06s2ud51jhfxc51fu7wyh10h88rc' />
+            <datasource name='Parameters' />
+          </datasources>
+          <datasource-dependencies datasource='Parameters'>
+            <column caption='Date Granularity' datatype='string' name='[Parameter 1]' param-domain-type='list' role='measure' type='nominal' value='&quot;Day&quot;'>
+              <calculation class='tableau' formula='&quot;Day&quot;' />
+            </column>
+            <column caption='Rush Input (Future &amp; Past)' datatype='real' name='[Parameter 3]' param-domain-type='any' role='measure' type='quantitative' value='1.1'>
+              <calculation class='tableau' formula='1.1' />
+            </column>
+          </datasource-dependencies>
+          <datasource-dependencies datasource='federated.06s2ud51jhfxc51fu7wyh10h88rc'>
+            <column caption='Dynamic Column Date' datatype='string' name='[Calculation_195836256969748481]' role='dimension' type='nominal'>
+              <calculation class='tableau' formula='CASE [Parameters].[Parameter 1]&#10;    WHEN &quot;Day&quot; THEN STR([Date])&#10;    WHEN &quot;Month&quot; THEN DATENAME(&apos;month&apos;, [Date]) + &quot; &quot; + STR(YEAR([Date]))&#10;END' />
+            </column>
+            <column caption='Historical CPO' datatype='real' name='[Calculation_195836256983924746]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='SUM([basic_pay])/SUM([orders_historical])' />
+            </column>
+            <column caption='Historical Cost    (After Rush Bonus)' datatype='real' name='[Calculation_195836256984436747]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='SUM([basic_pay])*[Parameters].[Parameter 3]' />
+            </column>
+            <column caption='Historical CPO    (After Rush Bonus)' datatype='real' name='[Calculation_195836256984686604]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='[Calculation_195836256984436747]/SUM([orders_historical])' />
+            </column>
+            <column datatype='string' name='[Country]' role='dimension' semantic-role='[Country].[ISO3166_2]' type='nominal' />
+            <column datatype='date' name='[Date]' role='dimension' type='ordinal' />
+            <column caption='Time Interval' datatype='string' name='[Hour_Minute]' role='dimension' type='nominal' />
+            <column datatype='string' name='[Zone]' role='dimension' type='nominal' />
+            <column caption='Historical Cost (Delivery + Distance)' datatype='real' name='[basic_pay]' role='measure' type='quantitative' />
+            <column-instance column='[Calculation_195836256969748481]' derivation='None' name='[none:Calculation_195836256969748481:nk]' pivot='key' type='nominal' />
+            <column-instance column='[Country]' derivation='None' name='[none:Country:nk]' pivot='key' type='nominal' />
+            <column-instance column='[Hour_Minute]' derivation='None' name='[none:Hour_Minute:nk]' pivot='key' type='nominal' />
+            <column-instance column='[Zone]' derivation='None' name='[none:Zone:nk]' pivot='key' type='nominal' />
+            <column caption='Historical Orders' datatype='integer' name='[orders_historical]' role='measure' type='quantitative' />
+            <column caption='Historical Rider Count' datatype='integer' name='[rider_count_historical]' role='measure' type='quantitative' />
+            <column-instance column='[basic_pay]' derivation='Sum' name='[sum:basic_pay:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[orders_historical]' derivation='Sum' name='[sum:orders_historical:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[rider_count_historical]' derivation='Sum' name='[sum:rider_count_historical:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[Calculation_195836256983924746]' derivation='User' name='[usr:Calculation_195836256983924746:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[Calculation_195836256984436747]' derivation='User' name='[usr:Calculation_195836256984436747:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[Calculation_195836256984686604]' derivation='User' name='[usr:Calculation_195836256984686604:qk]' pivot='key' type='quantitative' />
+          </datasource-dependencies>
+          <filter class='categorical' column='[federated.06s2ud51jhfxc51fu7wyh10h88rc].[:Measure Names]'>
+            <groupfilter function='union' user:op='manual'>
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.06s2ud51jhfxc51fu7wyh10h88rc].[sum:orders_historical:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.06s2ud51jhfxc51fu7wyh10h88rc].[sum:rider_count_historical:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.06s2ud51jhfxc51fu7wyh10h88rc].[sum:basic_pay:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.06s2ud51jhfxc51fu7wyh10h88rc].[usr:Calculation_195836256983924746:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.06s2ud51jhfxc51fu7wyh10h88rc].[usr:Calculation_195836256984436747:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.06s2ud51jhfxc51fu7wyh10h88rc].[usr:Calculation_195836256984686604:qk]&quot;' />
+            </groupfilter>
+          </filter>
+          <manual-sort column='[federated.06s2ud51jhfxc51fu7wyh10h88rc].[:Measure Names]' direction='ASC'>
+            <dictionary>
+              <bucket>&quot;[federated.06s2ud51jhfxc51fu7wyh10h88rc].[sum:orders_historical:qk]&quot;</bucket>
+              <bucket>&quot;[federated.06s2ud51jhfxc51fu7wyh10h88rc].[sum:rider_count_historical:qk]&quot;</bucket>
+              <bucket>&quot;[federated.06s2ud51jhfxc51fu7wyh10h88rc].[sum:basic_pay:qk]&quot;</bucket>
+              <bucket>&quot;[federated.06s2ud51jhfxc51fu7wyh10h88rc].[usr:Calculation_195836256983924746:qk]&quot;</bucket>
+              <bucket>&quot;[federated.06s2ud51jhfxc51fu7wyh10h88rc].[usr:Calculation_195836256984436747:qk]&quot;</bucket>
+              <bucket>&quot;[federated.06s2ud51jhfxc51fu7wyh10h88rc].[usr:Calculation_195836256984686604:qk]&quot;</bucket>
+            </dictionary>
+          </manual-sort>
+          <slices>
+            <column>[federated.06s2ud51jhfxc51fu7wyh10h88rc].[none:Calculation_195836256969748481:nk]</column>
+            <column>[federated.06s2ud51jhfxc51fu7wyh10h88rc].[none:Country:nk]</column>
+            <column>[federated.06s2ud51jhfxc51fu7wyh10h88rc].[none:Hour_Minute:nk]</column>
+            <column>[federated.06s2ud51jhfxc51fu7wyh10h88rc].[none:Zone:nk]</column>
+            <column>[federated.06s2ud51jhfxc51fu7wyh10h88rc].[:Measure Names]</column>
+          </slices>
+          <aggregation value='true' />
+        </view>
+        <style>
+          <style-rule element='cell'>
+            <format attr='width' field='[federated.06s2ud51jhfxc51fu7wyh10h88rc].[:Measure Names]' value='125' />
+            <format attr='wrap' value='on' />
+            <format attr='text-align' value='center' />
+            <format attr='text-format' field='[federated.06s2ud51jhfxc51fu7wyh10h88rc].[usr:Calculation_195836256983924746:qk]' value='n#,##0.00;-#,##0.00' />
+            <format attr='text-format' field='[federated.06s2ud51jhfxc51fu7wyh10h88rc].[usr:Calculation_195836256984686604:qk]' value='n#,##0.00;-#,##0.00' />
+            <format attr='font-weight' data-class='total' value='bold' />
+            <format attr='color' data-class='total' value='#fe3000' />
+          </style-rule>
+          <style-rule element='header'>
+            <format attr='width' field='[federated.06s2ud51jhfxc51fu7wyh10h88rc].[none:Hour_Minute:nk]' value='88' />
+            <format attr='wrap' data-class='subtotal' value='on' />
+            <format attr='font-weight' data-class='total' field='[federated.06s2ud51jhfxc51fu7wyh10h88rc].[none:Hour_Minute:nk]' value='bold' />
+            <format attr='color' data-class='total' field='[federated.06s2ud51jhfxc51fu7wyh10h88rc].[none:Hour_Minute:nk]' value='#fe3000' />
+            <format attr='font-weight' data-class='subtotal' field='[federated.06s2ud51jhfxc51fu7wyh10h88rc].[none:Hour_Minute:nk]' value='bold' />
+            <format attr='color' data-class='subtotal' field='[federated.06s2ud51jhfxc51fu7wyh10h88rc].[none:Hour_Minute:nk]' value='#fe3000' />
+          </style-rule>
+          <style-rule element='label'>
+            <format attr='wrap' scope='rows' value='on' />
+            <format attr='wrap' scope='cols' value='on' />
+            <format attr='text-align' value='center' />
+          </style-rule>
+        </style>
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Automatic' />
+            <encodings>
+              <text column='[federated.06s2ud51jhfxc51fu7wyh10h88rc].[Multiple Values]' />
+            </encodings>
+            <style>
+              <style-rule element='mark'>
+                <format attr='mark-labels-show' value='true' />
+              </style-rule>
+              <style-rule element='pane'>
+                <format attr='minwidth' value='-1' />
+                <format attr='maxwidth' value='-1' />
+              </style-rule>
+            </style>
+          </pane>
+        </panes>
+        <rows total='true'>[federated.06s2ud51jhfxc51fu7wyh10h88rc].[none:Hour_Minute:nk]</rows>
+        <cols>([federated.06s2ud51jhfxc51fu7wyh10h88rc].[none:Calculation_195836256969748481:nk] / [federated.06s2ud51jhfxc51fu7wyh10h88rc].[:Measure Names])</cols>
+      </table>
+      <simple-id uuid='{4589325D-4C8C-419F-A746-8CF813887565}' />
+    </worksheet>
+  </worksheets>
+  <dashboards>
+    <dashboard _.fcp.AccessibleZoneTabOrder.true...enable-sort-zone-taborder='true' name='Dashboard 1'>
+      <repository-location id='Dashboard1' path='/t/Talabat/workbooks/RushHourSimulatorCostImpact' revision='' site='Talabat' />
+      <style />
+      <size maxheight='900' maxwidth='1200' minheight='900' minwidth='1200' sizing-mode='fixed' />
+      <datasources>
+        <datasource name='Parameters' />
+        <datasource caption='Custom SQL Query (data_platform_logistics)' name='federated.06s2ud51jhfxc51fu7wyh10h88rc' />
+      </datasources>
+      <datasource-dependencies datasource='Parameters'>
+        <column caption='Date Granularity' datatype='string' name='[Parameter 1]' param-domain-type='list' role='measure' type='nominal' value='&quot;Day&quot;'>
+          <calculation class='tableau' formula='&quot;Day&quot;' />
+          <members>
+            <member value='&quot;Day&quot;' />
+            <member value='&quot;Month&quot;' />
+          </members>
+        </column>
+        <column caption='UTR Input (Future)' datatype='real' name='[Parameter 2]' param-domain-type='any' role='measure' type='quantitative' value='1.4'>
+          <calculation class='tableau' formula='1.4' />
+        </column>
+        <column caption='Rush Input (Future &amp; Past)' datatype='real' name='[Parameter 3]' param-domain-type='any' role='measure' type='quantitative' value='1.1'>
+          <calculation class='tableau' formula='1.1' />
+        </column>
+        <column caption='Earnings Input (Delivery + Distance)' datatype='real' name='[Parameter 4]' param-domain-type='any' role='measure' type='quantitative' value='0.85'>
+          <calculation class='tableau' formula='0.85' />
+        </column>
+      </datasource-dependencies>
+      <datasource-dependencies datasource='federated.06s2ud51jhfxc51fu7wyh10h88rc'>
+        <column caption='Dynamic Column Date' datatype='string' name='[Calculation_195836256969748481]' role='dimension' type='nominal'>
+          <calculation class='tableau' formula='CASE [Parameters].[Parameter 1]&#10;    WHEN &quot;Day&quot; THEN STR([Date])&#10;    WHEN &quot;Month&quot; THEN DATENAME(&apos;month&apos;, [Date]) + &quot; &quot; + STR(YEAR([Date]))&#10;END' />
+        </column>
+        <column datatype='string' name='[Country]' role='dimension' semantic-role='[Country].[ISO3166_2]' type='nominal' />
+        <column caption='Time Interval' datatype='string' name='[Hour_Minute]' role='dimension' type='nominal' />
+        <column datatype='string' name='[Zone]' role='dimension' type='nominal' />
+        <column-instance column='[Calculation_195836256969748481]' derivation='None' name='[none:Calculation_195836256969748481:nk]' pivot='key' type='nominal' />
+        <column-instance column='[Country]' derivation='None' name='[none:Country:nk]' pivot='key' type='nominal' />
+        <column-instance column='[Hour_Minute]' derivation='None' name='[none:Hour_Minute:nk]' pivot='key' type='nominal' />
+        <column-instance column='[Zone]' derivation='None' name='[none:Zone:nk]' pivot='key' type='nominal' />
+      </datasource-dependencies>
+      <zones>
+        <zone h='100000' id='4' type-v2='layout-basic' w='100000' x='0' y='0'>
+          <zone h='49111' id='7' param='horz' type-v2='layout-flow' w='98666' x='667' y='889'>
+            <zone h='49111' id='5' type-v2='layout-basic' w='84333' x='667' y='889'>
+              <zone h='43333' id='3' name='Future' w='84333' x='667' y='6667'>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+              <zone h='5778' id='13' mode='type_in' param='[Parameters].[Parameter 2]' type-v2='paramctrl' w='25596' x='667' y='889'>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+              <zone h='5778' id='14' mode='type_in' param='[Parameters].[Parameter 4]' type-v2='paramctrl' w='28404' x='26263' y='889'>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+              <zone h='5778' id='15' mode='type_in' param='[Parameters].[Parameter 3]' type-v2='paramctrl' w='30333' x='54667' y='889'>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+            </zone>
+            <zone fixed-size='172' h='49111' id='6' is-fixed='true' param='vert' type-v2='layout-flow' w='14333' x='85000' y='889'>
+              <zone h='5778' id='8' mode='checkdropdown' name='Future' param='[federated.06s2ud51jhfxc51fu7wyh10h88rc].[none:Country:nk]' type-v2='filter' w='14333' x='85000' y='889'>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+              <zone h='5778' id='9' mode='checkdropdown' name='Future' param='[federated.06s2ud51jhfxc51fu7wyh10h88rc].[none:Zone:nk]' type-v2='filter' values='relevant' w='14333' x='85000' y='6667'>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+              <zone h='5778' id='10' mode='checkdropdown' name='Future' param='[federated.06s2ud51jhfxc51fu7wyh10h88rc].[none:Hour_Minute:nk]' type-v2='filter' w='14333' x='85000' y='12445'>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+              <zone h='5778' id='11' mode='checkdropdown' name='Future' param='[federated.06s2ud51jhfxc51fu7wyh10h88rc].[none:Calculation_195836256969748481:nk]' type-v2='filter' w='14333' x='85000' y='18223'>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+              <zone h='5778' id='12' mode='checkdropdown' name='Future' param='[federated.06s2ud51jhfxc51fu7wyh10h88rc].[:Measure Names]' type-v2='filter' w='14333' x='85000' y='24001'>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+              <zone h='5778' id='16' mode='compact' param='[Parameters].[Parameter 1]' type-v2='paramctrl' w='14333' x='85000' y='29779'>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+            </zone>
+          </zone>
+          <zone h='49111' id='17' name='Past' w='98666' x='667' y='50000'>
+            <zone-style>
+              <format attr='border-color' value='#000000' />
+              <format attr='border-style' value='none' />
+              <format attr='border-width' value='0' />
+              <format attr='margin' value='4' />
+            </zone-style>
+          </zone>
+          <zone-style>
+            <format attr='border-color' value='#000000' />
+            <format attr='border-style' value='none' />
+            <format attr='border-width' value='0' />
+            <format attr='margin' value='8' />
+          </zone-style>
+        </zone>
+      </zones>
+      <devicelayouts>
+        <devicelayout auto-generated='true' name='Phone'>
+          <size maxheight='1150' minheight='1150' sizing-mode='vscroll' />
+          <zones>
+            <zone h='100000' id='31' type-v2='layout-basic' w='100000' x='0' y='0'>
+              <zone h='98222' id='30' param='vert' type-v2='layout-flow' w='98666' x='667' y='889'>
+                <zone h='5778' id='13' mode='type_in' param='[Parameters].[Parameter 2]' type-v2='paramctrl' w='25596' x='667' y='889'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone h='5778' id='14' mode='type_in' param='[Parameters].[Parameter 4]' type-v2='paramctrl' w='28404' x='26263' y='889'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone h='5778' id='15' mode='type_in' param='[Parameters].[Parameter 3]' type-v2='paramctrl' w='30333' x='54667' y='889'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone h='5778' id='8' mode='checkdropdown' name='Future' param='[federated.06s2ud51jhfxc51fu7wyh10h88rc].[none:Country:nk]' type-v2='filter' w='14333' x='85000' y='889'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone h='5778' id='9' mode='checkdropdown' name='Future' param='[federated.06s2ud51jhfxc51fu7wyh10h88rc].[none:Zone:nk]' type-v2='filter' values='relevant' w='14333' x='85000' y='6667'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone h='5778' id='10' mode='checkdropdown' name='Future' param='[federated.06s2ud51jhfxc51fu7wyh10h88rc].[none:Hour_Minute:nk]' type-v2='filter' w='14333' x='85000' y='12445'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone h='5778' id='11' mode='checkdropdown' name='Future' param='[federated.06s2ud51jhfxc51fu7wyh10h88rc].[none:Calculation_195836256969748481:nk]' type-v2='filter' w='14333' x='85000' y='18223'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone h='5778' id='12' mode='checkdropdown' name='Future' param='[federated.06s2ud51jhfxc51fu7wyh10h88rc].[:Measure Names]' type-v2='filter' w='14333' x='85000' y='24001'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone fixed-size='280' h='43333' id='3' is-fixed='true' name='Future' w='84333' x='667' y='6667'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone h='5778' id='16' mode='compact' param='[Parameters].[Parameter 1]' type-v2='paramctrl' w='14333' x='85000' y='29779'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone fixed-size='280' h='49111' id='17' is-fixed='true' name='Past' w='98666' x='667' y='50000'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+              </zone>
+              <zone-style>
+                <format attr='border-color' value='#000000' />
+                <format attr='border-style' value='none' />
+                <format attr='border-width' value='0' />
+                <format attr='margin' value='8' />
+              </zone-style>
+            </zone>
+          </zones>
+        </devicelayout>
+      </devicelayouts>
+      <simple-id uuid='{57633501-B74E-41DC-A804-19E8A6A4BE0E}' />
+    </dashboard>
+  </dashboards>
+  <windows source-height='30'>
+    <window class='worksheet' name='Future'>
+      <cards>
+        <edge name='left'>
+          <strip size='191'>
+            <card type='pages' />
+            <card type='filters' />
+            <card type='marks' />
+            <card type='measures' />
+          </strip>
+        </edge>
+        <edge name='top'>
+          <strip size='2147483647'>
+            <card type='columns' />
+          </strip>
+          <strip size='2147483647'>
+            <card type='rows' />
+          </strip>
+          <strip size='31'>
+            <card type='title' />
+          </strip>
+        </edge>
+        <edge name='right'>
+          <strip size='169'>
+            <card mode='checkdropdown' param='[federated.06s2ud51jhfxc51fu7wyh10h88rc].[none:Country:nk]' type='filter' />
+            <card mode='checkdropdown' param='[federated.06s2ud51jhfxc51fu7wyh10h88rc].[none:Zone:nk]' type='filter' values='relevant' />
+            <card mode='checkdropdown' param='[federated.06s2ud51jhfxc51fu7wyh10h88rc].[none:Hour_Minute:nk]' type='filter' />
+            <card mode='type_in' param='[Parameters].[Parameter 2]' type='parameter' />
+            <card mode='type_in' param='[Parameters].[Parameter 4]' type='parameter' />
+            <card mode='type_in' param='[Parameters].[Parameter 3]' type='parameter' />
+            <card mode='compact' param='[Parameters].[Parameter 1]' type='parameter' />
+            <card mode='checkdropdown' param='[federated.06s2ud51jhfxc51fu7wyh10h88rc].[none:Calculation_195836256969748481:nk]' type='filter' />
+            <card mode='checkdropdown' param='[federated.06s2ud51jhfxc51fu7wyh10h88rc].[:Measure Names]' show-morefewerbutton='false' type='filter' />
+          </strip>
+        </edge>
+      </cards>
+      <viewpoint>
+        <highlight>
+          <color-one-way>
+            <field>[federated.06s2ud51jhfxc51fu7wyh10h88rc].[none:Calculation_195836256969748481:nk]</field>
+            <field>[federated.06s2ud51jhfxc51fu7wyh10h88rc].[none:Country:nk]</field>
+            <field>[federated.06s2ud51jhfxc51fu7wyh10h88rc].[none:Hour_Minute:nk]</field>
+            <field>[federated.06s2ud51jhfxc51fu7wyh10h88rc].[none:Zone:nk]</field>
+          </color-one-way>
+        </highlight>
+      </viewpoint>
+      <simple-id uuid='{6ABC4BF6-2C48-49B9-AAFC-7AD4F98041C2}' />
+    </window>
+    <window class='worksheet' name='Past'>
+      <cards>
+        <edge name='left'>
+          <strip size='160'>
+            <card type='pages' />
+            <card type='filters' />
+            <card type='marks' />
+            <card type='measures' />
+          </strip>
+        </edge>
+        <edge name='top'>
+          <strip size='2147483647'>
+            <card type='columns' />
+          </strip>
+          <strip size='2147483647'>
+            <card type='rows' />
+          </strip>
+          <strip size='31'>
+            <card type='title' />
+          </strip>
+        </edge>
+      </cards>
+      <viewpoint>
+        <highlight>
+          <color-one-way>
+            <field>[federated.06s2ud51jhfxc51fu7wyh10h88rc].[none:Calculation_195836256969748481:nk]</field>
+            <field>[federated.06s2ud51jhfxc51fu7wyh10h88rc].[none:Hour_Minute:nk]</field>
+          </color-one-way>
+        </highlight>
+      </viewpoint>
+      <simple-id uuid='{D11B3AB2-AC54-4570-AB4D-D74BF5674A1E}' />
+    </window>
+    <window class='dashboard' maximized='true' name='Dashboard 1'>
+      <viewpoints>
+        <viewpoint name='Future' />
+        <viewpoint name='Past' />
+      </viewpoints>
+      <active id='-1' />
+      <simple-id uuid='{78ABBBAE-447B-4CBF-A86F-AA7ABACD1200}' />
+    </window>
+  </windows>
+</workbook>
