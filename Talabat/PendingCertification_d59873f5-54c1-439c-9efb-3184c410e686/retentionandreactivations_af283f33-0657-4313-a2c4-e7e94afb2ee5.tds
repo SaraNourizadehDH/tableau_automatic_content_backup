@@ -1,0 +1,3406 @@
+<?xml version='1.0' encoding='utf-8' ?>
+
+<!-- build 20233.25.0106.1650                               -->
+<datasource formatted-name='retention and reactivations' inline='true' source-platform='linux' version='18.1' xmlns:user='http://www.tableausoftware.com/xml/user'>
+  <document-format-change-manifest>
+    <_.fcp.ObjectModelEncapsulateLegacy.true...ObjectModelEncapsulateLegacy />
+    <_.fcp.ObjectModelExtractV2.true...ObjectModelExtractV2 />
+    <_.fcp.ObjectModelTableType.true...ObjectModelTableType />
+    <_.fcp.SchemaViewerObjectModel.true...SchemaViewerObjectModel />
+  </document-format-change-manifest>
+  <repository-location id='retentionandreactivations' path='/t/Talabat/datasources' revision='1.1' site='Talabat' />
+  <connection class='federated'>
+    <named-connections>
+      <named-connection caption='BigQuery' name='bigquery.0hljliy0mhok6717isu6b1q0tf8c'>
+        <connection CATALOG='tlb-data-prod' EXECCATALOG='tlb-datateam-analysis-6343' authentication='oauth' bq-dataset-fetch-rows='' bq-fetch-rows='' bq-fetch-tasks='' bq-large-fetch-rows='' bq-project-fetch-rows='' bq-response-rows='' class='bigquery' connection-dialect='google-sql' project='tlb-data-prod' schema='data_platform' server-oauth='' username='ali.anees@talabat.com' workgroup-auth-mode='prompt' />
+      </named-connection>
+    </named-connections>
+    <_.fcp.ObjectModelEncapsulateLegacy.false...relation connection='bigquery.0hljliy0mhok6717isu6b1q0tf8c' name='Custom SQL Query' type='text'><![CDATA[with activity as (
+
+with 
+
+comm as 
+( SELECT 
+
+    DISTINCT v.vendor_id,
+    salesforce_id,
+    avg(case when c.name__c = "tDine" then  commission__c/100  end) as tdine_commission,
+    avg(case when c.name__c <<>> "tDine" then  commission__c/100  end)  as other_commission
+
+  FROM `tlb-data-prod.data_platform.dim_vendor_info` v
+  LEFT JOIN `tlb-data-prod.data_platform.dim_location_info` l
+  ON l.location_id = v.location_id
+  LEFT JOIN `fulfillment-dwh-production.curated_data_shared_salesforce.account` a
+  ON v.salesforce_id = a.grid__c 
+  LEFT JOIN `fulfillment-dwh-production.curated_data_shared_salesforce.contract` c
+  ON a.id = c.accountid
+
+  WHERE 1=1
+  AND c.name__c IN ('TGO Basic Commission','TMP Basic Commission','TGO Basic Commission SSU','TGO Basic Commision','OD Basic Commission','MP Basic Commission','TGO Basic Commission N','TGO Basic commission','S01- Growth Package TGO Commission','B01 - Basic Package TGO Commission', 'TGO Incremental Orders Commission','BH S01 - Growth Package TGO Commission','BH B01 - Standard Package TGO Commission','OD Basic Commission trial','OM B01 - Standard Package (Restaurant) Commission OD','OM S01 - Growth Package (Restaurant) Commission OD','tDine','TGO Incremental GMV Commission')
+  AND c.status = 'Activated'
+  AND c.end_date__c IS NULL
+  group by 1 ,2
+  ),
+
+tiers as 
+(
+SELECT 
+distinct 
+lower(country_code) as country_code,
+(chain_id) as chain_id,
+date,
+lower(chain_name) as chain_name,
+chain_monetisation_tiers 
+FROM `tlb-data-prod.data_platform.agg_chain_tiers` 
+ where date >>= '2024-01-01'
+), 
+
+transmission as   
+(
+SELECT
+*
+FROM  
+(
+SELECT 
+vendor_id,
+dt.transmission_id  AS transmission_id,
+dt.transmission_category  AS transmission_category,
+dt.pos_integration_name  AS pos_integration_name,
+dt.pos_integration_flow  AS pos_integration_flow,
+dt.device_os_name  AS transmission_device_os_name,
+row_number() over (partition by vendor_id order by end_date desc ) as rno
+
+FROM `tlb-data-prod.data_platform.rltnp_vendor_x_transmission`  vt 
+LEFT JOIN `tlb-data-prod.data_platform.dim_transmission` dt ON vt.transmission_id = dt.transmission_id
+WHERE 1=1
+--and vendor_id = 1038
+)
+WHERE rno = 1
+),
+
+
+new_ven as    
+(
+  select 
+*
+from  
+(
+select 
+  *,
+  row_number() over(partition by salesforce_id  order by date(first_online_date) desc ) as rnk
+  from  
+(
+  SELECT
+  DISTINCT 
+  date_trunc(o.closedate,month) first_online_month,
+  ch.country_code as country,
+  v.salesforce_id,
+  v.vendor_id,
+  v.vendor_name,
+  o.business_type__c as business_type,
+  a.vertical__c as vertical,
+  o.closedate as first_online_date,
+  vendor_grade,
+  account_status__c,
+  lower(CONCAT(firstname, ' ', lastname)) AS opp_owner_name,
+  u.title as opp_owner_title
+
+FROM `tlb-data-prod.data_platform.dim_vendor_info` v 
+LEFT JOIN `tlb-data-prod.data_platform.dim_chain` ch 
+ON ch.chain_id = v.chain_id
+LEFT JOIN `fulfillment-dwh-production.curated_data_shared_salesforce.account` a
+ON v.salesforce_id = a.grid__c
+LEFT JOIN  `fulfillment-dwh-production.curated_data_shared_salesforce.contract` c
+ON a.id = c.accountid
+LEFT JOIN `fulfillment-dwh-production.curated_data_shared_salesforce.opportunity` o
+ON a.id =o.accountid
+LEFT JOIN `fulfillment-dwh-production.curated_data_shared_salesforce.user` u
+ON o.ownerid = u.id
+WHERE
+o.business_type__c IN 
+('Franchise Extension',
+'New Business',
+'Win Back')
+AND iswon
+)
+)
+where rnk = 1
+) 
+,
+is_active_before as (
+SELECT 
+         k1.vendor_id,
+         k1.month,
+        k1.country_code,
+        max(k2.is_active) as was_active_before
+    FROM `tlb-data-prod.data_platform.agg_vendor_inventory_kpi_monthly` k1 
+    left join `tlb-data-prod.data_platform.agg_vendor_inventory_kpi_monthly` k2 
+    on k1.vendor_id = k2.vendor_id
+    and k2.month <<k1.month and k2.vertical='Restaurant'
+    WHERE k1.vertical = 'Restaurant'
+     and  k1.month <<=date_trunc(current_date,month) -- before Jan 2023 bucket 
+   -- and first_online_date <<= month - interval '3' month
+    group by all
+    
+    )
+   , pre_output as (
+select i.* ,
+dv.is_dineout,
+dv.is_dh_kitchen,
+dv.team_leader_name,
+dv.first_online_date as dim_vendor_first_online_date, 
+dv.acquisition_business_type, 
+nv.opp_owner_name,  
+opp_owner_title,
+lower(CONCAT(u.firstname, ' ', u.lastname)) AS account_owner_name,
+u.title as account_owner_title,
+central_job_role__c as account_owner_central_job_role,
+case when dh_kitchen_onboarding_date is not null then true else false end as DH_kitchen_flag_v2,
+IFNULL(case when ifnull(tdine_commission,0) >> 0 and  ifnull(other_commission,0) = 0 then TRUE ELSE FALSE END,FALSE)  as vendor_dineout_flag,
+transmission_id,
+transmission_category,
+pos_integration_name,
+pos_integration_flow,
+transmission_device_os_name,
+vertical_segment__c,
+ifnull(chain_monetisation_tiers,"Tier E") as tiers,
+dv.is_managed_by_vendor_helpdesk 
+, current_timestamp as last_updated_timestamp,
+
+lag(m1_successful_orders) over(partition by i.vendor_id order by i.month ) m_2_successful_orders,
+ab.was_active_before
+from `tlb-data-prod.data_platform.agg_vendor_inventory_kpi_monthly`i
+LEFT JOIN `fulfillment-dwh-production.curated_data_shared_salesforce.account` a ON i.salesforce_id = a.grid__c
+LEFT JOIN `fulfillment-dwh-production.curated_data_shared_salesforce.user` u ON a.ownerid = u.id
+left join `tlb-data-prod.data_platform.dim_vendor_info` dv on i.vendor_id = dv.vendor_id 
+left join comm on comm.salesforce_id = dv.salesforce_id 
+left join new_ven nv on nv.vendor_id = i.vendor_id
+left join transmission tr on tr.vendor_id = i.vendor_id 
+left join tiers t on t.chain_id = i.chain_id and date_trunc(t.date,month) = i.month
+left join is_active_before ab on ab.vendor_id=i.vendor_id and ab.month=i.month
+where lower(i.country_code)  in ("ae","qa","jo","iq","kw","bh","om","eg")
+and i.month >>='2024-1-01') 
+
+/* 
+new active vendors done
+active vendors 
+m-1 active vendors done
+m-2 active vendors done
+m-1 sofar 
+m-2 sofar 
+onboarded m0 
+onboarded m-1
+onboarded m-2 
+
+*/
+,raw as (
+select month,country_code,case when date_diff(month,date_trunc(first_online_date,month),month)=0
+and acquisition_business_type<<>>'Switch'
+and is_active 
+and is_contracted 
+
+ then vendor_id else null end as new_active_vendor,
+
+case when date_diff(month,date_trunc(first_online_date,month),month)=1 
+and acquisition_business_type<<>>'Switch'
+and successful_orders >>0 and m1_successful_orders =0 and is_contracted then vendor_id else null
+end as onboarded_m0_active_m_1,
+
+
+
+ case when date_diff(month,date_trunc(first_online_date,month),month)=2
+and acquisition_business_type<<>>'Switch'
+and successful_orders >>0 and m1_successful_orders =0 
+and m_2_successful_orders=0
+ and is_contracted then vendor_id else null
+end as onboarded_m0_active_m_2,
+
+case when date_diff(month,date_trunc(first_online_date,month),month)=0
+and acquisition_business_type<<>>'Switch'
+ and is_contracted then vendor_id else null
+end as onboarded_m0,
+case when date_diff(month,date_trunc(first_online_date,month),month)=1
+and acquisition_business_type<<>>'Switch'
+ --and is_contracted 
+ then vendor_id else null
+end as onboarded_m1,
+case when date_diff(month,date_trunc(first_online_date,month),month)=2
+and acquisition_business_type<<>>'Switch'
+ and is_contracted then vendor_id else null
+end as onboarded_m2
+,
+/*
+
+if 
+        DATEDIFF('month', DATETRUNC('month', [dim_vendor_first_online_date]), [month]) = 1 
+        AND [acquisition_business_type] <<>> 'Switch' 
+        AND (
+            [successful_orders] >> 0 or [Previous month orders] >> 0
+            //DATEDIFF('month', DATETRUNC('month', [First Order Date]), [month]) = 1 
+            //OR DATEDIFF('month', DATETRUNC('month', [First Order Date]), [month]) = 0
+        )
+    THEN [vendor_id]
+    ELSE NULL
+END
+
+*/
+case when date_diff(month,date_trunc(first_online_date,month),month)=1
+and acquisition_business_type<<>>'Switch'
+and (successful_orders >>0 or m1_successful_orders >>0)
+then vendor_id else null end as live_m_1_atleast_order_sofar,
+
+case when date_diff(month,date_trunc(first_online_date,month),month)=2
+and acquisition_business_type<<>>'Switch'
+and (successful_orders >>0 or m1_successful_orders >>0 or m_2_successful_orders>>0)
+then vendor_id else null end as live_m_2_atleast_order_sofar,
+
+case --when acquisition_business_type <<>>'Switch'
+when is_active and is_contracted 
+then vendor_id else null end as active_vendor_id
+
+
+
+
+
+ from pre_output
+ where vendor_dineout_flag=false
+ and month>>='2025-02-01'
+ and vertical='Restaurant'
+ ) , 
+targets as (
+select * from `tlb-data-dev.vendor_analytics.activation_targets_percent_materialized`
+)
+
+SELECT
+  month,
+ country_code,
+  COUNT(DISTINCT new_active_vendor) AS new_active_vendor_count,
+  COUNT(DISTINCT onboarded_m0_active_m_1) AS onboarded_m0_active_m1_count,
+  COUNT(DISTINCT onboarded_m0_active_m_2) AS onboarded_m0_active_m2_count,
+  COUNT(DISTINCT onboarded_m0) AS onboarded_m0_count,
+  COUNT(DISTINCT onboarded_m1) AS onboarded_m1_count,
+  COUNT(DISTINCT onboarded_m2) AS onboarded_m2_count,
+  COUNT(DISTINCT live_m_1_atleast_order_sofar) AS live_m1_count,
+  COUNT(DISTINCT live_m_2_atleast_order_sofar) AS live_m2_count,
+  COUNT(DISTINCT active_vendor_id) AS active_vendor_count,
+  max(target_value) as m0_activation_target_value, 
+  if((COUNT(DISTINCT onboarded_m1)*0.87-COUNT(DISTINCT live_m_1_atleast_order_sofar))<<0,0,COUNT(DISTINCT onboarded_m1)*0.87-COUNT(DISTINCT live_m_1_atleast_order_sofar)) 
+  as M_1_activation_target,
+
+    if((COUNT(DISTINCT onboarded_m2)*0.9-COUNT(DISTINCT live_m_2_atleast_order_sofar))<<0,0,COUNT(DISTINCT onboarded_m2)*0.87-COUNT(DISTINCT live_m_2_atleast_order_sofar)) 
+  as M_2_activation_target
+
+FROM raw r 
+join targets t on r.country_code=t.country and r.month=t.target_date
+GROUP BY all
+), 
+reactivation_history as (/* 
+
+-- the goal is to get daily reactivation weight, to multiply it each day with last month churned vendors excluding dineout 
+--then sum over the days don't forget
+*/
+
+
+-- create the weights you will use first and put them in a table 
+---
+--create or replace table
+--tlb-data-dev.vendor_analytics.Reactivation_churn_daily_weights  as 
+WITH churn_Base_LM AS (
+    /* Active vendors in December 2024 */
+    SELECT 
+        vendor_id,
+        country_code,
+        month,
+        first_order_date,
+        coalesce(gmv_eur,0) as gmv_eur,
+        coalesce(m1_gmv_eur,0) as m1_gmv_eur
+    FROM `tlb-data-prod.data_platform.agg_vendor_inventory_kpi_monthly`
+    WHERE vertical = 'Restaurant'
+      --AND month = date_trunc(current_date,month) -interval '1' month -- December 2024
+      and month >>='2024-12-01'
+     -- AND is_churn
+      --and is_contracted
+),comm as 
+( SELECT 
+    DISTINCT v.vendor_id,
+    salesforce_id,
+    avg(case when c.name__c = "tDine" then  commission__c/100  end) as tdine_commission,
+    avg(case when c.name__c <<>> "tDine" then  commission__c/100  end)  as other_commission
+
+  FROM `tlb-data-prod.data_platform.dim_vendor_info` v
+  LEFT JOIN `tlb-data-prod.data_platform.dim_location_info` l
+  ON l.location_id = v.location_id
+  LEFT JOIN `fulfillment-dwh-production.curated_data_shared_salesforce.account` a
+  ON v.salesforce_id = a.grid__c 
+  LEFT JOIN `fulfillment-dwh-production.curated_data_shared_salesforce.contract` c
+  ON a.id = c.accountid
+
+  WHERE 1=1
+  AND c.name__c IN ('TGO Basic Commission','TMP Basic Commission','TGO Basic Commission SSU','TGO Basic Commision','OD Basic Commission','MP Basic Commission','TGO Basic Commission N','TGO Basic commission','S01- Growth Package TGO Commission','B01 - Basic Package TGO Commission', 'TGO Incremental Orders Commission','BH S01 - Growth Package TGO Commission','BH B01 - Standard Package TGO Commission','OD Basic Commission trial','OM B01 - Standard Package (Restaurant) Commission OD','OM S01 - Growth Package (Restaurant) Commission OD','tDine','TGO Incremental GMV Commission')
+  AND c.status = 'Activated'
+  AND c.end_date__c IS NULL
+  group by 1 ,2
+  ), 
+
+  churn_base_LM_filtered as (
+
+    select * from (
+    select * from (
+select a.*,  IFNULL(case when ifnull(tdine_commission,0) >> 0 and  ifnull(other_commission,0) = 0 then TRUE ELSE FALSE END,FALSE)  as vendor_dineout_flag
+ from churn_base_lm a 
+ left join comm c on a.vendor_id=c.vendor_id
+    ) 
+    where vendor_dineout_flag=false
+  and gmv_eur=0
+  and date_trunc(first_order_date,month) << month --was active before from reference month
+) 
+
+    
+  ) 
+
+  ,
+
+
+date_series AS (
+    -- Generate all dates in January 2025
+    SELECT date,date_trunc(date,month) as month
+    FROM `tlb-data-prod.data_platform.dim_date` 
+    WHERE date_trunc(date,month) between '2025-2-01' and date_trunc(current_date,month) 
+), 
+latest_first_online_date as (
+
+SELECT 
+        vendor_id,
+        country_code,
+        --month,
+       max(first_online_date) as first_online_date
+    FROM `tlb-data-prod.data_platform.agg_vendor_inventory_kpi_monthly`
+    WHERE vertical = 'Restaurant'
+    --  AND month >>='2024-12-01' -- December 2024
+     -- AND is_active  -- Only active vendors
+     -- and not(date_trunc(first_online_date,month)=month and is_reactivated_churn)
+     group by all
+
+)
+,Active_Base_m0 AS (
+    /* Active vendors in December 2024 */
+    SELECT 
+        k.vendor_id,
+        k.country_code,
+        month,
+        date_trunc(k.first_online_date,month) as first_online_month, 
+        is_reactivated_churn,
+        acquisition_business_type,
+        k.first_order_date,
+        k.is_active,
+        lag(k.is_active) over(partition by k.vendor_id order by month) as lm_active,
+        lag(k.is_active,2) over(partition by k.vendor_id order by month) as l2m_active
+    FROM `tlb-data-prod.data_platform.agg_vendor_inventory_kpi_monthly` k 
+    join `tlb-data-prod.data_platform.dim_vendor_info` f on k.vendor_id=f.vendor_id
+    WHERE k.vertical = 'Restaurant'
+      AND month >>='2024-12-01' -- December 2024
+      --AND k.is_active  -- Only active vendors
+      --and not(date_trunc(k.first_online_date,month)=month and is_reactivated_churn  )
+     -- and not(date_trunc(k.first_online_date,month)=month - interval '1' month and is_reactivated_churn and acquisition_business_type='Win Back')
+     --and k.vendor_id=748191
+),
+  active_base_m0_filtered as (
+    select * from (
+select a.*,  IFNULL(case when ifnull(tdine_commission,0) >> 0 and  ifnull(other_commission,0) = 0 then TRUE ELSE FALSE END,FALSE)  as vendor_dineout_flag
+ from active_base_m0 a 
+left join comm c on a.vendor_id=c.vendor_id ) 
+
+    where vendor_dineout_flag=false
+  ) 
+
+,orders_M0 AS (
+    -- Successful food orders in January 2025
+    SELECT
+        f.vendor_id,
+        f.country_code,
+        f.order_date,
+        a.month,
+        a.acquisition_business_type,
+        a.is_reactivated_churn,
+        first_online_month,
+        first_order_date,
+        lm_active,
+        l2m_active
+    FROM `tlb-data-prod.data_platform.fct_order_info` f 
+    join active_base_m0_filtered a on f.vendor_id=a.vendor_id and a.month=date_trunc(f.order_date,month)
+
+    WHERE date_trunc(order_date,month) =a.month
+    and is_active
+      --AND NOT is_non_food
+      --AND is_successful
+) 
+
+ --select * from orders_m0 
+ --where vendor_id=748191
+,order_m0_filt as 
+(select *
+from orders_m0 
+where 
+is_reactivated_churn
+
+and (
+  (first_online_month <<month - interval '2' month) or
+ (first_online_month=month - interval '2' month and l2m_active)
+  or(first_online_month is null and first_order_date is not null)
+
+
+ )
+ 
+ )
+/* 
+Here i need to get vendors acquired M-3
+
+*/
+--------------------------------------------------------------------------------------------------------
+--------------------------------------------------------------------------------------------------------
+,reactivations_from_zombies as (
+
+
+WITH Base AS (
+    /* Active vendors in December 2024 */
+ --with active_before as (
+SELECT 
+         k1.vendor_id,
+        k1.country_code,
+        k1.month,
+        max(k2.is_active) as was_active_before
+    FROM `tlb-data-prod.data_platform.agg_vendor_inventory_kpi_monthly` k1 
+    left join `tlb-data-prod.data_platform.agg_vendor_inventory_kpi_monthly`  k2 on k1.vendor_id=k2.vendor_id 
+    and k2.month <<= k1.month and k2.vertical='Restaurant'
+    WHERE k1.vertical = 'Restaurant'
+     and  k1.month >>='2024-12-01'
+         and date_trunc(k1.first_online_date,month) <<= k1.month - interval '2' month
+   -- and first_online_date <<= month - interval '3' month
+    group by all
+    having was_active_before=False
+    --)
+
+   /* SELECT 
+         k1.vendor_id,
+         k1.country_code,
+         a.was_active_before
+        
+    FROM `tlb-data-prod.data_platform.agg_vendor_inventory_kpi_monthly` k1 
+     join active_before a on k1.vendor_id=a.vendor_id
+    WHERE vertical = 'Restaurant'
+     and  month =date_trunc(current_date,month) - interval '1' month-- December 2024
+    and date_trunc(first_online_date,month) <<= month - interval '2' month
+    and not was_active_before
+    group by all
+*/
+
+),
+comm as 
+( SELECT 
+    DISTINCT v.vendor_id,
+    salesforce_id,
+    avg(case when c.name__c = "tDine" then  commission__c/100  end) as tdine_commission,
+    avg(case when c.name__c <<>> "tDine" then  commission__c/100  end)  as other_commission
+
+  FROM `tlb-data-prod.data_platform.dim_vendor_info` v
+  LEFT JOIN `tlb-data-prod.data_platform.dim_location_info` l
+  ON l.location_id = v.location_id
+  LEFT JOIN `fulfillment-dwh-production.curated_data_shared_salesforce.account` a
+  ON v.salesforce_id = a.grid__c 
+  LEFT JOIN `fulfillment-dwh-production.curated_data_shared_salesforce.contract` c
+  ON a.id = c.accountid
+
+  WHERE 1=1
+  AND c.name__c IN ('TGO Basic Commission','TMP Basic Commission','TGO Basic Commission SSU','TGO Basic Commision','OD Basic Commission','MP Basic Commission','TGO Basic Commission N','TGO Basic commission','S01- Growth Package TGO Commission','B01 - Basic Package TGO Commission', 'TGO Incremental Orders Commission','BH S01 - Growth Package TGO Commission','BH B01 - Standard Package TGO Commission','OD Basic Commission trial','OM B01 - Standard Package (Restaurant) Commission OD','OM S01 - Growth Package (Restaurant) Commission OD','tDine','TGO Incremental GMV Commission')
+  AND c.status = 'Activated'
+  AND c.end_date__c IS NULL
+  group by 1 ,2
+  ), 
+active_before_filtered as (
+
+select * from (
+    select * from (
+select a.*,  IFNULL(case when ifnull(tdine_commission,0) >> 0 and  ifnull(other_commission,0) = 0 then TRUE ELSE FALSE END,FALSE)  as vendor_dineout_flag
+ from base  a 
+ left join comm c on a.vendor_id=c.vendor_id
+    ) 
+    where vendor_dineout_flag=false
+
+) 
+
+  
+),
+date_series AS (
+    -- Generate all dates in January 2025
+    SELECT date ,date_trunc(date,month) as month
+    FROM `tlb-data-prod.data_platform.dim_date` 
+    WHERE date_trunc(date,month) between '2025-2-01' and date_trunc(current_date,month) 
+),
+
+Active_Base_m0 AS (
+    /* Active vendors in December 2024 */
+    SELECT 
+        vendor_id,
+        country_code,
+        month,
+        is_reactivated_churn
+    FROM `tlb-data-prod.data_platform.agg_vendor_inventory_kpi_monthly`
+    WHERE vertical = 'Restaurant'
+      AND month >>='2025-02-01' 
+      AND is_active  -- Only active vendors
+      
+),
+  active_base_m0_filtered as (
+    select * from (
+select a.*,  IFNULL(case when ifnull(tdine_commission,0) >> 0 and  ifnull(other_commission,0) = 0 then TRUE ELSE FALSE END,FALSE)  as vendor_dineout_flag
+ from active_base_m0 a 
+left join comm c on a.vendor_id=c.vendor_id ) 
+
+    where vendor_dineout_flag=false
+  ) 
+
+,orders_M0 AS (
+    -- Successful food orders in January 2025
+    SELECT
+        f.vendor_id,
+        f.country_code,
+        f.order_date,
+        a.month
+    FROM `tlb-data-prod.data_platform.fct_order_info` f 
+    join active_base_m0_filtered a on f.vendor_id=a.vendor_id and a.month=date_trunc(f.order_date,month)
+    WHERE date_trunc(order_date,month) >>= '2025-02-01' --=date_trunc(current_date,month)
+      --AND NOT is_non_food
+      --AND is_successful
+) 
+,orders_M0_zom AS (
+    -- Successful food orders in January 2025
+    SELECT
+        f.vendor_id,
+        f.country_code,
+        f.order_date,
+        a.month
+    FROM `tlb-data-prod.data_platform.fct_order_info` f 
+    join active_base_m0_filtered a on f.vendor_id=a.vendor_id and a.month=date_trunc(f.order_date,month)
+    WHERE date_trunc(order_date,month) >>= '2025-02-01' --=date_trunc(current_date,month)
+    and not is_reactivated_churn
+      --AND NOT is_non_food
+      --AND is_successful
+) 
+
+
+select *,max(reactivated_from_zombie) over(partition by country_code) as max_reactivated_from_zombie
+
+from (
+SELECT
+    d.date,
+    b.country_code,
+    COUNT(DISTINCT o.vendor_id) AS reactivated_from_zombie,
+    COUNT(DISTINCT b.vendor_id) AS churn_last_month,
+    ROUND(COUNT(DISTINCT o.vendor_id) * 1.0 / COUNT(DISTINCT b.vendor_id),8) AS reactivation_rate
+FROM date_series d
+CROSS JOIN base b  -- All active vendors from December
+LEFT JOIN orders_M0_zom o
+    ON b.vendor_id = o.vendor_id
+    AND b.country_code = o.country_code
+    AND o.order_date <<= d.date  -- Orders up to the current date
+    and date_trunc(o.order_date,month)=b.month+ interval '1' month
+    and date_trunc(o.order_date,month)=date_trunc(d.date,month)
+GROUP BY all
+)
+)
+
+,actuals as (
+  select *,max(reactivated_churn) over(partition by country_code) as max_reactivated_churn
+  from(
+    
+SELECT
+   --distinct  
+   d.date,
+   d.month,
+   extract(day from d.date) as day,
+    b.country_code,
+   
+   -- o.acquisition_business_type
+    --b.vendor_id churned,
+    COUNT(DISTINCT o.vendor_id) AS reactivated_churn,
+    COUNT(DISTINCT b.vendor_id) AS churn_last_month,
+    ROUND(COUNT(DISTINCT o.vendor_id) * 1.0 / COUNT(DISTINCT b.vendor_id), 4) AS reactivation_rate
+FROM date_series d
+CROSS JOIN churn_base_LM_filtered b  -- All active vendors from December
+LEFT JOIN order_m0_filt o
+    ON b.vendor_id = o.vendor_id
+    AND b.country_code = o.country_code
+    AND o.order_date <<= d.date  -- Orders up to the current date
+    and date_trunc(o.order_date,month)=b.month+ interval '1' month
+    and date_trunc(o.order_date,month)=date_trunc(d.date,month)
+    where b.country_code <<>> 'SA'
+GROUP BY all) 
+)
+,last_day as (select distinct month_start_date as month, extract(day from month_end_date) as last_day_of_month
+  from `tlb-data-prod.data_platform.dim_date`
+where month_start_date >>='2025-02-01' and month_start_date <<= date_trunc(current_date, month)
+), 
+actuals_edited as ( 
+
+
+select a.*, b.last_day_of_month 
+from actuals a 
+left join last_day b 
+on b.month=date_trunc(a.date, month)
+
+)
+select 
+a.*,
+z.reactivated_from_zombie,
+max_reactivated_churn+max_reactivated_from_zombie as max_base,
+reactivated_churn+reactivated_from_zombie as total_reactivated,
+Target_value,
+ round(Target_value*daily_reactivation_churn_weight)  as target_MTD_reactivated,
+daily_reactivation_churn_weight
+  , w.last_day_of_month
+ from actuals_edited a
+--join `tlb-data-dev.vendor_analytics.Reactivation_churn_daily_weights_opt` w 
+join (select 
+
+date,country_code,
+reactivated, churn_last_month, 
+reactivated/ max(reactivated) over(partition by country_code) as daily_reactivation_churn_weight, 
+max(reactivated) over(partition by country_code) as max_reactivated, 
+28 as last_day_of_month
+ from tlb-data-dev.vendor_analytics.Reactivation_churn_daily_weights_opt 
+ where date <<='2025-01-28'
+union all 
+
+select * from tlb-data-dev.vendor_analytics.Reactivation_churn_daily_weights_opt )w
+on extract(day from w.date)=extract(day from a.date) and w.last_day_of_month=a.last_day_of_month -- double rows here 
+ -- still double rows 
+and w.country_code=a.country_code -- i will add here flag whether it's 30 or 31 day month
+join `tlb-data-dev.vendor_analytics.Reactivation_targets_materialized` t on t.target_date=date_trunc(a.date,month)
+and t.country=a.country_code
+join reactivations_from_zombies z on z.country_code=a.country_code 
+and extract(day from z.date) =a.day and date_trunc(z.date,month)=date_trunc(a.date,month)
+
+)
+
+
+
+ , 
+ retn_hist as (/*create or replace table `tlb-data-dev.vendor_analytics.Retention_targets_materialized` 
+as select * from tlb-data-dev.vendor_analytics.Retention_targets;
+
+*/
+/*create or replace table `tlb-data-dev.vendor_analytics.Retention_targets_materialized` 
+as select * from tlb-data-dev.vendor_analytics.Retention_targets;
+
+*/
+
+
+/* create table only for the daily targets */ 
+
+WITH Active_Base_LM AS (
+    /* Active vendors in December 2024 */
+    SELECT 
+        vendor_id,
+        country_code,
+        month
+    FROM `tlb-data-prod.data_platform.agg_vendor_inventory_kpi_monthly`
+    WHERE vertical = 'Restaurant'
+      --AND month = date_trunc(current_date,month)-interval '1' month  -- December 2024
+      and month >>='2024-12-01'
+      AND is_active  -- Only active vendors
+),comm as 
+( SELECT 
+    DISTINCT v.vendor_id,
+    salesforce_id,
+    avg(case when c.name__c = "tDine" then  commission__c/100  end) as tdine_commission,
+    avg(case when c.name__c <<>> "tDine" then  commission__c/100  end)  as other_commission
+
+  FROM `tlb-data-prod.data_platform.dim_vendor_info` v
+  LEFT JOIN `tlb-data-prod.data_platform.dim_location_info` l
+  ON l.location_id = v.location_id
+  LEFT JOIN `fulfillment-dwh-production.curated_data_shared_salesforce.account` a
+  ON v.salesforce_id = a.grid__c 
+  LEFT JOIN `fulfillment-dwh-production.curated_data_shared_salesforce.contract` c
+  ON a.id = c.accountid
+
+  WHERE 1=1
+  AND c.name__c IN ('TGO Basic Commission','TMP Basic Commission','TGO Basic Commission SSU','TGO Basic Commision','OD Basic Commission','MP Basic Commission','TGO Basic Commission N','TGO Basic commission','S01- Growth Package TGO Commission','B01 - Basic Package TGO Commission', 'TGO Incremental Orders Commission','BH S01 - Growth Package TGO Commission','BH B01 - Standard Package TGO Commission','OD Basic Commission trial','OM B01 - Standard Package (Restaurant) Commission OD','OM S01 - Growth Package (Restaurant) Commission OD','tDine','TGO Incremental GMV Commission')
+  AND c.status = 'Activated'
+  AND c.end_date__c IS NULL
+  group by 1 ,2
+  ), 
+
+  active_base_LM_filtered as (
+    select * from (
+select a.*,  IFNULL(case when ifnull(tdine_commission,0) >> 0 and  ifnull(other_commission,0) = 0 then TRUE ELSE FALSE END,FALSE)  as vendor_dineout_flag
+ from active_base_lm a 
+left join comm c on a.vendor_id=c.vendor_id ) 
+where vendor_dineout_flag=false
+    
+  ),
+
+Active_Base_m0 AS (
+    /* Active vendors in December 2024 */
+    SELECT 
+        vendor_id,
+        country_code,
+        month,
+        is_retained, 
+        previous_segment,
+        is_active,
+        date_trunc(first_online_date,month) as first_online_month
+    FROM `tlb-data-prod.data_platform.agg_vendor_inventory_kpi_monthly`
+    WHERE vertical = 'Restaurant'
+      AND month >>='2025-2-01' --date_trunc(current_date,month) -- December 2024
+      AND is_active  -- Only active vendors
+),
+  active_base_m0_filtered as (
+    select * from (
+select a.*,  IFNULL(case when ifnull(tdine_commission,0) >> 0 and  ifnull(other_commission,0) = 0 then TRUE ELSE FALSE END,FALSE)  as vendor_dineout_flag
+ from active_base_m0 a 
+left join comm c on a.vendor_id=c.vendor_id ) 
+where vendor_dineout_flag=false
+    
+  )
+
+
+,
+date_series AS (
+    -- Generate all dates in January 2025
+    SELECT date ,date_trunc(date,month) as month
+    FROM `tlb-data-prod.data_platform.dim_date` 
+    WHERE date_trunc(date,month) between '2025-02-01' and date_trunc(current_date,month)
+),
+
+orders_M0 AS (
+    -- Successful food orders in January 2025
+    SELECT
+        f.vendor_id,
+        f.country_code,
+        f.order_date,
+        a.month,
+        a.is_retained,
+        a.first_online_month,
+        a.previous_segment,
+        a.is_active 
+    FROM `tlb-data-prod.data_platform.fct_order_info` f 
+    join active_base_m0_filtered a on f.vendor_id=a.vendor_id and a.month=date_trunc(f.order_date,month)
+    WHERE date_trunc(order_date,month) >>='2025-02-01'
+    --and first_online_month <<>> month
+      --AND NOT is_non_food
+      --AND is_successful
+     -- and not(previous_segment='Active' and first_online_month=month)
+      and a.is_active 
+)
+,orders_m0_filt as (
+select distinct o.* except(order_date),acquisition_business_type  from orders_m0 o
+join `tlb-data-prod.data_platform.dim_vendor_info` f on o.vendor_id=f.vendor_id 
+where --vendor_id not in (702005,661003,753851)
+ (first_online_month=month and previous_segment='Active')
+ and acquisition_business_type <<>> 'Switch'
+
+)
+--select * from orders_m0_filt 
+
+
+
+,daily_actuals as (
+select a.month,
+extract(day from date) as day, 
+date,
+a.country_code, 
+--retention_rate,
+--retained_vendors,
+--a.first_online_month
+count(distinct retained_vendors) as retained_vendors,
+--active_base_last_month
+
+from (
+SELECT
+    d.date,
+    b.country_code,
+    d.month,
+    o.vendor_id as retained_vendors,
+    --first_online_month,
+    --is_retained
+    --COUNT(DISTINCT o.vendor_id) AS retained_vendors,
+    --COUNT(DISTINCT b.vendor_id) AS active_base_last_month,
+    --ROUND(COUNT(DISTINCT o.vendor_id) * 1.0 / COUNT(DISTINCT b.vendor_id), 4) AS retention_rate
+FROM date_series d
+CROSS JOIN active_base_LM_filtered b  -- All active vendors from December
+LEFT JOIN orders_m0 o
+    ON b.vendor_id = o.vendor_id
+    AND b.country_code = o.country_code
+    AND o.order_date <<= d.date  -- Orders up to the current date
+    and date_trunc(o.order_date,month)=b.month+ interval '1' month
+    and date_trunc(o.order_date,month)=date_trunc(d.date,month)
+--GROUP BY all
+)a 
+left join orders_m0_filt om on om.vendor_id=a.retained_vendors
+ and om.month=a.month
+where om.vendor_id is  null 
+group by all
+) 
+
+
+,active_lm as (
+
+
+    select country_code, month, 
+    count(distinct vendor_id) active_lm
+    from active_base_LM_filtered 
+    group by all
+  ), 
+
+  active_lm_target as (
+
+select country,
+target_date as month,
+Active_Inventory as lm_active_target 
+  from `tlb-data-dev.vendor_analytics.Retention_targets_materialized` 
+
+
+
+  )
+  ,daily_actuals_v2 as (
+
+
+    select a.*, alm.lm_active_target as active_base_last_month 
+    ,retained_vendors/lm_active_target as retention_rate
+    ,lm.active_lm
+     from daily_actuals a 
+join active_lm_target alm on alm.country=a.country_code 
+and alm.month=a.month - interval '1' month
+
+join active_lm lm on lm.country_code=a.country_code 
+and lm.month=a.month - interval '1' month
+
+
+
+
+
+  )
+
+select *,round(target_retention_rate*active_base_last_month)  as target_retained
+ from (
+
+select d.*,target_value,
+case when month='2025-02-01' and d.day=26 then
+(target_value *0.996) 
+when month='2025-02-01' and d.day=27 then
+(target_value *0.998) 
+  when month='2025-02-01' and d.day=28 then 
+ (target_value*1) else  
+target_value * daily_retention_weight end as target_retention_rate,
+
+
+
+
+ from daily_actuals_v2 d 
+join `tlb-data-dev.vendor_analytics.Retention_daily_weights` w 
+on d.day=w.day and d.country_code=w.country_code
+join `tlb-data-dev.vendor_analytics.Retention_targets_materialized` t on t.target_date=d.month
+and t.country=d.country_code and t.Target_date=d.month
+
+)
+
+
+
+
+
+
+
+
+
+)
+
+
+
+
+
+
+,retn_react as (
+select distinct ret.*,
+reactivated_churn
+,churn_last_month
+,max_reactivated_churn
+,reactivated_from_zombie
+,max_base,
+total_reactivated
+,rh.target_value as react_target_value_EOM
+,target_MTD_reactivated
+ from retn_hist ret 
+join reactivation_history rh on ret.day=rh.day 
+and ret.month=rh.month 
+and ret.country_code=rh.country_code
+) select * from retn_react]]></_.fcp.ObjectModelEncapsulateLegacy.false...relation>
+    <_.fcp.ObjectModelEncapsulateLegacy.true...relation connection='bigquery.0hljliy0mhok6717isu6b1q0tf8c' name='Custom SQL Query' type='text'><![CDATA[with activity as (
+
+with 
+
+comm as 
+( SELECT 
+
+    DISTINCT v.vendor_id,
+    salesforce_id,
+    avg(case when c.name__c = "tDine" then  commission__c/100  end) as tdine_commission,
+    avg(case when c.name__c <<>> "tDine" then  commission__c/100  end)  as other_commission
+
+  FROM `tlb-data-prod.data_platform.dim_vendor_info` v
+  LEFT JOIN `tlb-data-prod.data_platform.dim_location_info` l
+  ON l.location_id = v.location_id
+  LEFT JOIN `fulfillment-dwh-production.curated_data_shared_salesforce.account` a
+  ON v.salesforce_id = a.grid__c 
+  LEFT JOIN `fulfillment-dwh-production.curated_data_shared_salesforce.contract` c
+  ON a.id = c.accountid
+
+  WHERE 1=1
+  AND c.name__c IN ('TGO Basic Commission','TMP Basic Commission','TGO Basic Commission SSU','TGO Basic Commision','OD Basic Commission','MP Basic Commission','TGO Basic Commission N','TGO Basic commission','S01- Growth Package TGO Commission','B01 - Basic Package TGO Commission', 'TGO Incremental Orders Commission','BH S01 - Growth Package TGO Commission','BH B01 - Standard Package TGO Commission','OD Basic Commission trial','OM B01 - Standard Package (Restaurant) Commission OD','OM S01 - Growth Package (Restaurant) Commission OD','tDine','TGO Incremental GMV Commission')
+  AND c.status = 'Activated'
+  AND c.end_date__c IS NULL
+  group by 1 ,2
+  ),
+
+tiers as 
+(
+SELECT 
+distinct 
+lower(country_code) as country_code,
+(chain_id) as chain_id,
+date,
+lower(chain_name) as chain_name,
+chain_monetisation_tiers 
+FROM `tlb-data-prod.data_platform.agg_chain_tiers` 
+ where date >>= '2024-01-01'
+), 
+
+transmission as   
+(
+SELECT
+*
+FROM  
+(
+SELECT 
+vendor_id,
+dt.transmission_id  AS transmission_id,
+dt.transmission_category  AS transmission_category,
+dt.pos_integration_name  AS pos_integration_name,
+dt.pos_integration_flow  AS pos_integration_flow,
+dt.device_os_name  AS transmission_device_os_name,
+row_number() over (partition by vendor_id order by end_date desc ) as rno
+
+FROM `tlb-data-prod.data_platform.rltnp_vendor_x_transmission`  vt 
+LEFT JOIN `tlb-data-prod.data_platform.dim_transmission` dt ON vt.transmission_id = dt.transmission_id
+WHERE 1=1
+--and vendor_id = 1038
+)
+WHERE rno = 1
+),
+
+
+new_ven as    
+(
+  select 
+*
+from  
+(
+select 
+  *,
+  row_number() over(partition by salesforce_id  order by date(first_online_date) desc ) as rnk
+  from  
+(
+  SELECT
+  DISTINCT 
+  date_trunc(o.closedate,month) first_online_month,
+  ch.country_code as country,
+  v.salesforce_id,
+  v.vendor_id,
+  v.vendor_name,
+  o.business_type__c as business_type,
+  a.vertical__c as vertical,
+  o.closedate as first_online_date,
+  vendor_grade,
+  account_status__c,
+  lower(CONCAT(firstname, ' ', lastname)) AS opp_owner_name,
+  u.title as opp_owner_title
+
+FROM `tlb-data-prod.data_platform.dim_vendor_info` v 
+LEFT JOIN `tlb-data-prod.data_platform.dim_chain` ch 
+ON ch.chain_id = v.chain_id
+LEFT JOIN `fulfillment-dwh-production.curated_data_shared_salesforce.account` a
+ON v.salesforce_id = a.grid__c
+LEFT JOIN  `fulfillment-dwh-production.curated_data_shared_salesforce.contract` c
+ON a.id = c.accountid
+LEFT JOIN `fulfillment-dwh-production.curated_data_shared_salesforce.opportunity` o
+ON a.id =o.accountid
+LEFT JOIN `fulfillment-dwh-production.curated_data_shared_salesforce.user` u
+ON o.ownerid = u.id
+WHERE
+o.business_type__c IN 
+('Franchise Extension',
+'New Business',
+'Win Back')
+AND iswon
+)
+)
+where rnk = 1
+) 
+,
+is_active_before as (
+SELECT 
+         k1.vendor_id,
+         k1.month,
+        k1.country_code,
+        max(k2.is_active) as was_active_before
+    FROM `tlb-data-prod.data_platform.agg_vendor_inventory_kpi_monthly` k1 
+    left join `tlb-data-prod.data_platform.agg_vendor_inventory_kpi_monthly` k2 
+    on k1.vendor_id = k2.vendor_id
+    and k2.month <<k1.month and k2.vertical='Restaurant'
+    WHERE k1.vertical = 'Restaurant'
+     and  k1.month <<=date_trunc(current_date,month) -- before Jan 2023 bucket 
+   -- and first_online_date <<= month - interval '3' month
+    group by all
+    
+    )
+   , pre_output as (
+select i.* ,
+dv.is_dineout,
+dv.is_dh_kitchen,
+dv.team_leader_name,
+dv.first_online_date as dim_vendor_first_online_date, 
+dv.acquisition_business_type, 
+nv.opp_owner_name,  
+opp_owner_title,
+lower(CONCAT(u.firstname, ' ', u.lastname)) AS account_owner_name,
+u.title as account_owner_title,
+central_job_role__c as account_owner_central_job_role,
+case when dh_kitchen_onboarding_date is not null then true else false end as DH_kitchen_flag_v2,
+IFNULL(case when ifnull(tdine_commission,0) >> 0 and  ifnull(other_commission,0) = 0 then TRUE ELSE FALSE END,FALSE)  as vendor_dineout_flag,
+transmission_id,
+transmission_category,
+pos_integration_name,
+pos_integration_flow,
+transmission_device_os_name,
+vertical_segment__c,
+ifnull(chain_monetisation_tiers,"Tier E") as tiers,
+dv.is_managed_by_vendor_helpdesk 
+, current_timestamp as last_updated_timestamp,
+
+lag(m1_successful_orders) over(partition by i.vendor_id order by i.month ) m_2_successful_orders,
+ab.was_active_before
+from `tlb-data-prod.data_platform.agg_vendor_inventory_kpi_monthly`i
+LEFT JOIN `fulfillment-dwh-production.curated_data_shared_salesforce.account` a ON i.salesforce_id = a.grid__c
+LEFT JOIN `fulfillment-dwh-production.curated_data_shared_salesforce.user` u ON a.ownerid = u.id
+left join `tlb-data-prod.data_platform.dim_vendor_info` dv on i.vendor_id = dv.vendor_id 
+left join comm on comm.salesforce_id = dv.salesforce_id 
+left join new_ven nv on nv.vendor_id = i.vendor_id
+left join transmission tr on tr.vendor_id = i.vendor_id 
+left join tiers t on t.chain_id = i.chain_id and date_trunc(t.date,month) = i.month
+left join is_active_before ab on ab.vendor_id=i.vendor_id and ab.month=i.month
+where lower(i.country_code)  in ("ae","qa","jo","iq","kw","bh","om","eg")
+and i.month >>='2024-1-01') 
+
+/* 
+new active vendors done
+active vendors 
+m-1 active vendors done
+m-2 active vendors done
+m-1 sofar 
+m-2 sofar 
+onboarded m0 
+onboarded m-1
+onboarded m-2 
+
+*/
+,raw as (
+select month,country_code,case when date_diff(month,date_trunc(first_online_date,month),month)=0
+and acquisition_business_type<<>>'Switch'
+and is_active 
+and is_contracted 
+
+ then vendor_id else null end as new_active_vendor,
+
+case when date_diff(month,date_trunc(first_online_date,month),month)=1 
+and acquisition_business_type<<>>'Switch'
+and successful_orders >>0 and m1_successful_orders =0 and is_contracted then vendor_id else null
+end as onboarded_m0_active_m_1,
+
+
+
+ case when date_diff(month,date_trunc(first_online_date,month),month)=2
+and acquisition_business_type<<>>'Switch'
+and successful_orders >>0 and m1_successful_orders =0 
+and m_2_successful_orders=0
+ and is_contracted then vendor_id else null
+end as onboarded_m0_active_m_2,
+
+case when date_diff(month,date_trunc(first_online_date,month),month)=0
+and acquisition_business_type<<>>'Switch'
+ and is_contracted then vendor_id else null
+end as onboarded_m0,
+case when date_diff(month,date_trunc(first_online_date,month),month)=1
+and acquisition_business_type<<>>'Switch'
+ --and is_contracted 
+ then vendor_id else null
+end as onboarded_m1,
+case when date_diff(month,date_trunc(first_online_date,month),month)=2
+and acquisition_business_type<<>>'Switch'
+ and is_contracted then vendor_id else null
+end as onboarded_m2
+,
+/*
+
+if 
+        DATEDIFF('month', DATETRUNC('month', [dim_vendor_first_online_date]), [month]) = 1 
+        AND [acquisition_business_type] <<>> 'Switch' 
+        AND (
+            [successful_orders] >> 0 or [Previous month orders] >> 0
+            //DATEDIFF('month', DATETRUNC('month', [First Order Date]), [month]) = 1 
+            //OR DATEDIFF('month', DATETRUNC('month', [First Order Date]), [month]) = 0
+        )
+    THEN [vendor_id]
+    ELSE NULL
+END
+
+*/
+case when date_diff(month,date_trunc(first_online_date,month),month)=1
+and acquisition_business_type<<>>'Switch'
+and (successful_orders >>0 or m1_successful_orders >>0)
+then vendor_id else null end as live_m_1_atleast_order_sofar,
+
+case when date_diff(month,date_trunc(first_online_date,month),month)=2
+and acquisition_business_type<<>>'Switch'
+and (successful_orders >>0 or m1_successful_orders >>0 or m_2_successful_orders>>0)
+then vendor_id else null end as live_m_2_atleast_order_sofar,
+
+case --when acquisition_business_type <<>>'Switch'
+when is_active and is_contracted 
+then vendor_id else null end as active_vendor_id
+
+
+
+
+
+ from pre_output
+ where vendor_dineout_flag=false
+ and month>>='2025-02-01'
+ and vertical='Restaurant'
+ ) , 
+targets as (
+select * from `tlb-data-dev.vendor_analytics.activation_targets_percent_materialized`
+)
+
+SELECT
+  month,
+ country_code,
+  COUNT(DISTINCT new_active_vendor) AS new_active_vendor_count,
+  COUNT(DISTINCT onboarded_m0_active_m_1) AS onboarded_m0_active_m1_count,
+  COUNT(DISTINCT onboarded_m0_active_m_2) AS onboarded_m0_active_m2_count,
+  COUNT(DISTINCT onboarded_m0) AS onboarded_m0_count,
+  COUNT(DISTINCT onboarded_m1) AS onboarded_m1_count,
+  COUNT(DISTINCT onboarded_m2) AS onboarded_m2_count,
+  COUNT(DISTINCT live_m_1_atleast_order_sofar) AS live_m1_count,
+  COUNT(DISTINCT live_m_2_atleast_order_sofar) AS live_m2_count,
+  COUNT(DISTINCT active_vendor_id) AS active_vendor_count,
+  max(target_value) as m0_activation_target_value, 
+  if((COUNT(DISTINCT onboarded_m1)*0.87-COUNT(DISTINCT live_m_1_atleast_order_sofar))<<0,0,COUNT(DISTINCT onboarded_m1)*0.87-COUNT(DISTINCT live_m_1_atleast_order_sofar)) 
+  as M_1_activation_target,
+
+    if((COUNT(DISTINCT onboarded_m2)*0.9-COUNT(DISTINCT live_m_2_atleast_order_sofar))<<0,0,COUNT(DISTINCT onboarded_m2)*0.87-COUNT(DISTINCT live_m_2_atleast_order_sofar)) 
+  as M_2_activation_target
+
+FROM raw r 
+join targets t on r.country_code=t.country and r.month=t.target_date
+GROUP BY all
+), 
+reactivation_history as (/* 
+
+-- the goal is to get daily reactivation weight, to multiply it each day with last month churned vendors excluding dineout 
+--then sum over the days don't forget
+*/
+
+
+-- create the weights you will use first and put them in a table 
+---
+--create or replace table
+--tlb-data-dev.vendor_analytics.Reactivation_churn_daily_weights  as 
+WITH churn_Base_LM AS (
+    /* Active vendors in December 2024 */
+    SELECT 
+        vendor_id,
+        country_code,
+        month,
+        first_order_date,
+        coalesce(gmv_eur,0) as gmv_eur,
+        coalesce(m1_gmv_eur,0) as m1_gmv_eur
+    FROM `tlb-data-prod.data_platform.agg_vendor_inventory_kpi_monthly`
+    WHERE vertical = 'Restaurant'
+      --AND month = date_trunc(current_date,month) -interval '1' month -- December 2024
+      and month >>='2024-12-01'
+     -- AND is_churn
+      --and is_contracted
+),comm as 
+( SELECT 
+    DISTINCT v.vendor_id,
+    salesforce_id,
+    avg(case when c.name__c = "tDine" then  commission__c/100  end) as tdine_commission,
+    avg(case when c.name__c <<>> "tDine" then  commission__c/100  end)  as other_commission
+
+  FROM `tlb-data-prod.data_platform.dim_vendor_info` v
+  LEFT JOIN `tlb-data-prod.data_platform.dim_location_info` l
+  ON l.location_id = v.location_id
+  LEFT JOIN `fulfillment-dwh-production.curated_data_shared_salesforce.account` a
+  ON v.salesforce_id = a.grid__c 
+  LEFT JOIN `fulfillment-dwh-production.curated_data_shared_salesforce.contract` c
+  ON a.id = c.accountid
+
+  WHERE 1=1
+  AND c.name__c IN ('TGO Basic Commission','TMP Basic Commission','TGO Basic Commission SSU','TGO Basic Commision','OD Basic Commission','MP Basic Commission','TGO Basic Commission N','TGO Basic commission','S01- Growth Package TGO Commission','B01 - Basic Package TGO Commission', 'TGO Incremental Orders Commission','BH S01 - Growth Package TGO Commission','BH B01 - Standard Package TGO Commission','OD Basic Commission trial','OM B01 - Standard Package (Restaurant) Commission OD','OM S01 - Growth Package (Restaurant) Commission OD','tDine','TGO Incremental GMV Commission')
+  AND c.status = 'Activated'
+  AND c.end_date__c IS NULL
+  group by 1 ,2
+  ), 
+
+  churn_base_LM_filtered as (
+
+    select * from (
+    select * from (
+select a.*,  IFNULL(case when ifnull(tdine_commission,0) >> 0 and  ifnull(other_commission,0) = 0 then TRUE ELSE FALSE END,FALSE)  as vendor_dineout_flag
+ from churn_base_lm a 
+ left join comm c on a.vendor_id=c.vendor_id
+    ) 
+    where vendor_dineout_flag=false
+  and gmv_eur=0
+  and date_trunc(first_order_date,month) << month --was active before from reference month
+) 
+
+    
+  ) 
+
+  ,
+
+
+date_series AS (
+    -- Generate all dates in January 2025
+    SELECT date,date_trunc(date,month) as month
+    FROM `tlb-data-prod.data_platform.dim_date` 
+    WHERE date_trunc(date,month) between '2025-2-01' and date_trunc(current_date,month) 
+), 
+latest_first_online_date as (
+
+SELECT 
+        vendor_id,
+        country_code,
+        --month,
+       max(first_online_date) as first_online_date
+    FROM `tlb-data-prod.data_platform.agg_vendor_inventory_kpi_monthly`
+    WHERE vertical = 'Restaurant'
+    --  AND month >>='2024-12-01' -- December 2024
+     -- AND is_active  -- Only active vendors
+     -- and not(date_trunc(first_online_date,month)=month and is_reactivated_churn)
+     group by all
+
+)
+,Active_Base_m0 AS (
+    /* Active vendors in December 2024 */
+    SELECT 
+        k.vendor_id,
+        k.country_code,
+        month,
+        date_trunc(k.first_online_date,month) as first_online_month, 
+        is_reactivated_churn,
+        acquisition_business_type,
+        k.first_order_date,
+        k.is_active,
+        lag(k.is_active) over(partition by k.vendor_id order by month) as lm_active,
+        lag(k.is_active,2) over(partition by k.vendor_id order by month) as l2m_active
+    FROM `tlb-data-prod.data_platform.agg_vendor_inventory_kpi_monthly` k 
+    join `tlb-data-prod.data_platform.dim_vendor_info` f on k.vendor_id=f.vendor_id
+    WHERE k.vertical = 'Restaurant'
+      AND month >>='2024-12-01' -- December 2024
+      --AND k.is_active  -- Only active vendors
+      --and not(date_trunc(k.first_online_date,month)=month and is_reactivated_churn  )
+     -- and not(date_trunc(k.first_online_date,month)=month - interval '1' month and is_reactivated_churn and acquisition_business_type='Win Back')
+     --and k.vendor_id=748191
+),
+  active_base_m0_filtered as (
+    select * from (
+select a.*,  IFNULL(case when ifnull(tdine_commission,0) >> 0 and  ifnull(other_commission,0) = 0 then TRUE ELSE FALSE END,FALSE)  as vendor_dineout_flag
+ from active_base_m0 a 
+left join comm c on a.vendor_id=c.vendor_id ) 
+
+    where vendor_dineout_flag=false
+  ) 
+
+,orders_M0 AS (
+    -- Successful food orders in January 2025
+    SELECT
+        f.vendor_id,
+        f.country_code,
+        f.order_date,
+        a.month,
+        a.acquisition_business_type,
+        a.is_reactivated_churn,
+        first_online_month,
+        first_order_date,
+        lm_active,
+        l2m_active
+    FROM `tlb-data-prod.data_platform.fct_order_info` f 
+    join active_base_m0_filtered a on f.vendor_id=a.vendor_id and a.month=date_trunc(f.order_date,month)
+
+    WHERE date_trunc(order_date,month) =a.month
+    and is_active
+      --AND NOT is_non_food
+      --AND is_successful
+) 
+
+ --select * from orders_m0 
+ --where vendor_id=748191
+,order_m0_filt as 
+(select *
+from orders_m0 
+where 
+is_reactivated_churn
+
+and (
+  (first_online_month <<month - interval '2' month) or
+ (first_online_month=month - interval '2' month and l2m_active)
+  or(first_online_month is null and first_order_date is not null)
+
+
+ )
+ 
+ )
+/* 
+Here i need to get vendors acquired M-3
+
+*/
+--------------------------------------------------------------------------------------------------------
+--------------------------------------------------------------------------------------------------------
+,reactivations_from_zombies as (
+
+
+WITH Base AS (
+    /* Active vendors in December 2024 */
+ --with active_before as (
+SELECT 
+         k1.vendor_id,
+        k1.country_code,
+        k1.month,
+        max(k2.is_active) as was_active_before
+    FROM `tlb-data-prod.data_platform.agg_vendor_inventory_kpi_monthly` k1 
+    left join `tlb-data-prod.data_platform.agg_vendor_inventory_kpi_monthly`  k2 on k1.vendor_id=k2.vendor_id 
+    and k2.month <<= k1.month and k2.vertical='Restaurant'
+    WHERE k1.vertical = 'Restaurant'
+     and  k1.month >>='2024-12-01'
+         and date_trunc(k1.first_online_date,month) <<= k1.month - interval '2' month
+   -- and first_online_date <<= month - interval '3' month
+    group by all
+    having was_active_before=False
+    --)
+
+   /* SELECT 
+         k1.vendor_id,
+         k1.country_code,
+         a.was_active_before
+        
+    FROM `tlb-data-prod.data_platform.agg_vendor_inventory_kpi_monthly` k1 
+     join active_before a on k1.vendor_id=a.vendor_id
+    WHERE vertical = 'Restaurant'
+     and  month =date_trunc(current_date,month) - interval '1' month-- December 2024
+    and date_trunc(first_online_date,month) <<= month - interval '2' month
+    and not was_active_before
+    group by all
+*/
+
+),
+comm as 
+( SELECT 
+    DISTINCT v.vendor_id,
+    salesforce_id,
+    avg(case when c.name__c = "tDine" then  commission__c/100  end) as tdine_commission,
+    avg(case when c.name__c <<>> "tDine" then  commission__c/100  end)  as other_commission
+
+  FROM `tlb-data-prod.data_platform.dim_vendor_info` v
+  LEFT JOIN `tlb-data-prod.data_platform.dim_location_info` l
+  ON l.location_id = v.location_id
+  LEFT JOIN `fulfillment-dwh-production.curated_data_shared_salesforce.account` a
+  ON v.salesforce_id = a.grid__c 
+  LEFT JOIN `fulfillment-dwh-production.curated_data_shared_salesforce.contract` c
+  ON a.id = c.accountid
+
+  WHERE 1=1
+  AND c.name__c IN ('TGO Basic Commission','TMP Basic Commission','TGO Basic Commission SSU','TGO Basic Commision','OD Basic Commission','MP Basic Commission','TGO Basic Commission N','TGO Basic commission','S01- Growth Package TGO Commission','B01 - Basic Package TGO Commission', 'TGO Incremental Orders Commission','BH S01 - Growth Package TGO Commission','BH B01 - Standard Package TGO Commission','OD Basic Commission trial','OM B01 - Standard Package (Restaurant) Commission OD','OM S01 - Growth Package (Restaurant) Commission OD','tDine','TGO Incremental GMV Commission')
+  AND c.status = 'Activated'
+  AND c.end_date__c IS NULL
+  group by 1 ,2
+  ), 
+active_before_filtered as (
+
+select * from (
+    select * from (
+select a.*,  IFNULL(case when ifnull(tdine_commission,0) >> 0 and  ifnull(other_commission,0) = 0 then TRUE ELSE FALSE END,FALSE)  as vendor_dineout_flag
+ from base  a 
+ left join comm c on a.vendor_id=c.vendor_id
+    ) 
+    where vendor_dineout_flag=false
+
+) 
+
+  
+),
+date_series AS (
+    -- Generate all dates in January 2025
+    SELECT date ,date_trunc(date,month) as month
+    FROM `tlb-data-prod.data_platform.dim_date` 
+    WHERE date_trunc(date,month) between '2025-2-01' and date_trunc(current_date,month) 
+),
+
+Active_Base_m0 AS (
+    /* Active vendors in December 2024 */
+    SELECT 
+        vendor_id,
+        country_code,
+        month,
+        is_reactivated_churn
+    FROM `tlb-data-prod.data_platform.agg_vendor_inventory_kpi_monthly`
+    WHERE vertical = 'Restaurant'
+      AND month >>='2025-02-01' 
+      AND is_active  -- Only active vendors
+      
+),
+  active_base_m0_filtered as (
+    select * from (
+select a.*,  IFNULL(case when ifnull(tdine_commission,0) >> 0 and  ifnull(other_commission,0) = 0 then TRUE ELSE FALSE END,FALSE)  as vendor_dineout_flag
+ from active_base_m0 a 
+left join comm c on a.vendor_id=c.vendor_id ) 
+
+    where vendor_dineout_flag=false
+  ) 
+
+,orders_M0 AS (
+    -- Successful food orders in January 2025
+    SELECT
+        f.vendor_id,
+        f.country_code,
+        f.order_date,
+        a.month
+    FROM `tlb-data-prod.data_platform.fct_order_info` f 
+    join active_base_m0_filtered a on f.vendor_id=a.vendor_id and a.month=date_trunc(f.order_date,month)
+    WHERE date_trunc(order_date,month) >>= '2025-02-01' --=date_trunc(current_date,month)
+      --AND NOT is_non_food
+      --AND is_successful
+) 
+,orders_M0_zom AS (
+    -- Successful food orders in January 2025
+    SELECT
+        f.vendor_id,
+        f.country_code,
+        f.order_date,
+        a.month
+    FROM `tlb-data-prod.data_platform.fct_order_info` f 
+    join active_base_m0_filtered a on f.vendor_id=a.vendor_id and a.month=date_trunc(f.order_date,month)
+    WHERE date_trunc(order_date,month) >>= '2025-02-01' --=date_trunc(current_date,month)
+    and not is_reactivated_churn
+      --AND NOT is_non_food
+      --AND is_successful
+) 
+
+
+select *,max(reactivated_from_zombie) over(partition by country_code) as max_reactivated_from_zombie
+
+from (
+SELECT
+    d.date,
+    b.country_code,
+    COUNT(DISTINCT o.vendor_id) AS reactivated_from_zombie,
+    COUNT(DISTINCT b.vendor_id) AS churn_last_month,
+    ROUND(COUNT(DISTINCT o.vendor_id) * 1.0 / COUNT(DISTINCT b.vendor_id),8) AS reactivation_rate
+FROM date_series d
+CROSS JOIN base b  -- All active vendors from December
+LEFT JOIN orders_M0_zom o
+    ON b.vendor_id = o.vendor_id
+    AND b.country_code = o.country_code
+    AND o.order_date <<= d.date  -- Orders up to the current date
+    and date_trunc(o.order_date,month)=b.month+ interval '1' month
+    and date_trunc(o.order_date,month)=date_trunc(d.date,month)
+GROUP BY all
+)
+)
+
+,actuals as (
+  select *,max(reactivated_churn) over(partition by country_code) as max_reactivated_churn
+  from(
+    
+SELECT
+   --distinct  
+   d.date,
+   d.month,
+   extract(day from d.date) as day,
+    b.country_code,
+   
+   -- o.acquisition_business_type
+    --b.vendor_id churned,
+    COUNT(DISTINCT o.vendor_id) AS reactivated_churn,
+    COUNT(DISTINCT b.vendor_id) AS churn_last_month,
+    ROUND(COUNT(DISTINCT o.vendor_id) * 1.0 / COUNT(DISTINCT b.vendor_id), 4) AS reactivation_rate
+FROM date_series d
+CROSS JOIN churn_base_LM_filtered b  -- All active vendors from December
+LEFT JOIN order_m0_filt o
+    ON b.vendor_id = o.vendor_id
+    AND b.country_code = o.country_code
+    AND o.order_date <<= d.date  -- Orders up to the current date
+    and date_trunc(o.order_date,month)=b.month+ interval '1' month
+    and date_trunc(o.order_date,month)=date_trunc(d.date,month)
+    where b.country_code <<>> 'SA'
+GROUP BY all) 
+)
+,last_day as (select distinct month_start_date as month, extract(day from month_end_date) as last_day_of_month
+  from `tlb-data-prod.data_platform.dim_date`
+where month_start_date >>='2025-02-01' and month_start_date <<= date_trunc(current_date, month)
+), 
+actuals_edited as ( 
+
+
+select a.*, b.last_day_of_month 
+from actuals a 
+left join last_day b 
+on b.month=date_trunc(a.date, month)
+
+)
+select 
+a.*,
+z.reactivated_from_zombie,
+max_reactivated_churn+max_reactivated_from_zombie as max_base,
+reactivated_churn+reactivated_from_zombie as total_reactivated,
+Target_value,
+ round(Target_value*daily_reactivation_churn_weight)  as target_MTD_reactivated,
+daily_reactivation_churn_weight
+  , w.last_day_of_month
+ from actuals_edited a
+--join `tlb-data-dev.vendor_analytics.Reactivation_churn_daily_weights_opt` w 
+join (select 
+
+date,country_code,
+reactivated, churn_last_month, 
+reactivated/ max(reactivated) over(partition by country_code) as daily_reactivation_churn_weight, 
+max(reactivated) over(partition by country_code) as max_reactivated, 
+28 as last_day_of_month
+ from tlb-data-dev.vendor_analytics.Reactivation_churn_daily_weights_opt 
+ where date <<='2025-01-28'
+union all 
+
+select * from tlb-data-dev.vendor_analytics.Reactivation_churn_daily_weights_opt )w
+on extract(day from w.date)=extract(day from a.date) and w.last_day_of_month=a.last_day_of_month -- double rows here 
+ -- still double rows 
+and w.country_code=a.country_code -- i will add here flag whether it's 30 or 31 day month
+join `tlb-data-dev.vendor_analytics.Reactivation_targets_materialized` t on t.target_date=date_trunc(a.date,month)
+and t.country=a.country_code
+join reactivations_from_zombies z on z.country_code=a.country_code 
+and extract(day from z.date) =a.day and date_trunc(z.date,month)=date_trunc(a.date,month)
+
+)
+
+
+
+ , 
+ retn_hist as (/*create or replace table `tlb-data-dev.vendor_analytics.Retention_targets_materialized` 
+as select * from tlb-data-dev.vendor_analytics.Retention_targets;
+
+*/
+/*create or replace table `tlb-data-dev.vendor_analytics.Retention_targets_materialized` 
+as select * from tlb-data-dev.vendor_analytics.Retention_targets;
+
+*/
+
+
+/* create table only for the daily targets */ 
+
+WITH Active_Base_LM AS (
+    /* Active vendors in December 2024 */
+    SELECT 
+        vendor_id,
+        country_code,
+        month
+    FROM `tlb-data-prod.data_platform.agg_vendor_inventory_kpi_monthly`
+    WHERE vertical = 'Restaurant'
+      --AND month = date_trunc(current_date,month)-interval '1' month  -- December 2024
+      and month >>='2024-12-01'
+      AND is_active  -- Only active vendors
+),comm as 
+( SELECT 
+    DISTINCT v.vendor_id,
+    salesforce_id,
+    avg(case when c.name__c = "tDine" then  commission__c/100  end) as tdine_commission,
+    avg(case when c.name__c <<>> "tDine" then  commission__c/100  end)  as other_commission
+
+  FROM `tlb-data-prod.data_platform.dim_vendor_info` v
+  LEFT JOIN `tlb-data-prod.data_platform.dim_location_info` l
+  ON l.location_id = v.location_id
+  LEFT JOIN `fulfillment-dwh-production.curated_data_shared_salesforce.account` a
+  ON v.salesforce_id = a.grid__c 
+  LEFT JOIN `fulfillment-dwh-production.curated_data_shared_salesforce.contract` c
+  ON a.id = c.accountid
+
+  WHERE 1=1
+  AND c.name__c IN ('TGO Basic Commission','TMP Basic Commission','TGO Basic Commission SSU','TGO Basic Commision','OD Basic Commission','MP Basic Commission','TGO Basic Commission N','TGO Basic commission','S01- Growth Package TGO Commission','B01 - Basic Package TGO Commission', 'TGO Incremental Orders Commission','BH S01 - Growth Package TGO Commission','BH B01 - Standard Package TGO Commission','OD Basic Commission trial','OM B01 - Standard Package (Restaurant) Commission OD','OM S01 - Growth Package (Restaurant) Commission OD','tDine','TGO Incremental GMV Commission')
+  AND c.status = 'Activated'
+  AND c.end_date__c IS NULL
+  group by 1 ,2
+  ), 
+
+  active_base_LM_filtered as (
+    select * from (
+select a.*,  IFNULL(case when ifnull(tdine_commission,0) >> 0 and  ifnull(other_commission,0) = 0 then TRUE ELSE FALSE END,FALSE)  as vendor_dineout_flag
+ from active_base_lm a 
+left join comm c on a.vendor_id=c.vendor_id ) 
+where vendor_dineout_flag=false
+    
+  ),
+
+Active_Base_m0 AS (
+    /* Active vendors in December 2024 */
+    SELECT 
+        vendor_id,
+        country_code,
+        month,
+        is_retained, 
+        previous_segment,
+        is_active,
+        date_trunc(first_online_date,month) as first_online_month
+    FROM `tlb-data-prod.data_platform.agg_vendor_inventory_kpi_monthly`
+    WHERE vertical = 'Restaurant'
+      AND month >>='2025-2-01' --date_trunc(current_date,month) -- December 2024
+      AND is_active  -- Only active vendors
+),
+  active_base_m0_filtered as (
+    select * from (
+select a.*,  IFNULL(case when ifnull(tdine_commission,0) >> 0 and  ifnull(other_commission,0) = 0 then TRUE ELSE FALSE END,FALSE)  as vendor_dineout_flag
+ from active_base_m0 a 
+left join comm c on a.vendor_id=c.vendor_id ) 
+where vendor_dineout_flag=false
+    
+  )
+
+
+,
+date_series AS (
+    -- Generate all dates in January 2025
+    SELECT date ,date_trunc(date,month) as month
+    FROM `tlb-data-prod.data_platform.dim_date` 
+    WHERE date_trunc(date,month) between '2025-02-01' and date_trunc(current_date,month)
+),
+
+orders_M0 AS (
+    -- Successful food orders in January 2025
+    SELECT
+        f.vendor_id,
+        f.country_code,
+        f.order_date,
+        a.month,
+        a.is_retained,
+        a.first_online_month,
+        a.previous_segment,
+        a.is_active 
+    FROM `tlb-data-prod.data_platform.fct_order_info` f 
+    join active_base_m0_filtered a on f.vendor_id=a.vendor_id and a.month=date_trunc(f.order_date,month)
+    WHERE date_trunc(order_date,month) >>='2025-02-01'
+    --and first_online_month <<>> month
+      --AND NOT is_non_food
+      --AND is_successful
+     -- and not(previous_segment='Active' and first_online_month=month)
+      and a.is_active 
+)
+,orders_m0_filt as (
+select distinct o.* except(order_date),acquisition_business_type  from orders_m0 o
+join `tlb-data-prod.data_platform.dim_vendor_info` f on o.vendor_id=f.vendor_id 
+where --vendor_id not in (702005,661003,753851)
+ (first_online_month=month and previous_segment='Active')
+ and acquisition_business_type <<>> 'Switch'
+
+)
+--select * from orders_m0_filt 
+
+
+
+,daily_actuals as (
+select a.month,
+extract(day from date) as day, 
+date,
+a.country_code, 
+--retention_rate,
+--retained_vendors,
+--a.first_online_month
+count(distinct retained_vendors) as retained_vendors,
+--active_base_last_month
+
+from (
+SELECT
+    d.date,
+    b.country_code,
+    d.month,
+    o.vendor_id as retained_vendors,
+    --first_online_month,
+    --is_retained
+    --COUNT(DISTINCT o.vendor_id) AS retained_vendors,
+    --COUNT(DISTINCT b.vendor_id) AS active_base_last_month,
+    --ROUND(COUNT(DISTINCT o.vendor_id) * 1.0 / COUNT(DISTINCT b.vendor_id), 4) AS retention_rate
+FROM date_series d
+CROSS JOIN active_base_LM_filtered b  -- All active vendors from December
+LEFT JOIN orders_m0 o
+    ON b.vendor_id = o.vendor_id
+    AND b.country_code = o.country_code
+    AND o.order_date <<= d.date  -- Orders up to the current date
+    and date_trunc(o.order_date,month)=b.month+ interval '1' month
+    and date_trunc(o.order_date,month)=date_trunc(d.date,month)
+--GROUP BY all
+)a 
+left join orders_m0_filt om on om.vendor_id=a.retained_vendors
+ and om.month=a.month
+where om.vendor_id is  null 
+group by all
+) 
+
+
+,active_lm as (
+
+
+    select country_code, month, 
+    count(distinct vendor_id) active_lm
+    from active_base_LM_filtered 
+    group by all
+  ), 
+
+  active_lm_target as (
+
+select country,
+target_date as month,
+Active_Inventory as lm_active_target 
+  from `tlb-data-dev.vendor_analytics.Retention_targets_materialized` 
+
+
+
+  )
+  ,daily_actuals_v2 as (
+
+
+    select a.*, alm.lm_active_target as active_base_last_month 
+    ,retained_vendors/lm_active_target as retention_rate
+    ,lm.active_lm
+     from daily_actuals a 
+join active_lm_target alm on alm.country=a.country_code 
+and alm.month=a.month - interval '1' month
+
+join active_lm lm on lm.country_code=a.country_code 
+and lm.month=a.month - interval '1' month
+
+
+
+
+
+  )
+
+select *,round(target_retention_rate*active_base_last_month)  as target_retained
+ from (
+
+select d.*,target_value,
+case when month='2025-02-01' and d.day=26 then
+(target_value *0.996) 
+when month='2025-02-01' and d.day=27 then
+(target_value *0.998) 
+  when month='2025-02-01' and d.day=28 then 
+ (target_value*1) else  
+target_value * daily_retention_weight end as target_retention_rate,
+
+
+
+
+ from daily_actuals_v2 d 
+join `tlb-data-dev.vendor_analytics.Retention_daily_weights` w 
+on d.day=w.day and d.country_code=w.country_code
+join `tlb-data-dev.vendor_analytics.Retention_targets_materialized` t on t.target_date=d.month
+and t.country=d.country_code and t.Target_date=d.month
+
+)
+
+
+
+
+
+
+
+
+
+)
+
+
+
+
+
+
+,retn_react as (
+select distinct ret.*,
+reactivated_churn
+,churn_last_month
+,max_reactivated_churn
+,reactivated_from_zombie
+,max_base,
+total_reactivated
+,rh.target_value as react_target_value_EOM
+,target_MTD_reactivated
+ from retn_hist ret 
+join reactivation_history rh on ret.day=rh.day 
+and ret.month=rh.month 
+and ret.country_code=rh.country_code
+) select * from retn_react]]></_.fcp.ObjectModelEncapsulateLegacy.true...relation>
+    <metadata-records>
+      <metadata-record class='column'>
+        <remote-name>month</remote-name>
+        <remote-type>7</remote-type>
+        <local-name>[month]</local-name>
+        <parent-name>[Custom SQL Query]</parent-name>
+        <remote-alias>month</remote-alias>
+        <local-type>date</local-type>
+        <aggregation>Year</aggregation>
+        <contains-null>true</contains-null>
+        <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_F2977D8ABE1043BA87FC9A78A4C3BF98]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+      </metadata-record>
+      <metadata-record class='column'>
+        <remote-name>day</remote-name>
+        <remote-type>20</remote-type>
+        <local-name>[day]</local-name>
+        <parent-name>[Custom SQL Query]</parent-name>
+        <remote-alias>day</remote-alias>
+        <local-type>integer</local-type>
+        <aggregation>Sum</aggregation>
+        <contains-null>true</contains-null>
+        <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_F2977D8ABE1043BA87FC9A78A4C3BF98]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+      </metadata-record>
+      <metadata-record class='column'>
+        <remote-name>date</remote-name>
+        <remote-type>7</remote-type>
+        <local-name>[date]</local-name>
+        <parent-name>[Custom SQL Query]</parent-name>
+        <remote-alias>date</remote-alias>
+        <local-type>date</local-type>
+        <aggregation>Year</aggregation>
+        <contains-null>true</contains-null>
+        <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_F2977D8ABE1043BA87FC9A78A4C3BF98]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+      </metadata-record>
+      <metadata-record class='column'>
+        <remote-name>country_code</remote-name>
+        <remote-type>130</remote-type>
+        <local-name>[country_code]</local-name>
+        <parent-name>[Custom SQL Query]</parent-name>
+        <remote-alias>country_code</remote-alias>
+        <local-type>string</local-type>
+        <aggregation>Count</aggregation>
+        <contains-null>true</contains-null>
+        <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_F2977D8ABE1043BA87FC9A78A4C3BF98]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+      </metadata-record>
+      <metadata-record class='column'>
+        <remote-name>retained_vendors</remote-name>
+        <remote-type>20</remote-type>
+        <local-name>[retained_vendors]</local-name>
+        <parent-name>[Custom SQL Query]</parent-name>
+        <remote-alias>retained_vendors</remote-alias>
+        <local-type>integer</local-type>
+        <aggregation>Sum</aggregation>
+        <contains-null>true</contains-null>
+        <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_F2977D8ABE1043BA87FC9A78A4C3BF98]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+      </metadata-record>
+      <metadata-record class='column'>
+        <remote-name>active_base_last_month</remote-name>
+        <remote-type>20</remote-type>
+        <local-name>[active_base_last_month]</local-name>
+        <parent-name>[Custom SQL Query]</parent-name>
+        <remote-alias>active_base_last_month</remote-alias>
+        <local-type>integer</local-type>
+        <aggregation>Sum</aggregation>
+        <contains-null>true</contains-null>
+        <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_F2977D8ABE1043BA87FC9A78A4C3BF98]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+      </metadata-record>
+      <metadata-record class='column'>
+        <remote-name>retention_rate</remote-name>
+        <remote-type>5</remote-type>
+        <local-name>[retention_rate]</local-name>
+        <parent-name>[Custom SQL Query]</parent-name>
+        <remote-alias>retention_rate</remote-alias>
+        <local-type>real</local-type>
+        <aggregation>Sum</aggregation>
+        <contains-null>true</contains-null>
+        <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_F2977D8ABE1043BA87FC9A78A4C3BF98]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+      </metadata-record>
+      <metadata-record class='column'>
+        <remote-name>active_lm</remote-name>
+        <remote-type>20</remote-type>
+        <local-name>[active_lm]</local-name>
+        <parent-name>[Custom SQL Query]</parent-name>
+        <remote-alias>active_lm</remote-alias>
+        <local-type>integer</local-type>
+        <aggregation>Sum</aggregation>
+        <contains-null>true</contains-null>
+        <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_F2977D8ABE1043BA87FC9A78A4C3BF98]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+      </metadata-record>
+      <metadata-record class='column'>
+        <remote-name>target_value</remote-name>
+        <remote-type>5</remote-type>
+        <local-name>[target_value]</local-name>
+        <parent-name>[Custom SQL Query]</parent-name>
+        <remote-alias>target_value</remote-alias>
+        <local-type>real</local-type>
+        <aggregation>Sum</aggregation>
+        <contains-null>true</contains-null>
+        <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_F2977D8ABE1043BA87FC9A78A4C3BF98]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+      </metadata-record>
+      <metadata-record class='column'>
+        <remote-name>target_retention_rate</remote-name>
+        <remote-type>5</remote-type>
+        <local-name>[target_retention_rate]</local-name>
+        <parent-name>[Custom SQL Query]</parent-name>
+        <remote-alias>target_retention_rate</remote-alias>
+        <local-type>real</local-type>
+        <aggregation>Sum</aggregation>
+        <contains-null>true</contains-null>
+        <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_F2977D8ABE1043BA87FC9A78A4C3BF98]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+      </metadata-record>
+      <metadata-record class='column'>
+        <remote-name>target_retained</remote-name>
+        <remote-type>5</remote-type>
+        <local-name>[target_retained]</local-name>
+        <parent-name>[Custom SQL Query]</parent-name>
+        <remote-alias>target_retained</remote-alias>
+        <local-type>real</local-type>
+        <aggregation>Sum</aggregation>
+        <contains-null>true</contains-null>
+        <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_F2977D8ABE1043BA87FC9A78A4C3BF98]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+      </metadata-record>
+      <metadata-record class='column'>
+        <remote-name>reactivated_churn</remote-name>
+        <remote-type>20</remote-type>
+        <local-name>[reactivated_churn]</local-name>
+        <parent-name>[Custom SQL Query]</parent-name>
+        <remote-alias>reactivated_churn</remote-alias>
+        <local-type>integer</local-type>
+        <aggregation>Sum</aggregation>
+        <contains-null>true</contains-null>
+        <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_F2977D8ABE1043BA87FC9A78A4C3BF98]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+      </metadata-record>
+      <metadata-record class='column'>
+        <remote-name>churn_last_month</remote-name>
+        <remote-type>20</remote-type>
+        <local-name>[churn_last_month]</local-name>
+        <parent-name>[Custom SQL Query]</parent-name>
+        <remote-alias>churn_last_month</remote-alias>
+        <local-type>integer</local-type>
+        <aggregation>Sum</aggregation>
+        <contains-null>true</contains-null>
+        <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_F2977D8ABE1043BA87FC9A78A4C3BF98]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+      </metadata-record>
+      <metadata-record class='column'>
+        <remote-name>max_reactivated_churn</remote-name>
+        <remote-type>20</remote-type>
+        <local-name>[max_reactivated_churn]</local-name>
+        <parent-name>[Custom SQL Query]</parent-name>
+        <remote-alias>max_reactivated_churn</remote-alias>
+        <local-type>integer</local-type>
+        <aggregation>Sum</aggregation>
+        <contains-null>true</contains-null>
+        <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_F2977D8ABE1043BA87FC9A78A4C3BF98]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+      </metadata-record>
+      <metadata-record class='column'>
+        <remote-name>reactivated_from_zombie</remote-name>
+        <remote-type>20</remote-type>
+        <local-name>[reactivated_from_zombie]</local-name>
+        <parent-name>[Custom SQL Query]</parent-name>
+        <remote-alias>reactivated_from_zombie</remote-alias>
+        <local-type>integer</local-type>
+        <aggregation>Sum</aggregation>
+        <contains-null>true</contains-null>
+        <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_F2977D8ABE1043BA87FC9A78A4C3BF98]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+      </metadata-record>
+      <metadata-record class='column'>
+        <remote-name>max_base</remote-name>
+        <remote-type>20</remote-type>
+        <local-name>[max_base]</local-name>
+        <parent-name>[Custom SQL Query]</parent-name>
+        <remote-alias>max_base</remote-alias>
+        <local-type>integer</local-type>
+        <aggregation>Sum</aggregation>
+        <contains-null>true</contains-null>
+        <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_F2977D8ABE1043BA87FC9A78A4C3BF98]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+      </metadata-record>
+      <metadata-record class='column'>
+        <remote-name>total_reactivated</remote-name>
+        <remote-type>20</remote-type>
+        <local-name>[total_reactivated]</local-name>
+        <parent-name>[Custom SQL Query]</parent-name>
+        <remote-alias>total_reactivated</remote-alias>
+        <local-type>integer</local-type>
+        <aggregation>Sum</aggregation>
+        <contains-null>true</contains-null>
+        <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_F2977D8ABE1043BA87FC9A78A4C3BF98]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+      </metadata-record>
+      <metadata-record class='column'>
+        <remote-name>react_target_value_EOM</remote-name>
+        <remote-type>20</remote-type>
+        <local-name>[react_target_value_EOM]</local-name>
+        <parent-name>[Custom SQL Query]</parent-name>
+        <remote-alias>react_target_value_EOM</remote-alias>
+        <local-type>integer</local-type>
+        <aggregation>Sum</aggregation>
+        <contains-null>true</contains-null>
+        <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_F2977D8ABE1043BA87FC9A78A4C3BF98]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+      </metadata-record>
+      <metadata-record class='column'>
+        <remote-name>target_MTD_reactivated</remote-name>
+        <remote-type>5</remote-type>
+        <local-name>[target_MTD_reactivated]</local-name>
+        <parent-name>[Custom SQL Query]</parent-name>
+        <remote-alias>target_MTD_reactivated</remote-alias>
+        <local-type>real</local-type>
+        <aggregation>Sum</aggregation>
+        <contains-null>true</contains-null>
+        <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_F2977D8ABE1043BA87FC9A78A4C3BF98]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+      </metadata-record>
+    </metadata-records>
+  </connection>
+  <aliases enabled='yes' />
+  <column datatype='string' name='[:Measure Names]' role='dimension' type='nominal'>
+    <aliases>
+      <alias key='&quot;[retention and reactivations].[pcdf:sum:retained_vendors:qk:4]&quot;' value='  vs Yest' />
+      <alias key='&quot;[retention and reactivations].[pcdf:sum:total_reactivated:qk:2]&quot;' value='vs Yest    ' />
+      <alias key='&quot;[retention and reactivations].[sum:active_base_last_month:qk]&quot;' value='Active LM Target' />
+      <alias key='&quot;[retention and reactivations].[sum:react_target_value_EOM:qk]&quot;' value='EOM target' />
+      <alias key='&quot;[retention and reactivations].[sum:reactivated_churn:qk]&quot;' value='Reactivated Churn' />
+      <alias key='&quot;[retention and reactivations].[sum:reactivated_from_zombie:qk]&quot;' value='Reactivated from Zombies' />
+      <alias key='&quot;[retention and reactivations].[sum:retained_vendors:qk]&quot;' value='Retained' />
+      <alias key='&quot;[retention and reactivations].[sum:retention_rate:qk]&quot;' value='Retention %' />
+      <alias key='&quot;[retention and reactivations].[sum:target_MTD_reactivated:qk]&quot;' value='  Target' />
+      <alias key='&quot;[retention and reactivations].[sum:target_retained:qk]&quot;' value='Target      ' />
+      <alias key='&quot;[retention and reactivations].[sum:target_retention_rate:qk]&quot;' value='Target' />
+      <alias key='&quot;[retention and reactivations].[sum:target_value:qk]&quot;' value='EOM Target Retention' />
+      <alias key='&quot;[retention and reactivations].[sum:total_reactivated:qk]&quot;' value='Reactivated' />
+      <alias key='&quot;[retention and reactivations].[usr:Absolute Diff react (copy)_2103673660510904335:qk]&quot;' value='vs Target %' />
+      <alias key='&quot;[retention and reactivations].[usr:Absolute Diff react (copy)_2103673660513665042:qk]&quot;' value='vs Target ' />
+      <alias key='&quot;[retention and reactivations].[usr:Absolute Diff Retention (copy)_2103673660513861651:qk]&quot;' value='vs Target % ' />
+      <alias key='&quot;[retention and reactivations].[usr:Calculation_2103673660510781454:qk]&quot;' value='vs Target' />
+      <alias key='&quot;[retention and reactivations].[usr:Calculation_2665638407285547033:qk]&quot;' value='Ret %' />
+      <alias key='&quot;[retention and reactivations].[usr:Calculation_2665638407285751834:qk]&quot;' value='Target ' />
+    </aliases>
+  </column>
+  <column caption='Absolute Diff Retention %' datatype='real' default-format='*0.0%▲;-0.0%▼' name='[Absolute Diff Retention (copy)_2103673660513861651]' role='measure' type='quantitative'>
+    <calculation class='tableau' formula='(sum([retained_vendors])-sum([target_retained]))/sum([target_retained])' />
+  </column>
+  <column caption='Absolute Diff react %' datatype='real' name='[Absolute Diff react (copy)_2103673660510904335]' role='measure' type='quantitative'>
+    <calculation class='tableau' formula='(sum([total_reactivated])-sum([target_MTD_reactivated]))/sum([target_MTD_reactivated])' />
+  </column>
+  <column caption='Absolute Diff Retention' datatype='real' name='[Absolute Diff react (copy)_2103673660513665042]' role='measure' type='quantitative'>
+    <calculation class='tableau' formula='sum([retained_vendors])-sum([target_retained])' />
+  </column>
+  <column caption='lastday' datatype='boolean' name='[Calculation_2103673660248477705]' role='dimension' type='nominal'>
+    <calculation class='tableau' formula='IF MONTH(TODAY()) = MONTH([month]) THEN&#10;    [day] = day(TODAY())-1&#10;ELSE&#10;    [day] = DAY(DATEADD(&apos;day&apos;, -1, DATEADD(&apos;month&apos;, 1, [month])))&#10;END' />
+  </column>
+  <column caption='Absolute Diff react' datatype='real' name='[Calculation_2103673660510781454]' role='measure' type='quantitative'>
+    <calculation class='tableau' formula='sum([total_reactivated])-sum([target_MTD_reactivated])' />
+  </column>
+  <column caption='Regional' datatype='string' name='[Calculation_2103673660512415760]' role='dimension' type='nominal'>
+    <calculation class='tableau' formula='&quot;Regional&quot;' />
+  </column>
+  <column caption='DAY' datatype='boolean' name='[Calculation_2665638407233310734]' role='dimension' type='nominal'>
+    <calculation class='tableau' formula='IF DATETRUNC(&apos;month&apos;, [month]) = DATETRUNC(&apos;month&apos;, TODAY()) THEN&#10;    day &lt;= DAY(TODAY()) - 1&#10;ELSE&#10;    TRUE&#10;END' />
+  </column>
+  <column caption='RetentionRate' datatype='real' default-format='p0.0%' name='[Calculation_2665638407285547033]' role='measure' type='quantitative'>
+    <calculation class='tableau' formula='sum([retained_vendors])/sum([active_base_last_month])' />
+  </column>
+  <column caption='TargetRetentionRate' datatype='real' default-format='p0.0%' name='[Calculation_2665638407285751834]' role='measure' type='quantitative'>
+    <calculation class='tableau' formula='sum([target_retained])/sum([active_base_last_month])' />
+  </column>
+  <column caption='day filter' datatype='boolean' name='[Calculation_3919609459325845505]' role='dimension' type='nominal'>
+    <calculation class='tableau' formula='IF [month] = DATETRUNC(&apos;month&apos;, TODAY()) THEN&#10;    DAY([date]) &lt;= DAY(TODAY()) - 1&#10;ELSE&#10;    TRUE&#10;END' />
+  </column>
+  <column caption='RetentionRate Actual' datatype='real' default-format='p0.0%' name='[RetentionRate (copy)_3105513452252622848]' role='measure' type='quantitative'>
+    <calculation class='tableau' formula='sum([retained_vendors])/sum([active_lm])' />
+  </column>
+  <_.fcp.ObjectModelTableType.true...column caption='Custom SQL Query' datatype='table' name='[__tableau_internal_object_id__].[_F2977D8ABE1043BA87FC9A78A4C3BF98]' role='measure' type='quantitative' />
+  <column datatype='integer' name='[active_base_last_month]' role='measure' type='quantitative' />
+  <column caption='Market' datatype='string' name='[country_code]' role='dimension' semantic-role='[Country].[ISO3166_2]' type='nominal' />
+  <column aggregation='Sum' datatype='integer' name='[day]' role='dimension' type='ordinal' />
+  <column datatype='integer' name='[react_target_value_EOM]' role='measure' type='quantitative' />
+  <column datatype='integer' name='[reactivated_churn]' role='measure' type='quantitative' />
+  <column datatype='integer' name='[reactivated_from_zombie]' role='measure' type='quantitative' />
+  <column datatype='integer' name='[retained_vendors]' role='measure' type='quantitative' />
+  <column datatype='real' name='[retention_rate]' role='measure' type='quantitative' />
+  <column datatype='real' name='[target_MTD_reactivated]' role='measure' type='quantitative' />
+  <column datatype='real' name='[target_retained]' role='measure' type='quantitative' />
+  <column datatype='real' name='[target_retention_rate]' role='measure' type='quantitative' />
+  <column datatype='real' name='[target_value]' role='measure' type='quantitative' />
+  <column datatype='integer' name='[total_reactivated]' role='measure' type='quantitative' />
+  <column-instance column='[retained_vendors]' derivation='Sum' name='[pcdf:sum:retained_vendors:qk:4]' pivot='key' type='quantitative'>
+    <table-calc diff-options='Relative' ordering-type='ColumnInPane' type='PctDiff'>
+      <address>
+        <value>1</value>
+      </address>
+    </table-calc>
+  </column-instance>
+  <column-instance column='[total_reactivated]' derivation='Sum' name='[pcdf:sum:total_reactivated:qk:2]' pivot='key' type='quantitative'>
+    <table-calc diff-options='Relative' ordering-type='Columns' type='PctDiff'>
+      <address>
+        <value>1</value>
+      </address>
+    </table-calc>
+  </column-instance>
+  <column-instance column='[active_base_last_month]' derivation='Sum' name='[sum:active_base_last_month:qk]' pivot='key' type='quantitative' />
+  <column-instance column='[react_target_value_EOM]' derivation='Sum' name='[sum:react_target_value_EOM:qk]' pivot='key' type='quantitative' />
+  <column-instance column='[reactivated_churn]' derivation='Sum' name='[sum:reactivated_churn:qk]' pivot='key' type='quantitative' />
+  <column-instance column='[reactivated_from_zombie]' derivation='Sum' name='[sum:reactivated_from_zombie:qk]' pivot='key' type='quantitative' />
+  <column-instance column='[retained_vendors]' derivation='Sum' name='[sum:retained_vendors:qk]' pivot='key' type='quantitative' />
+  <column-instance column='[retention_rate]' derivation='Sum' name='[sum:retention_rate:qk]' pivot='key' type='quantitative' />
+  <column-instance column='[target_MTD_reactivated]' derivation='Sum' name='[sum:target_MTD_reactivated:qk]' pivot='key' type='quantitative' />
+  <column-instance column='[target_retained]' derivation='Sum' name='[sum:target_retained:qk]' pivot='key' type='quantitative' />
+  <column-instance column='[target_retention_rate]' derivation='Sum' name='[sum:target_retention_rate:qk]' pivot='key' type='quantitative' />
+  <column-instance column='[target_value]' derivation='Sum' name='[sum:target_value:qk]' pivot='key' type='quantitative' />
+  <column-instance column='[total_reactivated]' derivation='Sum' name='[sum:total_reactivated:qk]' pivot='key' type='quantitative' />
+  <column-instance column='[Absolute Diff Retention (copy)_2103673660513861651]' derivation='User' name='[usr:Absolute Diff Retention (copy)_2103673660513861651:qk]' pivot='key' type='quantitative' />
+  <column-instance column='[Absolute Diff react (copy)_2103673660510904335]' derivation='User' name='[usr:Absolute Diff react (copy)_2103673660510904335:qk]' pivot='key' type='quantitative' />
+  <column-instance column='[Absolute Diff react (copy)_2103673660513665042]' derivation='User' name='[usr:Absolute Diff react (copy)_2103673660513665042:qk]' pivot='key' type='quantitative' />
+  <column-instance column='[Calculation_2103673660510781454]' derivation='User' name='[usr:Calculation_2103673660510781454:qk]' pivot='key' type='quantitative' />
+  <column-instance column='[Calculation_2665638407285547033]' derivation='User' name='[usr:Calculation_2665638407285547033:qk]' pivot='key' type='quantitative' />
+  <column-instance column='[Calculation_2665638407285751834]' derivation='User' name='[usr:Calculation_2665638407285751834:qk]' pivot='key' type='quantitative' />
+  <extract _.fcp.ObjectModelExtractV2.true...object-id='' count='-1' enabled='true' units='records'>
+    <connection access_mode='readonly' author-locale='en_US' class='hyper' dbname='extract/cd/e4/{F4859228-D290-4A80-995F-84C099FCDD1C}/retention and reactivations.hyper' extract-engine='true' schema='Extract' sslmode='' tablename='Extract' update-time='08/21/2025 04:31:32 AM'>
+      <_.fcp.ObjectModelEncapsulateLegacy.false...relation name='Extract' table='[Extract].[Extract]' type='table' />
+      <_.fcp.ObjectModelEncapsulateLegacy.true...relation name='Extract' table='[Extract].[Extract]' type='table' />
+      <metadata-records>
+        <metadata-record class='column'>
+          <remote-name>month</remote-name>
+          <remote-type>133</remote-type>
+          <local-name>[month]</local-name>
+          <parent-name>[Extract]</parent-name>
+          <remote-alias>month</remote-alias>
+          <ordinal>0</ordinal>
+          <family>Custom SQL Query</family>
+          <local-type>date</local-type>
+          <aggregation>Year</aggregation>
+          <approx-count>7</approx-count>
+          <contains-null>true</contains-null>
+          <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_F2977D8ABE1043BA87FC9A78A4C3BF98]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+        </metadata-record>
+        <metadata-record class='column'>
+          <remote-name>day</remote-name>
+          <remote-type>20</remote-type>
+          <local-name>[day]</local-name>
+          <parent-name>[Extract]</parent-name>
+          <remote-alias>day</remote-alias>
+          <ordinal>1</ordinal>
+          <family>Custom SQL Query</family>
+          <local-type>integer</local-type>
+          <aggregation>Sum</aggregation>
+          <approx-count>31</approx-count>
+          <contains-null>true</contains-null>
+          <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_F2977D8ABE1043BA87FC9A78A4C3BF98]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+        </metadata-record>
+        <metadata-record class='column'>
+          <remote-name>date</remote-name>
+          <remote-type>133</remote-type>
+          <local-name>[date]</local-name>
+          <parent-name>[Extract]</parent-name>
+          <remote-alias>date</remote-alias>
+          <ordinal>2</ordinal>
+          <family>Custom SQL Query</family>
+          <local-type>date</local-type>
+          <aggregation>Year</aggregation>
+          <approx-count>212</approx-count>
+          <contains-null>true</contains-null>
+          <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_F2977D8ABE1043BA87FC9A78A4C3BF98]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+        </metadata-record>
+        <metadata-record class='column'>
+          <remote-name>country_code</remote-name>
+          <remote-type>129</remote-type>
+          <local-name>[country_code]</local-name>
+          <parent-name>[Extract]</parent-name>
+          <remote-alias>country_code</remote-alias>
+          <ordinal>3</ordinal>
+          <family>Custom SQL Query</family>
+          <local-type>string</local-type>
+          <aggregation>Count</aggregation>
+          <approx-count>8</approx-count>
+          <contains-null>true</contains-null>
+          <collation flag='0' name='LROOT' />
+          <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_F2977D8ABE1043BA87FC9A78A4C3BF98]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+        </metadata-record>
+        <metadata-record class='column'>
+          <remote-name>retained_vendors</remote-name>
+          <remote-type>20</remote-type>
+          <local-name>[retained_vendors]</local-name>
+          <parent-name>[Extract]</parent-name>
+          <remote-alias>retained_vendors</remote-alias>
+          <ordinal>4</ordinal>
+          <family>Custom SQL Query</family>
+          <local-type>integer</local-type>
+          <aggregation>Sum</aggregation>
+          <approx-count>1137</approx-count>
+          <contains-null>true</contains-null>
+          <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_F2977D8ABE1043BA87FC9A78A4C3BF98]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+        </metadata-record>
+        <metadata-record class='column'>
+          <remote-name>active_base_last_month</remote-name>
+          <remote-type>20</remote-type>
+          <local-name>[active_base_last_month]</local-name>
+          <parent-name>[Extract]</parent-name>
+          <remote-alias>active_base_last_month</remote-alias>
+          <ordinal>5</ordinal>
+          <family>Custom SQL Query</family>
+          <local-type>integer</local-type>
+          <aggregation>Sum</aggregation>
+          <approx-count>56</approx-count>
+          <contains-null>true</contains-null>
+          <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_F2977D8ABE1043BA87FC9A78A4C3BF98]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+        </metadata-record>
+        <metadata-record class='column'>
+          <remote-name>retention_rate</remote-name>
+          <remote-type>5</remote-type>
+          <local-name>[retention_rate]</local-name>
+          <parent-name>[Extract]</parent-name>
+          <remote-alias>retention_rate</remote-alias>
+          <ordinal>6</ordinal>
+          <family>Custom SQL Query</family>
+          <local-type>real</local-type>
+          <aggregation>Sum</aggregation>
+          <approx-count>1311</approx-count>
+          <contains-null>true</contains-null>
+          <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_F2977D8ABE1043BA87FC9A78A4C3BF98]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+        </metadata-record>
+        <metadata-record class='column'>
+          <remote-name>active_lm</remote-name>
+          <remote-type>20</remote-type>
+          <local-name>[active_lm]</local-name>
+          <parent-name>[Extract]</parent-name>
+          <remote-alias>active_lm</remote-alias>
+          <ordinal>7</ordinal>
+          <family>Custom SQL Query</family>
+          <local-type>integer</local-type>
+          <aggregation>Sum</aggregation>
+          <approx-count>56</approx-count>
+          <contains-null>true</contains-null>
+          <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_F2977D8ABE1043BA87FC9A78A4C3BF98]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+        </metadata-record>
+        <metadata-record class='column'>
+          <remote-name>target_value</remote-name>
+          <remote-type>5</remote-type>
+          <local-name>[target_value]</local-name>
+          <parent-name>[Extract]</parent-name>
+          <remote-alias>target_value</remote-alias>
+          <ordinal>8</ordinal>
+          <family>Custom SQL Query</family>
+          <local-type>real</local-type>
+          <aggregation>Sum</aggregation>
+          <approx-count>23</approx-count>
+          <contains-null>true</contains-null>
+          <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_F2977D8ABE1043BA87FC9A78A4C3BF98]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+        </metadata-record>
+        <metadata-record class='column'>
+          <remote-name>target_retention_rate</remote-name>
+          <remote-type>5</remote-type>
+          <local-name>[target_retention_rate]</local-name>
+          <parent-name>[Extract]</parent-name>
+          <remote-alias>target_retention_rate</remote-alias>
+          <ordinal>9</ordinal>
+          <family>Custom SQL Query</family>
+          <local-type>real</local-type>
+          <aggregation>Sum</aggregation>
+          <approx-count>958</approx-count>
+          <contains-null>true</contains-null>
+          <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_F2977D8ABE1043BA87FC9A78A4C3BF98]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+        </metadata-record>
+        <metadata-record class='column'>
+          <remote-name>target_retained</remote-name>
+          <remote-type>5</remote-type>
+          <local-name>[target_retained]</local-name>
+          <parent-name>[Extract]</parent-name>
+          <remote-alias>target_retained</remote-alias>
+          <ordinal>10</ordinal>
+          <family>Custom SQL Query</family>
+          <local-type>real</local-type>
+          <aggregation>Sum</aggregation>
+          <approx-count>1167</approx-count>
+          <contains-null>true</contains-null>
+          <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_F2977D8ABE1043BA87FC9A78A4C3BF98]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+        </metadata-record>
+        <metadata-record class='column'>
+          <remote-name>reactivated_churn</remote-name>
+          <remote-type>20</remote-type>
+          <local-name>[reactivated_churn]</local-name>
+          <parent-name>[Extract]</parent-name>
+          <remote-alias>reactivated_churn</remote-alias>
+          <ordinal>11</ordinal>
+          <family>Custom SQL Query</family>
+          <local-type>integer</local-type>
+          <aggregation>Sum</aggregation>
+          <approx-count>263</approx-count>
+          <contains-null>true</contains-null>
+          <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_F2977D8ABE1043BA87FC9A78A4C3BF98]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+        </metadata-record>
+        <metadata-record class='column'>
+          <remote-name>churn_last_month</remote-name>
+          <remote-type>20</remote-type>
+          <local-name>[churn_last_month]</local-name>
+          <parent-name>[Extract]</parent-name>
+          <remote-alias>churn_last_month</remote-alias>
+          <ordinal>12</ordinal>
+          <family>Custom SQL Query</family>
+          <local-type>integer</local-type>
+          <aggregation>Sum</aggregation>
+          <approx-count>8</approx-count>
+          <contains-null>true</contains-null>
+          <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_F2977D8ABE1043BA87FC9A78A4C3BF98]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+        </metadata-record>
+        <metadata-record class='column'>
+          <remote-name>max_reactivated_churn</remote-name>
+          <remote-type>20</remote-type>
+          <local-name>[max_reactivated_churn]</local-name>
+          <parent-name>[Extract]</parent-name>
+          <remote-alias>max_reactivated_churn</remote-alias>
+          <ordinal>13</ordinal>
+          <family>Custom SQL Query</family>
+          <local-type>integer</local-type>
+          <aggregation>Sum</aggregation>
+          <approx-count>8</approx-count>
+          <contains-null>true</contains-null>
+          <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_F2977D8ABE1043BA87FC9A78A4C3BF98]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+        </metadata-record>
+        <metadata-record class='column'>
+          <remote-name>reactivated_from_zombie</remote-name>
+          <remote-type>20</remote-type>
+          <local-name>[reactivated_from_zombie]</local-name>
+          <parent-name>[Extract]</parent-name>
+          <remote-alias>reactivated_from_zombie</remote-alias>
+          <ordinal>14</ordinal>
+          <family>Custom SQL Query</family>
+          <local-type>integer</local-type>
+          <aggregation>Sum</aggregation>
+          <approx-count>38</approx-count>
+          <contains-null>true</contains-null>
+          <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_F2977D8ABE1043BA87FC9A78A4C3BF98]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+        </metadata-record>
+        <metadata-record class='column'>
+          <remote-name>max_base</remote-name>
+          <remote-type>20</remote-type>
+          <local-name>[max_base]</local-name>
+          <parent-name>[Extract]</parent-name>
+          <remote-alias>max_base</remote-alias>
+          <ordinal>15</ordinal>
+          <family>Custom SQL Query</family>
+          <local-type>integer</local-type>
+          <aggregation>Sum</aggregation>
+          <approx-count>8</approx-count>
+          <contains-null>true</contains-null>
+          <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_F2977D8ABE1043BA87FC9A78A4C3BF98]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+        </metadata-record>
+        <metadata-record class='column'>
+          <remote-name>total_reactivated</remote-name>
+          <remote-type>20</remote-type>
+          <local-name>[total_reactivated]</local-name>
+          <parent-name>[Extract]</parent-name>
+          <remote-alias>total_reactivated</remote-alias>
+          <ordinal>16</ordinal>
+          <family>Custom SQL Query</family>
+          <local-type>integer</local-type>
+          <aggregation>Sum</aggregation>
+          <approx-count>275</approx-count>
+          <contains-null>true</contains-null>
+          <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_F2977D8ABE1043BA87FC9A78A4C3BF98]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+        </metadata-record>
+        <metadata-record class='column'>
+          <remote-name>react_target_value_EOM</remote-name>
+          <remote-type>20</remote-type>
+          <local-name>[react_target_value_EOM]</local-name>
+          <parent-name>[Extract]</parent-name>
+          <remote-alias>react_target_value_EOM</remote-alias>
+          <ordinal>17</ordinal>
+          <family>Custom SQL Query</family>
+          <local-type>integer</local-type>
+          <aggregation>Sum</aggregation>
+          <approx-count>38</approx-count>
+          <contains-null>true</contains-null>
+          <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_F2977D8ABE1043BA87FC9A78A4C3BF98]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+        </metadata-record>
+        <metadata-record class='column'>
+          <remote-name>target_MTD_reactivated</remote-name>
+          <remote-type>5</remote-type>
+          <local-name>[target_MTD_reactivated]</local-name>
+          <parent-name>[Extract]</parent-name>
+          <remote-alias>target_MTD_reactivated</remote-alias>
+          <ordinal>18</ordinal>
+          <family>Custom SQL Query</family>
+          <local-type>real</local-type>
+          <aggregation>Sum</aggregation>
+          <approx-count>198</approx-count>
+          <contains-null>true</contains-null>
+          <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_F2977D8ABE1043BA87FC9A78A4C3BF98]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+        </metadata-record>
+      </metadata-records>
+    </connection>
+  </extract>
+  <layout _.fcp.SchemaViewerObjectModel.false...dim-percentage='0.5' _.fcp.SchemaViewerObjectModel.false...measure-percentage='0.4' dim-ordering='alphabetic' measure-ordering='alphabetic' show-aliased-fields='true' show-structure='true' />
+  <semantic-values>
+    <semantic-value key='[Country].[Name]' value='&quot;United States&quot;' />
+  </semantic-values>
+  <date-options start-of-week='saturday' />
+  <field-sort-info field-sort-order-type='custom-order'>
+    <field-sort-custom-order field='month' />
+    <field-sort-custom-order field='country_code' />
+    <field-sort-custom-order field='new_active_vendor_count' />
+    <field-sort-custom-order field='onboarded_m0_active_m1_count' />
+    <field-sort-custom-order field='onboarded_m0_active_m2_count' />
+    <field-sort-custom-order field='onboarded_m0_count' />
+    <field-sort-custom-order field='onboarded_m1_count' />
+    <field-sort-custom-order field='onboarded_m2_count' />
+    <field-sort-custom-order field='live_m1_count' />
+    <field-sort-custom-order field='live_m2_count' />
+    <field-sort-custom-order field='active_vendor_count' />
+    <field-sort-custom-order field='m0_activation_target_value' />
+    <field-sort-custom-order field='M_1_activation_target' />
+    <field-sort-custom-order field='M_2_activation_target' />
+    <field-sort-custom-order field='mtd_vendors' />
+    <field-sort-custom-order field='retained_target' />
+    <field-sort-custom-order field='reactivated_target' />
+    <field-sort-custom-order field='Activation M-1% (copy)_2103673660245241863' />
+    <field-sort-custom-order field='Calculation_2103673660242509824' />
+    <field-sort-custom-order field='Calculation_2103673660242636801' />
+    <field-sort-custom-order field='Calculation_2103673660243513346' />
+    <field-sort-custom-order field='Calculation_2103673660243812355' />
+    <field-sort-custom-order field='Calculation_2103673660244058116' />
+    <field-sort-custom-order field='Calculation_2103673660244561925' />
+  </field-sort-info>
+  <_.fcp.ObjectModelEncapsulateLegacy.true...object-graph>
+    <objects>
+      <object caption='Custom SQL Query' id='_F2977D8ABE1043BA87FC9A78A4C3BF98'>
+        <properties context=''>
+          <relation connection='bigquery.0hljliy0mhok6717isu6b1q0tf8c' name='Custom SQL Query' type='text'><![CDATA[with activity as (
+
+with 
+
+comm as 
+( SELECT 
+
+    DISTINCT v.vendor_id,
+    salesforce_id,
+    avg(case when c.name__c = "tDine" then  commission__c/100  end) as tdine_commission,
+    avg(case when c.name__c <<>> "tDine" then  commission__c/100  end)  as other_commission
+
+  FROM `tlb-data-prod.data_platform.dim_vendor_info` v
+  LEFT JOIN `tlb-data-prod.data_platform.dim_location_info` l
+  ON l.location_id = v.location_id
+  LEFT JOIN `fulfillment-dwh-production.curated_data_shared_salesforce.account` a
+  ON v.salesforce_id = a.grid__c 
+  LEFT JOIN `fulfillment-dwh-production.curated_data_shared_salesforce.contract` c
+  ON a.id = c.accountid
+
+  WHERE 1=1
+  AND c.name__c IN ('TGO Basic Commission','TMP Basic Commission','TGO Basic Commission SSU','TGO Basic Commision','OD Basic Commission','MP Basic Commission','TGO Basic Commission N','TGO Basic commission','S01- Growth Package TGO Commission','B01 - Basic Package TGO Commission', 'TGO Incremental Orders Commission','BH S01 - Growth Package TGO Commission','BH B01 - Standard Package TGO Commission','OD Basic Commission trial','OM B01 - Standard Package (Restaurant) Commission OD','OM S01 - Growth Package (Restaurant) Commission OD','tDine','TGO Incremental GMV Commission')
+  AND c.status = 'Activated'
+  AND c.end_date__c IS NULL
+  group by 1 ,2
+  ),
+
+tiers as 
+(
+SELECT 
+distinct 
+lower(country_code) as country_code,
+(chain_id) as chain_id,
+date,
+lower(chain_name) as chain_name,
+chain_monetisation_tiers 
+FROM `tlb-data-prod.data_platform.agg_chain_tiers` 
+ where date >>= '2024-01-01'
+), 
+
+transmission as   
+(
+SELECT
+*
+FROM  
+(
+SELECT 
+vendor_id,
+dt.transmission_id  AS transmission_id,
+dt.transmission_category  AS transmission_category,
+dt.pos_integration_name  AS pos_integration_name,
+dt.pos_integration_flow  AS pos_integration_flow,
+dt.device_os_name  AS transmission_device_os_name,
+row_number() over (partition by vendor_id order by end_date desc ) as rno
+
+FROM `tlb-data-prod.data_platform.rltnp_vendor_x_transmission`  vt 
+LEFT JOIN `tlb-data-prod.data_platform.dim_transmission` dt ON vt.transmission_id = dt.transmission_id
+WHERE 1=1
+--and vendor_id = 1038
+)
+WHERE rno = 1
+),
+
+
+new_ven as    
+(
+  select 
+*
+from  
+(
+select 
+  *,
+  row_number() over(partition by salesforce_id  order by date(first_online_date) desc ) as rnk
+  from  
+(
+  SELECT
+  DISTINCT 
+  date_trunc(o.closedate,month) first_online_month,
+  ch.country_code as country,
+  v.salesforce_id,
+  v.vendor_id,
+  v.vendor_name,
+  o.business_type__c as business_type,
+  a.vertical__c as vertical,
+  o.closedate as first_online_date,
+  vendor_grade,
+  account_status__c,
+  lower(CONCAT(firstname, ' ', lastname)) AS opp_owner_name,
+  u.title as opp_owner_title
+
+FROM `tlb-data-prod.data_platform.dim_vendor_info` v 
+LEFT JOIN `tlb-data-prod.data_platform.dim_chain` ch 
+ON ch.chain_id = v.chain_id
+LEFT JOIN `fulfillment-dwh-production.curated_data_shared_salesforce.account` a
+ON v.salesforce_id = a.grid__c
+LEFT JOIN  `fulfillment-dwh-production.curated_data_shared_salesforce.contract` c
+ON a.id = c.accountid
+LEFT JOIN `fulfillment-dwh-production.curated_data_shared_salesforce.opportunity` o
+ON a.id =o.accountid
+LEFT JOIN `fulfillment-dwh-production.curated_data_shared_salesforce.user` u
+ON o.ownerid = u.id
+WHERE
+o.business_type__c IN 
+('Franchise Extension',
+'New Business',
+'Win Back')
+AND iswon
+)
+)
+where rnk = 1
+) 
+,
+is_active_before as (
+SELECT 
+         k1.vendor_id,
+         k1.month,
+        k1.country_code,
+        max(k2.is_active) as was_active_before
+    FROM `tlb-data-prod.data_platform.agg_vendor_inventory_kpi_monthly` k1 
+    left join `tlb-data-prod.data_platform.agg_vendor_inventory_kpi_monthly` k2 
+    on k1.vendor_id = k2.vendor_id
+    and k2.month <<k1.month and k2.vertical='Restaurant'
+    WHERE k1.vertical = 'Restaurant'
+     and  k1.month <<=date_trunc(current_date,month) -- before Jan 2023 bucket 
+   -- and first_online_date <<= month - interval '3' month
+    group by all
+    
+    )
+   , pre_output as (
+select i.* ,
+dv.is_dineout,
+dv.is_dh_kitchen,
+dv.team_leader_name,
+dv.first_online_date as dim_vendor_first_online_date, 
+dv.acquisition_business_type, 
+nv.opp_owner_name,  
+opp_owner_title,
+lower(CONCAT(u.firstname, ' ', u.lastname)) AS account_owner_name,
+u.title as account_owner_title,
+central_job_role__c as account_owner_central_job_role,
+case when dh_kitchen_onboarding_date is not null then true else false end as DH_kitchen_flag_v2,
+IFNULL(case when ifnull(tdine_commission,0) >> 0 and  ifnull(other_commission,0) = 0 then TRUE ELSE FALSE END,FALSE)  as vendor_dineout_flag,
+transmission_id,
+transmission_category,
+pos_integration_name,
+pos_integration_flow,
+transmission_device_os_name,
+vertical_segment__c,
+ifnull(chain_monetisation_tiers,"Tier E") as tiers,
+dv.is_managed_by_vendor_helpdesk 
+, current_timestamp as last_updated_timestamp,
+
+lag(m1_successful_orders) over(partition by i.vendor_id order by i.month ) m_2_successful_orders,
+ab.was_active_before
+from `tlb-data-prod.data_platform.agg_vendor_inventory_kpi_monthly`i
+LEFT JOIN `fulfillment-dwh-production.curated_data_shared_salesforce.account` a ON i.salesforce_id = a.grid__c
+LEFT JOIN `fulfillment-dwh-production.curated_data_shared_salesforce.user` u ON a.ownerid = u.id
+left join `tlb-data-prod.data_platform.dim_vendor_info` dv on i.vendor_id = dv.vendor_id 
+left join comm on comm.salesforce_id = dv.salesforce_id 
+left join new_ven nv on nv.vendor_id = i.vendor_id
+left join transmission tr on tr.vendor_id = i.vendor_id 
+left join tiers t on t.chain_id = i.chain_id and date_trunc(t.date,month) = i.month
+left join is_active_before ab on ab.vendor_id=i.vendor_id and ab.month=i.month
+where lower(i.country_code)  in ("ae","qa","jo","iq","kw","bh","om","eg")
+and i.month >>='2024-1-01') 
+
+/* 
+new active vendors done
+active vendors 
+m-1 active vendors done
+m-2 active vendors done
+m-1 sofar 
+m-2 sofar 
+onboarded m0 
+onboarded m-1
+onboarded m-2 
+
+*/
+,raw as (
+select month,country_code,case when date_diff(month,date_trunc(first_online_date,month),month)=0
+and acquisition_business_type<<>>'Switch'
+and is_active 
+and is_contracted 
+
+ then vendor_id else null end as new_active_vendor,
+
+case when date_diff(month,date_trunc(first_online_date,month),month)=1 
+and acquisition_business_type<<>>'Switch'
+and successful_orders >>0 and m1_successful_orders =0 and is_contracted then vendor_id else null
+end as onboarded_m0_active_m_1,
+
+
+
+ case when date_diff(month,date_trunc(first_online_date,month),month)=2
+and acquisition_business_type<<>>'Switch'
+and successful_orders >>0 and m1_successful_orders =0 
+and m_2_successful_orders=0
+ and is_contracted then vendor_id else null
+end as onboarded_m0_active_m_2,
+
+case when date_diff(month,date_trunc(first_online_date,month),month)=0
+and acquisition_business_type<<>>'Switch'
+ and is_contracted then vendor_id else null
+end as onboarded_m0,
+case when date_diff(month,date_trunc(first_online_date,month),month)=1
+and acquisition_business_type<<>>'Switch'
+ --and is_contracted 
+ then vendor_id else null
+end as onboarded_m1,
+case when date_diff(month,date_trunc(first_online_date,month),month)=2
+and acquisition_business_type<<>>'Switch'
+ and is_contracted then vendor_id else null
+end as onboarded_m2
+,
+/*
+
+if 
+        DATEDIFF('month', DATETRUNC('month', [dim_vendor_first_online_date]), [month]) = 1 
+        AND [acquisition_business_type] <<>> 'Switch' 
+        AND (
+            [successful_orders] >> 0 or [Previous month orders] >> 0
+            //DATEDIFF('month', DATETRUNC('month', [First Order Date]), [month]) = 1 
+            //OR DATEDIFF('month', DATETRUNC('month', [First Order Date]), [month]) = 0
+        )
+    THEN [vendor_id]
+    ELSE NULL
+END
+
+*/
+case when date_diff(month,date_trunc(first_online_date,month),month)=1
+and acquisition_business_type<<>>'Switch'
+and (successful_orders >>0 or m1_successful_orders >>0)
+then vendor_id else null end as live_m_1_atleast_order_sofar,
+
+case when date_diff(month,date_trunc(first_online_date,month),month)=2
+and acquisition_business_type<<>>'Switch'
+and (successful_orders >>0 or m1_successful_orders >>0 or m_2_successful_orders>>0)
+then vendor_id else null end as live_m_2_atleast_order_sofar,
+
+case --when acquisition_business_type <<>>'Switch'
+when is_active and is_contracted 
+then vendor_id else null end as active_vendor_id
+
+
+
+
+
+ from pre_output
+ where vendor_dineout_flag=false
+ and month>>='2025-02-01'
+ and vertical='Restaurant'
+ ) , 
+targets as (
+select * from `tlb-data-dev.vendor_analytics.activation_targets_percent_materialized`
+)
+
+SELECT
+  month,
+ country_code,
+  COUNT(DISTINCT new_active_vendor) AS new_active_vendor_count,
+  COUNT(DISTINCT onboarded_m0_active_m_1) AS onboarded_m0_active_m1_count,
+  COUNT(DISTINCT onboarded_m0_active_m_2) AS onboarded_m0_active_m2_count,
+  COUNT(DISTINCT onboarded_m0) AS onboarded_m0_count,
+  COUNT(DISTINCT onboarded_m1) AS onboarded_m1_count,
+  COUNT(DISTINCT onboarded_m2) AS onboarded_m2_count,
+  COUNT(DISTINCT live_m_1_atleast_order_sofar) AS live_m1_count,
+  COUNT(DISTINCT live_m_2_atleast_order_sofar) AS live_m2_count,
+  COUNT(DISTINCT active_vendor_id) AS active_vendor_count,
+  max(target_value) as m0_activation_target_value, 
+  if((COUNT(DISTINCT onboarded_m1)*0.87-COUNT(DISTINCT live_m_1_atleast_order_sofar))<<0,0,COUNT(DISTINCT onboarded_m1)*0.87-COUNT(DISTINCT live_m_1_atleast_order_sofar)) 
+  as M_1_activation_target,
+
+    if((COUNT(DISTINCT onboarded_m2)*0.9-COUNT(DISTINCT live_m_2_atleast_order_sofar))<<0,0,COUNT(DISTINCT onboarded_m2)*0.87-COUNT(DISTINCT live_m_2_atleast_order_sofar)) 
+  as M_2_activation_target
+
+FROM raw r 
+join targets t on r.country_code=t.country and r.month=t.target_date
+GROUP BY all
+), 
+reactivation_history as (/* 
+
+-- the goal is to get daily reactivation weight, to multiply it each day with last month churned vendors excluding dineout 
+--then sum over the days don't forget
+*/
+
+
+-- create the weights you will use first and put them in a table 
+---
+--create or replace table
+--tlb-data-dev.vendor_analytics.Reactivation_churn_daily_weights  as 
+WITH churn_Base_LM AS (
+    /* Active vendors in December 2024 */
+    SELECT 
+        vendor_id,
+        country_code,
+        month,
+        first_order_date,
+        coalesce(gmv_eur,0) as gmv_eur,
+        coalesce(m1_gmv_eur,0) as m1_gmv_eur
+    FROM `tlb-data-prod.data_platform.agg_vendor_inventory_kpi_monthly`
+    WHERE vertical = 'Restaurant'
+      --AND month = date_trunc(current_date,month) -interval '1' month -- December 2024
+      and month >>='2024-12-01'
+     -- AND is_churn
+      --and is_contracted
+),comm as 
+( SELECT 
+    DISTINCT v.vendor_id,
+    salesforce_id,
+    avg(case when c.name__c = "tDine" then  commission__c/100  end) as tdine_commission,
+    avg(case when c.name__c <<>> "tDine" then  commission__c/100  end)  as other_commission
+
+  FROM `tlb-data-prod.data_platform.dim_vendor_info` v
+  LEFT JOIN `tlb-data-prod.data_platform.dim_location_info` l
+  ON l.location_id = v.location_id
+  LEFT JOIN `fulfillment-dwh-production.curated_data_shared_salesforce.account` a
+  ON v.salesforce_id = a.grid__c 
+  LEFT JOIN `fulfillment-dwh-production.curated_data_shared_salesforce.contract` c
+  ON a.id = c.accountid
+
+  WHERE 1=1
+  AND c.name__c IN ('TGO Basic Commission','TMP Basic Commission','TGO Basic Commission SSU','TGO Basic Commision','OD Basic Commission','MP Basic Commission','TGO Basic Commission N','TGO Basic commission','S01- Growth Package TGO Commission','B01 - Basic Package TGO Commission', 'TGO Incremental Orders Commission','BH S01 - Growth Package TGO Commission','BH B01 - Standard Package TGO Commission','OD Basic Commission trial','OM B01 - Standard Package (Restaurant) Commission OD','OM S01 - Growth Package (Restaurant) Commission OD','tDine','TGO Incremental GMV Commission')
+  AND c.status = 'Activated'
+  AND c.end_date__c IS NULL
+  group by 1 ,2
+  ), 
+
+  churn_base_LM_filtered as (
+
+    select * from (
+    select * from (
+select a.*,  IFNULL(case when ifnull(tdine_commission,0) >> 0 and  ifnull(other_commission,0) = 0 then TRUE ELSE FALSE END,FALSE)  as vendor_dineout_flag
+ from churn_base_lm a 
+ left join comm c on a.vendor_id=c.vendor_id
+    ) 
+    where vendor_dineout_flag=false
+  and gmv_eur=0
+  and date_trunc(first_order_date,month) << month --was active before from reference month
+) 
+
+    
+  ) 
+
+  ,
+
+
+date_series AS (
+    -- Generate all dates in January 2025
+    SELECT date,date_trunc(date,month) as month
+    FROM `tlb-data-prod.data_platform.dim_date` 
+    WHERE date_trunc(date,month) between '2025-2-01' and date_trunc(current_date,month) 
+), 
+latest_first_online_date as (
+
+SELECT 
+        vendor_id,
+        country_code,
+        --month,
+       max(first_online_date) as first_online_date
+    FROM `tlb-data-prod.data_platform.agg_vendor_inventory_kpi_monthly`
+    WHERE vertical = 'Restaurant'
+    --  AND month >>='2024-12-01' -- December 2024
+     -- AND is_active  -- Only active vendors
+     -- and not(date_trunc(first_online_date,month)=month and is_reactivated_churn)
+     group by all
+
+)
+,Active_Base_m0 AS (
+    /* Active vendors in December 2024 */
+    SELECT 
+        k.vendor_id,
+        k.country_code,
+        month,
+        date_trunc(k.first_online_date,month) as first_online_month, 
+        is_reactivated_churn,
+        acquisition_business_type,
+        k.first_order_date,
+        k.is_active,
+        lag(k.is_active) over(partition by k.vendor_id order by month) as lm_active,
+        lag(k.is_active,2) over(partition by k.vendor_id order by month) as l2m_active
+    FROM `tlb-data-prod.data_platform.agg_vendor_inventory_kpi_monthly` k 
+    join `tlb-data-prod.data_platform.dim_vendor_info` f on k.vendor_id=f.vendor_id
+    WHERE k.vertical = 'Restaurant'
+      AND month >>='2024-12-01' -- December 2024
+      --AND k.is_active  -- Only active vendors
+      --and not(date_trunc(k.first_online_date,month)=month and is_reactivated_churn  )
+     -- and not(date_trunc(k.first_online_date,month)=month - interval '1' month and is_reactivated_churn and acquisition_business_type='Win Back')
+     --and k.vendor_id=748191
+),
+  active_base_m0_filtered as (
+    select * from (
+select a.*,  IFNULL(case when ifnull(tdine_commission,0) >> 0 and  ifnull(other_commission,0) = 0 then TRUE ELSE FALSE END,FALSE)  as vendor_dineout_flag
+ from active_base_m0 a 
+left join comm c on a.vendor_id=c.vendor_id ) 
+
+    where vendor_dineout_flag=false
+  ) 
+
+,orders_M0 AS (
+    -- Successful food orders in January 2025
+    SELECT
+        f.vendor_id,
+        f.country_code,
+        f.order_date,
+        a.month,
+        a.acquisition_business_type,
+        a.is_reactivated_churn,
+        first_online_month,
+        first_order_date,
+        lm_active,
+        l2m_active
+    FROM `tlb-data-prod.data_platform.fct_order_info` f 
+    join active_base_m0_filtered a on f.vendor_id=a.vendor_id and a.month=date_trunc(f.order_date,month)
+
+    WHERE date_trunc(order_date,month) =a.month
+    and is_active
+      --AND NOT is_non_food
+      --AND is_successful
+) 
+
+ --select * from orders_m0 
+ --where vendor_id=748191
+,order_m0_filt as 
+(select *
+from orders_m0 
+where 
+is_reactivated_churn
+
+and (
+  (first_online_month <<month - interval '2' month) or
+ (first_online_month=month - interval '2' month and l2m_active)
+  or(first_online_month is null and first_order_date is not null)
+
+
+ )
+ 
+ )
+/* 
+Here i need to get vendors acquired M-3
+
+*/
+--------------------------------------------------------------------------------------------------------
+--------------------------------------------------------------------------------------------------------
+,reactivations_from_zombies as (
+
+
+WITH Base AS (
+    /* Active vendors in December 2024 */
+ --with active_before as (
+SELECT 
+         k1.vendor_id,
+        k1.country_code,
+        k1.month,
+        max(k2.is_active) as was_active_before
+    FROM `tlb-data-prod.data_platform.agg_vendor_inventory_kpi_monthly` k1 
+    left join `tlb-data-prod.data_platform.agg_vendor_inventory_kpi_monthly`  k2 on k1.vendor_id=k2.vendor_id 
+    and k2.month <<= k1.month and k2.vertical='Restaurant'
+    WHERE k1.vertical = 'Restaurant'
+     and  k1.month >>='2024-12-01'
+         and date_trunc(k1.first_online_date,month) <<= k1.month - interval '2' month
+   -- and first_online_date <<= month - interval '3' month
+    group by all
+    having was_active_before=False
+    --)
+
+   /* SELECT 
+         k1.vendor_id,
+         k1.country_code,
+         a.was_active_before
+        
+    FROM `tlb-data-prod.data_platform.agg_vendor_inventory_kpi_monthly` k1 
+     join active_before a on k1.vendor_id=a.vendor_id
+    WHERE vertical = 'Restaurant'
+     and  month =date_trunc(current_date,month) - interval '1' month-- December 2024
+    and date_trunc(first_online_date,month) <<= month - interval '2' month
+    and not was_active_before
+    group by all
+*/
+
+),
+comm as 
+( SELECT 
+    DISTINCT v.vendor_id,
+    salesforce_id,
+    avg(case when c.name__c = "tDine" then  commission__c/100  end) as tdine_commission,
+    avg(case when c.name__c <<>> "tDine" then  commission__c/100  end)  as other_commission
+
+  FROM `tlb-data-prod.data_platform.dim_vendor_info` v
+  LEFT JOIN `tlb-data-prod.data_platform.dim_location_info` l
+  ON l.location_id = v.location_id
+  LEFT JOIN `fulfillment-dwh-production.curated_data_shared_salesforce.account` a
+  ON v.salesforce_id = a.grid__c 
+  LEFT JOIN `fulfillment-dwh-production.curated_data_shared_salesforce.contract` c
+  ON a.id = c.accountid
+
+  WHERE 1=1
+  AND c.name__c IN ('TGO Basic Commission','TMP Basic Commission','TGO Basic Commission SSU','TGO Basic Commision','OD Basic Commission','MP Basic Commission','TGO Basic Commission N','TGO Basic commission','S01- Growth Package TGO Commission','B01 - Basic Package TGO Commission', 'TGO Incremental Orders Commission','BH S01 - Growth Package TGO Commission','BH B01 - Standard Package TGO Commission','OD Basic Commission trial','OM B01 - Standard Package (Restaurant) Commission OD','OM S01 - Growth Package (Restaurant) Commission OD','tDine','TGO Incremental GMV Commission')
+  AND c.status = 'Activated'
+  AND c.end_date__c IS NULL
+  group by 1 ,2
+  ), 
+active_before_filtered as (
+
+select * from (
+    select * from (
+select a.*,  IFNULL(case when ifnull(tdine_commission,0) >> 0 and  ifnull(other_commission,0) = 0 then TRUE ELSE FALSE END,FALSE)  as vendor_dineout_flag
+ from base  a 
+ left join comm c on a.vendor_id=c.vendor_id
+    ) 
+    where vendor_dineout_flag=false
+
+) 
+
+  
+),
+date_series AS (
+    -- Generate all dates in January 2025
+    SELECT date ,date_trunc(date,month) as month
+    FROM `tlb-data-prod.data_platform.dim_date` 
+    WHERE date_trunc(date,month) between '2025-2-01' and date_trunc(current_date,month) 
+),
+
+Active_Base_m0 AS (
+    /* Active vendors in December 2024 */
+    SELECT 
+        vendor_id,
+        country_code,
+        month,
+        is_reactivated_churn
+    FROM `tlb-data-prod.data_platform.agg_vendor_inventory_kpi_monthly`
+    WHERE vertical = 'Restaurant'
+      AND month >>='2025-02-01' 
+      AND is_active  -- Only active vendors
+      
+),
+  active_base_m0_filtered as (
+    select * from (
+select a.*,  IFNULL(case when ifnull(tdine_commission,0) >> 0 and  ifnull(other_commission,0) = 0 then TRUE ELSE FALSE END,FALSE)  as vendor_dineout_flag
+ from active_base_m0 a 
+left join comm c on a.vendor_id=c.vendor_id ) 
+
+    where vendor_dineout_flag=false
+  ) 
+
+,orders_M0 AS (
+    -- Successful food orders in January 2025
+    SELECT
+        f.vendor_id,
+        f.country_code,
+        f.order_date,
+        a.month
+    FROM `tlb-data-prod.data_platform.fct_order_info` f 
+    join active_base_m0_filtered a on f.vendor_id=a.vendor_id and a.month=date_trunc(f.order_date,month)
+    WHERE date_trunc(order_date,month) >>= '2025-02-01' --=date_trunc(current_date,month)
+      --AND NOT is_non_food
+      --AND is_successful
+) 
+,orders_M0_zom AS (
+    -- Successful food orders in January 2025
+    SELECT
+        f.vendor_id,
+        f.country_code,
+        f.order_date,
+        a.month
+    FROM `tlb-data-prod.data_platform.fct_order_info` f 
+    join active_base_m0_filtered a on f.vendor_id=a.vendor_id and a.month=date_trunc(f.order_date,month)
+    WHERE date_trunc(order_date,month) >>= '2025-02-01' --=date_trunc(current_date,month)
+    and not is_reactivated_churn
+      --AND NOT is_non_food
+      --AND is_successful
+) 
+
+
+select *,max(reactivated_from_zombie) over(partition by country_code) as max_reactivated_from_zombie
+
+from (
+SELECT
+    d.date,
+    b.country_code,
+    COUNT(DISTINCT o.vendor_id) AS reactivated_from_zombie,
+    COUNT(DISTINCT b.vendor_id) AS churn_last_month,
+    ROUND(COUNT(DISTINCT o.vendor_id) * 1.0 / COUNT(DISTINCT b.vendor_id),8) AS reactivation_rate
+FROM date_series d
+CROSS JOIN base b  -- All active vendors from December
+LEFT JOIN orders_M0_zom o
+    ON b.vendor_id = o.vendor_id
+    AND b.country_code = o.country_code
+    AND o.order_date <<= d.date  -- Orders up to the current date
+    and date_trunc(o.order_date,month)=b.month+ interval '1' month
+    and date_trunc(o.order_date,month)=date_trunc(d.date,month)
+GROUP BY all
+)
+)
+
+,actuals as (
+  select *,max(reactivated_churn) over(partition by country_code) as max_reactivated_churn
+  from(
+    
+SELECT
+   --distinct  
+   d.date,
+   d.month,
+   extract(day from d.date) as day,
+    b.country_code,
+   
+   -- o.acquisition_business_type
+    --b.vendor_id churned,
+    COUNT(DISTINCT o.vendor_id) AS reactivated_churn,
+    COUNT(DISTINCT b.vendor_id) AS churn_last_month,
+    ROUND(COUNT(DISTINCT o.vendor_id) * 1.0 / COUNT(DISTINCT b.vendor_id), 4) AS reactivation_rate
+FROM date_series d
+CROSS JOIN churn_base_LM_filtered b  -- All active vendors from December
+LEFT JOIN order_m0_filt o
+    ON b.vendor_id = o.vendor_id
+    AND b.country_code = o.country_code
+    AND o.order_date <<= d.date  -- Orders up to the current date
+    and date_trunc(o.order_date,month)=b.month+ interval '1' month
+    and date_trunc(o.order_date,month)=date_trunc(d.date,month)
+    where b.country_code <<>> 'SA'
+GROUP BY all) 
+)
+,last_day as (select distinct month_start_date as month, extract(day from month_end_date) as last_day_of_month
+  from `tlb-data-prod.data_platform.dim_date`
+where month_start_date >>='2025-02-01' and month_start_date <<= date_trunc(current_date, month)
+), 
+actuals_edited as ( 
+
+
+select a.*, b.last_day_of_month 
+from actuals a 
+left join last_day b 
+on b.month=date_trunc(a.date, month)
+
+)
+select 
+a.*,
+z.reactivated_from_zombie,
+max_reactivated_churn+max_reactivated_from_zombie as max_base,
+reactivated_churn+reactivated_from_zombie as total_reactivated,
+Target_value,
+ round(Target_value*daily_reactivation_churn_weight)  as target_MTD_reactivated,
+daily_reactivation_churn_weight
+  , w.last_day_of_month
+ from actuals_edited a
+--join `tlb-data-dev.vendor_analytics.Reactivation_churn_daily_weights_opt` w 
+join (select 
+
+date,country_code,
+reactivated, churn_last_month, 
+reactivated/ max(reactivated) over(partition by country_code) as daily_reactivation_churn_weight, 
+max(reactivated) over(partition by country_code) as max_reactivated, 
+28 as last_day_of_month
+ from tlb-data-dev.vendor_analytics.Reactivation_churn_daily_weights_opt 
+ where date <<='2025-01-28'
+union all 
+
+select * from tlb-data-dev.vendor_analytics.Reactivation_churn_daily_weights_opt )w
+on extract(day from w.date)=extract(day from a.date) and w.last_day_of_month=a.last_day_of_month -- double rows here 
+ -- still double rows 
+and w.country_code=a.country_code -- i will add here flag whether it's 30 or 31 day month
+join `tlb-data-dev.vendor_analytics.Reactivation_targets_materialized` t on t.target_date=date_trunc(a.date,month)
+and t.country=a.country_code
+join reactivations_from_zombies z on z.country_code=a.country_code 
+and extract(day from z.date) =a.day and date_trunc(z.date,month)=date_trunc(a.date,month)
+
+)
+
+
+
+ , 
+ retn_hist as (/*create or replace table `tlb-data-dev.vendor_analytics.Retention_targets_materialized` 
+as select * from tlb-data-dev.vendor_analytics.Retention_targets;
+
+*/
+/*create or replace table `tlb-data-dev.vendor_analytics.Retention_targets_materialized` 
+as select * from tlb-data-dev.vendor_analytics.Retention_targets;
+
+*/
+
+
+/* create table only for the daily targets */ 
+
+WITH Active_Base_LM AS (
+    /* Active vendors in December 2024 */
+    SELECT 
+        vendor_id,
+        country_code,
+        month
+    FROM `tlb-data-prod.data_platform.agg_vendor_inventory_kpi_monthly`
+    WHERE vertical = 'Restaurant'
+      --AND month = date_trunc(current_date,month)-interval '1' month  -- December 2024
+      and month >>='2024-12-01'
+      AND is_active  -- Only active vendors
+),comm as 
+( SELECT 
+    DISTINCT v.vendor_id,
+    salesforce_id,
+    avg(case when c.name__c = "tDine" then  commission__c/100  end) as tdine_commission,
+    avg(case when c.name__c <<>> "tDine" then  commission__c/100  end)  as other_commission
+
+  FROM `tlb-data-prod.data_platform.dim_vendor_info` v
+  LEFT JOIN `tlb-data-prod.data_platform.dim_location_info` l
+  ON l.location_id = v.location_id
+  LEFT JOIN `fulfillment-dwh-production.curated_data_shared_salesforce.account` a
+  ON v.salesforce_id = a.grid__c 
+  LEFT JOIN `fulfillment-dwh-production.curated_data_shared_salesforce.contract` c
+  ON a.id = c.accountid
+
+  WHERE 1=1
+  AND c.name__c IN ('TGO Basic Commission','TMP Basic Commission','TGO Basic Commission SSU','TGO Basic Commision','OD Basic Commission','MP Basic Commission','TGO Basic Commission N','TGO Basic commission','S01- Growth Package TGO Commission','B01 - Basic Package TGO Commission', 'TGO Incremental Orders Commission','BH S01 - Growth Package TGO Commission','BH B01 - Standard Package TGO Commission','OD Basic Commission trial','OM B01 - Standard Package (Restaurant) Commission OD','OM S01 - Growth Package (Restaurant) Commission OD','tDine','TGO Incremental GMV Commission')
+  AND c.status = 'Activated'
+  AND c.end_date__c IS NULL
+  group by 1 ,2
+  ), 
+
+  active_base_LM_filtered as (
+    select * from (
+select a.*,  IFNULL(case when ifnull(tdine_commission,0) >> 0 and  ifnull(other_commission,0) = 0 then TRUE ELSE FALSE END,FALSE)  as vendor_dineout_flag
+ from active_base_lm a 
+left join comm c on a.vendor_id=c.vendor_id ) 
+where vendor_dineout_flag=false
+    
+  ),
+
+Active_Base_m0 AS (
+    /* Active vendors in December 2024 */
+    SELECT 
+        vendor_id,
+        country_code,
+        month,
+        is_retained, 
+        previous_segment,
+        is_active,
+        date_trunc(first_online_date,month) as first_online_month
+    FROM `tlb-data-prod.data_platform.agg_vendor_inventory_kpi_monthly`
+    WHERE vertical = 'Restaurant'
+      AND month >>='2025-2-01' --date_trunc(current_date,month) -- December 2024
+      AND is_active  -- Only active vendors
+),
+  active_base_m0_filtered as (
+    select * from (
+select a.*,  IFNULL(case when ifnull(tdine_commission,0) >> 0 and  ifnull(other_commission,0) = 0 then TRUE ELSE FALSE END,FALSE)  as vendor_dineout_flag
+ from active_base_m0 a 
+left join comm c on a.vendor_id=c.vendor_id ) 
+where vendor_dineout_flag=false
+    
+  )
+
+
+,
+date_series AS (
+    -- Generate all dates in January 2025
+    SELECT date ,date_trunc(date,month) as month
+    FROM `tlb-data-prod.data_platform.dim_date` 
+    WHERE date_trunc(date,month) between '2025-02-01' and date_trunc(current_date,month)
+),
+
+orders_M0 AS (
+    -- Successful food orders in January 2025
+    SELECT
+        f.vendor_id,
+        f.country_code,
+        f.order_date,
+        a.month,
+        a.is_retained,
+        a.first_online_month,
+        a.previous_segment,
+        a.is_active 
+    FROM `tlb-data-prod.data_platform.fct_order_info` f 
+    join active_base_m0_filtered a on f.vendor_id=a.vendor_id and a.month=date_trunc(f.order_date,month)
+    WHERE date_trunc(order_date,month) >>='2025-02-01'
+    --and first_online_month <<>> month
+      --AND NOT is_non_food
+      --AND is_successful
+     -- and not(previous_segment='Active' and first_online_month=month)
+      and a.is_active 
+)
+,orders_m0_filt as (
+select distinct o.* except(order_date),acquisition_business_type  from orders_m0 o
+join `tlb-data-prod.data_platform.dim_vendor_info` f on o.vendor_id=f.vendor_id 
+where --vendor_id not in (702005,661003,753851)
+ (first_online_month=month and previous_segment='Active')
+ and acquisition_business_type <<>> 'Switch'
+
+)
+--select * from orders_m0_filt 
+
+
+
+,daily_actuals as (
+select a.month,
+extract(day from date) as day, 
+date,
+a.country_code, 
+--retention_rate,
+--retained_vendors,
+--a.first_online_month
+count(distinct retained_vendors) as retained_vendors,
+--active_base_last_month
+
+from (
+SELECT
+    d.date,
+    b.country_code,
+    d.month,
+    o.vendor_id as retained_vendors,
+    --first_online_month,
+    --is_retained
+    --COUNT(DISTINCT o.vendor_id) AS retained_vendors,
+    --COUNT(DISTINCT b.vendor_id) AS active_base_last_month,
+    --ROUND(COUNT(DISTINCT o.vendor_id) * 1.0 / COUNT(DISTINCT b.vendor_id), 4) AS retention_rate
+FROM date_series d
+CROSS JOIN active_base_LM_filtered b  -- All active vendors from December
+LEFT JOIN orders_m0 o
+    ON b.vendor_id = o.vendor_id
+    AND b.country_code = o.country_code
+    AND o.order_date <<= d.date  -- Orders up to the current date
+    and date_trunc(o.order_date,month)=b.month+ interval '1' month
+    and date_trunc(o.order_date,month)=date_trunc(d.date,month)
+--GROUP BY all
+)a 
+left join orders_m0_filt om on om.vendor_id=a.retained_vendors
+ and om.month=a.month
+where om.vendor_id is  null 
+group by all
+) 
+
+
+,active_lm as (
+
+
+    select country_code, month, 
+    count(distinct vendor_id) active_lm
+    from active_base_LM_filtered 
+    group by all
+  ), 
+
+  active_lm_target as (
+
+select country,
+target_date as month,
+Active_Inventory as lm_active_target 
+  from `tlb-data-dev.vendor_analytics.Retention_targets_materialized` 
+
+
+
+  )
+  ,daily_actuals_v2 as (
+
+
+    select a.*, alm.lm_active_target as active_base_last_month 
+    ,retained_vendors/lm_active_target as retention_rate
+    ,lm.active_lm
+     from daily_actuals a 
+join active_lm_target alm on alm.country=a.country_code 
+and alm.month=a.month - interval '1' month
+
+join active_lm lm on lm.country_code=a.country_code 
+and lm.month=a.month - interval '1' month
+
+
+
+
+
+  )
+
+select *,round(target_retention_rate*active_base_last_month)  as target_retained
+ from (
+
+select d.*,target_value,
+case when month='2025-02-01' and d.day=26 then
+(target_value *0.996) 
+when month='2025-02-01' and d.day=27 then
+(target_value *0.998) 
+  when month='2025-02-01' and d.day=28 then 
+ (target_value*1) else  
+target_value * daily_retention_weight end as target_retention_rate,
+
+
+
+
+ from daily_actuals_v2 d 
+join `tlb-data-dev.vendor_analytics.Retention_daily_weights` w 
+on d.day=w.day and d.country_code=w.country_code
+join `tlb-data-dev.vendor_analytics.Retention_targets_materialized` t on t.target_date=d.month
+and t.country=d.country_code and t.Target_date=d.month
+
+)
+
+
+
+
+
+
+
+
+
+)
+
+
+
+
+
+
+,retn_react as (
+select distinct ret.*,
+reactivated_churn
+,churn_last_month
+,max_reactivated_churn
+,reactivated_from_zombie
+,max_base,
+total_reactivated
+,rh.target_value as react_target_value_EOM
+,target_MTD_reactivated
+ from retn_hist ret 
+join reactivation_history rh on ret.day=rh.day 
+and ret.month=rh.month 
+and ret.country_code=rh.country_code
+) select * from retn_react]]></relation>
+        </properties>
+        <properties context='extract'>
+          <relation name='Extract' table='[Extract].[Extract]' type='table' />
+        </properties>
+      </object>
+    </objects>
+  </_.fcp.ObjectModelEncapsulateLegacy.true...object-graph>
+</datasource>
