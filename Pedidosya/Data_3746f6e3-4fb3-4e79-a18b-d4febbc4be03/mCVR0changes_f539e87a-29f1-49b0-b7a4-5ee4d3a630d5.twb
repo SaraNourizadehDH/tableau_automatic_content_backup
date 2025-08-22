@@ -1,0 +1,2194 @@
+<?xml version='1.0' encoding='utf-8' ?>
+
+<!-- build 20233.25.0106.1650                               -->
+<workbook original-version='18.1' source-build='2023.3.14 (20233.25.0106.1650)' version='18.1' xml:base='https://tableau.deliveryhero.net' xmlns:user='http://www.tableausoftware.com/xml/user'>
+  <document-format-change-manifest>
+    <_.fcp.AccessibleZoneTabOrder.true...AccessibleZoneTabOrder />
+    <_.fcp.AnimationOnByDefault.true...AnimationOnByDefault />
+    <AutoCreateAndUpdateDSDPhoneLayouts />
+    <_.fcp.MarkAnimation.true...MarkAnimation />
+    <_.fcp.ObjectModelEncapsulateLegacy.true...ObjectModelEncapsulateLegacy />
+    <_.fcp.ObjectModelExtractV2.true...ObjectModelExtractV2 />
+    <_.fcp.ObjectModelTableType.true...ObjectModelTableType />
+    <_.fcp.SchemaViewerObjectModel.true...SchemaViewerObjectModel />
+    <SetMembershipControl />
+    <SheetIdentifierTracking />
+    <SortTagCleanup />
+    <_.fcp.VConnDownstreamExtractsWithWarnings.true...VConnDownstreamExtractsWithWarnings />
+    <WindowsPersistSimpleIdentifiers />
+    <ZoneBackgroundTransparency />
+  </document-format-change-manifest>
+  <repository-location derived-from='https://tableau.deliveryhero.net/t/Pedidosya/workbooks/mCVR0-changes?rev=1.0' id='mCVR0-changes' path='/t/Pedidosya/workbooks' revision='1.1' site='Pedidosya' />
+  <preferences />
+  <_.fcp.AnimationOnByDefault.false...style>
+    <_.fcp.AnimationOnByDefault.false..._.fcp.MarkAnimation.true...style-rule element='animation'>
+      <_.fcp.AnimationOnByDefault.false...format attr='animation-on' value='ao-on' />
+    </_.fcp.AnimationOnByDefault.false..._.fcp.MarkAnimation.true...style-rule>
+  </_.fcp.AnimationOnByDefault.false...style>
+  <datasources>
+    <datasource caption='Reclasification impact' inline='true' name='federated.06kgplv0wyity31d9je4z1e9546o' version='18.1'>
+      <connection class='federated'>
+        <named-connections>
+          <named-connection caption='BigQuery' name='bigquery.1rljtr60vjiwxu14moato07rvity'>
+            <connection CATALOG='peya-growth-and-onboarding' EXECCATALOG='peya-growth-and-onboarding' authentication='oauth' bq-dataset-fetch-rows='' bq-fetch-rows='' bq-fetch-tasks='' bq-large-fetch-rows='' bq-project-fetch-rows='' bq-response-rows='' class='bigquery' connection-dialect='google-sql' project='peya-growth-and-onboarding' schema='automated_tables_reports' server-oauth='' username='camila.vinas@pedidosya.com' workgroup-auth-mode='prompt' />
+          </named-connection>
+        </named-connections>
+        <_.fcp.ObjectModelEncapsulateLegacy.false...relation connection='bigquery.1rljtr60vjiwxu14moato07rvity' name='Consulta SQL personalizada' type='text'><![CDATA[WITH sessions AS (
+
+SELECT
+distinct
+
+session_id
+,session_sk
+,global_entity_id
+,platform
+,home_loaded 
+,shop_list_loaded  
+,shop_details_loaded
+,add_cart_clicked
+,checkout_loaded
+,is_transaction
+,shop_impressions_loaded 
+,FORMAT_DATE('%F', DATE_TRUNC(sessions.partition_date , WEEK(MONDAY))) AS sessions_session_date_week
+,case when  sessions.totals.orders   >>0 then  1   else 0 end  AS sessions_sum_transaction_boolean,
+FROM `peya-bi-tools-pro.il_sessions.fact_perseus_sessions` AS sessions
+
+WHERE ((( sessions.partition_date  ) >>= ((DATE_ADD(DATE_TRUNC(CURRENT_DATE(), WEEK(MONDAY)), INTERVAL -3
+ WEEK))) AND ( sessions.partition_date  ) << ((DATE_ADD(DATE_ADD(DATE_TRUNC(CURRENT_DATE(), WEEK(MONDAY)), INTERVAL -3
+ WEEK), INTERVAL 3
+ WEEK))))) AND ((sessions.country_id ) >> 0 OR (sessions.country_id ) IS NULL) AND (sessions.country.country_name ) IS NOT NULL
+)
+, error_service AS (
+
+WITH app_opened AS (
+    SELECT 
+    distinct
+    sessionid
+    ,global_entity_id
+
+    FROM `peya-data-origins-pro.cl_sessions.perseus_events`
+    WHERE ((( partition_date  ) >>= ((DATE_ADD(DATE_TRUNC(CURRENT_DATE(), WEEK(MONDAY)), INTERVAL -3
+     WEEK))) AND ( partition_date  ) << ((DATE_ADD(DATE_ADD(DATE_TRUNC(CURRENT_DATE(), WEEK(MONDAY)), INTERVAL -3
+     WEEK), INTERVAL 3
+     WEEK)))))
+    AND eventAction = "app.opened"
+
+)
+
+, modal_loaded AS (
+     SELECT 
+    distinct
+    sessionid
+    ,global_entity_id
+
+    FROM `peya-data-origins-pro.cl_sessions.perseus_events`
+    WHERE ((( partition_date  ) >>= ((DATE_ADD(DATE_TRUNC(CURRENT_DATE(), WEEK(MONDAY)), INTERVAL -3
+     WEEK))) AND ( partition_date  ) << ((DATE_ADD(DATE_ADD(DATE_TRUNC(CURRENT_DATE(), WEEK(MONDAY)), INTERVAL -3
+     WEEK), INTERVAL 3
+     WEEK)))))
+    AND eventAction = "modal.loaded"
+    AND STRING(eventVariablesjson.modalType) = "error_service"
+)
+
+SELECT 
+DISTINCT 
+ao.sessionid
+,ao.global_entity_id
+
+FROM app_opened ao
+INNER JOIN modal_loaded ml on ml.sessionid = ao.sessionId and ml.global_entity_id = ao.global_entity_id
+)
+
+,raw_total_sessions as ( 
+SELECT 
+distinct
+s.session_id
+, s.session_sk
+,s.global_entity_id
+,s.platform
+,home_loaded 
+,shop_list_loaded  
+,shop_details_loaded
+,add_cart_clicked
+,checkout_loaded
+,is_transaction
+,shop_impressions_loaded 
+,sessions_session_date_week
+,sessions_sum_transaction_boolean
+,CASE WHEN es.sessionid IS NOT NULL THEN TRUE ELSE FALSE END error_service_session
+
+
+FROM sessions s
+LEFT JOIN error_service es on es.sessionid = s.session_id and es.global_entity_id = s.global_entity_id)
+
+
+SELECT
+sessions_session_date_week,
+platform,
+CASE WHEN home_loaded  OR shop_list_loaded OR shop_details_loaded OR add_cart_clicked OR checkout_loaded OR is_transaction OR shop_impressions_loaded THEN "FUNNEL" else "NO FUNNEL" end global_group,
+
+CASE WHEN home_loaded  OR shop_list_loaded OR shop_details_loaded OR add_cart_clicked OR checkout_loaded OR is_transaction OR shop_impressions_loaded THEN "FUNNEL"
+WHEN home_loaded = FALSE AND shop_list_loaded = FALSE AND shop_details_loaded = FALSE AND add_cart_clicked = FALSE AND checkout_loaded = FALSE AND is_transaction = FALSE AND shop_impressions_loaded = FALSE AND error_service_session = TRUE THEN "NO FUNNEL ERROR SERVICE"
+ELSE "NO FUNNEL" end with_error_service_group,
+
+COUNT(DISTINCT session_sk ) AS sessions_total_sessions,
+COUNT(DISTINCT case when sessions_sum_transaction_boolean >> 0 then session_sk else null end ) total_sessions_cvr,
+COUNT(DISTINCT case when sessions_sum_transaction_boolean >> 0 then session_sk else null end ) / NULLIF(COUNT(DISTINCT session_sk ), 0) AS sessions_kpi_cvr
+
+FROM raw_total_sessions
+GROUP BY 1,2,3,4]]></_.fcp.ObjectModelEncapsulateLegacy.false...relation>
+        <_.fcp.ObjectModelEncapsulateLegacy.true...relation connection='bigquery.1rljtr60vjiwxu14moato07rvity' name='Consulta SQL personalizada' type='text'><![CDATA[WITH sessions AS (
+
+SELECT
+distinct
+
+session_id
+,session_sk
+,global_entity_id
+,platform
+,home_loaded 
+,shop_list_loaded  
+,shop_details_loaded
+,add_cart_clicked
+,checkout_loaded
+,is_transaction
+,shop_impressions_loaded 
+,FORMAT_DATE('%F', DATE_TRUNC(sessions.partition_date , WEEK(MONDAY))) AS sessions_session_date_week
+,case when  sessions.totals.orders   >>0 then  1   else 0 end  AS sessions_sum_transaction_boolean,
+FROM `peya-bi-tools-pro.il_sessions.fact_perseus_sessions` AS sessions
+
+WHERE ((( sessions.partition_date  ) >>= ((DATE_ADD(DATE_TRUNC(CURRENT_DATE(), WEEK(MONDAY)), INTERVAL -3
+ WEEK))) AND ( sessions.partition_date  ) << ((DATE_ADD(DATE_ADD(DATE_TRUNC(CURRENT_DATE(), WEEK(MONDAY)), INTERVAL -3
+ WEEK), INTERVAL 3
+ WEEK))))) AND ((sessions.country_id ) >> 0 OR (sessions.country_id ) IS NULL) AND (sessions.country.country_name ) IS NOT NULL
+)
+, error_service AS (
+
+WITH app_opened AS (
+    SELECT 
+    distinct
+    sessionid
+    ,global_entity_id
+
+    FROM `peya-data-origins-pro.cl_sessions.perseus_events`
+    WHERE ((( partition_date  ) >>= ((DATE_ADD(DATE_TRUNC(CURRENT_DATE(), WEEK(MONDAY)), INTERVAL -3
+     WEEK))) AND ( partition_date  ) << ((DATE_ADD(DATE_ADD(DATE_TRUNC(CURRENT_DATE(), WEEK(MONDAY)), INTERVAL -3
+     WEEK), INTERVAL 3
+     WEEK)))))
+    AND eventAction = "app.opened"
+
+)
+
+, modal_loaded AS (
+     SELECT 
+    distinct
+    sessionid
+    ,global_entity_id
+
+    FROM `peya-data-origins-pro.cl_sessions.perseus_events`
+    WHERE ((( partition_date  ) >>= ((DATE_ADD(DATE_TRUNC(CURRENT_DATE(), WEEK(MONDAY)), INTERVAL -3
+     WEEK))) AND ( partition_date  ) << ((DATE_ADD(DATE_ADD(DATE_TRUNC(CURRENT_DATE(), WEEK(MONDAY)), INTERVAL -3
+     WEEK), INTERVAL 3
+     WEEK)))))
+    AND eventAction = "modal.loaded"
+    AND STRING(eventVariablesjson.modalType) = "error_service"
+)
+
+SELECT 
+DISTINCT 
+ao.sessionid
+,ao.global_entity_id
+
+FROM app_opened ao
+INNER JOIN modal_loaded ml on ml.sessionid = ao.sessionId and ml.global_entity_id = ao.global_entity_id
+)
+
+,raw_total_sessions as ( 
+SELECT 
+distinct
+s.session_id
+, s.session_sk
+,s.global_entity_id
+,s.platform
+,home_loaded 
+,shop_list_loaded  
+,shop_details_loaded
+,add_cart_clicked
+,checkout_loaded
+,is_transaction
+,shop_impressions_loaded 
+,sessions_session_date_week
+,sessions_sum_transaction_boolean
+,CASE WHEN es.sessionid IS NOT NULL THEN TRUE ELSE FALSE END error_service_session
+
+
+FROM sessions s
+LEFT JOIN error_service es on es.sessionid = s.session_id and es.global_entity_id = s.global_entity_id)
+
+
+SELECT
+sessions_session_date_week,
+platform,
+CASE WHEN home_loaded  OR shop_list_loaded OR shop_details_loaded OR add_cart_clicked OR checkout_loaded OR is_transaction OR shop_impressions_loaded THEN "FUNNEL" else "NO FUNNEL" end global_group,
+
+CASE WHEN home_loaded  OR shop_list_loaded OR shop_details_loaded OR add_cart_clicked OR checkout_loaded OR is_transaction OR shop_impressions_loaded THEN "FUNNEL"
+WHEN home_loaded = FALSE AND shop_list_loaded = FALSE AND shop_details_loaded = FALSE AND add_cart_clicked = FALSE AND checkout_loaded = FALSE AND is_transaction = FALSE AND shop_impressions_loaded = FALSE AND error_service_session = TRUE THEN "NO FUNNEL ERROR SERVICE"
+ELSE "NO FUNNEL" end with_error_service_group,
+
+COUNT(DISTINCT session_sk ) AS sessions_total_sessions,
+COUNT(DISTINCT case when sessions_sum_transaction_boolean >> 0 then session_sk else null end ) total_sessions_cvr,
+COUNT(DISTINCT case when sessions_sum_transaction_boolean >> 0 then session_sk else null end ) / NULLIF(COUNT(DISTINCT session_sk ), 0) AS sessions_kpi_cvr
+
+FROM raw_total_sessions
+GROUP BY 1,2,3,4]]></_.fcp.ObjectModelEncapsulateLegacy.true...relation>
+        <metadata-records>
+          <metadata-record class='column'>
+            <remote-name>sessions_session_date_week</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[sessions_session_date_week]</local-name>
+            <parent-name>[Consulta SQL personalizada]</parent-name>
+            <remote-alias>sessions_session_date_week</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_DF1F0A8006D84EC6B91D7D25A553B688]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>platform</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[platform]</local-name>
+            <parent-name>[Consulta SQL personalizada]</parent-name>
+            <remote-alias>platform</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_DF1F0A8006D84EC6B91D7D25A553B688]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>global_group</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[global_group]</local-name>
+            <parent-name>[Consulta SQL personalizada]</parent-name>
+            <remote-alias>global_group</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_DF1F0A8006D84EC6B91D7D25A553B688]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>with_error_service_group</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[with_error_service_group]</local-name>
+            <parent-name>[Consulta SQL personalizada]</parent-name>
+            <remote-alias>with_error_service_group</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_DF1F0A8006D84EC6B91D7D25A553B688]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>sessions_total_sessions</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[sessions_total_sessions]</local-name>
+            <parent-name>[Consulta SQL personalizada]</parent-name>
+            <remote-alias>sessions_total_sessions</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_DF1F0A8006D84EC6B91D7D25A553B688]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>total_sessions_cvr</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[total_sessions_cvr]</local-name>
+            <parent-name>[Consulta SQL personalizada]</parent-name>
+            <remote-alias>total_sessions_cvr</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_DF1F0A8006D84EC6B91D7D25A553B688]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>sessions_kpi_cvr</remote-name>
+            <remote-type>5</remote-type>
+            <local-name>[sessions_kpi_cvr]</local-name>
+            <parent-name>[Consulta SQL personalizada]</parent-name>
+            <remote-alias>sessions_kpi_cvr</remote-alias>
+            <local-type>real</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_DF1F0A8006D84EC6B91D7D25A553B688]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+        </metadata-records>
+      </connection>
+      <aliases enabled='yes' />
+      <column datatype='string' name='[:Measure Names]' role='dimension' type='nominal'>
+        <aliases>
+          <alias key='&quot;[federated.06kgplv0wyity31d9je4z1e9546o].[sum:sessions_total_sessions:qk]&quot;' value='Total sessions' />
+          <alias key='&quot;[federated.06kgplv0wyity31d9je4z1e9546o].[usr:Calculation_984880977751879682:qk:1]&quot;' value='Sessions share_' />
+          <alias key='&quot;[federated.06kgplv0wyity31d9je4z1e9546o].[usr:Calculation_984880977751879682:qk]&quot;' value='Sessions share' />
+        </aliases>
+      </column>
+      <column caption='cvr' datatype='real' name='[Calculation_984880977748353024]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='sum([total_sessions_cvr])/sum([sessions_total_sessions])' />
+      </column>
+      <column caption='Sessions share_' datatype='real' name='[Calculation_984880977751879682]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='SUM([sessions_total_sessions])/TOTAL(sum([sessions_total_sessions]))'>
+          <table-calc ordering-type='Rows' />
+        </calculation>
+      </column>
+      <column caption='Estimated CVR' datatype='real' name='[Calculation_984880977753948163]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='SUM([total_sessions_cvr]) / SUM(IF [with_error_service_group] != &quot;NO FUNNEL ERROR SERVICE&quot; THEN [sessions_total_sessions] ELSE 0 END)' />
+      </column>
+      <column caption='Diff' datatype='real' name='[Calculation_984880977755303940]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='[Calculation_984880977748353024] - [Calculation_984880977753948163]' />
+      </column>
+      <column caption='Cálculo1' datatype='integer' name='[Calculation_984880977772679174]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='// Cálculo corregido que evita mezclar agregación y no-agregación&#13;&#10;IF [sessions_session_date_week] &lt; DATE(&quot;2025-07-25&quot;) THEN&#13;&#10;    IF [with_error_service_group] = &quot;NO FUNNEL&quot; OR [with_error_service_group] = &quot;NO FUNNEL ERROR SERVICE&quot; THEN&#13;&#10;        [sessions_total_sessions]&#13;&#10;    ELSE&#13;&#10;        0&#13;&#10;    END&#13;&#10;ELSE&#13;&#10;    IF [with_error_service_group] = &quot;NO FUNNEL&quot; THEN&#13;&#10;        [sessions_total_sessions]&#13;&#10;    ELSE&#13;&#10;        0&#13;&#10;    END&#13;&#10;END' />
+      </column>
+      <column caption='Funnel reclasification' datatype='string' name='[Calculation_984880977777508359]' role='dimension' type='nominal'>
+        <calculation class='tableau' formula='IF [sessions_session_date_week] &lt; DATE(&quot;2025-07-25&quot;) THEN&#13;&#10;    IF [with_error_service_group] = &quot;FUNNEL&quot; THEN &quot;FUNNEL&quot;&#13;&#10;    ELSE &quot;NO FUNNEL&quot; END&#13;&#10;ELSE&#13;&#10;    IF [with_error_service_group] = &quot;FUNNEL&quot; THEN &quot;FUNNEL&quot;&#13;&#10;    ELSEIF [with_error_service_group] = &quot;NO FUNNEL&quot; THEN &quot;NO FUNNEL&quot;&#13;&#10;    ELSE NULL END&#13;&#10;END' />
+      </column>
+      <_.fcp.ObjectModelTableType.true...column caption='Consulta SQL personalizada' datatype='table' name='[__tableau_internal_object_id__].[_DF1F0A8006D84EC6B91D7D25A553B688]' role='measure' type='quantitative' />
+      <column datatype='date' datatype-customized='true' name='[sessions_session_date_week]' role='dimension' type='ordinal' />
+      <column datatype='integer' name='[sessions_total_sessions]' role='measure' type='quantitative' />
+      <column caption='Sessions TX' datatype='integer' name='[total_sessions_cvr]' role='measure' type='quantitative' />
+      <column caption='Reclasification group' datatype='string' name='[with_error_service_group]' role='dimension' type='nominal' />
+      <column-instance column='[Calculation_984880977777508359]' derivation='None' name='[none:Calculation_984880977777508359:nk]' pivot='key' type='nominal' />
+      <column-instance column='[with_error_service_group]' derivation='None' name='[none:with_error_service_group:nk]' pivot='key' type='nominal' />
+      <column-instance column='[sessions_total_sessions]' derivation='Sum' name='[sum:sessions_total_sessions:qk]' pivot='key' type='quantitative' />
+      <column-instance column='[Calculation_984880977751879682]' derivation='User' name='[usr:Calculation_984880977751879682:qk:1]' pivot='key' type='quantitative'>
+        <table-calc ordering-field='[federated.06kgplv0wyity31d9je4z1e9546o].[none:with_error_service_group:nk]' ordering-type='Field' />
+      </column-instance>
+      <column-instance column='[Calculation_984880977751879682]' derivation='User' name='[usr:Calculation_984880977751879682:qk]' pivot='key' type='quantitative'>
+        <table-calc ordering-type='Columns' />
+      </column-instance>
+      <extract _.fcp.ObjectModelExtractV2.true...object-id='' _.fcp.VConnDownstreamExtractsWithWarnings.true...user-specific='false' count='-1' enabled='true' units='records'>
+        <connection access_mode='readonly' author-locale='en_US' class='hyper' dbname='extract/6f/8e/{4E86F312-902F-4C33-B1ED-239F34C2DC8D}/federated_06kgplv0wyity31d9je4z1.hyper' extract-engine='true' schema='Extract' sslmode='' tablename='Extract' update-time='08/18/2025 05:01:03 PM'>
+          <_.fcp.ObjectModelEncapsulateLegacy.false...relation name='Extract' table='[Extract].[Extract]' type='table' />
+          <_.fcp.ObjectModelEncapsulateLegacy.true...relation name='Extract' table='[Extract].[Extract]' type='table' />
+          <metadata-records>
+            <metadata-record class='column'>
+              <remote-name>sessions_session_date_week</remote-name>
+              <remote-type>133</remote-type>
+              <local-name>[sessions_session_date_week]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>sessions_session_date_week</remote-alias>
+              <ordinal>0</ordinal>
+              <family>Consulta SQL personalizada</family>
+              <local-type>date</local-type>
+              <aggregation>Year</aggregation>
+              <approx-count>3</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_DF1F0A8006D84EC6B91D7D25A553B688]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>platform</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[platform]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>platform</remote-alias>
+              <ordinal>1</ordinal>
+              <family>Consulta SQL personalizada</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>3</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_DF1F0A8006D84EC6B91D7D25A553B688]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>global_group</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[global_group]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>global_group</remote-alias>
+              <ordinal>2</ordinal>
+              <family>Consulta SQL personalizada</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>2</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_DF1F0A8006D84EC6B91D7D25A553B688]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>with_error_service_group</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[with_error_service_group]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>with_error_service_group</remote-alias>
+              <ordinal>3</ordinal>
+              <family>Consulta SQL personalizada</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>3</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_DF1F0A8006D84EC6B91D7D25A553B688]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>sessions_total_sessions</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[sessions_total_sessions]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>sessions_total_sessions</remote-alias>
+              <ordinal>4</ordinal>
+              <family>Consulta SQL personalizada</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>24</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_DF1F0A8006D84EC6B91D7D25A553B688]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>total_sessions_cvr</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[total_sessions_cvr]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>total_sessions_cvr</remote-alias>
+              <ordinal>5</ordinal>
+              <family>Consulta SQL personalizada</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>10</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_DF1F0A8006D84EC6B91D7D25A553B688]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>sessions_kpi_cvr</remote-name>
+              <remote-type>5</remote-type>
+              <local-name>[sessions_kpi_cvr]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>sessions_kpi_cvr</remote-alias>
+              <ordinal>6</ordinal>
+              <family>Consulta SQL personalizada</family>
+              <local-type>real</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>10</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_DF1F0A8006D84EC6B91D7D25A553B688]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+          </metadata-records>
+        </connection>
+      </extract>
+      <layout _.fcp.SchemaViewerObjectModel.false...dim-percentage='0.5' _.fcp.SchemaViewerObjectModel.false...measure-percentage='0.4' dim-ordering='alphabetic' measure-ordering='alphabetic' show-structure='true' />
+      <style>
+        <style-rule element='mark'>
+          <encoding attr='color' field='[none:Calculation_984880977777508359:nk]' type='palette'>
+            <map to='#9467bd'>
+              <bucket>&quot;NO FUNNEL&quot;</bucket>
+            </map>
+            <map to='#aec7e8'>
+              <bucket>&quot;FUNNEL&quot;</bucket>
+            </map>
+          </encoding>
+        </style-rule>
+      </style>
+      <semantic-values>
+        <semantic-value key='[Country].[Name]' value='&quot;República Oriental de Uruguay&quot;' />
+      </semantic-values>
+      <date-options start-of-week='monday' />
+      <_.fcp.ObjectModelEncapsulateLegacy.true...object-graph>
+        <objects>
+          <object caption='Consulta SQL personalizada' id='_DF1F0A8006D84EC6B91D7D25A553B688'>
+            <properties context=''>
+              <relation connection='bigquery.1rljtr60vjiwxu14moato07rvity' name='Consulta SQL personalizada' type='text'><![CDATA[WITH sessions AS (
+
+SELECT
+distinct
+
+session_id
+,session_sk
+,global_entity_id
+,platform
+,home_loaded 
+,shop_list_loaded  
+,shop_details_loaded
+,add_cart_clicked
+,checkout_loaded
+,is_transaction
+,shop_impressions_loaded 
+,FORMAT_DATE('%F', DATE_TRUNC(sessions.partition_date , WEEK(MONDAY))) AS sessions_session_date_week
+,case when  sessions.totals.orders   >>0 then  1   else 0 end  AS sessions_sum_transaction_boolean,
+FROM `peya-bi-tools-pro.il_sessions.fact_perseus_sessions` AS sessions
+
+WHERE ((( sessions.partition_date  ) >>= ((DATE_ADD(DATE_TRUNC(CURRENT_DATE(), WEEK(MONDAY)), INTERVAL -3
+ WEEK))) AND ( sessions.partition_date  ) << ((DATE_ADD(DATE_ADD(DATE_TRUNC(CURRENT_DATE(), WEEK(MONDAY)), INTERVAL -3
+ WEEK), INTERVAL 3
+ WEEK))))) AND ((sessions.country_id ) >> 0 OR (sessions.country_id ) IS NULL) AND (sessions.country.country_name ) IS NOT NULL
+)
+, error_service AS (
+
+WITH app_opened AS (
+    SELECT 
+    distinct
+    sessionid
+    ,global_entity_id
+
+    FROM `peya-data-origins-pro.cl_sessions.perseus_events`
+    WHERE ((( partition_date  ) >>= ((DATE_ADD(DATE_TRUNC(CURRENT_DATE(), WEEK(MONDAY)), INTERVAL -3
+     WEEK))) AND ( partition_date  ) << ((DATE_ADD(DATE_ADD(DATE_TRUNC(CURRENT_DATE(), WEEK(MONDAY)), INTERVAL -3
+     WEEK), INTERVAL 3
+     WEEK)))))
+    AND eventAction = "app.opened"
+
+)
+
+, modal_loaded AS (
+     SELECT 
+    distinct
+    sessionid
+    ,global_entity_id
+
+    FROM `peya-data-origins-pro.cl_sessions.perseus_events`
+    WHERE ((( partition_date  ) >>= ((DATE_ADD(DATE_TRUNC(CURRENT_DATE(), WEEK(MONDAY)), INTERVAL -3
+     WEEK))) AND ( partition_date  ) << ((DATE_ADD(DATE_ADD(DATE_TRUNC(CURRENT_DATE(), WEEK(MONDAY)), INTERVAL -3
+     WEEK), INTERVAL 3
+     WEEK)))))
+    AND eventAction = "modal.loaded"
+    AND STRING(eventVariablesjson.modalType) = "error_service"
+)
+
+SELECT 
+DISTINCT 
+ao.sessionid
+,ao.global_entity_id
+
+FROM app_opened ao
+INNER JOIN modal_loaded ml on ml.sessionid = ao.sessionId and ml.global_entity_id = ao.global_entity_id
+)
+
+,raw_total_sessions as ( 
+SELECT 
+distinct
+s.session_id
+, s.session_sk
+,s.global_entity_id
+,s.platform
+,home_loaded 
+,shop_list_loaded  
+,shop_details_loaded
+,add_cart_clicked
+,checkout_loaded
+,is_transaction
+,shop_impressions_loaded 
+,sessions_session_date_week
+,sessions_sum_transaction_boolean
+,CASE WHEN es.sessionid IS NOT NULL THEN TRUE ELSE FALSE END error_service_session
+
+
+FROM sessions s
+LEFT JOIN error_service es on es.sessionid = s.session_id and es.global_entity_id = s.global_entity_id)
+
+
+SELECT
+sessions_session_date_week,
+platform,
+CASE WHEN home_loaded  OR shop_list_loaded OR shop_details_loaded OR add_cart_clicked OR checkout_loaded OR is_transaction OR shop_impressions_loaded THEN "FUNNEL" else "NO FUNNEL" end global_group,
+
+CASE WHEN home_loaded  OR shop_list_loaded OR shop_details_loaded OR add_cart_clicked OR checkout_loaded OR is_transaction OR shop_impressions_loaded THEN "FUNNEL"
+WHEN home_loaded = FALSE AND shop_list_loaded = FALSE AND shop_details_loaded = FALSE AND add_cart_clicked = FALSE AND checkout_loaded = FALSE AND is_transaction = FALSE AND shop_impressions_loaded = FALSE AND error_service_session = TRUE THEN "NO FUNNEL ERROR SERVICE"
+ELSE "NO FUNNEL" end with_error_service_group,
+
+COUNT(DISTINCT session_sk ) AS sessions_total_sessions,
+COUNT(DISTINCT case when sessions_sum_transaction_boolean >> 0 then session_sk else null end ) total_sessions_cvr,
+COUNT(DISTINCT case when sessions_sum_transaction_boolean >> 0 then session_sk else null end ) / NULLIF(COUNT(DISTINCT session_sk ), 0) AS sessions_kpi_cvr
+
+FROM raw_total_sessions
+GROUP BY 1,2,3,4]]></relation>
+            </properties>
+            <properties context='extract'>
+              <relation name='Extract' table='[Extract].[Extract]' type='table' />
+            </properties>
+          </object>
+        </objects>
+      </_.fcp.ObjectModelEncapsulateLegacy.true...object-graph>
+    </datasource>
+    <datasource caption='WoW CVR' inline='true' name='federated.18r1he60qlln031bmwd1z1t0fli3' version='18.1'>
+      <connection class='federated'>
+        <named-connections>
+          <named-connection caption='BigQuery' name='bigquery.0du25d20pgcxei16l6pq910v74yf'>
+            <connection CATALOG='peya-growth-and-onboarding' EXECCATALOG='peya-growth-and-onboarding' authentication='oauth' bq-dataset-fetch-rows='' bq-fetch-rows='' bq-fetch-tasks='' bq-large-fetch-rows='' bq-project-fetch-rows='' bq-response-rows='' class='bigquery' connection-dialect='google-sql' project='peya-growth-and-onboarding' schema='automated_tables_reports' server-oauth='' username='camila.vinas@pedidosya.com' workgroup-auth-mode='prompt' />
+          </named-connection>
+        </named-connections>
+        <_.fcp.ObjectModelEncapsulateLegacy.false...relation connection='bigquery.0du25d20pgcxei16l6pq910v74yf' name='Consulta SQL personalizada' type='text'><![CDATA[SELECT
+platform,
+    CASE WHEN sessions.home_loaded THEN 'HOME' ELSE CASE WHEN ((((sessions.shop_list_loaded OR sessions.shop_details_loaded) OR sessions.add_cart_clicked) OR sessions.checkout_loaded) OR sessions.is_transaction) OR sessions.shop_impressions_loaded THEN 'OTHER' ELSE 'NO FUNNEL' END
+ END
+ AS `group`,
+        (FORMAT_DATE('%F', DATE_TRUNC(sessions.partition_date , WEEK(MONDAY)))) AS sessions_session_date_week,
+    COUNT(DISTINCT sessions.session_sk ) AS sessions_total_sessions,
+    COUNT(DISTINCT case when  sessions.totals.orders   >>0 then  sessions.session_sk   else null end ) AS sessions_sum_transaction_boolean,
+    100*COUNT(DISTINCT case when  sessions.totals.orders   >>0 then  sessions.session_sk   else null end ) / NULLIF(COUNT(DISTINCT sessions.session_sk ), 0) AS sessions_kpi_cvr
+FROM `peya-bi-tools-pro.il_sessions.fact_perseus_sessions`
+     AS sessions
+WHERE ((( sessions.partition_date  ) >>= ((DATE_ADD(DATE_TRUNC(CURRENT_DATE(), WEEK(MONDAY)), INTERVAL -10 WEEK))) AND ( sessions.partition_date  ) << ((DATE_ADD(DATE_ADD(DATE_TRUNC(CURRENT_DATE(), WEEK(MONDAY)), INTERVAL -10 WEEK), INTERVAL 10 WEEK))))) AND ((sessions.country_id ) >> 0 OR (sessions.country_id ) IS NULL) AND (sessions.country.country_name ) IS NOT NULL
+GROUP BY
+    1,
+    2,
+    3]]></_.fcp.ObjectModelEncapsulateLegacy.false...relation>
+        <_.fcp.ObjectModelEncapsulateLegacy.true...relation connection='bigquery.0du25d20pgcxei16l6pq910v74yf' name='Consulta SQL personalizada' type='text'><![CDATA[SELECT
+platform,
+    CASE WHEN sessions.home_loaded THEN 'HOME' ELSE CASE WHEN ((((sessions.shop_list_loaded OR sessions.shop_details_loaded) OR sessions.add_cart_clicked) OR sessions.checkout_loaded) OR sessions.is_transaction) OR sessions.shop_impressions_loaded THEN 'OTHER' ELSE 'NO FUNNEL' END
+ END
+ AS `group`,
+        (FORMAT_DATE('%F', DATE_TRUNC(sessions.partition_date , WEEK(MONDAY)))) AS sessions_session_date_week,
+    COUNT(DISTINCT sessions.session_sk ) AS sessions_total_sessions,
+    COUNT(DISTINCT case when  sessions.totals.orders   >>0 then  sessions.session_sk   else null end ) AS sessions_sum_transaction_boolean,
+    100*COUNT(DISTINCT case when  sessions.totals.orders   >>0 then  sessions.session_sk   else null end ) / NULLIF(COUNT(DISTINCT sessions.session_sk ), 0) AS sessions_kpi_cvr
+FROM `peya-bi-tools-pro.il_sessions.fact_perseus_sessions`
+     AS sessions
+WHERE ((( sessions.partition_date  ) >>= ((DATE_ADD(DATE_TRUNC(CURRENT_DATE(), WEEK(MONDAY)), INTERVAL -10 WEEK))) AND ( sessions.partition_date  ) << ((DATE_ADD(DATE_ADD(DATE_TRUNC(CURRENT_DATE(), WEEK(MONDAY)), INTERVAL -10 WEEK), INTERVAL 10 WEEK))))) AND ((sessions.country_id ) >> 0 OR (sessions.country_id ) IS NULL) AND (sessions.country.country_name ) IS NOT NULL
+GROUP BY
+    1,
+    2,
+    3]]></_.fcp.ObjectModelEncapsulateLegacy.true...relation>
+        <metadata-records>
+          <metadata-record class='column'>
+            <remote-name>platform</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[platform]</local-name>
+            <parent-name>[Consulta SQL personalizada]</parent-name>
+            <remote-alias>platform</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_E42B158AF2934082860C55FF1503236F]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>group</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[group]</local-name>
+            <parent-name>[Consulta SQL personalizada]</parent-name>
+            <remote-alias>group</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_E42B158AF2934082860C55FF1503236F]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>sessions_session_date_week</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[sessions_session_date_week]</local-name>
+            <parent-name>[Consulta SQL personalizada]</parent-name>
+            <remote-alias>sessions_session_date_week</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_E42B158AF2934082860C55FF1503236F]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>sessions_total_sessions</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[sessions_total_sessions]</local-name>
+            <parent-name>[Consulta SQL personalizada]</parent-name>
+            <remote-alias>sessions_total_sessions</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_E42B158AF2934082860C55FF1503236F]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>sessions_sum_transaction_boolean</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[sessions_sum_transaction_boolean]</local-name>
+            <parent-name>[Consulta SQL personalizada]</parent-name>
+            <remote-alias>sessions_sum_transaction_boolean</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_E42B158AF2934082860C55FF1503236F]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>sessions_kpi_cvr</remote-name>
+            <remote-type>5</remote-type>
+            <local-name>[sessions_kpi_cvr]</local-name>
+            <parent-name>[Consulta SQL personalizada]</parent-name>
+            <remote-alias>sessions_kpi_cvr</remote-alias>
+            <local-type>real</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_E42B158AF2934082860C55FF1503236F]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+        </metadata-records>
+      </connection>
+      <aliases enabled='yes' />
+      <_.fcp.ObjectModelTableType.true...column caption='Consulta SQL personalizada' datatype='table' name='[__tableau_internal_object_id__].[_E42B158AF2934082860C55FF1503236F]' role='measure' type='quantitative' />
+      <column datatype='string' name='[group]' role='dimension' type='nominal' />
+      <column caption='CVR' datatype='real' name='[sessions_kpi_cvr]' role='measure' type='quantitative' />
+      <column datatype='date' datatype-customized='true' name='[sessions_session_date_week]' role='dimension' type='ordinal' />
+      <column-instance column='[group]' derivation='None' name='[none:group:nk]' pivot='key' type='nominal' />
+      <extract _.fcp.ObjectModelExtractV2.true...object-id='' _.fcp.VConnDownstreamExtractsWithWarnings.true...user-specific='false' count='-1' enabled='true' units='records'>
+        <connection access_mode='readonly' author-locale='en_US' class='hyper' dbname='extract/6f/8e/{4E86F312-902F-4C33-B1ED-239F34C2DC8D}/federated_18r1he60qlln031bmwd1z1.hyper' extract-engine='true' schema='Extract' sslmode='' tablename='Extract' update-time='08/18/2025 05:01:27 PM'>
+          <_.fcp.ObjectModelEncapsulateLegacy.false...relation name='Extract' table='[Extract].[Extract]' type='table' />
+          <_.fcp.ObjectModelEncapsulateLegacy.true...relation name='Extract' table='[Extract].[Extract]' type='table' />
+          <metadata-records>
+            <metadata-record class='column'>
+              <remote-name>platform</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[platform]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>platform</remote-alias>
+              <ordinal>0</ordinal>
+              <family>Consulta SQL personalizada</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>3</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_E42B158AF2934082860C55FF1503236F]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>group</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[group]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>group</remote-alias>
+              <ordinal>1</ordinal>
+              <family>Consulta SQL personalizada</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>3</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_E42B158AF2934082860C55FF1503236F]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>sessions_session_date_week</remote-name>
+              <remote-type>133</remote-type>
+              <local-name>[sessions_session_date_week]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>sessions_session_date_week</remote-alias>
+              <ordinal>2</ordinal>
+              <family>Consulta SQL personalizada</family>
+              <local-type>date</local-type>
+              <aggregation>Year</aggregation>
+              <approx-count>10</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_E42B158AF2934082860C55FF1503236F]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>sessions_total_sessions</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[sessions_total_sessions]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>sessions_total_sessions</remote-alias>
+              <ordinal>3</ordinal>
+              <family>Consulta SQL personalizada</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>90</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_E42B158AF2934082860C55FF1503236F]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>sessions_sum_transaction_boolean</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[sessions_sum_transaction_boolean]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>sessions_sum_transaction_boolean</remote-alias>
+              <ordinal>4</ordinal>
+              <family>Consulta SQL personalizada</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>61</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_E42B158AF2934082860C55FF1503236F]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>sessions_kpi_cvr</remote-name>
+              <remote-type>5</remote-type>
+              <local-name>[sessions_kpi_cvr]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>sessions_kpi_cvr</remote-alias>
+              <ordinal>5</ordinal>
+              <family>Consulta SQL personalizada</family>
+              <local-type>real</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>61</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_E42B158AF2934082860C55FF1503236F]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+          </metadata-records>
+        </connection>
+      </extract>
+      <layout _.fcp.SchemaViewerObjectModel.false...dim-percentage='0.5' _.fcp.SchemaViewerObjectModel.false...measure-percentage='0.4' dim-ordering='alphabetic' measure-ordering='alphabetic' show-structure='true' />
+      <style>
+        <style-rule element='mark'>
+          <encoding attr='color' field='[none:group:nk]' type='palette'>
+            <map to='#aec7e8'>
+              <bucket>&quot;HOME&quot;</bucket>
+            </map>
+            <map to='#c5b0d5'>
+              <bucket>&quot;OTHER&quot;</bucket>
+            </map>
+            <map to='#f28e2b'>
+              <bucket>&quot;NO FUNNEL&quot;</bucket>
+            </map>
+          </encoding>
+        </style-rule>
+      </style>
+      <semantic-values>
+        <semantic-value key='[Country].[Name]' value='&quot;República Oriental de Uruguay&quot;' />
+      </semantic-values>
+      <date-options start-of-week='monday' />
+      <_.fcp.ObjectModelEncapsulateLegacy.true...object-graph>
+        <objects>
+          <object caption='Consulta SQL personalizada' id='_E42B158AF2934082860C55FF1503236F'>
+            <properties context=''>
+              <relation connection='bigquery.0du25d20pgcxei16l6pq910v74yf' name='Consulta SQL personalizada' type='text'><![CDATA[SELECT
+platform,
+    CASE WHEN sessions.home_loaded THEN 'HOME' ELSE CASE WHEN ((((sessions.shop_list_loaded OR sessions.shop_details_loaded) OR sessions.add_cart_clicked) OR sessions.checkout_loaded) OR sessions.is_transaction) OR sessions.shop_impressions_loaded THEN 'OTHER' ELSE 'NO FUNNEL' END
+ END
+ AS `group`,
+        (FORMAT_DATE('%F', DATE_TRUNC(sessions.partition_date , WEEK(MONDAY)))) AS sessions_session_date_week,
+    COUNT(DISTINCT sessions.session_sk ) AS sessions_total_sessions,
+    COUNT(DISTINCT case when  sessions.totals.orders   >>0 then  sessions.session_sk   else null end ) AS sessions_sum_transaction_boolean,
+    100*COUNT(DISTINCT case when  sessions.totals.orders   >>0 then  sessions.session_sk   else null end ) / NULLIF(COUNT(DISTINCT sessions.session_sk ), 0) AS sessions_kpi_cvr
+FROM `peya-bi-tools-pro.il_sessions.fact_perseus_sessions`
+     AS sessions
+WHERE ((( sessions.partition_date  ) >>= ((DATE_ADD(DATE_TRUNC(CURRENT_DATE(), WEEK(MONDAY)), INTERVAL -10 WEEK))) AND ( sessions.partition_date  ) << ((DATE_ADD(DATE_ADD(DATE_TRUNC(CURRENT_DATE(), WEEK(MONDAY)), INTERVAL -10 WEEK), INTERVAL 10 WEEK))))) AND ((sessions.country_id ) >> 0 OR (sessions.country_id ) IS NULL) AND (sessions.country.country_name ) IS NOT NULL
+GROUP BY
+    1,
+    2,
+    3]]></relation>
+            </properties>
+            <properties context='extract'>
+              <relation name='Extract' table='[Extract].[Extract]' type='table' />
+            </properties>
+          </object>
+        </objects>
+      </_.fcp.ObjectModelEncapsulateLegacy.true...object-graph>
+    </datasource>
+  </datasources>
+  <worksheets>
+    <worksheet name='AND - Estimated impact of reclasification error service'>
+      <layout-options>
+        <title>
+          <formatted-text>
+            <run bold='true' fontsize='10'>Android</run>
+          </formatted-text>
+        </title>
+      </layout-options>
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='Reclasification impact' name='federated.06kgplv0wyity31d9je4z1e9546o' />
+          </datasources>
+          <datasource-dependencies datasource='federated.06kgplv0wyity31d9je4z1e9546o'>
+            <column caption='cvr' datatype='real' name='[Calculation_984880977748353024]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='sum([total_sessions_cvr])/sum([sessions_total_sessions])' />
+            </column>
+            <column caption='Sessions share_' datatype='real' name='[Calculation_984880977751879682]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='SUM([sessions_total_sessions])/TOTAL(sum([sessions_total_sessions]))'>
+                <table-calc ordering-type='Rows' />
+              </calculation>
+            </column>
+            <column caption='Estimated CVR' datatype='real' name='[Calculation_984880977753948163]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='SUM([total_sessions_cvr]) / SUM(IF [with_error_service_group] != &quot;NO FUNNEL ERROR SERVICE&quot; THEN [sessions_total_sessions] ELSE 0 END)' />
+            </column>
+            <column caption='Diff' datatype='real' name='[Calculation_984880977755303940]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='[Calculation_984880977748353024] - [Calculation_984880977753948163]' />
+            </column>
+            <column-instance column='[platform]' derivation='None' name='[none:platform:nk]' pivot='key' type='nominal' />
+            <column-instance column='[with_error_service_group]' derivation='None' name='[none:with_error_service_group:nk]' pivot='key' type='nominal' />
+            <column datatype='string' name='[platform]' role='dimension' type='nominal' />
+            <column datatype='integer' name='[sessions_total_sessions]' role='measure' type='quantitative' />
+            <column-instance column='[sessions_total_sessions]' derivation='Sum' name='[sum:sessions_total_sessions:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[total_sessions_cvr]' derivation='Sum' name='[sum:total_sessions_cvr:qk]' pivot='key' type='quantitative' />
+            <column caption='Sessions TX' datatype='integer' name='[total_sessions_cvr]' role='measure' type='quantitative' />
+            <column-instance column='[Calculation_984880977748353024]' derivation='User' name='[usr:Calculation_984880977748353024:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[Calculation_984880977751879682]' derivation='User' name='[usr:Calculation_984880977751879682:qk]' pivot='key' type='quantitative'>
+              <table-calc ordering-type='Columns' />
+            </column-instance>
+            <column-instance column='[Calculation_984880977753948163]' derivation='User' name='[usr:Calculation_984880977753948163:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[Calculation_984880977755303940]' derivation='User' name='[usr:Calculation_984880977755303940:qk]' pivot='key' type='quantitative' />
+            <column caption='Reclasification group' datatype='string' name='[with_error_service_group]' role='dimension' type='nominal' />
+          </datasource-dependencies>
+          <filter class='categorical' column='[federated.06kgplv0wyity31d9je4z1e9546o].[:Measure Names]'>
+            <groupfilter function='union' user:op='manual'>
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.06kgplv0wyity31d9je4z1e9546o].[sum:sessions_total_sessions:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.06kgplv0wyity31d9je4z1e9546o].[usr:Calculation_984880977751879682:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.06kgplv0wyity31d9je4z1e9546o].[sum:total_sessions_cvr:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.06kgplv0wyity31d9je4z1e9546o].[usr:Calculation_984880977748353024:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.06kgplv0wyity31d9je4z1e9546o].[usr:Calculation_984880977753948163:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.06kgplv0wyity31d9je4z1e9546o].[usr:Calculation_984880977755303940:qk]&quot;' />
+            </groupfilter>
+          </filter>
+          <manual-sort column='[federated.06kgplv0wyity31d9je4z1e9546o].[:Measure Names]' direction='ASC'>
+            <dictionary>
+              <bucket>&quot;[federated.06kgplv0wyity31d9je4z1e9546o].[sum:sessions_total_sessions:qk]&quot;</bucket>
+              <bucket>&quot;[federated.06kgplv0wyity31d9je4z1e9546o].[usr:Calculation_984880977751879682:qk]&quot;</bucket>
+              <bucket>&quot;[federated.06kgplv0wyity31d9je4z1e9546o].[sum:total_sessions_cvr:qk]&quot;</bucket>
+              <bucket>&quot;[federated.06kgplv0wyity31d9je4z1e9546o].[usr:Calculation_984880977748353024:qk]&quot;</bucket>
+              <bucket>&quot;[federated.06kgplv0wyity31d9je4z1e9546o].[usr:Calculation_984880977753948163:qk]&quot;</bucket>
+              <bucket>&quot;[federated.06kgplv0wyity31d9je4z1e9546o].[usr:Calculation_984880977755303940:qk]&quot;</bucket>
+            </dictionary>
+          </manual-sort>
+          <filter class='categorical' column='[federated.06kgplv0wyity31d9je4z1e9546o].[none:platform:nk]'>
+            <groupfilter function='member' level='[none:platform:nk]' member='&quot;Android&quot;' user:ui-domain='database' user:ui-enumeration='inclusive' user:ui-marker='enumerate' />
+          </filter>
+          <slices>
+            <column>[federated.06kgplv0wyity31d9je4z1e9546o].[:Measure Names]</column>
+            <column>[federated.06kgplv0wyity31d9je4z1e9546o].[none:platform:nk]</column>
+          </slices>
+          <aggregation value='true' />
+        </view>
+        <style>
+          <style-rule element='cell'>
+            <format attr='width' field='[federated.06kgplv0wyity31d9je4z1e9546o].[:Measure Names]' value='138' />
+            <format attr='text-format' field='[federated.06kgplv0wyity31d9je4z1e9546o].[usr:Calculation_984880977748353024:qk]' value='p0.00%' />
+            <format attr='text-format' field='[federated.06kgplv0wyity31d9je4z1e9546o].[usr:Calculation_984880977751879682:qk]' value='p0.00%' />
+            <format attr='text-format' field='[federated.06kgplv0wyity31d9je4z1e9546o].[usr:Calculation_984880977753948163:qk]' value='p0.00%' />
+            <format attr='text-format' field='[federated.06kgplv0wyity31d9je4z1e9546o].[usr:Calculation_984880977755303940:qk]' value='p0.00%' />
+          </style-rule>
+          <style-rule element='header'>
+            <format attr='width' field='[federated.06kgplv0wyity31d9je4z1e9546o].[none:with_error_service_group:nk]' value='260' />
+            <format attr='background-color' scope='cols' value='#dfe7e8' />
+          </style-rule>
+          <style-rule element='label'>
+            <format attr='font-weight' field='[federated.06kgplv0wyity31d9je4z1e9546o].[none:with_error_service_group:nk]' value='bold' />
+            <format attr='font-size' field='[federated.06kgplv0wyity31d9je4z1e9546o].[none:with_error_service_group:nk]' value='9' />
+          </style-rule>
+        </style>
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Automatic' />
+            <encodings>
+              <text column='[federated.06kgplv0wyity31d9je4z1e9546o].[Multiple Values]' />
+            </encodings>
+            <style>
+              <style-rule element='mark'>
+                <format attr='mark-labels-show' value='true' />
+              </style-rule>
+              <style-rule element='pane'>
+                <format attr='minwidth' value='-1' />
+                <format attr='maxwidth' value='-1' />
+              </style-rule>
+            </style>
+          </pane>
+        </panes>
+        <rows total='true'>[federated.06kgplv0wyity31d9je4z1e9546o].[none:with_error_service_group:nk]</rows>
+        <cols>[federated.06kgplv0wyity31d9je4z1e9546o].[:Measure Names]</cols>
+      </table>
+      <simple-id uuid='{7A8EB1AF-F0AD-496E-A0ED-875F56A9AFE0}' />
+    </worksheet>
+    <worksheet name='And - WoW CVR'>
+      <layout-options>
+        <title>
+          <formatted-text>
+            <run bold='true' fontsize='9'>Android</run>
+          </formatted-text>
+        </title>
+      </layout-options>
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='WoW CVR' name='federated.18r1he60qlln031bmwd1z1t0fli3' />
+          </datasources>
+          <datasource-dependencies datasource='federated.18r1he60qlln031bmwd1z1t0fli3'>
+            <column datatype='string' name='[group]' role='dimension' type='nominal' />
+            <column-instance column='[group]' derivation='None' name='[none:group:nk]' pivot='key' type='nominal' />
+            <column-instance column='[platform]' derivation='None' name='[none:platform:nk]' pivot='key' type='nominal' />
+            <column datatype='string' name='[platform]' role='dimension' type='nominal' />
+            <column caption='CVR' datatype='real' name='[sessions_kpi_cvr]' role='measure' type='quantitative' />
+            <column datatype='date' datatype-customized='true' name='[sessions_session_date_week]' role='dimension' type='ordinal' />
+            <column-instance column='[sessions_kpi_cvr]' derivation='Sum' name='[sum:sessions_kpi_cvr:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[sessions_session_date_week]' derivation='Week-Trunc' name='[twk:sessions_session_date_week:qk]' pivot='key' type='quantitative' />
+          </datasource-dependencies>
+          <filter class='categorical' column='[federated.18r1he60qlln031bmwd1z1t0fli3].[none:platform:nk]'>
+            <groupfilter function='member' level='[none:platform:nk]' member='&quot;Android&quot;' user:ui-domain='database' user:ui-enumeration='inclusive' user:ui-marker='enumerate' />
+          </filter>
+          <slices>
+            <column>[federated.18r1he60qlln031bmwd1z1t0fli3].[none:platform:nk]</column>
+          </slices>
+          <aggregation value='true' />
+        </view>
+        <style>
+          <style-rule element='axis'>
+            <format attr='title' class='0' field='[federated.18r1he60qlln031bmwd1z1t0fli3].[twk:sessions_session_date_week:qk]' scope='cols' value='' />
+          </style-rule>
+          <style-rule element='label'>
+            <format attr='text-format' field='[federated.18r1he60qlln031bmwd1z1t0fli3].[sum:sessions_kpi_cvr:qk]' value='n#,##0&quot;%&quot;;-#,##0&quot;%&quot;' />
+          </style-rule>
+          <style-rule element='worksheet'>
+            <format attr='display-field-labels' scope='cols' value='false' />
+          </style-rule>
+          <style-rule element='refline'>
+            <format attr='stroke-size' scope='cols' value='1' />
+          </style-rule>
+        </style>
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Line' />
+            <mark-sizing mark-sizing-setting='marks-scaling-off' />
+            <encodings>
+              <color column='[federated.18r1he60qlln031bmwd1z1t0fli3].[none:group:nk]' />
+            </encodings>
+            <style>
+              <style-rule element='datalabel'>
+                <format attr='color-mode' value='auto' />
+                <format attr='font-size' value='9' />
+              </style-rule>
+              <style-rule element='mark'>
+                <format attr='mark-labels-cull' value='false' />
+                <format attr='mark-labels-mode' value='line-ends' />
+                <format attr='mark-labels-show' value='true' />
+                <format attr='size' value='1' />
+              </style-rule>
+              <style-rule element='pane'>
+                <format attr='minwidth' value='-1' />
+                <format attr='maxwidth' value='-1' />
+              </style-rule>
+            </style>
+          </pane>
+        </panes>
+        <rows>[federated.18r1he60qlln031bmwd1z1t0fli3].[sum:sessions_kpi_cvr:qk]</rows>
+        <cols>[federated.18r1he60qlln031bmwd1z1t0fli3].[twk:sessions_session_date_week:qk]</cols>
+      </table>
+      <simple-id uuid='{A0A2CC34-EBC9-43B3-8A87-88A63008BC83}' />
+    </worksheet>
+    <worksheet name='Estimated impact of reclasification error service'>
+      <layout-options>
+        <title>
+          <formatted-text>
+            <run>Estimated impact of reclasification error service</run>
+          </formatted-text>
+        </title>
+      </layout-options>
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='Reclasification impact' name='federated.06kgplv0wyity31d9je4z1e9546o' />
+          </datasources>
+          <datasource-dependencies datasource='federated.06kgplv0wyity31d9je4z1e9546o'>
+            <column caption='cvr' datatype='real' name='[Calculation_984880977748353024]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='sum([total_sessions_cvr])/sum([sessions_total_sessions])' />
+            </column>
+            <column caption='Sessions share_' datatype='real' name='[Calculation_984880977751879682]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='SUM([sessions_total_sessions])/TOTAL(sum([sessions_total_sessions]))'>
+                <table-calc ordering-type='Rows' />
+              </calculation>
+            </column>
+            <column caption='Estimated CVR' datatype='real' name='[Calculation_984880977753948163]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='SUM([total_sessions_cvr]) / SUM(IF [with_error_service_group] != &quot;NO FUNNEL ERROR SERVICE&quot; THEN [sessions_total_sessions] ELSE 0 END)' />
+            </column>
+            <column caption='Diff' datatype='real' name='[Calculation_984880977755303940]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='[Calculation_984880977748353024] - [Calculation_984880977753948163]' />
+            </column>
+            <column-instance column='[with_error_service_group]' derivation='None' name='[none:with_error_service_group:nk]' pivot='key' type='nominal' />
+            <column datatype='integer' name='[sessions_total_sessions]' role='measure' type='quantitative' />
+            <column-instance column='[sessions_total_sessions]' derivation='Sum' name='[sum:sessions_total_sessions:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[total_sessions_cvr]' derivation='Sum' name='[sum:total_sessions_cvr:qk]' pivot='key' type='quantitative' />
+            <column caption='Sessions TX' datatype='integer' name='[total_sessions_cvr]' role='measure' type='quantitative' />
+            <column-instance column='[Calculation_984880977748353024]' derivation='User' name='[usr:Calculation_984880977748353024:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[Calculation_984880977751879682]' derivation='User' name='[usr:Calculation_984880977751879682:qk]' pivot='key' type='quantitative'>
+              <table-calc ordering-type='Columns' />
+            </column-instance>
+            <column-instance column='[Calculation_984880977753948163]' derivation='User' name='[usr:Calculation_984880977753948163:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[Calculation_984880977755303940]' derivation='User' name='[usr:Calculation_984880977755303940:qk]' pivot='key' type='quantitative' />
+            <column caption='Reclasification group' datatype='string' name='[with_error_service_group]' role='dimension' type='nominal' />
+          </datasource-dependencies>
+          <filter class='categorical' column='[federated.06kgplv0wyity31d9je4z1e9546o].[:Measure Names]'>
+            <groupfilter function='union' user:op='manual'>
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.06kgplv0wyity31d9je4z1e9546o].[sum:sessions_total_sessions:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.06kgplv0wyity31d9je4z1e9546o].[usr:Calculation_984880977751879682:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.06kgplv0wyity31d9je4z1e9546o].[sum:total_sessions_cvr:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.06kgplv0wyity31d9je4z1e9546o].[usr:Calculation_984880977748353024:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.06kgplv0wyity31d9je4z1e9546o].[usr:Calculation_984880977753948163:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.06kgplv0wyity31d9je4z1e9546o].[usr:Calculation_984880977755303940:qk]&quot;' />
+            </groupfilter>
+          </filter>
+          <manual-sort column='[federated.06kgplv0wyity31d9je4z1e9546o].[:Measure Names]' direction='ASC'>
+            <dictionary>
+              <bucket>&quot;[federated.06kgplv0wyity31d9je4z1e9546o].[sum:sessions_total_sessions:qk]&quot;</bucket>
+              <bucket>&quot;[federated.06kgplv0wyity31d9je4z1e9546o].[usr:Calculation_984880977751879682:qk]&quot;</bucket>
+              <bucket>&quot;[federated.06kgplv0wyity31d9je4z1e9546o].[sum:total_sessions_cvr:qk]&quot;</bucket>
+              <bucket>&quot;[federated.06kgplv0wyity31d9je4z1e9546o].[usr:Calculation_984880977748353024:qk]&quot;</bucket>
+              <bucket>&quot;[federated.06kgplv0wyity31d9je4z1e9546o].[usr:Calculation_984880977753948163:qk]&quot;</bucket>
+              <bucket>&quot;[federated.06kgplv0wyity31d9je4z1e9546o].[usr:Calculation_984880977755303940:qk]&quot;</bucket>
+            </dictionary>
+          </manual-sort>
+          <slices>
+            <column>[federated.06kgplv0wyity31d9je4z1e9546o].[:Measure Names]</column>
+          </slices>
+          <aggregation value='true' />
+        </view>
+        <style>
+          <style-rule element='cell'>
+            <format attr='width' field='[federated.06kgplv0wyity31d9je4z1e9546o].[:Measure Names]' value='136' />
+            <format attr='height' field='[federated.06kgplv0wyity31d9je4z1e9546o].[none:with_error_service_group:nk]' value='38' />
+            <format attr='text-format' field='[federated.06kgplv0wyity31d9je4z1e9546o].[usr:Calculation_984880977748353024:qk]' value='p0.00%' />
+            <format attr='text-format' field='[federated.06kgplv0wyity31d9je4z1e9546o].[usr:Calculation_984880977751879682:qk]' value='p0.00%' />
+            <format attr='text-format' field='[federated.06kgplv0wyity31d9je4z1e9546o].[usr:Calculation_984880977753948163:qk]' value='p0.00%' />
+            <format attr='text-format' field='[federated.06kgplv0wyity31d9je4z1e9546o].[usr:Calculation_984880977755303940:qk]' value='p0.00%' />
+          </style-rule>
+          <style-rule element='header'>
+            <format attr='width' field='[federated.06kgplv0wyity31d9je4z1e9546o].[none:with_error_service_group:nk]' value='260' />
+            <format attr='background-color' scope='cols' value='#dfe7e8' />
+            <format attr='background-color' scope='rows' value='#ffffff' />
+            <format attr='background-color' data-class='subtotal' value='#ffffff' />
+            <format attr='background-color' data-class='total' value='#ffffff' />
+            <format attr='band-color' scope='rows' value='#f5f5f5' />
+          </style-rule>
+          <style-rule element='label'>
+            <format attr='font-weight' field='[federated.06kgplv0wyity31d9je4z1e9546o].[none:with_error_service_group:nk]' value='bold' />
+            <format attr='font-size' field='[federated.06kgplv0wyity31d9je4z1e9546o].[none:with_error_service_group:nk]' value='9' />
+          </style-rule>
+          <style-rule element='pane'>
+            <format attr='band-color' scope='cols' value='#ffffff' />
+            <format attr='band-color' scope='rows' value='#f5f5f5' />
+            <format attr='background-color' value='#ffffff' />
+          </style-rule>
+          <style-rule element='table'>
+            <format attr='background-color' value='#ffffff' />
+            <format attr='band-size' scope='cols' value='0' />
+            <format attr='band-size' scope='rows' value='1' />
+          </style-rule>
+        </style>
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Automatic' />
+            <encodings>
+              <text column='[federated.06kgplv0wyity31d9je4z1e9546o].[Multiple Values]' />
+            </encodings>
+            <style>
+              <style-rule element='mark'>
+                <format attr='mark-labels-show' value='true' />
+              </style-rule>
+              <style-rule element='pane'>
+                <format attr='minwidth' value='-1' />
+                <format attr='maxwidth' value='-1' />
+                <format attr='minheight' value='-1' />
+                <format attr='maxheight' value='-1' />
+              </style-rule>
+            </style>
+          </pane>
+        </panes>
+        <rows total='true'>[federated.06kgplv0wyity31d9je4z1e9546o].[none:with_error_service_group:nk]</rows>
+        <cols>[federated.06kgplv0wyity31d9je4z1e9546o].[:Measure Names]</cols>
+      </table>
+      <simple-id uuid='{1FDFF7B6-0456-4DB6-8B38-F53998D680DF}' />
+    </worksheet>
+    <worksheet name='WoW CVR'>
+      <layout-options>
+        <title>
+          <formatted-text>
+            <run bold='true' fontsize='9'>WoW CVR</run>
+          </formatted-text>
+        </title>
+      </layout-options>
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='WoW CVR' name='federated.18r1he60qlln031bmwd1z1t0fli3' />
+          </datasources>
+          <datasource-dependencies datasource='federated.18r1he60qlln031bmwd1z1t0fli3'>
+            <column datatype='string' name='[group]' role='dimension' type='nominal' />
+            <column-instance column='[group]' derivation='None' name='[none:group:nk]' pivot='key' type='nominal' />
+            <column caption='CVR' datatype='real' name='[sessions_kpi_cvr]' role='measure' type='quantitative' />
+            <column datatype='date' datatype-customized='true' name='[sessions_session_date_week]' role='dimension' type='ordinal' />
+            <column-instance column='[sessions_kpi_cvr]' derivation='Sum' name='[sum:sessions_kpi_cvr:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[sessions_session_date_week]' derivation='Week-Trunc' name='[twk:sessions_session_date_week:qk]' pivot='key' type='quantitative' />
+          </datasource-dependencies>
+          <aggregation value='true' />
+        </view>
+        <style>
+          <style-rule element='axis'>
+            <format attr='title' class='0' field='[federated.18r1he60qlln031bmwd1z1t0fli3].[twk:sessions_session_date_week:qk]' scope='cols' value='' />
+          </style-rule>
+          <style-rule element='cell'>
+            <format attr='font-size' data-class='subtotal' value='8' />
+          </style-rule>
+          <style-rule element='label'>
+            <format attr='text-format' field='[federated.18r1he60qlln031bmwd1z1t0fli3].[sum:sessions_kpi_cvr:qk]' value='n#,##0&quot;%&quot;;-#,##0&quot;%&quot;' />
+          </style-rule>
+          <style-rule element='worksheet'>
+            <format attr='display-field-labels' scope='cols' value='false' />
+            <format attr='font-size' value='8' />
+          </style-rule>
+          <style-rule element='refline'>
+            <format attr='stroke-size' scope='cols' value='1' />
+          </style-rule>
+          <style-rule element='legend'>
+            <format attr='col-width' field='[federated.18r1he60qlln031bmwd1z1t0fli3].[none:group:nk]' value='180' />
+            <format attr='font-size' value='8' />
+            <format attr='background-color' value='#ffffff' />
+          </style-rule>
+          <style-rule element='legend-title'>
+            <format attr='text-align' value='center' />
+            <format attr='font-size' value='8' />
+          </style-rule>
+        </style>
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Line' />
+            <mark-sizing mark-sizing-setting='marks-scaling-off' />
+            <encodings>
+              <color column='[federated.18r1he60qlln031bmwd1z1t0fli3].[none:group:nk]' />
+            </encodings>
+            <style>
+              <style-rule element='datalabel'>
+                <format attr='color-mode' value='auto' />
+                <format attr='font-size' value='9' />
+              </style-rule>
+              <style-rule element='mark'>
+                <format attr='mark-labels-show' value='true' />
+                <format attr='mark-labels-cull' value='false' />
+                <format attr='mark-labels-mode' value='line-ends' />
+                <format attr='mark-transparency' value='180' />
+                <format attr='mark-markers-mode' value='none' />
+                <format attr='size' value='1' />
+              </style-rule>
+              <style-rule element='pane'>
+                <format attr='minwidth' value='-1' />
+                <format attr='maxwidth' value='-1' />
+              </style-rule>
+            </style>
+          </pane>
+        </panes>
+        <rows>[federated.18r1he60qlln031bmwd1z1t0fli3].[sum:sessions_kpi_cvr:qk]</rows>
+        <cols>[federated.18r1he60qlln031bmwd1z1t0fli3].[twk:sessions_session_date_week:qk]</cols>
+      </table>
+      <simple-id uuid='{9D804BCB-4EF9-4A76-9276-7B70547530BA}' />
+    </worksheet>
+    <worksheet name='funnel/ no funnel re-clasification'>
+      <layout-options>
+        <title>
+          <formatted-text>
+            <run bold='true' fontsize='12'>Funnel / No Funnel re-clasification</run>
+          </formatted-text>
+        </title>
+      </layout-options>
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='Reclasification impact' name='federated.06kgplv0wyity31d9je4z1e9546o' />
+          </datasources>
+          <datasource-dependencies datasource='federated.06kgplv0wyity31d9je4z1e9546o'>
+            <column caption='Sessions share_' datatype='real' name='[Calculation_984880977751879682]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='SUM([sessions_total_sessions])/TOTAL(sum([sessions_total_sessions]))'>
+                <table-calc ordering-type='Rows' />
+              </calculation>
+            </column>
+            <column caption='Funnel reclasification' datatype='string' name='[Calculation_984880977777508359]' role='dimension' type='nominal'>
+              <calculation class='tableau' formula='IF [sessions_session_date_week] &lt; DATE(&quot;2025-07-25&quot;) THEN&#13;&#10;    IF [with_error_service_group] = &quot;FUNNEL&quot; THEN &quot;FUNNEL&quot;&#13;&#10;    ELSE &quot;NO FUNNEL&quot; END&#13;&#10;ELSE&#13;&#10;    IF [with_error_service_group] = &quot;FUNNEL&quot; THEN &quot;FUNNEL&quot;&#13;&#10;    ELSEIF [with_error_service_group] = &quot;NO FUNNEL&quot; THEN &quot;NO FUNNEL&quot;&#13;&#10;    ELSE NULL END&#13;&#10;END' />
+            </column>
+            <column-instance column='[Calculation_984880977777508359]' derivation='None' name='[none:Calculation_984880977777508359:nk]' pivot='key' type='nominal' />
+            <column-instance column='[platform]' derivation='None' name='[none:platform:nk]' pivot='key' type='nominal' />
+            <column datatype='string' name='[platform]' role='dimension' type='nominal' />
+            <column datatype='date' datatype-customized='true' name='[sessions_session_date_week]' role='dimension' type='ordinal' />
+            <column datatype='integer' name='[sessions_total_sessions]' role='measure' type='quantitative' />
+            <column-instance column='[sessions_session_date_week]' derivation='Week-Trunc' name='[twk:sessions_session_date_week:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[Calculation_984880977751879682]' derivation='User' name='[usr:Calculation_984880977751879682:qk:4]' pivot='key' type='quantitative'>
+              <table-calc ordering-field='[federated.06kgplv0wyity31d9je4z1e9546o].[none:Calculation_984880977777508359:nk]' ordering-type='Field' />
+            </column-instance>
+            <column caption='Reclasification group' datatype='string' name='[with_error_service_group]' role='dimension' type='nominal' />
+          </datasource-dependencies>
+          <filter class='categorical' column='[federated.06kgplv0wyity31d9je4z1e9546o].[none:platform:nk]'>
+            <groupfilter function='level-members' level='[none:platform:nk]' user:ui-enumeration='all' user:ui-marker='enumerate' />
+          </filter>
+          <slices>
+            <column>[federated.06kgplv0wyity31d9je4z1e9546o].[none:platform:nk]</column>
+          </slices>
+          <aggregation value='true' />
+        </view>
+        <style>
+          <style-rule element='axis'>
+            <format attr='title' class='0' field='[federated.06kgplv0wyity31d9je4z1e9546o].[twk:sessions_session_date_week:qk]' scope='cols' value='' />
+            <format attr='title' class='0' field='[federated.06kgplv0wyity31d9je4z1e9546o].[usr:Calculation_984880977751879682:qk:4]' scope='rows' value='Sessions share' />
+          </style-rule>
+          <style-rule element='cell'>
+            <format attr='text-format' field='[federated.06kgplv0wyity31d9je4z1e9546o].[usr:Calculation_984880977751879682:qk:4]' value='p0.00%' />
+          </style-rule>
+          <style-rule element='legend'>
+            <format attr='col-width' field='[federated.06kgplv0wyity31d9je4z1e9546o].[none:Calculation_984880977777508359:nk]' value='160' />
+          </style-rule>
+          <style-rule element='legend-title-text'>
+            <format attr='color' field='[federated.06kgplv0wyity31d9je4z1e9546o].[none:Calculation_984880977777508359:nk]' value='Funnel reclasification'>
+              <formatted-text>
+                <run>Funnel reclasification</run>
+              </formatted-text>
+            </format>
+          </style-rule>
+          <style-rule element='quick-filter'>
+            <format attr='title' field='[federated.06kgplv0wyity31d9je4z1e9546o].[none:platform:nk]' value='platform'>
+              <formatted-text>
+                <run>platform</run>
+              </formatted-text>
+            </format>
+          </style-rule>
+        </style>
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Automatic' />
+            <mark-sizing mark-sizing-setting='marks-scaling-off' />
+            <encodings>
+              <color column='[federated.06kgplv0wyity31d9je4z1e9546o].[none:Calculation_984880977777508359:nk]' />
+            </encodings>
+            <style>
+              <style-rule element='mark'>
+                <format attr='mark-labels-show' value='true' />
+                <format attr='mark-labels-cull' value='true' />
+                <format attr='size' value='1' />
+              </style-rule>
+            </style>
+          </pane>
+        </panes>
+        <rows>[federated.06kgplv0wyity31d9je4z1e9546o].[usr:Calculation_984880977751879682:qk:4]</rows>
+        <cols>[federated.06kgplv0wyity31d9je4z1e9546o].[twk:sessions_session_date_week:qk]</cols>
+      </table>
+      <simple-id uuid='{3C5A6E3C-9198-49EC-9ABC-1CDBF24F1E0E}' />
+    </worksheet>
+    <worksheet name='iOS - Estimated impact of reclasification error service'>
+      <layout-options>
+        <title>
+          <formatted-text>
+            <run bold='true' fontsize='10'>iOS</run>
+          </formatted-text>
+        </title>
+      </layout-options>
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='Reclasification impact' name='federated.06kgplv0wyity31d9je4z1e9546o' />
+          </datasources>
+          <datasource-dependencies datasource='federated.06kgplv0wyity31d9je4z1e9546o'>
+            <column caption='cvr' datatype='real' name='[Calculation_984880977748353024]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='sum([total_sessions_cvr])/sum([sessions_total_sessions])' />
+            </column>
+            <column caption='Sessions share_' datatype='real' name='[Calculation_984880977751879682]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='SUM([sessions_total_sessions])/TOTAL(sum([sessions_total_sessions]))'>
+                <table-calc ordering-type='Rows' />
+              </calculation>
+            </column>
+            <column caption='Estimated CVR' datatype='real' name='[Calculation_984880977753948163]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='SUM([total_sessions_cvr]) / SUM(IF [with_error_service_group] != &quot;NO FUNNEL ERROR SERVICE&quot; THEN [sessions_total_sessions] ELSE 0 END)' />
+            </column>
+            <column caption='Diff' datatype='real' name='[Calculation_984880977755303940]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='[Calculation_984880977748353024] - [Calculation_984880977753948163]' />
+            </column>
+            <column-instance column='[platform]' derivation='None' name='[none:platform:nk]' pivot='key' type='nominal' />
+            <column-instance column='[with_error_service_group]' derivation='None' name='[none:with_error_service_group:nk]' pivot='key' type='nominal' />
+            <column datatype='string' name='[platform]' role='dimension' type='nominal' />
+            <column datatype='integer' name='[sessions_total_sessions]' role='measure' type='quantitative' />
+            <column-instance column='[sessions_total_sessions]' derivation='Sum' name='[sum:sessions_total_sessions:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[total_sessions_cvr]' derivation='Sum' name='[sum:total_sessions_cvr:qk]' pivot='key' type='quantitative' />
+            <column caption='Sessions TX' datatype='integer' name='[total_sessions_cvr]' role='measure' type='quantitative' />
+            <column-instance column='[Calculation_984880977748353024]' derivation='User' name='[usr:Calculation_984880977748353024:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[Calculation_984880977751879682]' derivation='User' name='[usr:Calculation_984880977751879682:qk]' pivot='key' type='quantitative'>
+              <table-calc ordering-type='Columns' />
+            </column-instance>
+            <column-instance column='[Calculation_984880977753948163]' derivation='User' name='[usr:Calculation_984880977753948163:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[Calculation_984880977755303940]' derivation='User' name='[usr:Calculation_984880977755303940:qk]' pivot='key' type='quantitative' />
+            <column caption='Reclasification group' datatype='string' name='[with_error_service_group]' role='dimension' type='nominal' />
+          </datasource-dependencies>
+          <filter class='categorical' column='[federated.06kgplv0wyity31d9je4z1e9546o].[:Measure Names]'>
+            <groupfilter function='union' user:op='manual'>
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.06kgplv0wyity31d9je4z1e9546o].[sum:sessions_total_sessions:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.06kgplv0wyity31d9je4z1e9546o].[usr:Calculation_984880977751879682:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.06kgplv0wyity31d9je4z1e9546o].[sum:total_sessions_cvr:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.06kgplv0wyity31d9je4z1e9546o].[usr:Calculation_984880977748353024:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.06kgplv0wyity31d9je4z1e9546o].[usr:Calculation_984880977753948163:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.06kgplv0wyity31d9je4z1e9546o].[usr:Calculation_984880977755303940:qk]&quot;' />
+            </groupfilter>
+          </filter>
+          <manual-sort column='[federated.06kgplv0wyity31d9je4z1e9546o].[:Measure Names]' direction='ASC'>
+            <dictionary>
+              <bucket>&quot;[federated.06kgplv0wyity31d9je4z1e9546o].[sum:sessions_total_sessions:qk]&quot;</bucket>
+              <bucket>&quot;[federated.06kgplv0wyity31d9je4z1e9546o].[usr:Calculation_984880977751879682:qk]&quot;</bucket>
+              <bucket>&quot;[federated.06kgplv0wyity31d9je4z1e9546o].[sum:total_sessions_cvr:qk]&quot;</bucket>
+              <bucket>&quot;[federated.06kgplv0wyity31d9je4z1e9546o].[usr:Calculation_984880977748353024:qk]&quot;</bucket>
+              <bucket>&quot;[federated.06kgplv0wyity31d9je4z1e9546o].[usr:Calculation_984880977753948163:qk]&quot;</bucket>
+              <bucket>&quot;[federated.06kgplv0wyity31d9je4z1e9546o].[usr:Calculation_984880977755303940:qk]&quot;</bucket>
+            </dictionary>
+          </manual-sort>
+          <filter class='categorical' column='[federated.06kgplv0wyity31d9je4z1e9546o].[none:platform:nk]'>
+            <groupfilter function='member' level='[none:platform:nk]' member='&quot;iOS&quot;' user:ui-domain='database' user:ui-enumeration='inclusive' user:ui-marker='enumerate' />
+          </filter>
+          <slices>
+            <column>[federated.06kgplv0wyity31d9je4z1e9546o].[:Measure Names]</column>
+            <column>[federated.06kgplv0wyity31d9je4z1e9546o].[none:platform:nk]</column>
+          </slices>
+          <aggregation value='true' />
+        </view>
+        <style>
+          <style-rule element='cell'>
+            <format attr='width' field='[federated.06kgplv0wyity31d9je4z1e9546o].[:Measure Names]' value='141' />
+            <format attr='text-format' field='[federated.06kgplv0wyity31d9je4z1e9546o].[usr:Calculation_984880977748353024:qk]' value='p0.00%' />
+            <format attr='text-format' field='[federated.06kgplv0wyity31d9je4z1e9546o].[usr:Calculation_984880977751879682:qk]' value='p0.00%' />
+            <format attr='text-format' field='[federated.06kgplv0wyity31d9je4z1e9546o].[usr:Calculation_984880977753948163:qk]' value='p0.00%' />
+            <format attr='text-format' field='[federated.06kgplv0wyity31d9je4z1e9546o].[usr:Calculation_984880977755303940:qk]' value='p0.00%' />
+          </style-rule>
+          <style-rule element='header'>
+            <format attr='width' field='[federated.06kgplv0wyity31d9je4z1e9546o].[none:with_error_service_group:nk]' value='260' />
+            <format attr='background-color' scope='cols' value='#dfe7e8' />
+          </style-rule>
+          <style-rule element='label'>
+            <format attr='font-weight' field='[federated.06kgplv0wyity31d9je4z1e9546o].[none:with_error_service_group:nk]' value='bold' />
+            <format attr='font-size' field='[federated.06kgplv0wyity31d9je4z1e9546o].[none:with_error_service_group:nk]' value='9' />
+          </style-rule>
+          <style-rule element='pane'>
+            <format attr='band-color' scope='cols' value='#ffffff' />
+          </style-rule>
+          <style-rule element='table'>
+            <format attr='band-size' scope='cols' value='1' />
+          </style-rule>
+        </style>
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Automatic' />
+            <encodings>
+              <text column='[federated.06kgplv0wyity31d9je4z1e9546o].[Multiple Values]' />
+            </encodings>
+            <style>
+              <style-rule element='mark'>
+                <format attr='mark-labels-show' value='true' />
+              </style-rule>
+              <style-rule element='pane'>
+                <format attr='minwidth' value='-1' />
+                <format attr='maxwidth' value='-1' />
+              </style-rule>
+            </style>
+          </pane>
+        </panes>
+        <rows total='true'>[federated.06kgplv0wyity31d9je4z1e9546o].[none:with_error_service_group:nk]</rows>
+        <cols>[federated.06kgplv0wyity31d9je4z1e9546o].[:Measure Names]</cols>
+      </table>
+      <simple-id uuid='{0B83E962-BB00-451F-AEF6-65FE04981FA4}' />
+    </worksheet>
+    <worksheet name='iOS - WoW CVR'>
+      <layout-options>
+        <title>
+          <formatted-text>
+            <run bold='true' fontsize='9'>iOS</run>
+            <run fontsize='9'>Æ </run>
+          </formatted-text>
+        </title>
+      </layout-options>
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='WoW CVR' name='federated.18r1he60qlln031bmwd1z1t0fli3' />
+          </datasources>
+          <datasource-dependencies datasource='federated.18r1he60qlln031bmwd1z1t0fli3'>
+            <column datatype='string' name='[group]' role='dimension' type='nominal' />
+            <column-instance column='[group]' derivation='None' name='[none:group:nk]' pivot='key' type='nominal' />
+            <column-instance column='[platform]' derivation='None' name='[none:platform:nk]' pivot='key' type='nominal' />
+            <column datatype='string' name='[platform]' role='dimension' type='nominal' />
+            <column caption='CVR' datatype='real' name='[sessions_kpi_cvr]' role='measure' type='quantitative' />
+            <column datatype='date' datatype-customized='true' name='[sessions_session_date_week]' role='dimension' type='ordinal' />
+            <column-instance column='[sessions_kpi_cvr]' derivation='Sum' name='[sum:sessions_kpi_cvr:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[sessions_session_date_week]' derivation='Day-Trunc' name='[tdy:sessions_session_date_week:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[sessions_session_date_week]' derivation='Week-Trunc' name='[twk:sessions_session_date_week:qk]' pivot='key' type='quantitative' />
+          </datasource-dependencies>
+          <filter class='categorical' column='[federated.18r1he60qlln031bmwd1z1t0fli3].[none:platform:nk]'>
+            <groupfilter function='member' level='[none:platform:nk]' member='&quot;iOS&quot;' user:ui-domain='database' user:ui-enumeration='inclusive' user:ui-marker='enumerate' />
+          </filter>
+          <slices>
+            <column>[federated.18r1he60qlln031bmwd1z1t0fli3].[none:platform:nk]</column>
+          </slices>
+          <aggregation value='true' />
+        </view>
+        <style>
+          <style-rule element='axis'>
+            <format attr='title' class='0' field='[federated.18r1he60qlln031bmwd1z1t0fli3].[twk:sessions_session_date_week:qk]' scope='cols' value='' />
+          </style-rule>
+          <style-rule element='label'>
+            <format attr='text-format' field='[federated.18r1he60qlln031bmwd1z1t0fli3].[sum:sessions_kpi_cvr:qk]' value='n#,##0&quot;%&quot;;-#,##0&quot;%&quot;' />
+          </style-rule>
+          <style-rule element='worksheet'>
+            <format attr='display-field-labels' scope='cols' value='false' />
+          </style-rule>
+          <style-rule element='refline'>
+            <format attr='stroke-size' scope='cols' value='1' />
+          </style-rule>
+          <style-rule element='annotation'>
+            <format attr='line-end-size' id='annotation_4' value='smallest' />
+            <format attr='fill-color' id='annotation_4' value='#ffffff00' />
+            <format attr='line-visibility' id='annotation_4' value='on' />
+            <format attr='line-pattern-only' id='annotation_4' value='dotted' />
+            <format attr='fill-color' id='annotation_5' value='#fafafa00' />
+            <format attr='line-end-size' id='annotation_5' value='smallest' />
+            <format attr='line-visibility' id='annotation_5' value='on' />
+            <format attr='line-pattern-only' id='annotation_5' value='dotted' />
+            <format attr='fill-color' id='annotation_6' value='#fafafa00' />
+            <format attr='line-visibility' id='annotation_6' value='on' />
+            <format attr='line-pattern-only' id='annotation_6' value='dotted' />
+          </style-rule>
+        </style>
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Line' />
+            <mark-sizing mark-sizing-setting='marks-scaling-off' />
+            <encodings>
+              <color column='[federated.18r1he60qlln031bmwd1z1t0fli3].[none:group:nk]' />
+            </encodings>
+            <style>
+              <style-rule element='mark'>
+                <format attr='mark-labels-cull' value='false' />
+                <format attr='mark-labels-mode' value='line-ends' />
+                <format attr='mark-labels-show' value='true' />
+                <format attr='size' value='1' />
+              </style-rule>
+              <style-rule element='pane'>
+                <format attr='minwidth' value='-1' />
+                <format attr='maxwidth' value='-1' />
+              </style-rule>
+            </style>
+          </pane>
+        </panes>
+        <rows>[federated.18r1he60qlln031bmwd1z1t0fli3].[sum:sessions_kpi_cvr:qk]</rows>
+        <cols>[federated.18r1he60qlln031bmwd1z1t0fli3].[twk:sessions_session_date_week:qk]</cols>
+        <annotations>
+          <annotation class='point' id='5' mark-position='1' pullback='0' text-width='318'>
+            <formatted-text>
+              <run bold='true' fontsize='8'>order_status.backgrounded</run>
+            </formatted-text>
+            <point>
+              <visual-coordinate class='axis'>
+                <x-coord axis-value='#2025-06-01 19:19:06.677#'>
+                  <node-reference>
+                    <axis>[federated.18r1he60qlln031bmwd1z1t0fli3].[tdy:sessions_session_date_week:qk]</axis>
+                  </node-reference>
+                </x-coord>
+                <y-coord axis-value='37.264415919427776'>
+                  <node-reference>
+                    <axis>[federated.18r1he60qlln031bmwd1z1t0fli3].[sum:sessions_kpi_cvr:qk]</axis>
+                  </node-reference>
+                </y-coord>
+                <page-reference />
+              </visual-coordinate>
+            </point>
+            <body x='-1' y='180' />
+          </annotation>
+          <annotation class='point' id='6' mark-position='1' pullback='0' text-width='355'>
+            <formatted-text>
+              <run bold='true' fontsize='8'>order_status.backgrounded</run>
+            </formatted-text>
+            <point>
+              <visual-coordinate class='axis'>
+                <x-coord axis-value='#2025-06-01 21:10:42.716#'>
+                  <node-reference>
+                    <axis>[federated.18r1he60qlln031bmwd1z1t0fli3].[twk:sessions_session_date_week:qk]</axis>
+                  </node-reference>
+                </x-coord>
+                <y-coord axis-value='37.080475092868141'>
+                  <node-reference>
+                    <axis>[federated.18r1he60qlln031bmwd1z1t0fli3].[sum:sessions_kpi_cvr:qk]</axis>
+                  </node-reference>
+                </y-coord>
+                <page-reference />
+              </visual-coordinate>
+            </point>
+            <body x='2' y='113' />
+          </annotation>
+        </annotations>
+      </table>
+      <simple-id uuid='{871C0ED5-ECBD-4F21-B92E-D654A0CD8AB9}' />
+    </worksheet>
+  </worksheets>
+  <dashboards>
+    <dashboard _.fcp.AccessibleZoneTabOrder.true...enable-sort-zone-taborder='true' name='Re-clasification estimation impact'>
+      <repository-location id='Re-clasificationestimationimpact' path='/t/Pedidosya/workbooks/mCVR0-changes' revision='' site='Pedidosya' />
+      <style />
+      <size maxheight='800' maxwidth='1150' minheight='800' minwidth='1150' sizing-mode='fixed' />
+      <zones>
+        <zone h='100000' id='4' type-v2='layout-basic' w='100000' x='0' y='0'>
+          <zone h='32250' id='3' name='Estimated impact of reclasification error service' w='98608' x='696' y='1000'>
+            <zone-style>
+              <format attr='border-color' value='#000000' />
+              <format attr='border-style' value='none' />
+              <format attr='border-width' value='0' />
+              <format attr='margin' value='4' />
+            </zone-style>
+          </zone>
+          <zone h='28375' id='5' name='AND - Estimated impact of reclasification error service' w='98608' x='696' y='38250'>
+            <zone-style>
+              <format attr='border-color' value='#000000' />
+              <format attr='border-style' value='none' />
+              <format attr='border-width' value='0' />
+              <format attr='margin' value='4' />
+            </zone-style>
+          </zone>
+          <zone h='27382' id='6' name='iOS - Estimated impact of reclasification error service' w='98608' x='696' y='71618'>
+            <zone-style>
+              <format attr='border-color' value='#000000' />
+              <format attr='border-style' value='none' />
+              <format attr='border-width' value='0' />
+              <format attr='margin' value='4' />
+            </zone-style>
+          </zone>
+          <zone h='5000' id='7' param='horz' type-v2='layout-flow' w='98608' x='696' y='33250' />
+          <zone h='4993' id='8' param='horz' type-v2='layout-flow' w='98608' x='696' y='66625' />
+          <zone-style>
+            <format attr='border-color' value='#000000' />
+            <format attr='border-style' value='none' />
+            <format attr='border-width' value='0' />
+            <format attr='margin' value='8' />
+          </zone-style>
+        </zone>
+      </zones>
+      <devicelayouts>
+        <devicelayout auto-generated='true' name='Phone'>
+          <size maxheight='750' minheight='750' sizing-mode='vscroll' />
+          <zones>
+            <zone h='100000' id='12' type-v2='layout-basic' w='100000' x='0' y='0'>
+              <zone h='98000' id='11' param='vert' type-v2='layout-flow' w='98608' x='696' y='1000'>
+                <zone fixed-size='250' h='32250' id='3' is-fixed='true' name='Estimated impact of reclasification error service' w='98608' x='696' y='1000'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone fixed-size='219' h='28375' id='5' is-fixed='true' name='AND - Estimated impact of reclasification error service' w='98608' x='696' y='38250'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone fixed-size='211' h='27382' id='6' is-fixed='true' name='iOS - Estimated impact of reclasification error service' w='98608' x='696' y='71618'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+              </zone>
+              <zone-style>
+                <format attr='border-color' value='#000000' />
+                <format attr='border-style' value='none' />
+                <format attr='border-width' value='0' />
+                <format attr='margin' value='8' />
+              </zone-style>
+            </zone>
+          </zones>
+        </devicelayout>
+      </devicelayouts>
+      <simple-id uuid='{DA0D38AC-0B40-4CD8-AFA9-74E84D47DA1E}' />
+    </dashboard>
+    <dashboard _.fcp.AccessibleZoneTabOrder.true...enable-sort-zone-taborder='true' name='WoW cvr by platform'>
+      <repository-location id='WoWcvrbyplatform' path='/t/Pedidosya/workbooks/mCVR0-changes' revision='' site='Pedidosya' />
+      <style />
+      <size maxheight='1200' maxwidth='1200' minheight='1200' minwidth='1200' sizing-mode='fixed' />
+      <datasources>
+        <datasource caption='Reclasification impact' name='federated.06kgplv0wyity31d9je4z1e9546o' />
+      </datasources>
+      <datasource-dependencies datasource='federated.06kgplv0wyity31d9je4z1e9546o'>
+        <column-instance column='[platform]' derivation='None' name='[none:platform:nk]' pivot='key' type='nominal' />
+        <column datatype='string' name='[platform]' role='dimension' type='nominal' />
+      </datasource-dependencies>
+      <zones>
+        <zone h='100000' id='4' type-v2='layout-basic' w='100000' x='0' y='0'>
+          <zone h='21917' id='7' param='horz' type-v2='layout-flow' w='98666' x='667' y='4583'>
+            <zone h='21917' id='5' type-v2='layout-basic' w='98666' x='667' y='4583'>
+              <zone h='21917' id='3' name='WoW CVR' w='98666' x='667' y='4583'>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+            </zone>
+          </zone>
+          <zone h='20833' id='9' name='And - WoW CVR' w='98666' x='667' y='29167'>
+            <zone-style>
+              <format attr='border-color' value='#000000' />
+              <format attr='border-style' value='none' />
+              <format attr='border-width' value='0' />
+              <format attr='margin' value='4' />
+            </zone-style>
+          </zone>
+          <zone h='20500' id='10' name='iOS - WoW CVR' w='98666' x='667' y='52667'>
+            <zone-style>
+              <format attr='border-color' value='#000000' />
+              <format attr='border-style' value='none' />
+              <format attr='border-width' value='0' />
+              <format attr='margin' value='4' />
+            </zone-style>
+          </zone>
+          <zone h='3916' id='11' param='horz' type-v2='layout-flow' w='71750' x='27583' y='667'>
+            <zone h='2583' id='8' leg-item-layout='horz' name='WoW CVR' pane-specification-id='0' param='[federated.18r1he60qlln031bmwd1z1t0fli3].[none:group:nk]' show-title='false' type-v2='color' w='71750' x='27583' y='667'>
+              <zone-style>
+                <format attr='border-color' value='#000000' />
+                <format attr='border-style' value='none' />
+                <format attr='border-width' value='0' />
+                <format attr='margin' value='4' />
+              </zone-style>
+            </zone>
+          </zone>
+          <zone h='3916' id='12' param='horz' type-v2='layout-flow' w='26916' x='667' y='667' />
+          <zone h='2667' id='13' param='horz' type-v2='layout-flow' w='98666' x='667' y='26500' />
+          <zone h='2667' id='14' param='horz' type-v2='layout-flow' w='98666' x='667' y='50000' />
+          <zone h='20583' id='15' name='funnel/ no funnel re-clasification' w='98666' x='667' y='78750'>
+            <zone-style>
+              <format attr='border-color' value='#000000' />
+              <format attr='border-style' value='none' />
+              <format attr='border-width' value='0' />
+              <format attr='margin' value='4' />
+            </zone-style>
+          </zone>
+          <zone h='2917' id='16' mode='checkdropdown' name='funnel/ no funnel re-clasification' param='[federated.06kgplv0wyity31d9je4z1e9546o].[none:platform:nk]' show-apply='true' show-search='false' type-v2='filter' w='66000' x='33333' y='75833'>
+            <zone-style>
+              <format attr='border-color' value='#000000' />
+              <format attr='border-style' value='none' />
+              <format attr='border-width' value='0' />
+              <format attr='margin' value='4' />
+            </zone-style>
+          </zone>
+          <zone h='2917' id='17' leg-item-layout='horz' name='funnel/ no funnel re-clasification' pane-specification-id='0' param='[federated.06kgplv0wyity31d9je4z1e9546o].[none:Calculation_984880977777508359:nk]' show-title='false' type-v2='color' w='32666' x='667' y='75833'>
+            <zone-style>
+              <format attr='border-color' value='#000000' />
+              <format attr='border-style' value='none' />
+              <format attr='border-width' value='0' />
+              <format attr='margin' value='4' />
+            </zone-style>
+          </zone>
+          <zone h='2666' id='18' param='horz' type-v2='layout-flow' w='98666' x='667' y='73167'>
+            <zone-style>
+              <format attr='border-color' value='#000000' />
+              <format attr='border-style' value='solid' />
+              <format attr='border-width' value='1' />
+              <format attr='margin-top' value='1' />
+              <format attr='background-color' value='#f5f5f5' />
+            </zone-style>
+          </zone>
+          <zone-style>
+            <format attr='border-color' value='#000000' />
+            <format attr='border-style' value='none' />
+            <format attr='border-width' value='0' />
+            <format attr='margin' value='8' />
+          </zone-style>
+        </zone>
+      </zones>
+      <devicelayouts>
+        <devicelayout auto-generated='true' name='Phone'>
+          <size maxheight='1200' minheight='1200' sizing-mode='vscroll' />
+          <zones>
+            <zone h='100000' id='22' type-v2='layout-basic' w='100000' x='0' y='0'>
+              <zone h='98666' id='21' param='vert' type-v2='layout-flow' w='98666' x='667' y='667'>
+                <zone fixed-size='255' h='21917' id='3' is-fixed='true' name='WoW CVR' w='98666' x='667' y='4583'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone h='2583' id='8' leg-item-layout='horz' name='WoW CVR' pane-specification-id='0' param='[federated.18r1he60qlln031bmwd1z1t0fli3].[none:group:nk]' show-title='false' type-v2='color' w='71750' x='27583' y='667'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone fixed-size='242' h='20833' id='9' is-fixed='true' name='And - WoW CVR' w='98666' x='667' y='29167'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone fixed-size='238' h='20500' id='10' is-fixed='true' name='iOS - WoW CVR' w='98666' x='667' y='52667'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone h='2917' id='16' mode='checkdropdown' name='funnel/ no funnel re-clasification' param='[federated.06kgplv0wyity31d9je4z1e9546o].[none:platform:nk]' show-apply='true' show-search='false' type-v2='filter' w='66000' x='33333' y='75833'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone fixed-size='239' h='20583' id='15' is-fixed='true' name='funnel/ no funnel re-clasification' w='98666' x='667' y='78750'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone h='2917' id='17' leg-item-layout='horz' name='funnel/ no funnel re-clasification' pane-specification-id='0' param='[federated.06kgplv0wyity31d9je4z1e9546o].[none:Calculation_984880977777508359:nk]' show-title='false' type-v2='color' w='32666' x='667' y='75833'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+              </zone>
+              <zone-style>
+                <format attr='border-color' value='#000000' />
+                <format attr='border-style' value='none' />
+                <format attr='border-width' value='0' />
+                <format attr='margin' value='8' />
+              </zone-style>
+            </zone>
+          </zones>
+        </devicelayout>
+      </devicelayouts>
+      <simple-id uuid='{DCB9DE3F-9FB5-4785-BC33-70CBFA298754}' />
+    </dashboard>
+  </dashboards>
+  <windows source-height='51'>
+    <window class='worksheet' name='WoW CVR'>
+      <cards>
+        <edge name='left'>
+          <strip size='240'>
+            <card type='pages' />
+            <card type='filters' />
+            <card type='marks' />
+          </strip>
+        </edge>
+        <edge name='top'>
+          <strip size='48'>
+            <card type='columns' />
+          </strip>
+          <strip size='48'>
+            <card type='rows' />
+          </strip>
+          <strip size='46'>
+            <card type='title' />
+          </strip>
+        </edge>
+        <edge name='right'>
+          <strip size='175'>
+            <card pane-specification-id='0' param='[federated.18r1he60qlln031bmwd1z1t0fli3].[none:group:nk]' type='color' />
+          </strip>
+        </edge>
+      </cards>
+      <viewpoint>
+        <highlight>
+          <color-one-way>
+            <field>[federated.06kgplv0wyity31d9je4z1e9546o].[:Measure Names]</field>
+            <field>[federated.06kgplv0wyity31d9je4z1e9546o].[none:global_group:nk]</field>
+            <field>[federated.06kgplv0wyity31d9je4z1e9546o].[none:sessions_session_date_week:nk]</field>
+            <field>[federated.18r1he60qlln031bmwd1z1t0fli3].[none:group:nk]</field>
+            <field>[federated.18r1he60qlln031bmwd1z1t0fli3].[none:sessions_session_date_week:ok]</field>
+            <field>[federated.18r1he60qlln031bmwd1z1t0fli3].[yr:sessions_session_date_week:ok]</field>
+          </color-one-way>
+        </highlight>
+      </viewpoint>
+      <simple-id uuid='{BAA4DBC3-C9E6-408F-A40A-3E2227F1B4D5}' />
+    </window>
+    <window class='worksheet' name='And - WoW CVR'>
+      <cards>
+        <edge name='left'>
+          <strip size='240'>
+            <card type='pages' />
+            <card type='filters' />
+            <card type='marks' />
+          </strip>
+        </edge>
+        <edge name='top'>
+          <strip size='48'>
+            <card type='columns' />
+          </strip>
+          <strip size='48'>
+            <card type='rows' />
+          </strip>
+          <strip size='46'>
+            <card type='title' />
+          </strip>
+        </edge>
+        <edge name='right'>
+          <strip size='175'>
+            <card pane-specification-id='0' param='[federated.18r1he60qlln031bmwd1z1t0fli3].[none:group:nk]' type='color' />
+          </strip>
+        </edge>
+      </cards>
+      <viewpoint>
+        <highlight>
+          <color-one-way>
+            <field>[federated.06kgplv0wyity31d9je4z1e9546o].[:Measure Names]</field>
+            <field>[federated.06kgplv0wyity31d9je4z1e9546o].[none:global_group:nk]</field>
+            <field>[federated.06kgplv0wyity31d9je4z1e9546o].[none:sessions_session_date_week:nk]</field>
+            <field>[federated.18r1he60qlln031bmwd1z1t0fli3].[none:group:nk]</field>
+            <field>[federated.18r1he60qlln031bmwd1z1t0fli3].[none:platform:nk]</field>
+            <field>[federated.18r1he60qlln031bmwd1z1t0fli3].[none:sessions_session_date_week:ok]</field>
+            <field>[federated.18r1he60qlln031bmwd1z1t0fli3].[yr:sessions_session_date_week:ok]</field>
+          </color-one-way>
+        </highlight>
+      </viewpoint>
+      <simple-id uuid='{744DD3A2-260B-411A-8C5B-6DB2DF198B3B}' />
+    </window>
+    <window class='worksheet' name='iOS - WoW CVR'>
+      <cards>
+        <edge name='left'>
+          <strip size='240'>
+            <card type='pages' />
+            <card type='filters' />
+            <card type='marks' />
+          </strip>
+        </edge>
+        <edge name='top'>
+          <strip size='48'>
+            <card type='columns' />
+          </strip>
+          <strip size='48'>
+            <card type='rows' />
+          </strip>
+          <strip size='46'>
+            <card type='title' />
+          </strip>
+        </edge>
+        <edge name='right'>
+          <strip size='175'>
+            <card pane-specification-id='0' param='[federated.18r1he60qlln031bmwd1z1t0fli3].[none:group:nk]' type='color' />
+          </strip>
+        </edge>
+      </cards>
+      <viewpoint>
+        <highlight>
+          <color-one-way>
+            <field>[federated.06kgplv0wyity31d9je4z1e9546o].[:Measure Names]</field>
+            <field>[federated.06kgplv0wyity31d9je4z1e9546o].[none:global_group:nk]</field>
+            <field>[federated.06kgplv0wyity31d9je4z1e9546o].[none:sessions_session_date_week:nk]</field>
+            <field>[federated.18r1he60qlln031bmwd1z1t0fli3].[none:group:nk]</field>
+            <field>[federated.18r1he60qlln031bmwd1z1t0fli3].[none:platform:nk]</field>
+            <field>[federated.18r1he60qlln031bmwd1z1t0fli3].[none:sessions_session_date_week:ok]</field>
+            <field>[federated.18r1he60qlln031bmwd1z1t0fli3].[yr:sessions_session_date_week:ok]</field>
+          </color-one-way>
+        </highlight>
+      </viewpoint>
+      <simple-id uuid='{7C174B07-7AAB-423F-877A-8800803B6042}' />
+    </window>
+    <window class='worksheet' name='Estimated impact of reclasification error service'>
+      <cards>
+        <edge name='left'>
+          <strip size='164'>
+            <card type='pages' />
+            <card type='filters' />
+            <card type='marks' />
+            <card type='measures' />
+          </strip>
+        </edge>
+        <edge name='top'>
+          <strip size='2147483647'>
+            <card type='columns' />
+          </strip>
+          <strip size='2147483647'>
+            <card type='rows' />
+          </strip>
+          <strip size='2147483647'>
+            <card type='title' />
+          </strip>
+        </edge>
+      </cards>
+      <viewpoint>
+        <highlight>
+          <color-one-way>
+            <field>[federated.06kgplv0wyity31d9je4z1e9546o].[:Measure Names]</field>
+            <field>[federated.06kgplv0wyity31d9je4z1e9546o].[none:with_error_service_group:nk]</field>
+          </color-one-way>
+        </highlight>
+      </viewpoint>
+      <simple-id uuid='{7C9A4A68-128D-4556-8CE2-D0AAAC68C33F}' />
+    </window>
+    <window class='worksheet' name='AND - Estimated impact of reclasification error service'>
+      <cards>
+        <edge name='left'>
+          <strip size='164'>
+            <card type='pages' />
+            <card type='filters' />
+            <card type='marks' />
+            <card type='measures' />
+          </strip>
+        </edge>
+        <edge name='top'>
+          <strip size='2147483647'>
+            <card type='columns' />
+          </strip>
+          <strip size='2147483647'>
+            <card type='rows' />
+          </strip>
+          <strip size='2147483647'>
+            <card type='title' />
+          </strip>
+        </edge>
+      </cards>
+      <viewpoint>
+        <selection-collection>
+          <tuple-selection>
+            <tuple-reference>
+              <tuple-descriptor>
+                <pane-descriptor>
+                  <x-fields>
+                    <field>[federated.06kgplv0wyity31d9je4z1e9546o].[:Measure Names]</field>
+                  </x-fields>
+                  <y-fields>
+                    <field>[federated.06kgplv0wyity31d9je4z1e9546o].[none:with_error_service_group:nk]</field>
+                  </y-fields>
+                </pane-descriptor>
+                <columns>
+                  <field>[federated.06kgplv0wyity31d9je4z1e9546o].[none:with_error_service_group:nk]</field>
+                  <field>[federated.06kgplv0wyity31d9je4z1e9546o].[:Measure Names]</field>
+                  <field>[federated.06kgplv0wyity31d9je4z1e9546o].[Multiple Values]</field>
+                </columns>
+              </tuple-descriptor>
+              <tuple>
+                <value>&quot;NO FUNNEL&quot;</value>
+                <value>&quot;[federated.06kgplv0wyity31d9je4z1e9546o].[sum:sessions_total_sessions:qk]&quot;</value>
+                <value>7884057.0</value>
+              </tuple>
+            </tuple-reference>
+          </tuple-selection>
+        </selection-collection>
+        <highlight>
+          <color-one-way>
+            <field>[federated.06kgplv0wyity31d9je4z1e9546o].[:Measure Names]</field>
+            <field>[federated.06kgplv0wyity31d9je4z1e9546o].[none:platform:nk]</field>
+            <field>[federated.06kgplv0wyity31d9je4z1e9546o].[none:with_error_service_group:nk]</field>
+          </color-one-way>
+        </highlight>
+      </viewpoint>
+      <simple-id uuid='{B5CAB57C-5053-43F6-9BB2-2CCB2BB1B3BF}' />
+    </window>
+    <window class='worksheet' name='iOS - Estimated impact of reclasification error service'>
+      <cards>
+        <edge name='left'>
+          <strip size='164'>
+            <card type='pages' />
+            <card type='filters' />
+            <card type='marks' />
+            <card type='measures' />
+          </strip>
+        </edge>
+        <edge name='top'>
+          <strip size='2147483647'>
+            <card type='columns' />
+          </strip>
+          <strip size='2147483647'>
+            <card type='rows' />
+          </strip>
+          <strip size='2147483647'>
+            <card type='title' />
+          </strip>
+        </edge>
+      </cards>
+      <viewpoint>
+        <highlight>
+          <color-one-way>
+            <field>[federated.06kgplv0wyity31d9je4z1e9546o].[:Measure Names]</field>
+            <field>[federated.06kgplv0wyity31d9je4z1e9546o].[none:platform:nk]</field>
+            <field>[federated.06kgplv0wyity31d9je4z1e9546o].[none:with_error_service_group:nk]</field>
+          </color-one-way>
+        </highlight>
+      </viewpoint>
+      <simple-id uuid='{5AFE5514-9B7F-4C60-B91B-C8D3EC83E6DD}' />
+    </window>
+    <window class='worksheet' name='funnel/ no funnel re-clasification'>
+      <cards>
+        <edge name='left'>
+          <strip size='160'>
+            <card type='pages' />
+            <card type='filters' />
+            <card type='marks' />
+          </strip>
+        </edge>
+        <edge name='top'>
+          <strip size='2147483647'>
+            <card type='columns' />
+          </strip>
+          <strip size='2147483647'>
+            <card type='rows' />
+          </strip>
+          <strip size='31'>
+            <card type='title' />
+          </strip>
+        </edge>
+        <edge name='right'>
+          <strip size='175'>
+            <card mode='checkdropdown' param='[federated.06kgplv0wyity31d9je4z1e9546o].[none:platform:nk]' show-apply='true' show-search='false' type='filter' />
+            <card pane-specification-id='0' param='[federated.06kgplv0wyity31d9je4z1e9546o].[none:Calculation_984880977777508359:nk]' type='color' />
+          </strip>
+        </edge>
+      </cards>
+      <viewpoint>
+        <highlight>
+          <color-one-way>
+            <field>[federated.06kgplv0wyity31d9je4z1e9546o].[:Measure Names]</field>
+            <field>[federated.06kgplv0wyity31d9je4z1e9546o].[none:Calculation_984880977777508359:nk]</field>
+            <field>[federated.06kgplv0wyity31d9je4z1e9546o].[none:platform:nk]</field>
+            <field>[federated.06kgplv0wyity31d9je4z1e9546o].[none:sessions_session_date_week:nk]</field>
+            <field>[federated.06kgplv0wyity31d9je4z1e9546o].[none:with_error_service_group:nk]</field>
+            <field>[federated.06kgplv0wyity31d9je4z1e9546o].[yr:sessions_session_date_week:ok]</field>
+          </color-one-way>
+        </highlight>
+      </viewpoint>
+      <simple-id uuid='{2F9ABCD8-FB8F-4463-9C6E-D7838045D843}' />
+    </window>
+    <window class='dashboard' maximized='true' name='WoW cvr by platform'>
+      <viewpoints>
+        <viewpoint name='And - WoW CVR'>
+          <zoom type='entire-view' />
+        </viewpoint>
+        <viewpoint name='WoW CVR'>
+          <zoom type='entire-view' />
+        </viewpoint>
+        <viewpoint name='funnel/ no funnel re-clasification'>
+          <zoom type='entire-view' />
+        </viewpoint>
+        <viewpoint name='iOS - WoW CVR'>
+          <zoom type='entire-view' />
+        </viewpoint>
+      </viewpoints>
+      <active id='-1' />
+      <simple-id uuid='{5DE94FA1-098D-411A-B064-9971612602EF}' />
+    </window>
+    <window class='dashboard' name='Re-clasification estimation impact'>
+      <viewpoints>
+        <viewpoint name='AND - Estimated impact of reclasification error service' />
+        <viewpoint name='Estimated impact of reclasification error service' />
+        <viewpoint name='iOS - Estimated impact of reclasification error service' />
+      </viewpoints>
+      <active id='3' />
+      <simple-id uuid='{FE819397-191A-4E26-9037-B94C25489192}' />
+    </window>
+  </windows>
+</workbook>
