@@ -1,0 +1,3109 @@
+<?xml version='1.0' encoding='utf-8' ?>
+
+<!-- build 20233.25.0106.1650                               -->
+<workbook original-version='18.1' source-build='2023.3.14 (20233.25.0106.1650)' version='18.1' xml:base='https://tableau.deliveryhero.net' xmlns:user='http://www.tableausoftware.com/xml/user'>
+  <document-format-change-manifest>
+    <_.fcp.AccessibleZoneTabOrder.true...AccessibleZoneTabOrder />
+    <_.fcp.AnimationOnByDefault.true...AnimationOnByDefault />
+    <AutoCreateAndUpdateDSDPhoneLayouts />
+    <_.fcp.MarkAnimation.true...MarkAnimation />
+    <_.fcp.ObjectModelEncapsulateLegacy.true...ObjectModelEncapsulateLegacy />
+    <_.fcp.ObjectModelExtractV2.true...ObjectModelExtractV2 />
+    <_.fcp.ObjectModelTableType.true...ObjectModelTableType />
+    <_.fcp.SchemaViewerObjectModel.true...SchemaViewerObjectModel />
+    <SetMembershipControl />
+    <SheetIdentifierTracking />
+    <SortTagCleanup />
+    <_.fcp.VConnDownstreamExtractsWithWarnings.true...VConnDownstreamExtractsWithWarnings />
+    <WindowsPersistSimpleIdentifiers />
+    <WorksheetBackgroundTransparency />
+    <ZoneBackgroundTransparency />
+  </document-format-change-manifest>
+  <repository-location derived-from='https://tableau.deliveryhero.net/t/Foodora/workbooks/SGPandaproFreeTrialTracker?rev=1.3' id='SGPandaproFreeTrialTracker' path='/t/Foodora/workbooks' revision='1.4' site='Foodora' />
+  <preferences />
+  <_.fcp.AnimationOnByDefault.false...style>
+    <_.fcp.AnimationOnByDefault.false..._.fcp.MarkAnimation.true...style-rule element='animation'>
+      <_.fcp.AnimationOnByDefault.false...format attr='animation-on' value='ao-on' />
+    </_.fcp.AnimationOnByDefault.false..._.fcp.MarkAnimation.true...style-rule>
+  </_.fcp.AnimationOnByDefault.false...style>
+  <datasources>
+    <datasource caption='[SG] Free Trial Tracker' inline='true' name='federated.03zwpmm0wu2ntl1f6iy7y1f2cykh' version='18.1'>
+      <connection class='federated'>
+        <named-connections>
+          <named-connection caption='BigQuery' name='bigquery.1gv1u7c05d19x2195l2j518ads7e'>
+            <connection CATALOG='fulfillment-dwh-production' EXECCATALOG='foodpanda-sg-bigquery' authentication='oauth' bq-dataset-fetch-rows='' bq-fetch-rows='' bq-fetch-tasks='' bq-large-fetch-rows='' bq-project-fetch-rows='' bq-response-rows='' class='bigquery' connection-dialect='google-sql' project='fulfillment-dwh-production' schema='pandata_report' server-oauth='' username='cheryl.yeo@foodpanda.sg' workgroup-auth-mode='prompt' />
+          </named-connection>
+        </named-connections>
+        <_.fcp.ObjectModelEncapsulateLegacy.false...relation connection='bigquery.1gv1u7c05d19x2195l2j518ads7e' name='Custom SQL Query' type='text'><![CDATA[WITH subs_entry_points AS (
+  
+  SELECT
+    
+    partition_date,
+    CONCAT(userId, global_entity_id) AS user_uuid,
+    platform,
+    DATE_ADD(payload_timestamp, INTERVAL 8 HOUR) AS event_time_local,
+    eventAction,
+    eventOrigin,
+
+    CASE
+      WHEN eventAction = "subscription_benefit_overlay.loaded" AND eventOrigin IN ("view_cart", "checkout", "rdp_view_cart", "rdp_checkout", "rdp_pro_banner") THEN "RDP one-click subscribe" -- previously named "One-click subscribe"
+      WHEN eventAction = "subscription_benefit_overlay.loaded" AND eventOrigin IN ("sdp_view_cart", "sdp_checkout") THEN "SDP one-click subscribe"
+      WHEN eventAction = "subscription_benefit_overlay.loaded" AND eventOrigin IN ("OTP_dynamic") THEN "OTP banner one-click subscribe"
+      WHEN eventAction = "subscription_benefit.loaded" AND eventOrigin IN ("rdp_pro_banner") THEN "RDP pro sticky banner" -- previously named "Pro sticky banner"
+      WHEN eventOrigin IN ("rdp_offers_carousel") THEN "RDP offers carousel"
+      WHEN eventOrigin IN ("restaurants_carousel", "rlp_carousel", "home_marketing_carousel") THEN "RLP marketing carousel"
+      WHEN eventOrigin IN ("pickup_carousel") THEN "RLP marketing carousel (Pickup)"  -- previously named "Pickup RLP marketing carousel"
+      WHEN eventOrigin IN ("SLP_marketing_carousel", "shop") THEN "SLP marketing carousel"
+      WHEN eventOrigin IN ("side_navigation", "home_screen_side_menu") THEN "Account screen" -- previously named "Side navigation"
+      WHEN eventOrigin IN ("cart_banner", "cart_pro_banner") THEN "Cart pro banner"
+      WHEN eventOrigin IN ("home", "home_banner", "home_growth_banner", "homescreen_banner", "home_marketing_carousel", "homescreen_carousel") THEN "Old home entry points"
+      WHEN eventOrigin IN ("home_hero_banner", "home_hero_banner_dynamic", "home_hero_banner_static", "home_global_ads_atf", "home_screen_entry_points") THEN "Home hero banner"
+      WHEN eventOrigin IN ("OTP_dynamic") THEN "OTP banner"
+      WHEN eventOrigin IN ("voucher_wallet") THEN "Voucher wallet"
+      WHEN eventOrigin IN ("deeplink", "enrolment_deeplink", "braze") THEN "Deeplink"
+      WHEN eventOrigin IN ("account_banner") THEN "Account Banner"
+      WHEN eventOrigin IN ("payment_banner") THEN NULL --For grace period users: to identify that the user enters APTC page from home screen banner because APTC is non recurring. To remove since they're not new subs
+      WHEN eventAction = "subscription_benefit.loaded" AND eventOrigin IN ("checkbox", "textBox", "payment_retry_ongoing", "checkout_deeplink") THEN NULL --Web inherits eventOrigin from unrelated events
+      WHEN eventAction = "subscription_benefit.loaded" AND eventOrigin IS NULL THEN NULL -- Web fires extra subscription_benefit.loaded without eventOrigin, removing this.
+      WHEN eventAction = "subscription_benefit.loaded" AND eventOrigin IN ("view_cart") THEN NULL --iOS fires both subscription_benefit.loaded and subscription_benefit_overlay.loaded, removing the former.
+      ELSE LOWER(REGEXP_REPLACE(eventOrigin, '_', ' '))
+    END AS entry_point
+
+  FROM `fulfillment-dwh-production.curated_data_shared_coredata_tracking.perseus_events_pandora`
+  
+  WHERE partition_date >>= '2024-10-01'
+    AND eventAction IN ("subscription_benefit.loaded", "subscription_benefit_overlay.loaded")
+    AND global_entity_id = 'FP_SG'
+  
+  QUALIFY ROW_NUMBER() OVER(PARTITION BY partition_date, user_uuid, platform, event_time_local, eventAction, eventOrigin, entry_point) = 1
+
+),
+
+subscription_history AS (
+
+  SELECT
+
+    customer_uuid,
+    MIN(DATE(sb.subscription_start_at_local)) AS earliest_subscription_start_date
+
+  FROM `fulfillment-dwh-production.pandata_datamart.pandora__core_subscriptions` sb, UNNEST(payments) AS payments
+
+  WHERE global_entity_id = 'FP_SG'
+    AND created_date_local <<= CURRENT_DATE()
+    AND payments.is_status_success = TRUE
+    AND DATE(sb.subscription_start_at_local) <<= CURRENT_DATE()
+
+  GROUP BY 1
+
+),
+
+free_trial_base AS (
+
+  SELECT
+
+    sb.customer_uuid,
+    CONCAT(sb.customer_code, sb.global_entity_id) AS user_uuid,
+    uuid AS subscription_uuid,
+
+    CASE
+      WHEN DATE(payments.subscription_start_at_local) = earliest_subscription_start_date THEN TRUE
+      WHEN earliest_subscription_start_date IS NULL THEN TRUE
+      ELSE FALSE
+    END AS is_first_subscription,
+
+    DATE(sb.subscription_start_at_local) AS subs_start_date,
+    sb.subscription_start_at_local AS subs_start_timestamp,
+    DATE(sb.subscription_end_at_local) AS subs_end_date,
+    DATE(payments.subscription_start_at_local) AS trial_start_date,
+    DATE(payments.subscription_end_at_local) AS trial_end_date,
+    payments.subscription_start_at_local AS trial_start_time,
+    payments.subscription_end_at_local AS trial_end_time,
+
+    CASE
+      WHEN payments.is_free_trial = TRUE AND status = 'revoked' THEN DATE_DIFF(DATE(payments.subscription_end_at_local), DATE(payments.subscription_start_at_local), DAY)
+      WHEN DATE(payments.subscription_end_at_local) >> (CURRENT_DATE()) THEN DATE_DIFF((CURRENT_DATE()), DATE(payments.subscription_start_at_local), DAY)
+      WHEN DATE_DIFF(DATE(payments.subscription_end_at_local), DATE(payments.subscription_start_at_local), DAY) >> 14 THEN 14
+      ELSE DATE_DIFF(DATE(payments.subscription_end_at_local), DATE(payments.subscription_start_at_local), DAY)
+    END AS free_trial_duration,
+
+  FROM `fulfillment-dwh-production.pandata_datamart.pandora__core_subscriptions` sb, UNNEST(payments) AS payments
+
+  LEFT JOIN subscription_history
+    ON sb.customer_uuid = subscription_history.customer_uuid
+
+  WHERE global_entity_id = 'FP_SG'
+    AND created_date_local <<= CURRENT_DATE()
+    AND payments.is_status_success = TRUE
+    AND DATE(sb.subscription_start_at_local) >>= '2024-10-01'
+    AND DATE(sb.subscription_start_at_local) <<= CURRENT_DATE()
+    AND payments.is_free_trial = TRUE
+    -- AND payments.payment_plan_duration = '0M'
+
+  QUALIFY ROW_NUMBER() OVER(PARTITION BY customer_uuid) = 1
+
+),
+
+cleaned_free_trial_base AS (
+
+  SELECT
+
+    free_trial_base.*,
+
+    CASE
+      WHEN free_trial_base.free_trial_duration << 14 AND trial_end_date << (CURRENT_DATE()) THEN 'revoked'
+      WHEN free_trial_base.free_trial_duration << 14 AND trial_end_date >>= (CURRENT_DATE()) THEN 'ongoing'
+      ELSE 'completed'
+    END AS trial_status
+
+  FROM free_trial_base
+
+),
+
+pro_new_cvp_orders AS (
+
+  SELECT
+
+    billing.order_code AS order_id,
+
+    MAX(IFNULL(gross_delivery_fee_discount_platform_local, 0)) OVER(PARTITION BY billing.order_code) AS platform_incentive_gross,
+
+    MAX(IFNULL(gross_delivery_fee_discount_vendor_local, 0)) OVER(PARTITION BY billing.order_code) AS vendor_incentive_gross,
+
+  FROM `fulfillment-dwh-production.pandata_curated.billing_engine_workflow_sap_orders` billing
+
+  JOIN `fulfillment-dwh-production.pandata_report.country_SG_pd_orders` pd
+    ON pd.code = billing.order_code
+    AND pd.ordered_at_date_local >>= '2024-09-01'
+
+  JOIN `fulfillment-dwh-production.pandata_report.regional_apac_pd_orders_agg_accounting` acc
+    ON CONCAT(pd.global_entity_id, '_', pd.code) = CONCAT(acc.global_entity_id, "_", acc.order_code)
+    AND acc.created_date_utc >>= '2024-06-01'
+
+  LEFT JOIN `fulfillment-dwh-production.curated_data_shared.dps_sessions_mapped_to_orders` dps
+    ON billing.order_code = dps.platform_order_code
+    AND dps.country_code = 'sg'
+    AND dps.created_date >>= '2024-06-01'
+
+  WHERE billing.global_entity_id = 'FP_SG'
+    AND billing.created_date_utc >>= '2024-06-30'
+    AND pd_order_fees_delivery_fee_adjustment_local << 0
+    AND IFNULL(has_new_customer_condition, FALSE) = FALSE
+    AND pd.business_type_apac IN ('restaurants', 'street_food', 'caterers')
+
+  QUALIFY ROW_NUMBER() OVER(PARTITION BY billing.order_code) = 1
+
+),
+
+orders AS (
+
+  SELECT
+
+    customer_uuid,
+    COUNT(DISTINCT code) AS total_orders,
+    SUM(IFNULL(discount_amount_local, 0) + IFNULL(voucher_amount_local, 0) + IFNULL(platform_incentive_gross, 0) + IFNULL(vendor_incentive_gross, 0)) AS total_savings
+
+  FROM `fulfillment-dwh-production.pandata_report.country_SG_pd_orders` pd
+
+  JOIN cleaned_free_trial_base
+    ON pd.pd_customer_uuid = cleaned_free_trial_base.customer_uuid
+    AND pd.ordered_at_local BETWEEN cleaned_free_trial_base.trial_start_time AND cleaned_free_trial_base.trial_end_time
+
+  LEFT JOIN pro_new_cvp_orders
+    ON pd.code = pro_new_cvp_orders.order_id
+
+  WHERE ordered_at_date_local >>= '2024-10-01'
+    AND is_valid_order = TRUE
+    AND is_test_order = FALSE
+
+  GROUP BY 1
+
+),
+
+following_subs AS (
+
+  SELECT
+
+    sb.customer_uuid,
+    DATE(payments.subscription_start_at_local) AS following_sub_start_date,
+    DATE(payments.subscription_end_at_local) AS following_sub_end_date,
+
+    CASE
+      WHEN payments.voucher_code IS NOT NULL AND payments.voucher_code != '' THEN TRUE
+      ELSE FALSE
+    END AS is_voucher_used,
+
+    payments.payment_plan_duration
+
+  FROM `fulfillment-dwh-production.pandata_datamart.pandora__core_subscriptions` sb, UNNEST(payments) AS payments
+
+  JOIN cleaned_free_trial_base
+    ON cleaned_free_trial_base.customer_uuid = sb.customer_uuid
+    AND DATE(payments.subscription_start_at_local) >> trial_start_date
+
+  WHERE global_entity_id = 'FP_SG'
+    AND created_date_local <<= CURRENT_DATE()
+    AND payments.is_status_success = TRUE
+    AND DATE(sb.subscription_start_at_local) >>= '2024-10-01'
+    AND DATE(sb.subscription_start_at_local) <<= CURRENT_DATE()
+
+  QUALIFY ROW_NUMBER() OVER(PARTITION BY customer_uuid, following_sub_start_date) = 1
+
+)
+
+SELECT
+
+  cleaned_free_trial_base.*EXCEPT(trial_start_time, trial_end_time),
+  following_subs.*EXCEPT(customer_uuid, is_voucher_used),
+  IFNULL(is_voucher_used, FALSE) AS is_voucher_used,
+  IFNULL(total_orders, 0) total_orders,
+  IFNULL(total_savings, 0) total_savings,
+  entry_point
+
+FROM cleaned_free_trial_base
+
+LEFT JOIN following_subs
+  ON following_subs.customer_uuid = cleaned_free_trial_base.customer_uuid
+
+LEFT JOIN orders
+  ON orders.customer_uuid = cleaned_free_trial_base.customer_uuid
+
+LEFT JOIN subs_entry_points
+  ON cleaned_free_trial_base.user_uuid = subs_entry_points.user_uuid
+  AND subs_entry_points.event_time_local << TIMESTAMP(subs_start_timestamp)
+
+QUALIFY ROW_NUMBER() OVER(PARTITION BY customer_uuid, user_uuid, subscription_uuid, following_sub_start_date ORDER BY subs_entry_points.event_time_local DESC) = 1]]></_.fcp.ObjectModelEncapsulateLegacy.false...relation>
+        <_.fcp.ObjectModelEncapsulateLegacy.true...relation connection='bigquery.1gv1u7c05d19x2195l2j518ads7e' name='Custom SQL Query' type='text'><![CDATA[WITH subs_entry_points AS (
+  
+  SELECT
+    
+    partition_date,
+    CONCAT(userId, global_entity_id) AS user_uuid,
+    platform,
+    DATE_ADD(payload_timestamp, INTERVAL 8 HOUR) AS event_time_local,
+    eventAction,
+    eventOrigin,
+
+    CASE
+      WHEN eventAction = "subscription_benefit_overlay.loaded" AND eventOrigin IN ("view_cart", "checkout", "rdp_view_cart", "rdp_checkout", "rdp_pro_banner") THEN "RDP one-click subscribe" -- previously named "One-click subscribe"
+      WHEN eventAction = "subscription_benefit_overlay.loaded" AND eventOrigin IN ("sdp_view_cart", "sdp_checkout") THEN "SDP one-click subscribe"
+      WHEN eventAction = "subscription_benefit_overlay.loaded" AND eventOrigin IN ("OTP_dynamic") THEN "OTP banner one-click subscribe"
+      WHEN eventAction = "subscription_benefit.loaded" AND eventOrigin IN ("rdp_pro_banner") THEN "RDP pro sticky banner" -- previously named "Pro sticky banner"
+      WHEN eventOrigin IN ("rdp_offers_carousel") THEN "RDP offers carousel"
+      WHEN eventOrigin IN ("restaurants_carousel", "rlp_carousel", "home_marketing_carousel") THEN "RLP marketing carousel"
+      WHEN eventOrigin IN ("pickup_carousel") THEN "RLP marketing carousel (Pickup)"  -- previously named "Pickup RLP marketing carousel"
+      WHEN eventOrigin IN ("SLP_marketing_carousel", "shop") THEN "SLP marketing carousel"
+      WHEN eventOrigin IN ("side_navigation", "home_screen_side_menu") THEN "Account screen" -- previously named "Side navigation"
+      WHEN eventOrigin IN ("cart_banner", "cart_pro_banner") THEN "Cart pro banner"
+      WHEN eventOrigin IN ("home", "home_banner", "home_growth_banner", "homescreen_banner", "home_marketing_carousel", "homescreen_carousel") THEN "Old home entry points"
+      WHEN eventOrigin IN ("home_hero_banner", "home_hero_banner_dynamic", "home_hero_banner_static", "home_global_ads_atf", "home_screen_entry_points") THEN "Home hero banner"
+      WHEN eventOrigin IN ("OTP_dynamic") THEN "OTP banner"
+      WHEN eventOrigin IN ("voucher_wallet") THEN "Voucher wallet"
+      WHEN eventOrigin IN ("deeplink", "enrolment_deeplink", "braze") THEN "Deeplink"
+      WHEN eventOrigin IN ("account_banner") THEN "Account Banner"
+      WHEN eventOrigin IN ("payment_banner") THEN NULL --For grace period users: to identify that the user enters APTC page from home screen banner because APTC is non recurring. To remove since they're not new subs
+      WHEN eventAction = "subscription_benefit.loaded" AND eventOrigin IN ("checkbox", "textBox", "payment_retry_ongoing", "checkout_deeplink") THEN NULL --Web inherits eventOrigin from unrelated events
+      WHEN eventAction = "subscription_benefit.loaded" AND eventOrigin IS NULL THEN NULL -- Web fires extra subscription_benefit.loaded without eventOrigin, removing this.
+      WHEN eventAction = "subscription_benefit.loaded" AND eventOrigin IN ("view_cart") THEN NULL --iOS fires both subscription_benefit.loaded and subscription_benefit_overlay.loaded, removing the former.
+      ELSE LOWER(REGEXP_REPLACE(eventOrigin, '_', ' '))
+    END AS entry_point
+
+  FROM `fulfillment-dwh-production.curated_data_shared_coredata_tracking.perseus_events_pandora`
+  
+  WHERE partition_date >>= '2024-10-01'
+    AND eventAction IN ("subscription_benefit.loaded", "subscription_benefit_overlay.loaded")
+    AND global_entity_id = 'FP_SG'
+  
+  QUALIFY ROW_NUMBER() OVER(PARTITION BY partition_date, user_uuid, platform, event_time_local, eventAction, eventOrigin, entry_point) = 1
+
+),
+
+subscription_history AS (
+
+  SELECT
+
+    customer_uuid,
+    MIN(DATE(sb.subscription_start_at_local)) AS earliest_subscription_start_date
+
+  FROM `fulfillment-dwh-production.pandata_datamart.pandora__core_subscriptions` sb, UNNEST(payments) AS payments
+
+  WHERE global_entity_id = 'FP_SG'
+    AND created_date_local <<= CURRENT_DATE()
+    AND payments.is_status_success = TRUE
+    AND DATE(sb.subscription_start_at_local) <<= CURRENT_DATE()
+
+  GROUP BY 1
+
+),
+
+free_trial_base AS (
+
+  SELECT
+
+    sb.customer_uuid,
+    CONCAT(sb.customer_code, sb.global_entity_id) AS user_uuid,
+    uuid AS subscription_uuid,
+
+    CASE
+      WHEN DATE(payments.subscription_start_at_local) = earliest_subscription_start_date THEN TRUE
+      WHEN earliest_subscription_start_date IS NULL THEN TRUE
+      ELSE FALSE
+    END AS is_first_subscription,
+
+    DATE(sb.subscription_start_at_local) AS subs_start_date,
+    sb.subscription_start_at_local AS subs_start_timestamp,
+    DATE(sb.subscription_end_at_local) AS subs_end_date,
+    DATE(payments.subscription_start_at_local) AS trial_start_date,
+    DATE(payments.subscription_end_at_local) AS trial_end_date,
+    payments.subscription_start_at_local AS trial_start_time,
+    payments.subscription_end_at_local AS trial_end_time,
+
+    CASE
+      WHEN payments.is_free_trial = TRUE AND status = 'revoked' THEN DATE_DIFF(DATE(payments.subscription_end_at_local), DATE(payments.subscription_start_at_local), DAY)
+      WHEN DATE(payments.subscription_end_at_local) >> (CURRENT_DATE()) THEN DATE_DIFF((CURRENT_DATE()), DATE(payments.subscription_start_at_local), DAY)
+      WHEN DATE_DIFF(DATE(payments.subscription_end_at_local), DATE(payments.subscription_start_at_local), DAY) >> 14 THEN 14
+      ELSE DATE_DIFF(DATE(payments.subscription_end_at_local), DATE(payments.subscription_start_at_local), DAY)
+    END AS free_trial_duration,
+
+  FROM `fulfillment-dwh-production.pandata_datamart.pandora__core_subscriptions` sb, UNNEST(payments) AS payments
+
+  LEFT JOIN subscription_history
+    ON sb.customer_uuid = subscription_history.customer_uuid
+
+  WHERE global_entity_id = 'FP_SG'
+    AND created_date_local <<= CURRENT_DATE()
+    AND payments.is_status_success = TRUE
+    AND DATE(sb.subscription_start_at_local) >>= '2024-10-01'
+    AND DATE(sb.subscription_start_at_local) <<= CURRENT_DATE()
+    AND payments.is_free_trial = TRUE
+    -- AND payments.payment_plan_duration = '0M'
+
+  QUALIFY ROW_NUMBER() OVER(PARTITION BY customer_uuid) = 1
+
+),
+
+cleaned_free_trial_base AS (
+
+  SELECT
+
+    free_trial_base.*,
+
+    CASE
+      WHEN free_trial_base.free_trial_duration << 14 AND trial_end_date << (CURRENT_DATE()) THEN 'revoked'
+      WHEN free_trial_base.free_trial_duration << 14 AND trial_end_date >>= (CURRENT_DATE()) THEN 'ongoing'
+      ELSE 'completed'
+    END AS trial_status
+
+  FROM free_trial_base
+
+),
+
+pro_new_cvp_orders AS (
+
+  SELECT
+
+    billing.order_code AS order_id,
+
+    MAX(IFNULL(gross_delivery_fee_discount_platform_local, 0)) OVER(PARTITION BY billing.order_code) AS platform_incentive_gross,
+
+    MAX(IFNULL(gross_delivery_fee_discount_vendor_local, 0)) OVER(PARTITION BY billing.order_code) AS vendor_incentive_gross,
+
+  FROM `fulfillment-dwh-production.pandata_curated.billing_engine_workflow_sap_orders` billing
+
+  JOIN `fulfillment-dwh-production.pandata_report.country_SG_pd_orders` pd
+    ON pd.code = billing.order_code
+    AND pd.ordered_at_date_local >>= '2024-09-01'
+
+  JOIN `fulfillment-dwh-production.pandata_report.regional_apac_pd_orders_agg_accounting` acc
+    ON CONCAT(pd.global_entity_id, '_', pd.code) = CONCAT(acc.global_entity_id, "_", acc.order_code)
+    AND acc.created_date_utc >>= '2024-06-01'
+
+  LEFT JOIN `fulfillment-dwh-production.curated_data_shared.dps_sessions_mapped_to_orders` dps
+    ON billing.order_code = dps.platform_order_code
+    AND dps.country_code = 'sg'
+    AND dps.created_date >>= '2024-06-01'
+
+  WHERE billing.global_entity_id = 'FP_SG'
+    AND billing.created_date_utc >>= '2024-06-30'
+    AND pd_order_fees_delivery_fee_adjustment_local << 0
+    AND IFNULL(has_new_customer_condition, FALSE) = FALSE
+    AND pd.business_type_apac IN ('restaurants', 'street_food', 'caterers')
+
+  QUALIFY ROW_NUMBER() OVER(PARTITION BY billing.order_code) = 1
+
+),
+
+orders AS (
+
+  SELECT
+
+    customer_uuid,
+    COUNT(DISTINCT code) AS total_orders,
+    SUM(IFNULL(discount_amount_local, 0) + IFNULL(voucher_amount_local, 0) + IFNULL(platform_incentive_gross, 0) + IFNULL(vendor_incentive_gross, 0)) AS total_savings
+
+  FROM `fulfillment-dwh-production.pandata_report.country_SG_pd_orders` pd
+
+  JOIN cleaned_free_trial_base
+    ON pd.pd_customer_uuid = cleaned_free_trial_base.customer_uuid
+    AND pd.ordered_at_local BETWEEN cleaned_free_trial_base.trial_start_time AND cleaned_free_trial_base.trial_end_time
+
+  LEFT JOIN pro_new_cvp_orders
+    ON pd.code = pro_new_cvp_orders.order_id
+
+  WHERE ordered_at_date_local >>= '2024-10-01'
+    AND is_valid_order = TRUE
+    AND is_test_order = FALSE
+
+  GROUP BY 1
+
+),
+
+following_subs AS (
+
+  SELECT
+
+    sb.customer_uuid,
+    DATE(payments.subscription_start_at_local) AS following_sub_start_date,
+    DATE(payments.subscription_end_at_local) AS following_sub_end_date,
+
+    CASE
+      WHEN payments.voucher_code IS NOT NULL AND payments.voucher_code != '' THEN TRUE
+      ELSE FALSE
+    END AS is_voucher_used,
+
+    payments.payment_plan_duration
+
+  FROM `fulfillment-dwh-production.pandata_datamart.pandora__core_subscriptions` sb, UNNEST(payments) AS payments
+
+  JOIN cleaned_free_trial_base
+    ON cleaned_free_trial_base.customer_uuid = sb.customer_uuid
+    AND DATE(payments.subscription_start_at_local) >> trial_start_date
+
+  WHERE global_entity_id = 'FP_SG'
+    AND created_date_local <<= CURRENT_DATE()
+    AND payments.is_status_success = TRUE
+    AND DATE(sb.subscription_start_at_local) >>= '2024-10-01'
+    AND DATE(sb.subscription_start_at_local) <<= CURRENT_DATE()
+
+  QUALIFY ROW_NUMBER() OVER(PARTITION BY customer_uuid, following_sub_start_date) = 1
+
+)
+
+SELECT
+
+  cleaned_free_trial_base.*EXCEPT(trial_start_time, trial_end_time),
+  following_subs.*EXCEPT(customer_uuid, is_voucher_used),
+  IFNULL(is_voucher_used, FALSE) AS is_voucher_used,
+  IFNULL(total_orders, 0) total_orders,
+  IFNULL(total_savings, 0) total_savings,
+  entry_point
+
+FROM cleaned_free_trial_base
+
+LEFT JOIN following_subs
+  ON following_subs.customer_uuid = cleaned_free_trial_base.customer_uuid
+
+LEFT JOIN orders
+  ON orders.customer_uuid = cleaned_free_trial_base.customer_uuid
+
+LEFT JOIN subs_entry_points
+  ON cleaned_free_trial_base.user_uuid = subs_entry_points.user_uuid
+  AND subs_entry_points.event_time_local << TIMESTAMP(subs_start_timestamp)
+
+QUALIFY ROW_NUMBER() OVER(PARTITION BY customer_uuid, user_uuid, subscription_uuid, following_sub_start_date ORDER BY subs_entry_points.event_time_local DESC) = 1]]></_.fcp.ObjectModelEncapsulateLegacy.true...relation>
+        <metadata-records>
+          <metadata-record class='column'>
+            <remote-name>customer_uuid</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[customer_uuid]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>customer_uuid</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[country_SG_pandapro_free_trial_dashboard_74252EE5E207456E9414E0EBEBCEC43B]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>user_uuid</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[user_uuid]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>user_uuid</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[country_SG_pandapro_free_trial_dashboard_74252EE5E207456E9414E0EBEBCEC43B]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>subscription_uuid</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[subscription_uuid]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>subscription_uuid</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[country_SG_pandapro_free_trial_dashboard_74252EE5E207456E9414E0EBEBCEC43B]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>is_first_subscription</remote-name>
+            <remote-type>11</remote-type>
+            <local-name>[is_first_subscription]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>is_first_subscription</remote-alias>
+            <local-type>boolean</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[country_SG_pandapro_free_trial_dashboard_74252EE5E207456E9414E0EBEBCEC43B]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>subs_start_date</remote-name>
+            <remote-type>7</remote-type>
+            <local-name>[subs_start_date]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>subs_start_date</remote-alias>
+            <local-type>date</local-type>
+            <aggregation>Year</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[country_SG_pandapro_free_trial_dashboard_74252EE5E207456E9414E0EBEBCEC43B]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>subs_start_timestamp</remote-name>
+            <remote-type>7</remote-type>
+            <local-name>[subs_start_timestamp]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>subs_start_timestamp</remote-alias>
+            <local-type>datetime</local-type>
+            <aggregation>Year</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[country_SG_pandapro_free_trial_dashboard_74252EE5E207456E9414E0EBEBCEC43B]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>subs_end_date</remote-name>
+            <remote-type>7</remote-type>
+            <local-name>[subs_end_date]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>subs_end_date</remote-alias>
+            <local-type>date</local-type>
+            <aggregation>Year</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[country_SG_pandapro_free_trial_dashboard_74252EE5E207456E9414E0EBEBCEC43B]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>trial_start_date</remote-name>
+            <remote-type>7</remote-type>
+            <local-name>[trial_start_date]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>trial_start_date</remote-alias>
+            <local-type>date</local-type>
+            <aggregation>Year</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[country_SG_pandapro_free_trial_dashboard_74252EE5E207456E9414E0EBEBCEC43B]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>trial_end_date</remote-name>
+            <remote-type>7</remote-type>
+            <local-name>[trial_end_date]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>trial_end_date</remote-alias>
+            <local-type>date</local-type>
+            <aggregation>Year</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[country_SG_pandapro_free_trial_dashboard_74252EE5E207456E9414E0EBEBCEC43B]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>free_trial_duration</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[free_trial_duration]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>free_trial_duration</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[country_SG_pandapro_free_trial_dashboard_74252EE5E207456E9414E0EBEBCEC43B]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>trial_status</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[trial_status]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>trial_status</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[country_SG_pandapro_free_trial_dashboard_74252EE5E207456E9414E0EBEBCEC43B]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>following_sub_start_date</remote-name>
+            <remote-type>7</remote-type>
+            <local-name>[following_sub_start_date]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>following_sub_start_date</remote-alias>
+            <local-type>date</local-type>
+            <aggregation>Year</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[country_SG_pandapro_free_trial_dashboard_74252EE5E207456E9414E0EBEBCEC43B]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>following_sub_end_date</remote-name>
+            <remote-type>7</remote-type>
+            <local-name>[following_sub_end_date]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>following_sub_end_date</remote-alias>
+            <local-type>date</local-type>
+            <aggregation>Year</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[country_SG_pandapro_free_trial_dashboard_74252EE5E207456E9414E0EBEBCEC43B]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>payment_plan_duration</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[payment_plan_duration]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>payment_plan_duration</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[country_SG_pandapro_free_trial_dashboard_74252EE5E207456E9414E0EBEBCEC43B]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>is_voucher_used</remote-name>
+            <remote-type>11</remote-type>
+            <local-name>[is_voucher_used]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>is_voucher_used</remote-alias>
+            <local-type>boolean</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[country_SG_pandapro_free_trial_dashboard_74252EE5E207456E9414E0EBEBCEC43B]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>total_orders</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[total_orders]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>total_orders</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[country_SG_pandapro_free_trial_dashboard_74252EE5E207456E9414E0EBEBCEC43B]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>total_savings</remote-name>
+            <remote-type>5</remote-type>
+            <local-name>[total_savings]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>total_savings</remote-alias>
+            <local-type>real</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[country_SG_pandapro_free_trial_dashboard_74252EE5E207456E9414E0EBEBCEC43B]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>entry_point</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[entry_point]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>entry_point</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[country_SG_pandapro_free_trial_dashboard_74252EE5E207456E9414E0EBEBCEC43B]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+        </metadata-records>
+      </connection>
+      <aliases enabled='yes' />
+      <column datatype='string' name='[:Measure Names]' role='dimension' type='nominal'>
+        <aliases>
+          <alias key='&quot;[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[avg:Calculation_3964504682032857090:qk]&quot;' value='Average Orders / Customer' />
+          <alias key='&quot;[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[avg:Orders Per Customer (copy)_3964504682032955395:qk]&quot;' value='Average Savings / Customer' />
+          <alias key='&quot;[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[ctd:customer_uuid:qk]&quot;' value='Customers' />
+        </aliases>
+      </column>
+      <column caption='Number of Subsequent Subs' datatype='integer' name='[Calculation_3964504681951133697]' role='dimension' type='ordinal'>
+        <calculation class='tableau' formula='{FIXED [customer_uuid]: COUNTD([following_sub_start_date])}' />
+        <aliases>
+          <alias key='1' value='Resubscribed Post Trial' />
+        </aliases>
+      </column>
+      <column caption='Orders Per Customer' datatype='real' name='[Calculation_3964504682032857090]' role='dimension' type='ordinal'>
+        <calculation class='tableau' formula='{FIXED [customer_uuid]: AVG([total_orders])}' />
+      </column>
+      <column caption='Savings Per Customer' datatype='real' name='[Orders Per Customer (copy)_3964504682032955395]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='{FIXED [customer_uuid]: AVG([total_savings])}' />
+      </column>
+      <_.fcp.ObjectModelTableType.true...column caption='country_SG_pandapro_free_trial_dashboard' datatype='table' name='[__tableau_internal_object_id__].[country_SG_pandapro_free_trial_dashboard_74252EE5E207456E9414E0EBEBCEC43B]' role='measure' type='quantitative' />
+      <column caption='Customer Uuid' datatype='string' name='[customer_uuid]' role='dimension' type='nominal' />
+      <column datatype='string' name='[entry_point]' role='dimension' type='nominal' />
+      <column caption='Following Sub End Date' datatype='date' name='[following_sub_end_date]' role='dimension' type='ordinal' />
+      <column caption='Following Sub Start Date' datatype='date' name='[following_sub_start_date]' role='dimension' type='ordinal' />
+      <column aggregation='Sum' caption='Free Trial Duration' datatype='integer' name='[free_trial_duration]' role='dimension' type='ordinal' />
+      <column caption='Is First Subscription' datatype='boolean' name='[is_first_subscription]' role='dimension' type='nominal' />
+      <column caption='Is Voucher Used' datatype='boolean' name='[is_voucher_used]' role='dimension' type='nominal'>
+        <aliases>
+          <alias key='false' value='No Voucher Used' />
+          <alias key='true' value='Voucher Used' />
+        </aliases>
+      </column>
+      <column caption='Payment Plan Duration' datatype='string' name='[payment_plan_duration]' role='dimension' type='nominal'>
+        <aliases>
+          <alias key='%null%' value='NA' />
+        </aliases>
+      </column>
+      <column caption='Subs End Date' datatype='date' name='[subs_end_date]' role='dimension' type='ordinal' />
+      <column caption='Subs Start Date' datatype='date' name='[subs_start_date]' role='dimension' type='ordinal' />
+      <column caption='Subscription Uuid' datatype='string' name='[subscription_uuid]' role='dimension' type='nominal' />
+      <column caption='Total Orders' datatype='integer' name='[total_orders]' role='measure' type='quantitative' />
+      <column caption='Total Savings' datatype='real' name='[total_savings]' role='measure' type='quantitative' />
+      <column caption='Trial End Date' datatype='date' name='[trial_end_date]' role='dimension' type='ordinal' />
+      <column caption='Trial Start Date' datatype='date' name='[trial_start_date]' role='dimension' type='ordinal' />
+      <column caption='Trial Status' datatype='string' name='[trial_status]' role='dimension' type='nominal' />
+      <column-instance column='[Calculation_3964504682032857090]' derivation='Avg' name='[avg:Calculation_3964504682032857090:qk]' pivot='key' type='quantitative' />
+      <column-instance column='[Orders Per Customer (copy)_3964504682032955395]' derivation='Avg' name='[avg:Orders Per Customer (copy)_3964504682032955395:qk]' pivot='key' type='quantitative' />
+      <column-instance column='[customer_uuid]' derivation='CountD' name='[ctd:customer_uuid:qk]' pivot='key' type='quantitative' />
+      <column-instance column='[entry_point]' derivation='None' name='[none:entry_point:nk]' pivot='key' type='nominal' />
+      <column-instance column='[is_first_subscription]' derivation='None' name='[none:is_first_subscription:nk]' pivot='key' type='nominal' />
+      <column-instance column='[trial_status]' derivation='None' name='[none:trial_status:nk]' pivot='key' type='nominal' />
+      <group caption='Action (trial_start_date,trial_status)' hidden='true' name='[Action (trial_start_date,trial_status)]' name-style='unqualified' user:auto-column='sheet_link'>
+        <groupfilter function='crossjoin'>
+          <groupfilter function='level-members' level='[trial_start_date]' />
+          <groupfilter function='level-members' level='[trial_status]' />
+        </groupfilter>
+      </group>
+      <extract _.fcp.ObjectModelExtractV2.true...object-id='' _.fcp.VConnDownstreamExtractsWithWarnings.true...user-specific='false' count='-1' enabled='true' units='records'>
+        <connection access_mode='readonly' author-locale='en_US' class='hyper' dbname='extract/c7/0a/{3D741467-4EC7-49E5-9B01-A3C169DD4EA0}/federated_03zwpmm0wu2ntl1f6iy7y1.hyper' extract-engine='true' schema='Extract' sslmode='' tablename='Extract' update-time='08/22/2025 03:01:20 AM'>
+          <_.fcp.ObjectModelEncapsulateLegacy.false...relation name='Extract' table='[Extract].[Extract]' type='table' />
+          <_.fcp.ObjectModelEncapsulateLegacy.true...relation name='Extract' table='[Extract].[Extract]' type='table' />
+          <metadata-records>
+            <metadata-record class='column'>
+              <remote-name>customer_uuid</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[customer_uuid]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>customer_uuid</remote-alias>
+              <ordinal>0</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>158583</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[country_SG_pandapro_free_trial_dashboard_74252EE5E207456E9414E0EBEBCEC43B]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>user_uuid</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[user_uuid]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>user_uuid</remote-alias>
+              <ordinal>1</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>158583</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[country_SG_pandapro_free_trial_dashboard_74252EE5E207456E9414E0EBEBCEC43B]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>subscription_uuid</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[subscription_uuid]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>subscription_uuid</remote-alias>
+              <ordinal>2</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>158583</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[country_SG_pandapro_free_trial_dashboard_74252EE5E207456E9414E0EBEBCEC43B]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>is_first_subscription</remote-name>
+              <remote-type>11</remote-type>
+              <local-name>[is_first_subscription]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>is_first_subscription</remote-alias>
+              <ordinal>3</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>boolean</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>2</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[country_SG_pandapro_free_trial_dashboard_74252EE5E207456E9414E0EBEBCEC43B]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>subs_start_date</remote-name>
+              <remote-type>133</remote-type>
+              <local-name>[subs_start_date]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>subs_start_date</remote-alias>
+              <ordinal>4</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>date</local-type>
+              <aggregation>Year</aggregation>
+              <approx-count>865</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[country_SG_pandapro_free_trial_dashboard_74252EE5E207456E9414E0EBEBCEC43B]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>subs_start_timestamp</remote-name>
+              <remote-type>135</remote-type>
+              <local-name>[subs_start_timestamp]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>subs_start_timestamp</remote-alias>
+              <ordinal>5</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>datetime</local-type>
+              <aggregation>Year</aggregation>
+              <approx-count>158583</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[country_SG_pandapro_free_trial_dashboard_74252EE5E207456E9414E0EBEBCEC43B]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>subs_end_date</remote-name>
+              <remote-type>133</remote-type>
+              <local-name>[subs_end_date]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>subs_end_date</remote-alias>
+              <ordinal>6</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>date</local-type>
+              <aggregation>Year</aggregation>
+              <approx-count>1446</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[country_SG_pandapro_free_trial_dashboard_74252EE5E207456E9414E0EBEBCEC43B]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>trial_start_date</remote-name>
+              <remote-type>133</remote-type>
+              <local-name>[trial_start_date]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>trial_start_date</remote-alias>
+              <ordinal>7</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>date</local-type>
+              <aggregation>Year</aggregation>
+              <approx-count>865</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[country_SG_pandapro_free_trial_dashboard_74252EE5E207456E9414E0EBEBCEC43B]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>trial_end_date</remote-name>
+              <remote-type>133</remote-type>
+              <local-name>[trial_end_date]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>trial_end_date</remote-alias>
+              <ordinal>8</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>date</local-type>
+              <aggregation>Year</aggregation>
+              <approx-count>1035</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[country_SG_pandapro_free_trial_dashboard_74252EE5E207456E9414E0EBEBCEC43B]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>free_trial_duration</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[free_trial_duration]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>free_trial_duration</remote-alias>
+              <ordinal>9</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>76</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[country_SG_pandapro_free_trial_dashboard_74252EE5E207456E9414E0EBEBCEC43B]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>trial_status</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[trial_status]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>trial_status</remote-alias>
+              <ordinal>10</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>3</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[country_SG_pandapro_free_trial_dashboard_74252EE5E207456E9414E0EBEBCEC43B]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>following_sub_start_date</remote-name>
+              <remote-type>133</remote-type>
+              <local-name>[following_sub_start_date]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>following_sub_start_date</remote-alias>
+              <ordinal>11</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>date</local-type>
+              <aggregation>Year</aggregation>
+              <approx-count>915</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[country_SG_pandapro_free_trial_dashboard_74252EE5E207456E9414E0EBEBCEC43B]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>following_sub_end_date</remote-name>
+              <remote-type>133</remote-type>
+              <local-name>[following_sub_end_date]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>following_sub_end_date</remote-alias>
+              <ordinal>12</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>date</local-type>
+              <aggregation>Year</aggregation>
+              <approx-count>1194</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[country_SG_pandapro_free_trial_dashboard_74252EE5E207456E9414E0EBEBCEC43B]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>payment_plan_duration</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[payment_plan_duration]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>payment_plan_duration</remote-alias>
+              <ordinal>13</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>8</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[country_SG_pandapro_free_trial_dashboard_74252EE5E207456E9414E0EBEBCEC43B]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>is_voucher_used</remote-name>
+              <remote-type>11</remote-type>
+              <local-name>[is_voucher_used]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>is_voucher_used</remote-alias>
+              <ordinal>14</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>boolean</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>2</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[country_SG_pandapro_free_trial_dashboard_74252EE5E207456E9414E0EBEBCEC43B]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>total_orders</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[total_orders]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>total_orders</remote-alias>
+              <ordinal>15</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>100</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[country_SG_pandapro_free_trial_dashboard_74252EE5E207456E9414E0EBEBCEC43B]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>total_savings</remote-name>
+              <remote-type>5</remote-type>
+              <local-name>[total_savings]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>total_savings</remote-alias>
+              <ordinal>16</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>real</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>25771</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[country_SG_pandapro_free_trial_dashboard_74252EE5E207456E9414E0EBEBCEC43B]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>entry_point</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[entry_point]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>entry_point</remote-alias>
+              <ordinal>17</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>32</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[country_SG_pandapro_free_trial_dashboard_74252EE5E207456E9414E0EBEBCEC43B]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+          </metadata-records>
+        </connection>
+      </extract>
+      <layout _.fcp.SchemaViewerObjectModel.false...dim-percentage='0.5' _.fcp.SchemaViewerObjectModel.false...measure-percentage='0.4' dim-ordering='alphabetic' measure-ordering='alphabetic' show-structure='true' />
+      <style>
+        <style-rule element='mark'>
+          <encoding attr='color' field='[none:is_first_subscription:nk]' type='palette'>
+            <map to='#4629ff'>
+              <bucket>false</bucket>
+            </map>
+            <map to='#d70a64'>
+              <bucket>true</bucket>
+            </map>
+          </encoding>
+          <encoding attr='color' field='[none:entry_point:nk]' type='palette'>
+            <map to='#499894'>
+              <bucket>&quot;RDP pro sticky banner&quot;</bucket>
+            </map>
+            <map to='#4e79a7'>
+              <bucket>%null%</bucket>
+            </map>
+            <map to='#59a14f'>
+              <bucket>&quot;Home hero banner&quot;</bucket>
+            </map>
+            <map to='#79706e'>
+              <bucket>&quot;app opened&quot;</bucket>
+            </map>
+            <map to='#86bcb6'>
+              <bucket>&quot;RLP marketing carousel&quot;</bucket>
+            </map>
+            <map to='#8cd17d'>
+              <bucket>&quot;Old home entry points&quot;</bucket>
+            </map>
+            <map to='#9d7660'>
+              <bucket>&quot;SLP marketing carousel&quot;</bucket>
+            </map>
+            <map to='#a0cbe8'>
+              <bucket>&quot;Account screen&quot;</bucket>
+            </map>
+            <map to='#b07aa1'>
+              <bucket>&quot;rdp view cart&quot;</bucket>
+            </map>
+            <map to='#b6992d'>
+              <bucket>&quot;OTP banner&quot;</bucket>
+            </map>
+            <map to='#bab0ac'>
+              <bucket>&quot;offers zone campaign carousel&quot;</bucket>
+            </map>
+            <map to='#d37295'>
+              <bucket>&quot;OTP banner one-click subscribe&quot;</bucket>
+            </map>
+            <map to='#d4a6c8'>
+              <bucket>&quot;SDP one-click subscribe&quot;</bucket>
+            </map>
+            <map to='#d7b5a6'>
+              <bucket>&quot;RLP marketing carousel (Pickup)&quot;</bucket>
+            </map>
+            <map to='#e15759'>
+              <bucket>&quot;Voucher wallet&quot;</bucket>
+            </map>
+            <map to='#f1ce63'>
+              <bucket>&quot;RDP offers carousel&quot;</bucket>
+            </map>
+            <map to='#f28e2b'>
+              <bucket>&quot;Cart pro banner&quot;</bucket>
+            </map>
+            <map to='#fabfd2'>
+              <bucket>&quot;RDP one-click subscribe&quot;</bucket>
+            </map>
+            <map to='#ff9d9a'>
+              <bucket>&quot;Account Banner&quot;</bucket>
+            </map>
+            <map to='#ffbe7d'>
+              <bucket>&quot;Deeplink&quot;</bucket>
+            </map>
+          </encoding>
+          <encoding attr='color' field='[none:trial_status:nk]' type='palette'>
+            <map to='#4e79a7'>
+              <bucket>&quot;completed&quot;</bucket>
+            </map>
+            <map to='#e15759'>
+              <bucket>&quot;revoked&quot;</bucket>
+            </map>
+            <map to='#f28e2b'>
+              <bucket>&quot;ongoing&quot;</bucket>
+            </map>
+          </encoding>
+        </style-rule>
+      </style>
+      <semantic-values>
+        <semantic-value key='[Country].[Name]' value='&quot;Singapore&quot;' />
+      </semantic-values>
+      <_.fcp.ObjectModelEncapsulateLegacy.true...object-graph>
+        <objects>
+          <object caption='country_SG_pandapro_free_trial_dashboard' id='country_SG_pandapro_free_trial_dashboard_74252EE5E207456E9414E0EBEBCEC43B'>
+            <properties context=''>
+              <relation connection='bigquery.1gv1u7c05d19x2195l2j518ads7e' name='Custom SQL Query' type='text'><![CDATA[WITH subs_entry_points AS (
+  
+  SELECT
+    
+    partition_date,
+    CONCAT(userId, global_entity_id) AS user_uuid,
+    platform,
+    DATE_ADD(payload_timestamp, INTERVAL 8 HOUR) AS event_time_local,
+    eventAction,
+    eventOrigin,
+
+    CASE
+      WHEN eventAction = "subscription_benefit_overlay.loaded" AND eventOrigin IN ("view_cart", "checkout", "rdp_view_cart", "rdp_checkout", "rdp_pro_banner") THEN "RDP one-click subscribe" -- previously named "One-click subscribe"
+      WHEN eventAction = "subscription_benefit_overlay.loaded" AND eventOrigin IN ("sdp_view_cart", "sdp_checkout") THEN "SDP one-click subscribe"
+      WHEN eventAction = "subscription_benefit_overlay.loaded" AND eventOrigin IN ("OTP_dynamic") THEN "OTP banner one-click subscribe"
+      WHEN eventAction = "subscription_benefit.loaded" AND eventOrigin IN ("rdp_pro_banner") THEN "RDP pro sticky banner" -- previously named "Pro sticky banner"
+      WHEN eventOrigin IN ("rdp_offers_carousel") THEN "RDP offers carousel"
+      WHEN eventOrigin IN ("restaurants_carousel", "rlp_carousel", "home_marketing_carousel") THEN "RLP marketing carousel"
+      WHEN eventOrigin IN ("pickup_carousel") THEN "RLP marketing carousel (Pickup)"  -- previously named "Pickup RLP marketing carousel"
+      WHEN eventOrigin IN ("SLP_marketing_carousel", "shop") THEN "SLP marketing carousel"
+      WHEN eventOrigin IN ("side_navigation", "home_screen_side_menu") THEN "Account screen" -- previously named "Side navigation"
+      WHEN eventOrigin IN ("cart_banner", "cart_pro_banner") THEN "Cart pro banner"
+      WHEN eventOrigin IN ("home", "home_banner", "home_growth_banner", "homescreen_banner", "home_marketing_carousel", "homescreen_carousel") THEN "Old home entry points"
+      WHEN eventOrigin IN ("home_hero_banner", "home_hero_banner_dynamic", "home_hero_banner_static", "home_global_ads_atf", "home_screen_entry_points") THEN "Home hero banner"
+      WHEN eventOrigin IN ("OTP_dynamic") THEN "OTP banner"
+      WHEN eventOrigin IN ("voucher_wallet") THEN "Voucher wallet"
+      WHEN eventOrigin IN ("deeplink", "enrolment_deeplink", "braze") THEN "Deeplink"
+      WHEN eventOrigin IN ("account_banner") THEN "Account Banner"
+      WHEN eventOrigin IN ("payment_banner") THEN NULL --For grace period users: to identify that the user enters APTC page from home screen banner because APTC is non recurring. To remove since they're not new subs
+      WHEN eventAction = "subscription_benefit.loaded" AND eventOrigin IN ("checkbox", "textBox", "payment_retry_ongoing", "checkout_deeplink") THEN NULL --Web inherits eventOrigin from unrelated events
+      WHEN eventAction = "subscription_benefit.loaded" AND eventOrigin IS NULL THEN NULL -- Web fires extra subscription_benefit.loaded without eventOrigin, removing this.
+      WHEN eventAction = "subscription_benefit.loaded" AND eventOrigin IN ("view_cart") THEN NULL --iOS fires both subscription_benefit.loaded and subscription_benefit_overlay.loaded, removing the former.
+      ELSE LOWER(REGEXP_REPLACE(eventOrigin, '_', ' '))
+    END AS entry_point
+
+  FROM `fulfillment-dwh-production.curated_data_shared_coredata_tracking.perseus_events_pandora`
+  
+  WHERE partition_date >>= '2024-10-01'
+    AND eventAction IN ("subscription_benefit.loaded", "subscription_benefit_overlay.loaded")
+    AND global_entity_id = 'FP_SG'
+  
+  QUALIFY ROW_NUMBER() OVER(PARTITION BY partition_date, user_uuid, platform, event_time_local, eventAction, eventOrigin, entry_point) = 1
+
+),
+
+subscription_history AS (
+
+  SELECT
+
+    customer_uuid,
+    MIN(DATE(sb.subscription_start_at_local)) AS earliest_subscription_start_date
+
+  FROM `fulfillment-dwh-production.pandata_datamart.pandora__core_subscriptions` sb, UNNEST(payments) AS payments
+
+  WHERE global_entity_id = 'FP_SG'
+    AND created_date_local <<= CURRENT_DATE()
+    AND payments.is_status_success = TRUE
+    AND DATE(sb.subscription_start_at_local) <<= CURRENT_DATE()
+
+  GROUP BY 1
+
+),
+
+free_trial_base AS (
+
+  SELECT
+
+    sb.customer_uuid,
+    CONCAT(sb.customer_code, sb.global_entity_id) AS user_uuid,
+    uuid AS subscription_uuid,
+
+    CASE
+      WHEN DATE(payments.subscription_start_at_local) = earliest_subscription_start_date THEN TRUE
+      WHEN earliest_subscription_start_date IS NULL THEN TRUE
+      ELSE FALSE
+    END AS is_first_subscription,
+
+    DATE(sb.subscription_start_at_local) AS subs_start_date,
+    sb.subscription_start_at_local AS subs_start_timestamp,
+    DATE(sb.subscription_end_at_local) AS subs_end_date,
+    DATE(payments.subscription_start_at_local) AS trial_start_date,
+    DATE(payments.subscription_end_at_local) AS trial_end_date,
+    payments.subscription_start_at_local AS trial_start_time,
+    payments.subscription_end_at_local AS trial_end_time,
+
+    CASE
+      WHEN payments.is_free_trial = TRUE AND status = 'revoked' THEN DATE_DIFF(DATE(payments.subscription_end_at_local), DATE(payments.subscription_start_at_local), DAY)
+      WHEN DATE(payments.subscription_end_at_local) >> (CURRENT_DATE()) THEN DATE_DIFF((CURRENT_DATE()), DATE(payments.subscription_start_at_local), DAY)
+      WHEN DATE_DIFF(DATE(payments.subscription_end_at_local), DATE(payments.subscription_start_at_local), DAY) >> 14 THEN 14
+      ELSE DATE_DIFF(DATE(payments.subscription_end_at_local), DATE(payments.subscription_start_at_local), DAY)
+    END AS free_trial_duration,
+
+  FROM `fulfillment-dwh-production.pandata_datamart.pandora__core_subscriptions` sb, UNNEST(payments) AS payments
+
+  LEFT JOIN subscription_history
+    ON sb.customer_uuid = subscription_history.customer_uuid
+
+  WHERE global_entity_id = 'FP_SG'
+    AND created_date_local <<= CURRENT_DATE()
+    AND payments.is_status_success = TRUE
+    AND DATE(sb.subscription_start_at_local) >>= '2024-10-01'
+    AND DATE(sb.subscription_start_at_local) <<= CURRENT_DATE()
+    AND payments.is_free_trial = TRUE
+    -- AND payments.payment_plan_duration = '0M'
+
+  QUALIFY ROW_NUMBER() OVER(PARTITION BY customer_uuid) = 1
+
+),
+
+cleaned_free_trial_base AS (
+
+  SELECT
+
+    free_trial_base.*,
+
+    CASE
+      WHEN free_trial_base.free_trial_duration << 14 AND trial_end_date << (CURRENT_DATE()) THEN 'revoked'
+      WHEN free_trial_base.free_trial_duration << 14 AND trial_end_date >>= (CURRENT_DATE()) THEN 'ongoing'
+      ELSE 'completed'
+    END AS trial_status
+
+  FROM free_trial_base
+
+),
+
+pro_new_cvp_orders AS (
+
+  SELECT
+
+    billing.order_code AS order_id,
+
+    MAX(IFNULL(gross_delivery_fee_discount_platform_local, 0)) OVER(PARTITION BY billing.order_code) AS platform_incentive_gross,
+
+    MAX(IFNULL(gross_delivery_fee_discount_vendor_local, 0)) OVER(PARTITION BY billing.order_code) AS vendor_incentive_gross,
+
+  FROM `fulfillment-dwh-production.pandata_curated.billing_engine_workflow_sap_orders` billing
+
+  JOIN `fulfillment-dwh-production.pandata_report.country_SG_pd_orders` pd
+    ON pd.code = billing.order_code
+    AND pd.ordered_at_date_local >>= '2024-09-01'
+
+  JOIN `fulfillment-dwh-production.pandata_report.regional_apac_pd_orders_agg_accounting` acc
+    ON CONCAT(pd.global_entity_id, '_', pd.code) = CONCAT(acc.global_entity_id, "_", acc.order_code)
+    AND acc.created_date_utc >>= '2024-06-01'
+
+  LEFT JOIN `fulfillment-dwh-production.curated_data_shared.dps_sessions_mapped_to_orders` dps
+    ON billing.order_code = dps.platform_order_code
+    AND dps.country_code = 'sg'
+    AND dps.created_date >>= '2024-06-01'
+
+  WHERE billing.global_entity_id = 'FP_SG'
+    AND billing.created_date_utc >>= '2024-06-30'
+    AND pd_order_fees_delivery_fee_adjustment_local << 0
+    AND IFNULL(has_new_customer_condition, FALSE) = FALSE
+    AND pd.business_type_apac IN ('restaurants', 'street_food', 'caterers')
+
+  QUALIFY ROW_NUMBER() OVER(PARTITION BY billing.order_code) = 1
+
+),
+
+orders AS (
+
+  SELECT
+
+    customer_uuid,
+    COUNT(DISTINCT code) AS total_orders,
+    SUM(IFNULL(discount_amount_local, 0) + IFNULL(voucher_amount_local, 0) + IFNULL(platform_incentive_gross, 0) + IFNULL(vendor_incentive_gross, 0)) AS total_savings
+
+  FROM `fulfillment-dwh-production.pandata_report.country_SG_pd_orders` pd
+
+  JOIN cleaned_free_trial_base
+    ON pd.pd_customer_uuid = cleaned_free_trial_base.customer_uuid
+    AND pd.ordered_at_local BETWEEN cleaned_free_trial_base.trial_start_time AND cleaned_free_trial_base.trial_end_time
+
+  LEFT JOIN pro_new_cvp_orders
+    ON pd.code = pro_new_cvp_orders.order_id
+
+  WHERE ordered_at_date_local >>= '2024-10-01'
+    AND is_valid_order = TRUE
+    AND is_test_order = FALSE
+
+  GROUP BY 1
+
+),
+
+following_subs AS (
+
+  SELECT
+
+    sb.customer_uuid,
+    DATE(payments.subscription_start_at_local) AS following_sub_start_date,
+    DATE(payments.subscription_end_at_local) AS following_sub_end_date,
+
+    CASE
+      WHEN payments.voucher_code IS NOT NULL AND payments.voucher_code != '' THEN TRUE
+      ELSE FALSE
+    END AS is_voucher_used,
+
+    payments.payment_plan_duration
+
+  FROM `fulfillment-dwh-production.pandata_datamart.pandora__core_subscriptions` sb, UNNEST(payments) AS payments
+
+  JOIN cleaned_free_trial_base
+    ON cleaned_free_trial_base.customer_uuid = sb.customer_uuid
+    AND DATE(payments.subscription_start_at_local) >> trial_start_date
+
+  WHERE global_entity_id = 'FP_SG'
+    AND created_date_local <<= CURRENT_DATE()
+    AND payments.is_status_success = TRUE
+    AND DATE(sb.subscription_start_at_local) >>= '2024-10-01'
+    AND DATE(sb.subscription_start_at_local) <<= CURRENT_DATE()
+
+  QUALIFY ROW_NUMBER() OVER(PARTITION BY customer_uuid, following_sub_start_date) = 1
+
+)
+
+SELECT
+
+  cleaned_free_trial_base.*EXCEPT(trial_start_time, trial_end_time),
+  following_subs.*EXCEPT(customer_uuid, is_voucher_used),
+  IFNULL(is_voucher_used, FALSE) AS is_voucher_used,
+  IFNULL(total_orders, 0) total_orders,
+  IFNULL(total_savings, 0) total_savings,
+  entry_point
+
+FROM cleaned_free_trial_base
+
+LEFT JOIN following_subs
+  ON following_subs.customer_uuid = cleaned_free_trial_base.customer_uuid
+
+LEFT JOIN orders
+  ON orders.customer_uuid = cleaned_free_trial_base.customer_uuid
+
+LEFT JOIN subs_entry_points
+  ON cleaned_free_trial_base.user_uuid = subs_entry_points.user_uuid
+  AND subs_entry_points.event_time_local << TIMESTAMP(subs_start_timestamp)
+
+QUALIFY ROW_NUMBER() OVER(PARTITION BY customer_uuid, user_uuid, subscription_uuid, following_sub_start_date ORDER BY subs_entry_points.event_time_local DESC) = 1]]></relation>
+            </properties>
+            <properties context='extract'>
+              <relation name='Extract' table='[Extract].[Extract]' type='table' />
+            </properties>
+          </object>
+        </objects>
+      </_.fcp.ObjectModelEncapsulateLegacy.true...object-graph>
+    </datasource>
+  </datasources>
+  <shared-views>
+    <shared-view name='federated.03zwpmm0wu2ntl1f6iy7y1f2cykh'>
+      <datasources>
+        <datasource caption='[SG] Free Trial Tracker' name='federated.03zwpmm0wu2ntl1f6iy7y1f2cykh' />
+      </datasources>
+      <datasource-dependencies datasource='federated.03zwpmm0wu2ntl1f6iy7y1f2cykh'>
+        <column datatype='string' name='[entry_point]' role='dimension' type='nominal' />
+        <column-instance column='[entry_point]' derivation='None' name='[none:entry_point:nk]' pivot='key' type='nominal' />
+      </datasource-dependencies>
+      <filter class='categorical' column='[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[none:entry_point:nk]'>
+        <groupfilter function='level-members' level='[none:entry_point:nk]' user:ui-enumeration='all' user:ui-marker='enumerate' />
+      </filter>
+    </shared-view>
+  </shared-views>
+  <worksheets>
+    <worksheet name='% of Customers with Subsequent Subs'>
+      <layout-options>
+        <title>
+          <formatted-text>
+            <run bold='true' fontcolor='#000000' fontname='Tableau Regular'>Resubscription After Free Trial</run>
+            <run>Æ&#10;</run>
+            <run fontcolor='#000000' fontname='Tableau Regular' fontsize='10'>Includes both auto-renewals after the free trial ended or self-signups after revoking the trial.</run>
+          </formatted-text>
+        </title>
+      </layout-options>
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='[SG] Free Trial Tracker' name='federated.03zwpmm0wu2ntl1f6iy7y1f2cykh' />
+          </datasources>
+          <datasource-dependencies datasource='federated.03zwpmm0wu2ntl1f6iy7y1f2cykh'>
+            <column caption='Number of Subsequent Subs' datatype='integer' name='[Calculation_3964504681951133697]' role='dimension' type='ordinal'>
+              <calculation class='tableau' formula='{FIXED [customer_uuid]: COUNTD([following_sub_start_date])}' />
+              <aliases>
+                <alias key='1' value='Resubscribed Post Trial' />
+              </aliases>
+            </column>
+            <column-instance column='[customer_uuid]' derivation='CountD' name='[ctd:customer_uuid:qk]' pivot='key' type='quantitative' />
+            <column caption='Customer Uuid' datatype='string' name='[customer_uuid]' role='dimension' type='nominal' />
+            <column datatype='string' name='[entry_point]' role='dimension' type='nominal' />
+            <column caption='Following Sub Start Date' datatype='date' name='[following_sub_start_date]' role='dimension' type='ordinal' />
+            <column-instance column='[Calculation_3964504681951133697]' derivation='None' name='[none:Calculation_3964504681951133697:ok]' pivot='key' type='ordinal' />
+            <column-instance column='[entry_point]' derivation='None' name='[none:entry_point:nk]' pivot='key' type='nominal' />
+            <column-instance column='[payment_plan_duration]' derivation='None' name='[none:payment_plan_duration:nk]' pivot='key' type='nominal' />
+            <column-instance column='[trial_start_date]' derivation='None' name='[none:trial_start_date:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[trial_status]' derivation='None' name='[none:trial_status:nk]' pivot='key' type='nominal' />
+            <column caption='Payment Plan Duration' datatype='string' name='[payment_plan_duration]' role='dimension' type='nominal'>
+              <aliases>
+                <alias key='%null%' value='NA' />
+              </aliases>
+            </column>
+            <column-instance column='[customer_uuid]' derivation='CountD' name='[pcto:ctd:customer_uuid:qk:2]' pivot='key' type='quantitative'>
+              <table-calc ordering-type='Columns' type='PctTotal' />
+            </column-instance>
+            <column caption='Trial Start Date' datatype='date' name='[trial_start_date]' role='dimension' type='ordinal' />
+            <column caption='Trial Status' datatype='string' name='[trial_status]' role='dimension' type='nominal' />
+          </datasource-dependencies>
+          <filter class='categorical' column='[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[none:Calculation_3964504681951133697:ok]'>
+            <groupfilter from='1' function='range' level='[none:Calculation_3964504681951133697:ok]' to='8' user:ui-domain='database' user:ui-enumeration='inclusive' user:ui-marker='enumerate' />
+          </filter>
+          <filter class='quantitative' column='[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[none:trial_start_date:qk]' filter-group='4' included-values='in-range'>
+            <min>#2025-04-01#</min>
+            <max>#2025-04-30#</max>
+          </filter>
+          <filter class='categorical' column='[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[none:trial_status:nk]' filter-group='5'>
+            <groupfilter function='level-members' level='[none:trial_status:nk]' />
+          </filter>
+          <manual-sort column='[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[none:trial_status:nk]' direction='ASC'>
+            <dictionary>
+              <bucket>&quot;completed&quot;</bucket>
+              <bucket>&quot;ongoing&quot;</bucket>
+              <bucket>&quot;revoked&quot;</bucket>
+            </dictionary>
+          </manual-sort>
+          <slices>
+            <column>[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[none:trial_status:nk]</column>
+            <column>[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[none:trial_start_date:qk]</column>
+            <column>[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[none:Calculation_3964504681951133697:ok]</column>
+            <column>[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[none:entry_point:nk]</column>
+          </slices>
+          <aggregation value='true' />
+        </view>
+        <style>
+          <style-rule element='cell'>
+            <format attr='height' field='[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[none:trial_status:nk]' value='42' />
+            <format attr='height' field='[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[none:Calculation_3964504681951133697:ok]' value='30' />
+            <format attr='text-align' value='center' />
+            <format attr='text-format' field='[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[pcto:ctd:customer_uuid:qk:2]' value='p0.0%' />
+          </style-rule>
+          <style-rule element='header'>
+            <format attr='width' field='[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[none:Calculation_3964504681951133697:ok]' value='96' />
+            <format attr='height' field='[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[none:trial_status:nk]' value='25' />
+            <format attr='border-width' data-class='total' scope='cols' value='0' />
+            <format attr='border-style' data-class='total' scope='cols' value='none' />
+            <format attr='border-width' data-class='subtotal' scope='cols' value='0' />
+            <format attr='border-style' data-class='subtotal' scope='cols' value='none' />
+            <format attr='background-color' field='[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[none:trial_status:nk]' value='#f5f5f5' />
+          </style-rule>
+          <style-rule element='label'>
+            <format attr='display' field='[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[none:Calculation_3964504681951133697:ok]' value='true' />
+            <format attr='text-align' field='[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[none:Calculation_3964504681951133697:ok]' value='center' />
+            <format attr='vertical-align' field='[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[none:Calculation_3964504681951133697:ok]' value='center' />
+            <format attr='text-align' field='[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[none:payment_plan_duration:nk]' value='center' />
+            <format attr='vertical-align' field='[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[none:payment_plan_duration:nk]' value='center' />
+          </style-rule>
+          <style-rule element='pane'>
+            <format attr='border-width' data-class='total' scope='cols' value='0' />
+            <format attr='border-style' data-class='total' scope='cols' value='none' />
+            <format attr='border-width' data-class='subtotal' scope='cols' value='1' />
+            <format attr='border-style' data-class='subtotal' scope='cols' value='dotted' />
+          </style-rule>
+          <style-rule element='worksheet'>
+            <format attr='display-field-labels' scope='cols' value='false' />
+            <format attr='display-field-labels' scope='rows' value='false' />
+          </style-rule>
+          <style-rule element='table-div'>
+            <format attr='line-visibility' scope='rows' value='on' />
+            <format attr='line-pattern-only' scope='rows' value='dotted' />
+            <format attr='line-visibility' scope='cols' value='on' />
+            <format attr='line-pattern-only' scope='cols' value='dotted' />
+            <format attr='div-level' scope='cols' value='1' />
+            <format attr='div-level' scope='rows' value='2' />
+          </style-rule>
+          <style-rule element='header-div'>
+            <format attr='line-visibility' scope='rows' value='on' />
+            <format attr='line-pattern-only' scope='rows' value='dotted' />
+            <format attr='stroke-size' scope='cols' value='0' />
+            <format attr='line-visibility' scope='cols' value='off' />
+          </style-rule>
+          <style-rule element='quick-filter'>
+            <format attr='title' field='[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[none:entry_point:nk]' value='Entry Point'>
+              <formatted-text>
+                <run>Entry Point</run>
+              </formatted-text>
+            </format>
+          </style-rule>
+        </style>
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Square' />
+            <encodings>
+              <color column='[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[pcto:ctd:customer_uuid:qk:2]' />
+              <text column='[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[ctd:customer_uuid:qk]' />
+              <text column='[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[pcto:ctd:customer_uuid:qk:2]' />
+            </encodings>
+            <customized-label>
+              <formatted-text>
+                <run><![CDATA[<[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[ctd:customer_uuid:qk]>
+]]></run>
+                <run fontsize='8'><![CDATA[(<[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[pcto:ctd:customer_uuid:qk:2]>)]]></run>
+              </formatted-text>
+            </customized-label>
+            <style>
+              <style-rule element='cell'>
+                <format attr='vertical-align' value='center' />
+              </style-rule>
+              <style-rule element='mark'>
+                <format attr='mark-labels-show' value='true' />
+                <format attr='mark-labels-cull' value='true' />
+              </style-rule>
+              <style-rule element='pane'>
+                <format attr='minheight' value='-1' />
+                <format attr='maxheight' value='-1' />
+              </style-rule>
+            </style>
+          </pane>
+        </panes>
+        <rows total='true'>[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[none:payment_plan_duration:nk]</rows>
+        <cols total='true'>[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[none:trial_status:nk]</cols>
+      </table>
+      <simple-id uuid='{DE525581-D7F5-4235-AD32-BA5863F7BBA0}' />
+    </worksheet>
+    <worksheet name='Daily Signups'>
+      <layout-options>
+        <title>
+          <formatted-text>
+            <run bold='true' fontcolor='#000000' fontname='Tableau Regular'>Trend of Daily Free Trial Signups</run>
+            <run>Æ&#10;</run>
+            <run bold='true' fontcolor='#000000' fontname='Tableau Regular' fontsize='10'>Note:</run>
+            <run fontcolor='#000000' fontname='Tableau Regular' fontsize='10'> Free trial targeting was updated on 11th October to target only customers new to pro.</run>
+          </formatted-text>
+        </title>
+      </layout-options>
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='[SG] Free Trial Tracker' name='federated.03zwpmm0wu2ntl1f6iy7y1f2cykh' />
+          </datasources>
+          <datasource-dependencies datasource='federated.03zwpmm0wu2ntl1f6iy7y1f2cykh'>
+            <column-instance column='[customer_uuid]' derivation='CountD' name='[ctd:customer_uuid:qk]' pivot='key' type='quantitative' />
+            <column caption='Customer Uuid' datatype='string' name='[customer_uuid]' role='dimension' type='nominal' />
+            <column datatype='string' name='[entry_point]' role='dimension' type='nominal' />
+            <column caption='Is First Subscription' datatype='boolean' name='[is_first_subscription]' role='dimension' type='nominal' />
+            <column-instance column='[entry_point]' derivation='None' name='[none:entry_point:nk]' pivot='key' type='nominal' />
+            <column-instance column='[is_first_subscription]' derivation='None' name='[none:is_first_subscription:nk]' pivot='key' type='nominal' />
+            <column-instance column='[trial_start_date]' derivation='None' name='[none:trial_start_date:ok]' pivot='key' type='ordinal' />
+            <column-instance column='[trial_start_date]' derivation='None' name='[none:trial_start_date:qk]' pivot='key' type='quantitative' />
+            <column caption='Trial Start Date' datatype='date' name='[trial_start_date]' role='dimension' type='ordinal' />
+          </datasource-dependencies>
+          <filter class='categorical' column='[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[none:trial_start_date:ok]'>
+            <groupfilter function='level-members' level='[none:trial_start_date:ok]' user:ui-enumeration='all' user:ui-marker='enumerate' />
+          </filter>
+          <filter class='quantitative' column='[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[none:trial_start_date:qk]' filter-group='4' included-values='in-range'>
+            <min>#2025-04-01#</min>
+            <max>#2025-04-30#</max>
+          </filter>
+          <slices>
+            <column>[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[none:trial_start_date:qk]</column>
+            <column>[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[none:trial_start_date:ok]</column>
+            <column>[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[none:entry_point:nk]</column>
+          </slices>
+          <aggregation value='true' />
+        </view>
+        <style>
+          <style-rule element='axis'>
+            <format attr='display' class='0' field='[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[ctd:customer_uuid:qk]' scope='rows' value='false' />
+            <encoding attr='space' class='1' field='[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[ctd:customer_uuid:qk]' field-type='quantitative' fold='true' scope='rows' synchronized='true' type='space' />
+            <encoding attr='space' class='0' field='[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[ctd:customer_uuid:qk]' field-type='quantitative' range-type='independent' scope='rows' type='space' />
+            <format attr='display' class='1' field='[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[ctd:customer_uuid:qk]' scope='rows' value='false' />
+          </style-rule>
+          <style-rule element='header'>
+            <format attr='border-width' data-class='total' scope='cols' value='0' />
+            <format attr='border-style' data-class='total' scope='cols' value='none' />
+            <format attr='border-width' data-class='total' scope='rows' value='0' />
+            <format attr='border-style' data-class='total' scope='rows' value='none' />
+          </style-rule>
+          <style-rule element='label'>
+            <format attr='text-format' field='[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[none:trial_start_date:ok]' value='*DD-MM' />
+          </style-rule>
+          <style-rule element='pane'>
+            <format attr='border-width' data-class='total' scope='cols' value='0' />
+            <format attr='border-style' data-class='total' scope='cols' value='none' />
+            <format attr='border-width' data-class='total' scope='rows' value='0' />
+            <format attr='border-style' data-class='total' scope='rows' value='none' />
+          </style-rule>
+          <style-rule element='worksheet'>
+            <format attr='display-field-labels' scope='cols' value='false' />
+          </style-rule>
+          <style-rule element='gridline'>
+            <format attr='stroke-size' scope='rows' value='0' />
+            <format attr='line-visibility' scope='rows' value='off' />
+          </style-rule>
+          <style-rule element='zeroline'>
+            <format attr='stroke-size' scope='rows' value='0' />
+            <format attr='line-visibility' scope='rows' value='off' />
+            <format attr='stroke-size' scope='cols' value='0' />
+            <format attr='line-visibility' scope='cols' value='off' />
+          </style-rule>
+          <style-rule element='table-div'>
+            <format attr='stroke-size' scope='cols' value='0' />
+            <format attr='line-visibility' scope='cols' value='off' />
+            <format attr='stroke-size' scope='rows' value='0' />
+            <format attr='line-visibility' scope='rows' value='off' />
+          </style-rule>
+          <style-rule element='legend-title-text'>
+            <format attr='color' field='[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[none:is_first_subscription:nk]' value='Is First Subscription?'>
+              <formatted-text>
+                <run>Is First Subscription?</run>
+              </formatted-text>
+            </format>
+          </style-rule>
+          <style-rule element='quick-filter'>
+            <format attr='title' field='[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[none:trial_start_date:qk]' value='Trial Sign Up Date'>
+              <formatted-text>
+                <run>Trial Sign Up Date</run>
+              </formatted-text>
+            </format>
+          </style-rule>
+        </style>
+        <panes>
+          <pane id='1' selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Bar' />
+            <style>
+              <style-rule element='mark'>
+                <format attr='mark-labels-show' value='true' />
+                <format attr='mark-labels-cull' value='true' />
+              </style-rule>
+            </style>
+          </pane>
+          <pane id='2' selection-relaxation-option='selection-relaxation-allow' y-axis-name='[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[ctd:customer_uuid:qk]'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Bar' />
+            <encodings>
+              <text column='[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[ctd:customer_uuid:qk]' />
+            </encodings>
+            <style>
+              <style-rule element='mark'>
+                <format attr='mark-labels-show' value='true' />
+                <format attr='mark-labels-cull' value='true' />
+                <format attr='mark-color' value='#f9e7ed' />
+              </style-rule>
+            </style>
+          </pane>
+          <pane id='3' selection-relaxation-option='selection-relaxation-allow' y-axis-name='[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[ctd:customer_uuid:qk]' y-index='1'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Line' />
+            <mark-sizing mark-sizing-setting='marks-scaling-off' />
+            <encodings>
+              <color column='[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[none:is_first_subscription:nk]' />
+            </encodings>
+            <style>
+              <style-rule element='mark'>
+                <format attr='mark-labels-cull' value='true' />
+                <format attr='mark-labels-show' value='false' />
+                <format attr='size' value='1.4172928333282471' />
+                <format attr='mark-markers-mode' value='all' />
+              </style-rule>
+            </style>
+          </pane>
+        </panes>
+        <rows>([federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[ctd:customer_uuid:qk] + [federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[ctd:customer_uuid:qk])</rows>
+        <cols>[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[none:trial_start_date:ok]</cols>
+      </table>
+      <simple-id uuid='{616A7912-4ACE-4648-8791-513BA22D8744}' />
+    </worksheet>
+    <worksheet name='Distribution of Orders'>
+      <layout-options>
+        <title>
+          <formatted-text>
+            <run fontcolor='#000000' fontname='Tableau Regular' fontsize='10'>Distribution of Revoked Customers with X Number of Orders:</run>
+          </formatted-text>
+        </title>
+      </layout-options>
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='[SG] Free Trial Tracker' name='federated.03zwpmm0wu2ntl1f6iy7y1f2cykh' />
+          </datasources>
+          <datasource-dependencies datasource='federated.03zwpmm0wu2ntl1f6iy7y1f2cykh'>
+            <column caption='Orders Per Customer' datatype='real' name='[Calculation_3964504682032857090]' role='dimension' type='ordinal'>
+              <calculation class='tableau' formula='{FIXED [customer_uuid]: AVG([total_orders])}' />
+            </column>
+            <column-instance column='[customer_uuid]' derivation='CountD' name='[ctd:customer_uuid:qk]' pivot='key' type='quantitative' />
+            <column caption='Customer Uuid' datatype='string' name='[customer_uuid]' role='dimension' type='nominal' />
+            <column datatype='string' name='[entry_point]' role='dimension' type='nominal' />
+            <column aggregation='Sum' caption='Free Trial Duration' datatype='integer' name='[free_trial_duration]' role='dimension' type='ordinal' />
+            <column-instance column='[Calculation_3964504682032857090]' derivation='None' name='[none:Calculation_3964504682032857090:ok]' pivot='key' type='ordinal' />
+            <column-instance column='[entry_point]' derivation='None' name='[none:entry_point:nk]' pivot='key' type='nominal' />
+            <column-instance column='[free_trial_duration]' derivation='None' name='[none:free_trial_duration:ok]' pivot='key' type='ordinal' />
+            <column-instance column='[trial_start_date]' derivation='None' name='[none:trial_start_date:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[trial_status]' derivation='None' name='[none:trial_status:nk]' pivot='key' type='nominal' />
+            <column-instance column='[customer_uuid]' derivation='CountD' name='[pcto:ctd:customer_uuid:qk:1]' pivot='key' type='quantitative'>
+              <table-calc ordering-type='Rows' type='PctTotal' />
+            </column-instance>
+            <column caption='Total Orders' datatype='integer' name='[total_orders]' role='measure' type='quantitative' />
+            <column caption='Trial Start Date' datatype='date' name='[trial_start_date]' role='dimension' type='ordinal' />
+            <column caption='Trial Status' datatype='string' name='[trial_status]' role='dimension' type='nominal' />
+          </datasource-dependencies>
+          <filter class='categorical' column='[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[none:free_trial_duration:ok]'>
+            <groupfilter function='level-members' level='[none:free_trial_duration:ok]' user:ui-enumeration='all' user:ui-marker='enumerate' />
+          </filter>
+          <filter class='quantitative' column='[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[none:trial_start_date:qk]' filter-group='4' included-values='in-range'>
+            <min>#2025-04-01#</min>
+            <max>#2025-04-30#</max>
+          </filter>
+          <filter class='categorical' column='[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[none:trial_status:nk]' filter-group='3'>
+            <groupfilter function='member' level='[none:trial_status:nk]' member='&quot;revoked&quot;' user:ui-domain='database' user:ui-enumeration='inclusive' user:ui-marker='enumerate' />
+          </filter>
+          <slices>
+            <column>[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[none:trial_status:nk]</column>
+            <column>[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[none:free_trial_duration:ok]</column>
+            <column>[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[none:trial_start_date:qk]</column>
+            <column>[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[none:entry_point:nk]</column>
+          </slices>
+          <aggregation value='true' />
+        </view>
+        <style>
+          <style-rule element='axis'>
+            <format attr='display' class='0' field='[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[ctd:customer_uuid:qk]' scope='rows' value='false' />
+            <format attr='display' class='0' field='[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[pcto:ctd:customer_uuid:qk:1]' scope='rows' value='false' />
+          </style-rule>
+          <style-rule element='cell'>
+            <format attr='height' field='[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[none:trial_status:nk]' value='42' />
+            <format attr='text-align' value='center' />
+            <format attr='text-format' field='[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[ctd:customer_uuid:qk]' value='n#,##0;-#,##0' />
+            <format attr='text-format' field='[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[pcto:ctd:customer_uuid:qk:1]' value='p0%' />
+          </style-rule>
+          <style-rule element='header'>
+            <format attr='height' field='[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[none:free_trial_duration:ok]' value='21' />
+            <format attr='border-width' data-class='total' scope='cols' value='0' />
+            <format attr='border-style' data-class='total' scope='cols' value='none' />
+            <format attr='border-width' data-class='subtotal' scope='cols' value='0' />
+            <format attr='border-style' data-class='subtotal' scope='cols' value='none' />
+            <format attr='background-color' field='[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[none:free_trial_duration:ok]' value='#f5f5f5' />
+          </style-rule>
+          <style-rule element='label'>
+            <format attr='text-align' field='[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[none:trial_status:nk]' value='center' />
+            <format attr='vertical-align' field='[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[none:trial_status:nk]' value='center' />
+          </style-rule>
+          <style-rule element='pane'>
+            <format attr='border-width' data-class='total' scope='cols' value='0' />
+            <format attr='border-style' data-class='total' scope='cols' value='none' />
+            <format attr='border-width' data-class='subtotal' scope='cols' value='1' />
+            <format attr='border-style' data-class='subtotal' scope='cols' value='dotted' />
+            <format attr='background-color' data-class='total' scope='rows' value='#00000000' />
+            <format attr='background-color' data-class='subtotal' scope='rows' value='#00000000' />
+            <format attr='background-color' data-class='total' scope='cols' value='#fefaf1' />
+          </style-rule>
+          <style-rule element='worksheet'>
+            <format attr='display-field-labels' scope='cols' value='false' />
+            <format attr='display-field-labels' scope='rows' value='false' />
+          </style-rule>
+          <style-rule element='gridline'>
+            <format attr='stroke-size' scope='rows' value='0' />
+            <format attr='line-visibility' scope='rows' value='off' />
+          </style-rule>
+          <style-rule element='zeroline'>
+            <format attr='stroke-size' scope='rows' value='0' />
+            <format attr='line-visibility' scope='rows' value='off' />
+            <format attr='stroke-size' scope='cols' value='0' />
+            <format attr='line-visibility' scope='cols' value='off' />
+          </style-rule>
+          <style-rule element='table-div'>
+            <format attr='line-pattern-only' scope='rows' value='dotted' />
+            <format attr='line-pattern-only' scope='cols' value='dotted' />
+            <format attr='div-level' scope='cols' value='1' />
+            <format attr='div-level' scope='rows' value='2' />
+            <format attr='stroke-size' scope='rows' value='0' />
+            <format attr='line-visibility' scope='rows' value='off' />
+            <format attr='stroke-size' scope='cols' value='0' />
+            <format attr='line-visibility' scope='cols' value='off' />
+          </style-rule>
+          <style-rule element='header-div'>
+            <format attr='line-pattern-only' scope='rows' value='dotted' />
+            <format attr='line-pattern-only' scope='cols' value='dotted' />
+            <format attr='stroke-size' scope='cols' value='0' />
+            <format attr='line-visibility' scope='cols' value='off' />
+            <format attr='line-visibility' scope='rows' value='off' />
+          </style-rule>
+          <style-rule element='quick-filter'>
+            <format attr='title' field='[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[none:free_trial_duration:ok]' value='Duration'>
+              <formatted-text>
+                <run>Duration</run>
+              </formatted-text>
+            </format>
+          </style-rule>
+        </style>
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Bar' />
+            <encodings>
+              <text column='[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[pcto:ctd:customer_uuid:qk:1]' />
+            </encodings>
+            <style>
+              <style-rule element='mark'>
+                <format attr='mark-labels-cull' value='true' />
+                <format attr='mark-labels-show' value='true' />
+                <format attr='mark-color' value='#a41137' />
+              </style-rule>
+              <style-rule element='pane'>
+                <format attr='minheight' value='-1' />
+                <format attr='maxheight' value='-1' />
+              </style-rule>
+            </style>
+          </pane>
+        </panes>
+        <rows>[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[ctd:customer_uuid:qk]</rows>
+        <cols>[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[none:Calculation_3964504682032857090:ok]</cols>
+      </table>
+      <simple-id uuid='{26F0B0F4-63CD-424D-9FD6-F10499C27439}' />
+    </worksheet>
+    <worksheet name='Entry Point'>
+      <layout-options>
+        <title>
+          <formatted-text>
+            <run bold='true' fontcolor='#000000' fontname='Tableau Regular'>Free Trial Entry Points</run>
+          </formatted-text>
+        </title>
+      </layout-options>
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='[SG] Free Trial Tracker' name='federated.03zwpmm0wu2ntl1f6iy7y1f2cykh' />
+          </datasources>
+          <datasource-dependencies datasource='federated.03zwpmm0wu2ntl1f6iy7y1f2cykh'>
+            <column-instance column='[customer_uuid]' derivation='CountD' name='[ctd:customer_uuid:qk]' pivot='key' type='quantitative' />
+            <column caption='Customer Uuid' datatype='string' name='[customer_uuid]' role='dimension' type='nominal' />
+            <column datatype='string' name='[entry_point]' role='dimension' type='nominal' />
+            <column-instance column='[entry_point]' derivation='None' name='[none:entry_point:nk]' pivot='key' type='nominal' />
+            <column-instance column='[trial_start_date]' derivation='None' name='[none:trial_start_date:ok]' pivot='key' type='ordinal' />
+            <column-instance column='[trial_start_date]' derivation='None' name='[none:trial_start_date:qk]' pivot='key' type='quantitative' />
+            <column caption='Trial Start Date' datatype='date' name='[trial_start_date]' role='dimension' type='ordinal' />
+          </datasource-dependencies>
+          <filter class='categorical' column='[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[none:trial_start_date:ok]'>
+            <groupfilter function='level-members' level='[none:trial_start_date:ok]' user:ui-enumeration='all' user:ui-marker='enumerate' />
+          </filter>
+          <filter class='quantitative' column='[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[none:trial_start_date:qk]' filter-group='4' included-values='in-range'>
+            <min>#2025-04-01#</min>
+            <max>#2025-04-30#</max>
+          </filter>
+          <slices>
+            <column>[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[none:trial_start_date:qk]</column>
+            <column>[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[none:trial_start_date:ok]</column>
+            <column>[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[none:entry_point:nk]</column>
+          </slices>
+          <aggregation value='true' />
+        </view>
+        <style>
+          <style-rule element='axis'>
+            <format attr='display' class='0' field='[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[ctd:customer_uuid:qk]' scope='rows' value='false' />
+            <encoding attr='space' class='0' field='[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[ctd:customer_uuid:qk]' field-type='quantitative' range-type='independent' scope='rows' type='space' />
+          </style-rule>
+          <style-rule element='header'>
+            <format attr='border-width' data-class='total' scope='cols' value='0' />
+            <format attr='border-style' data-class='total' scope='cols' value='none' />
+            <format attr='border-width' data-class='total' scope='rows' value='0' />
+            <format attr='border-style' data-class='total' scope='rows' value='none' />
+          </style-rule>
+          <style-rule element='label'>
+            <format attr='text-format' field='[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[none:trial_start_date:ok]' value='*DD-MM' />
+          </style-rule>
+          <style-rule element='pane'>
+            <format attr='border-width' data-class='total' scope='cols' value='0' />
+            <format attr='border-style' data-class='total' scope='cols' value='none' />
+            <format attr='border-width' data-class='total' scope='rows' value='0' />
+            <format attr='border-style' data-class='total' scope='rows' value='none' />
+          </style-rule>
+          <style-rule element='worksheet'>
+            <format attr='display-field-labels' scope='cols' value='false' />
+          </style-rule>
+          <style-rule element='gridline'>
+            <format attr='stroke-size' scope='rows' value='0' />
+            <format attr='line-visibility' scope='rows' value='off' />
+          </style-rule>
+          <style-rule element='zeroline'>
+            <format attr='stroke-size' scope='rows' value='0' />
+            <format attr='line-visibility' scope='rows' value='off' />
+            <format attr='stroke-size' scope='cols' value='0' />
+            <format attr='line-visibility' scope='cols' value='off' />
+          </style-rule>
+          <style-rule element='table-div'>
+            <format attr='stroke-size' scope='cols' value='0' />
+            <format attr='line-visibility' scope='cols' value='off' />
+            <format attr='stroke-size' scope='rows' value='0' />
+            <format attr='line-visibility' scope='rows' value='off' />
+          </style-rule>
+          <style-rule element='legend-title-text'>
+            <format attr='color' field='[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[none:entry_point:nk]' value='Entry Point Legend'>
+              <formatted-text>
+                <run>Entry Point Legend</run>
+              </formatted-text>
+            </format>
+          </style-rule>
+          <style-rule element='quick-filter'>
+            <format attr='title' field='[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[none:trial_start_date:qk]' value='Trial Sign Up Date'>
+              <formatted-text>
+                <run>Trial Sign Up Date</run>
+              </formatted-text>
+            </format>
+          </style-rule>
+        </style>
+        <panes>
+          <pane id='2' selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Bar' />
+            <encodings>
+              <color column='[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[none:entry_point:nk]' />
+            </encodings>
+            <style>
+              <style-rule element='mark'>
+                <format attr='mark-labels-cull' value='true' />
+                <format attr='mark-color' value='#f9e7ed' />
+                <format attr='mark-labels-show' value='false' />
+              </style-rule>
+            </style>
+          </pane>
+        </panes>
+        <rows>[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[ctd:customer_uuid:qk]</rows>
+        <cols>[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[none:trial_start_date:ok]</cols>
+      </table>
+      <simple-id uuid='{A3DA47BA-8C77-467D-B455-F817AD5FC449}' />
+    </worksheet>
+    <worksheet name='Revoked Duration'>
+      <layout-options>
+        <title>
+          <formatted-text>
+            <run bold='true' fontcolor='#000000' fontname='Tableau Regular'>Behavior of Customers Who Revoked Free Trial</run>
+            <run>Æ&#10;</run>
+            <run fontcolor='#000000' fontname='Tableau Regular' fontsize='10'>Y-axis refers to number of days the free trial was active for before being revoked.</run>
+          </formatted-text>
+        </title>
+      </layout-options>
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='[SG] Free Trial Tracker' name='federated.03zwpmm0wu2ntl1f6iy7y1f2cykh' />
+          </datasources>
+          <datasource-dependencies datasource='federated.03zwpmm0wu2ntl1f6iy7y1f2cykh'>
+            <column caption='Orders Per Customer' datatype='real' name='[Calculation_3964504682032857090]' role='dimension' type='ordinal'>
+              <calculation class='tableau' formula='{FIXED [customer_uuid]: AVG([total_orders])}' />
+            </column>
+            <column caption='Savings Per Customer' datatype='real' name='[Orders Per Customer (copy)_3964504682032955395]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='{FIXED [customer_uuid]: AVG([total_savings])}' />
+            </column>
+            <column-instance column='[Calculation_3964504682032857090]' derivation='Avg' name='[avg:Calculation_3964504682032857090:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[Orders Per Customer (copy)_3964504682032955395]' derivation='Avg' name='[avg:Orders Per Customer (copy)_3964504682032955395:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[customer_uuid]' derivation='CountD' name='[ctd:customer_uuid:qk]' pivot='key' type='quantitative' />
+            <column caption='Customer Uuid' datatype='string' name='[customer_uuid]' role='dimension' type='nominal' />
+            <column datatype='string' name='[entry_point]' role='dimension' type='nominal' />
+            <column aggregation='Sum' caption='Free Trial Duration' datatype='integer' name='[free_trial_duration]' role='dimension' type='ordinal' />
+            <column-instance column='[entry_point]' derivation='None' name='[none:entry_point:nk]' pivot='key' type='nominal' />
+            <column-instance column='[free_trial_duration]' derivation='None' name='[none:free_trial_duration:ok]' pivot='key' type='ordinal' />
+            <column-instance column='[trial_start_date]' derivation='None' name='[none:trial_start_date:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[trial_status]' derivation='None' name='[none:trial_status:nk]' pivot='key' type='nominal' />
+            <column-instance column='[customer_uuid]' derivation='CountD' name='[pcto:ctd:customer_uuid:qk:1]' pivot='key' type='quantitative'>
+              <table-calc ordering-type='Rows' type='PctTotal' />
+            </column-instance>
+            <column-instance column='[Orders Per Customer (copy)_3964504682032955395]' derivation='Sum' name='[sum:Orders Per Customer (copy)_3964504682032955395:qk]' pivot='key' type='quantitative' />
+            <column caption='Total Orders' datatype='integer' name='[total_orders]' role='measure' type='quantitative' />
+            <column caption='Total Savings' datatype='real' name='[total_savings]' role='measure' type='quantitative' />
+            <column caption='Trial Start Date' datatype='date' name='[trial_start_date]' role='dimension' type='ordinal' />
+            <column caption='Trial Status' datatype='string' name='[trial_status]' role='dimension' type='nominal' />
+          </datasource-dependencies>
+          <filter class='categorical' column='[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[:Measure Names]'>
+            <groupfilter function='union' user:op='manual'>
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[ctd:customer_uuid:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[avg:Calculation_3964504682032857090:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[avg:Orders Per Customer (copy)_3964504682032955395:qk]&quot;' />
+            </groupfilter>
+          </filter>
+          <manual-sort column='[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[:Measure Names]' direction='ASC'>
+            <dictionary>
+              <bucket>&quot;[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[ctd:customer_uuid:qk]&quot;</bucket>
+              <bucket>&quot;[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[avg:Calculation_3964504682032857090:qk]&quot;</bucket>
+              <bucket>&quot;[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[sum:Orders Per Customer (copy)_3964504682032955395:qk]&quot;</bucket>
+            </dictionary>
+          </manual-sort>
+          <filter class='quantitative' column='[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[none:trial_start_date:qk]' filter-group='4' included-values='in-range'>
+            <min>#2025-04-01#</min>
+            <max>#2025-04-30#</max>
+          </filter>
+          <filter class='categorical' column='[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[none:trial_status:nk]' filter-group='3'>
+            <groupfilter function='member' level='[none:trial_status:nk]' member='&quot;revoked&quot;' user:ui-domain='database' user:ui-enumeration='inclusive' user:ui-marker='enumerate' />
+          </filter>
+          <manual-sort column='[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[none:trial_status:nk]' direction='ASC'>
+            <dictionary>
+              <bucket>&quot;completed&quot;</bucket>
+              <bucket>&quot;ongoing&quot;</bucket>
+              <bucket>&quot;revoked&quot;</bucket>
+            </dictionary>
+          </manual-sort>
+          <slices>
+            <column>[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[none:trial_status:nk]</column>
+            <column>[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[:Measure Names]</column>
+            <column>[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[none:trial_start_date:qk]</column>
+            <column>[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[none:entry_point:nk]</column>
+          </slices>
+          <aggregation value='true' />
+        </view>
+        <style>
+          <style-rule element='cell'>
+            <format attr='height' field='[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[none:trial_status:nk]' value='42' />
+            <format attr='height' field='[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[:Measure Names]' value='27' />
+            <format attr='text-align' value='center' />
+            <format attr='text-format' field='[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[pcto:ctd:customer_uuid:qk:1]' value='p0.0%' />
+            <format attr='text-format' field='[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[avg:Calculation_3964504682032857090:qk]' value='n#,##0;-#,##0' />
+            <format attr='text-format' field='[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[avg:Orders Per Customer (copy)_3964504682032955395:qk]' value='C18441%' />
+            <format attr='text-format' field='[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[ctd:customer_uuid:qk]' value='n#,##0;-#,##0' />
+          </style-rule>
+          <style-rule element='header'>
+            <format attr='width' field='[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[:Measure Names]' value='168' />
+            <format attr='height' field='[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[none:free_trial_duration:ok]' value='21' />
+            <format attr='border-width' data-class='total' scope='cols' value='0' />
+            <format attr='border-style' data-class='total' scope='cols' value='none' />
+            <format attr='border-width' data-class='subtotal' scope='cols' value='0' />
+            <format attr='border-style' data-class='subtotal' scope='cols' value='none' />
+            <format attr='background-color' field='[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[none:free_trial_duration:ok]' value='#f5f5f5' />
+          </style-rule>
+          <style-rule element='label'>
+            <format attr='text-align' field='[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[none:trial_status:nk]' value='center' />
+            <format attr='vertical-align' field='[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[none:trial_status:nk]' value='center' />
+          </style-rule>
+          <style-rule element='mark'>
+            <encoding attr='color' field='[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[pcto:ctd:customer_uuid:qk:1]' palette='red_10_0' type='interpolated' />
+          </style-rule>
+          <style-rule element='pane'>
+            <format attr='border-width' data-class='total' scope='cols' value='0' />
+            <format attr='border-style' data-class='total' scope='cols' value='none' />
+            <format attr='border-width' data-class='subtotal' scope='cols' value='1' />
+            <format attr='border-style' data-class='subtotal' scope='cols' value='dotted' />
+            <format attr='background-color' data-class='total' scope='rows' value='#00000000' />
+            <format attr='background-color' data-class='subtotal' scope='rows' value='#00000000' />
+            <format attr='background-color' data-class='total' scope='cols' value='#fefaf1' />
+          </style-rule>
+          <style-rule element='worksheet'>
+            <format attr='display-field-labels' scope='cols' value='false' />
+            <format attr='display-field-labels' scope='rows' value='false' />
+          </style-rule>
+          <style-rule element='table-div'>
+            <format attr='line-visibility' scope='rows' value='on' />
+            <format attr='line-pattern-only' scope='rows' value='dotted' />
+            <format attr='line-visibility' scope='cols' value='on' />
+            <format attr='line-pattern-only' scope='cols' value='dotted' />
+            <format attr='div-level' scope='cols' value='1' />
+            <format attr='div-level' scope='rows' value='2' />
+          </style-rule>
+          <style-rule element='header-div'>
+            <format attr='line-visibility' scope='rows' value='on' />
+            <format attr='line-pattern-only' scope='rows' value='dotted' />
+            <format attr='line-pattern-only' scope='cols' value='dotted' />
+            <format attr='stroke-size' scope='cols' value='0' />
+            <format attr='line-visibility' scope='cols' value='off' />
+          </style-rule>
+        </style>
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Square' />
+            <encodings>
+              <color column='[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[pcto:ctd:customer_uuid:qk:1]' />
+              <text column='[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[Multiple Values]' />
+            </encodings>
+            <customized-label>
+              <formatted-text>
+                <run>&lt;</run>
+                <run>[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[Multiple Values]</run>
+                <run>&gt;</run>
+              </formatted-text>
+            </customized-label>
+            <style>
+              <style-rule element='mark'>
+                <format attr='mark-labels-show' value='true' />
+                <format attr='mark-labels-cull' value='true' />
+              </style-rule>
+              <style-rule element='pane'>
+                <format attr='minheight' value='-1' />
+                <format attr='maxheight' value='-1' />
+              </style-rule>
+            </style>
+          </pane>
+        </panes>
+        <rows>([federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[none:trial_status:nk] / [federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[:Measure Names])</rows>
+        <cols total='true'>[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[none:free_trial_duration:ok]</cols>
+      </table>
+      <simple-id uuid='{6CA7C142-AA36-4DE1-96E3-6E14304B5336}' />
+    </worksheet>
+    <worksheet name='Trial Status'>
+      <layout-options>
+        <title>
+          <formatted-text>
+            <run bold='true' fontcolor='#000000' fontname='Tableau Regular'>Subscription Status of Customers in Free Trial</run>
+            <run>Æ&#10;</run>
+            <run bold='true' fontcolor='#f52a85' fontname='Tableau Regular' fontsize='10' underline='true'>Definitions:</run>
+            <run>Æ&#10;</run>
+            <run bold='true' fontcolor='#59a14f' fontname='Tableau Regular' fontsize='10'>Completed</run>
+            <run fontcolor='#000000' fontname='Tableau Regular' fontsize='10'> - Customers who have completed the 14D free trial.</run>
+            <run>Æ&#10;</run>
+            <run bold='true' fontcolor='#f28e2b' fontname='Tableau Regular' fontsize='10'>Ongoing</run>
+            <run fontcolor='#000000' fontname='Tableau Regular' fontsize='10'> - Customers who are still in the midst of the 14D free trial.</run>
+            <run>Æ&#10;</run>
+            <run bold='true' fontcolor='#a41137' fontname='Tableau Regular' fontsize='10'>Revoked</run>
+            <run fontcolor='#000000' fontname='Tableau Regular' fontsize='10'> - Customers who cancelled the trial before 14D completion.</run>
+          </formatted-text>
+        </title>
+      </layout-options>
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='[SG] Free Trial Tracker' name='federated.03zwpmm0wu2ntl1f6iy7y1f2cykh' />
+          </datasources>
+          <datasource-dependencies datasource='federated.03zwpmm0wu2ntl1f6iy7y1f2cykh'>
+            <column-instance column='[customer_uuid]' derivation='CountD' name='[ctd:customer_uuid:qk]' pivot='key' type='quantitative' />
+            <column caption='Customer Uuid' datatype='string' name='[customer_uuid]' role='dimension' type='nominal' />
+            <column datatype='string' name='[entry_point]' role='dimension' type='nominal' />
+            <column-instance column='[entry_point]' derivation='None' name='[none:entry_point:nk]' pivot='key' type='nominal' />
+            <column-instance column='[trial_start_date]' derivation='None' name='[none:trial_start_date:ok]' pivot='key' type='ordinal' />
+            <column-instance column='[trial_start_date]' derivation='None' name='[none:trial_start_date:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[trial_status]' derivation='None' name='[none:trial_status:nk]' pivot='key' type='nominal' />
+            <column-instance column='[customer_uuid]' derivation='CountD' name='[pcto:ctd:customer_uuid:qk:2]' pivot='key' type='quantitative'>
+              <table-calc ordering-type='Columns' type='PctTotal' />
+            </column-instance>
+            <column caption='Trial Start Date' datatype='date' name='[trial_start_date]' role='dimension' type='ordinal' />
+            <column caption='Trial Status' datatype='string' name='[trial_status]' role='dimension' type='nominal' />
+          </datasource-dependencies>
+          <filter class='quantitative' column='[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[none:trial_start_date:qk]' filter-group='4' included-values='in-range'>
+            <min>#2025-04-01#</min>
+            <max>#2025-04-30#</max>
+          </filter>
+          <filter class='categorical' column='[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[none:trial_status:nk]' filter-group='5'>
+            <groupfilter function='level-members' level='[none:trial_status:nk]' />
+          </filter>
+          <manual-sort column='[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[none:trial_status:nk]' direction='ASC'>
+            <dictionary>
+              <bucket>&quot;completed&quot;</bucket>
+              <bucket>&quot;ongoing&quot;</bucket>
+              <bucket>&quot;revoked&quot;</bucket>
+            </dictionary>
+          </manual-sort>
+          <slices>
+            <column>[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[none:trial_start_date:qk]</column>
+            <column>[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[none:trial_status:nk]</column>
+            <column>[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[none:entry_point:nk]</column>
+          </slices>
+          <aggregation value='true' />
+        </view>
+        <style>
+          <style-rule element='cell'>
+            <format attr='height' field='[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[none:trial_status:nk]' value='42' />
+            <format attr='text-align' value='center' />
+            <format attr='text-format' field='[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[pcto:ctd:customer_uuid:qk:2]' value='p0.0%' />
+          </style-rule>
+          <style-rule element='header'>
+            <format attr='height' field='[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[none:trial_start_date:ok]' value='33' />
+            <format attr='border-width' data-class='total' scope='cols' value='0' />
+            <format attr='border-style' data-class='total' scope='cols' value='none' />
+            <format attr='border-width' data-class='subtotal' scope='cols' value='0' />
+            <format attr='border-style' data-class='subtotal' scope='cols' value='none' />
+            <format attr='background-color' field='[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[none:trial_start_date:ok]' value='#f5f5f5' />
+          </style-rule>
+          <style-rule element='label'>
+            <format attr='text-format' field='[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[none:trial_start_date:ok]' value='*DD-MM' />
+          </style-rule>
+          <style-rule element='pane'>
+            <format attr='border-width' data-class='total' scope='cols' value='0' />
+            <format attr='border-style' data-class='total' scope='cols' value='none' />
+            <format attr='border-width' data-class='subtotal' scope='cols' value='1' />
+            <format attr='border-style' data-class='subtotal' scope='cols' value='dotted' />
+          </style-rule>
+          <style-rule element='worksheet'>
+            <format attr='display-field-labels' scope='cols' value='false' />
+            <format attr='display-field-labels' scope='rows' value='false' />
+          </style-rule>
+          <style-rule element='table-div'>
+            <format attr='line-visibility' scope='rows' value='on' />
+            <format attr='line-pattern-only' scope='rows' value='dotted' />
+            <format attr='div-level' scope='rows' value='1' />
+          </style-rule>
+          <style-rule element='header-div'>
+            <format attr='line-visibility' scope='rows' value='on' />
+            <format attr='line-pattern-only' scope='rows' value='dotted' />
+          </style-rule>
+          <style-rule element='quick-filter'>
+            <format attr='title' field='[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[none:trial_status:nk]' value='Trial Status'>
+              <formatted-text>
+                <run>Trial Status</run>
+              </formatted-text>
+            </format>
+          </style-rule>
+        </style>
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Automatic' />
+            <encodings>
+              <color column='[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[none:trial_status:nk]' />
+              <text column='[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[ctd:customer_uuid:qk]' />
+              <text column='[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[pcto:ctd:customer_uuid:qk:2]' />
+            </encodings>
+            <customized-label>
+              <formatted-text>
+                <run><![CDATA[<[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[ctd:customer_uuid:qk]>
+]]></run>
+                <run fontsize='8'><![CDATA[(<[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[pcto:ctd:customer_uuid:qk:2]>)]]></run>
+              </formatted-text>
+            </customized-label>
+            <style>
+              <style-rule element='mark'>
+                <format attr='mark-labels-show' value='true' />
+                <format attr='mark-labels-cull' value='true' />
+              </style-rule>
+              <style-rule element='pane'>
+                <format attr='minheight' value='-1' />
+                <format attr='maxheight' value='-1' />
+              </style-rule>
+            </style>
+          </pane>
+        </panes>
+        <rows>[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[none:trial_status:nk]</rows>
+        <cols total='true'>[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[none:trial_start_date:ok]</cols>
+      </table>
+      <simple-id uuid='{1F28AB59-F278-482E-A245-77165E5E5D68}' />
+    </worksheet>
+    <worksheet name='Trial Status (Pie)'>
+      <layout-options>
+        <title>
+          <formatted-text>
+            <run bold='true' fontcolor='#000000' fontname='Tableau Regular'>Distribution of Free Trial Status</run>
+          </formatted-text>
+        </title>
+      </layout-options>
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='[SG] Free Trial Tracker' name='federated.03zwpmm0wu2ntl1f6iy7y1f2cykh' />
+          </datasources>
+          <datasource-dependencies datasource='federated.03zwpmm0wu2ntl1f6iy7y1f2cykh'>
+            <column-instance column='[customer_uuid]' derivation='CountD' name='[ctd:customer_uuid:qk]' pivot='key' type='quantitative' />
+            <column caption='Customer Uuid' datatype='string' name='[customer_uuid]' role='dimension' type='nominal' />
+            <column datatype='string' name='[entry_point]' role='dimension' type='nominal' />
+            <column-instance column='[entry_point]' derivation='None' name='[none:entry_point:nk]' pivot='key' type='nominal' />
+            <column-instance column='[trial_start_date]' derivation='None' name='[none:trial_start_date:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[trial_status]' derivation='None' name='[none:trial_status:nk]' pivot='key' type='nominal' />
+            <column-instance column='[customer_uuid]' derivation='CountD' name='[pcto:ctd:customer_uuid:qk:2]' pivot='key' type='quantitative'>
+              <table-calc ordering-type='Columns' type='PctTotal' />
+            </column-instance>
+            <column caption='Trial Start Date' datatype='date' name='[trial_start_date]' role='dimension' type='ordinal' />
+            <column caption='Trial Status' datatype='string' name='[trial_status]' role='dimension' type='nominal' />
+          </datasource-dependencies>
+          <filter class='quantitative' column='[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[none:trial_start_date:qk]' filter-group='4' included-values='in-range'>
+            <min>#2025-04-01#</min>
+            <max>#2025-04-30#</max>
+          </filter>
+          <manual-sort column='[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[none:trial_status:nk]' direction='ASC'>
+            <dictionary>
+              <bucket>&quot;completed&quot;</bucket>
+              <bucket>&quot;ongoing&quot;</bucket>
+              <bucket>&quot;revoked&quot;</bucket>
+            </dictionary>
+          </manual-sort>
+          <slices>
+            <column>[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[none:trial_start_date:qk]</column>
+            <column>[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[none:entry_point:nk]</column>
+          </slices>
+          <aggregation value='true' />
+        </view>
+        <style>
+          <style-rule element='cell'>
+            <format attr='height' field='[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[none:trial_status:nk]' value='42' />
+            <format attr='text-align' value='center' />
+            <format attr='text-format' field='[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[pcto:ctd:customer_uuid:qk:2]' value='p0.0%' />
+          </style-rule>
+          <style-rule element='header'>
+            <format attr='border-width' data-class='total' scope='cols' value='0' />
+            <format attr='border-style' data-class='total' scope='cols' value='none' />
+            <format attr='border-width' data-class='subtotal' scope='cols' value='0' />
+            <format attr='border-style' data-class='subtotal' scope='cols' value='none' />
+            <format attr='border-width' data-class='subtotal' scope='rows' value='0' />
+            <format attr='border-style' data-class='subtotal' scope='rows' value='none' />
+          </style-rule>
+          <style-rule element='pane'>
+            <format attr='border-width' data-class='total' scope='cols' value='0' />
+            <format attr='border-style' data-class='total' scope='cols' value='none' />
+            <format attr='border-width' data-class='subtotal' scope='cols' value='0' />
+            <format attr='border-style' data-class='subtotal' scope='cols' value='none' />
+            <format attr='border-width' data-class='subtotal' scope='rows' value='0' />
+            <format attr='border-style' data-class='subtotal' scope='rows' value='none' />
+          </style-rule>
+          <style-rule element='worksheet'>
+            <format attr='display-field-labels' scope='cols' value='false' />
+          </style-rule>
+          <style-rule element='table-div'>
+            <format attr='line-pattern-only' scope='rows' value='dotted' />
+            <format attr='div-level' scope='rows' value='1' />
+            <format attr='stroke-size' scope='rows' value='0' />
+            <format attr='line-visibility' scope='rows' value='off' />
+          </style-rule>
+          <style-rule element='header-div'>
+            <format attr='line-pattern-only' scope='rows' value='dotted' />
+            <format attr='line-visibility' scope='rows' value='off' />
+          </style-rule>
+          <style-rule element='legend-title-text'>
+            <format attr='color' field='[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[none:trial_status:nk]' value='Trial Status'>
+              <formatted-text>
+                <run>Trial Status</run>
+              </formatted-text>
+            </format>
+          </style-rule>
+        </style>
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Pie' />
+            <mark-sizing mark-sizing-setting='marks-scaling-off' />
+            <encodings>
+              <color column='[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[none:trial_status:nk]' />
+              <wedge-size column='[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[pcto:ctd:customer_uuid:qk:2]' />
+              <text column='[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[ctd:customer_uuid:qk]' />
+              <text column='[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[pcto:ctd:customer_uuid:qk:2]' />
+            </encodings>
+            <customized-label>
+              <formatted-text>
+                <run><![CDATA[<[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[ctd:customer_uuid:qk]>
+]]></run>
+                <run fontsize='8'><![CDATA[(<[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[pcto:ctd:customer_uuid:qk:2]>)]]></run>
+              </formatted-text>
+            </customized-label>
+            <style>
+              <style-rule element='mark'>
+                <format attr='mark-labels-show' value='true' />
+                <format attr='mark-labels-cull' value='true' />
+                <format attr='size' value='1.7471270561218262' />
+              </style-rule>
+              <style-rule element='pane'>
+                <format attr='minheight' value='-1' />
+                <format attr='maxheight' value='-1' />
+              </style-rule>
+            </style>
+          </pane>
+        </panes>
+        <rows />
+        <cols total='true' />
+        <mark-labels>
+          <mark-label id='0'>
+            <tuple-reference>
+              <tuple-descriptor>
+                <pane-descriptor>
+                  <x-fields />
+                  <y-fields />
+                </pane-descriptor>
+                <columns>
+                  <field>[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[ctd:customer_uuid:qk]</field>
+                  <field>[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[none:trial_status:nk]</field>
+                  <field>[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[pcto:ctd:customer_uuid:qk:2]</field>
+                </columns>
+              </tuple-descriptor>
+              <tuple>
+                <value>1315</value>
+                <value>&quot;revoked&quot;</value>
+                <value>0.14226982581412961</value>
+              </tuple>
+            </tuple-reference>
+            <label-position x='-32' y='9' />
+          </mark-label>
+        </mark-labels>
+      </table>
+      <simple-id uuid='{874CA72D-8D7B-4308-9216-55F74B0FA881}' />
+    </worksheet>
+  </worksheets>
+  <dashboards>
+    <dashboard _.fcp.AccessibleZoneTabOrder.true...enable-sort-zone-taborder='true' name='Summary'>
+      <repository-location derived-from='https://tableau.deliveryhero.net/t/Foodora/workbooks/SGPandaproFreeTrialTracker/Summary?rev=' id='Summary' path='/t/Foodora/workbooks/SGPandaproFreeTrialTracker' revision='' site='Foodora' />
+      <style />
+      <size maxheight='1000' maxwidth='1500' minheight='1000' minwidth='1500' sizing-mode='fixed' />
+      <datasources>
+        <datasource caption='[SG] Free Trial Tracker' name='federated.03zwpmm0wu2ntl1f6iy7y1f2cykh' />
+      </datasources>
+      <datasource-dependencies datasource='federated.03zwpmm0wu2ntl1f6iy7y1f2cykh'>
+        <column datatype='string' name='[entry_point]' role='dimension' type='nominal' />
+        <column aggregation='Sum' caption='Free Trial Duration' datatype='integer' name='[free_trial_duration]' role='dimension' type='ordinal' />
+        <column-instance column='[entry_point]' derivation='None' name='[none:entry_point:nk]' pivot='key' type='nominal' />
+        <column-instance column='[free_trial_duration]' derivation='None' name='[none:free_trial_duration:ok]' pivot='key' type='ordinal' />
+        <column-instance column='[trial_start_date]' derivation='None' name='[none:trial_start_date:qk]' pivot='key' type='quantitative' />
+        <column-instance column='[trial_status]' derivation='None' name='[none:trial_status:nk]' pivot='key' type='nominal' />
+        <column caption='Trial Start Date' datatype='date' name='[trial_start_date]' role='dimension' type='ordinal' />
+        <column caption='Trial Status' datatype='string' name='[trial_status]' role='dimension' type='nominal' />
+      </datasource-dependencies>
+      <zones>
+        <zone h='100000' id='4' type-v2='layout-basic' w='100000' x='0' y='0'>
+          <zone h='98400' id='41' param='horz' type-v2='layout-flow' w='86990' x='533' y='800'>
+            <zone h='98400' id='5' type-v2='layout-basic' w='86990' x='533' y='800'>
+              <zone h='21700' id='3' name='Daily Signups' w='58938' x='533' y='800'>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+              <zone h='22800' id='9' name='Trial Status' w='58938' x='533' y='43400'>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+              <zone h='30600' id='10' name='% of Customers with Subsequent Subs' w='28052' x='59471' y='35600'>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+              <zone h='18400' id='13' name='Revoked Duration' w='86990' x='533' y='66200'>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+              <zone h='34800' id='18' name='Trial Status (Pie)' w='28052' x='59471' y='800'>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+              <zone h='14600' id='39' name='Distribution of Orders' w='86990' x='533' y='84600'>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+              <zone h='20900' id='96' name='Entry Point' w='48271' x='533' y='22500'>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+              <zone h='20900' id='97' name='Entry Point' pane-specification-id='2' param='[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[none:entry_point:nk]' type-v2='color' w='10667' x='48804' y='22500'>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+            </zone>
+          </zone>
+          <zone h='98400' id='49' is-fixed='true' type-v2='layout-basic' w='11944' x='87523' y='800'>
+            <zone h='31400' id='44' param='vert' type-v2='layout-flow' w='11944' x='87523' y='800'>
+              <zone h='6900' id='46' name='Daily Signups' param='[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[none:trial_start_date:qk]' type-v2='filter' values='database' w='11944' x='87523' y='800'>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+              <zone h='5200' id='100' mode='checkdropdown' name='% of Customers with Subsequent Subs' param='[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[none:entry_point:nk]' show-apply='true' type-v2='filter' values='database' w='11944' x='87523' y='7700'>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+              <zone h='19300' id='48' type-v2='empty' w='11944' x='87523' y='12900'>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+              <zone-style>
+                <format attr='border-color' value='#000000' />
+                <format attr='border-style' value='none' />
+                <format attr='border-width' value='0' />
+                <format attr='background-color' value='#fbf7fb' />
+              </zone-style>
+            </zone>
+            <zone h='67000' id='52' is-fixed='true' type-v2='layout-basic' w='11944' x='87523' y='32200'>
+              <zone h='34000' id='50' param='vert' type-v2='layout-flow' w='11944' x='87523' y='32200'>
+                <zone h='5200' id='47' mode='checkdropdown' name='Trial Status' param='[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[none:trial_status:nk]' show-apply='true' type-v2='filter' values='database' w='11944' x='87523' y='32200'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                  </zone-style>
+                </zone>
+                <zone h='28800' id='51' type-v2='empty' w='11944' x='87523' y='37400'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                  </zone-style>
+                </zone>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='background-color' value='#fbf7fb' />
+                </zone-style>
+              </zone>
+              <zone h='33000' id='53' param='vert' type-v2='layout-flow' w='11944' x='87523' y='66200'>
+                <zone h='5200' id='43' mode='checkdropdown' name='Distribution of Orders' param='[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[none:free_trial_duration:ok]' show-apply='true' show-filter-state='false' type-v2='filter' values='database' w='11944' x='87523' y='66200'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                  </zone-style>
+                </zone>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='background-color' value='#fbf7fb' />
+                </zone-style>
+              </zone>
+            </zone>
+          </zone>
+          <zone-style>
+            <format attr='border-color' value='#000000' />
+            <format attr='border-style' value='none' />
+            <format attr='border-width' value='0' />
+            <format attr='margin' value='8' />
+          </zone-style>
+        </zone>
+        <zone h='5800' id='31' name='Daily Signups' pane-specification-id='3' param='[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[none:is_first_subscription:nk]' type-v2='color' w='10800' x='51000' y='1600' />
+        <zone h='7800' id='34' name='Trial Status (Pie)' pane-specification-id='0' param='[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[none:trial_status:nk]' type-v2='color' w='10733' x='59667' y='29300' />
+      </zones>
+      <devicelayouts>
+        <devicelayout auto-generated='true' name='Phone'>
+          <size maxheight='2050' minheight='2050' sizing-mode='vscroll' />
+          <zones>
+            <zone h='100000' id='112' type-v2='layout-basic' w='100000' x='0' y='0'>
+              <zone h='98400' id='111' param='vert' type-v2='layout-flow' w='98934' x='533' y='800'>
+                <zone h='6900' id='46' name='Daily Signups' param='[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[none:trial_start_date:qk]' type-v2='filter' values='database' w='11944' x='87523' y='800'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone fixed-size='209' h='21700' id='3' is-fixed='true' name='Daily Signups' w='58938' x='533' y='800'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone h='5800' id='31' name='Daily Signups' pane-specification-id='3' param='[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[none:is_first_subscription:nk]' type-v2='color' w='10800' x='51000' y='1600'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone fixed-size='280' h='34800' id='18' is-fixed='true' name='Trial Status (Pie)' w='28052' x='59471' y='800'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone h='7800' id='34' name='Trial Status (Pie)' pane-specification-id='0' param='[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[none:trial_status:nk]' type-v2='color' w='10733' x='59667' y='29300'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone fixed-size='201' h='20900' id='96' is-fixed='true' name='Entry Point' w='48271' x='533' y='22500'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone h='20900' id='97' name='Entry Point' pane-specification-id='2' param='[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[none:entry_point:nk]' type-v2='color' w='10667' x='48804' y='22500'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone h='5200' id='100' mode='checkdropdown' name='% of Customers with Subsequent Subs' param='[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[none:entry_point:nk]' show-apply='true' type-v2='filter' values='database' w='11944' x='87523' y='7700'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone fixed-size='280' h='30600' id='10' is-fixed='true' name='% of Customers with Subsequent Subs' w='28052' x='59471' y='35600'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone h='5200' id='47' mode='checkdropdown' name='Trial Status' param='[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[none:trial_status:nk]' show-apply='true' type-v2='filter' values='database' w='11944' x='87523' y='32200'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone fixed-size='220' h='22800' id='9' is-fixed='true' name='Trial Status' w='58938' x='533' y='43400'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone fixed-size='176' h='18400' id='13' is-fixed='true' name='Revoked Duration' w='86990' x='533' y='66200'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone h='5200' id='43' mode='checkdropdown' name='Distribution of Orders' param='[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[none:free_trial_duration:ok]' show-apply='true' show-filter-state='false' type-v2='filter' values='database' w='11944' x='87523' y='66200'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone fixed-size='138' h='14600' id='39' is-fixed='true' name='Distribution of Orders' w='86990' x='533' y='84600'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+              </zone>
+              <zone-style>
+                <format attr='border-color' value='#000000' />
+                <format attr='border-style' value='none' />
+                <format attr='border-width' value='0' />
+                <format attr='margin' value='8' />
+              </zone-style>
+            </zone>
+          </zones>
+        </devicelayout>
+      </devicelayouts>
+      <simple-id uuid='{6E67E8CC-3889-4DB5-A661-F23CBB63F6EF}' />
+    </dashboard>
+  </dashboards>
+  <windows source-height='30'>
+    <window class='worksheet' name='Daily Signups'>
+      <cards>
+        <edge name='left'>
+          <strip size='160'>
+            <card type='pages' />
+            <card type='filters' />
+            <card type='marks' />
+          </strip>
+        </edge>
+        <edge name='top'>
+          <strip size='2147483647'>
+            <card type='columns' />
+          </strip>
+          <strip size='2147483647'>
+            <card type='rows' />
+          </strip>
+          <strip size='31'>
+            <card type='title' />
+          </strip>
+        </edge>
+        <edge name='right'>
+          <strip size='160'>
+            <card param='[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[none:trial_start_date:qk]' show-domain='false' show-null-ctrls='false' type='filter' />
+            <card pane-specification-id='3' param='[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[none:is_first_subscription:nk]' type='color' />
+          </strip>
+        </edge>
+      </cards>
+      <viewpoint>
+        <zoom type='fit-width' />
+        <highlight>
+          <color-one-way>
+            <field>[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[none:customer_uuid:nk]</field>
+            <field>[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[none:is_first_subscription:nk]</field>
+            <field>[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[none:trial_start_date:qk]</field>
+            <field>[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[yr:trial_start_date:ok]</field>
+          </color-one-way>
+        </highlight>
+      </viewpoint>
+      <simple-id uuid='{F038A092-F94C-474D-A128-0FCFFBFA7960}' />
+    </window>
+    <window class='worksheet' name='Entry Point'>
+      <cards>
+        <edge name='left'>
+          <strip size='160'>
+            <card type='pages' />
+            <card type='filters' />
+            <card type='marks' />
+          </strip>
+        </edge>
+        <edge name='top'>
+          <strip size='2147483647'>
+            <card type='columns' />
+          </strip>
+          <strip size='2147483647'>
+            <card type='rows' />
+          </strip>
+          <strip size='31'>
+            <card type='title' />
+          </strip>
+        </edge>
+        <edge name='right'>
+          <strip size='160'>
+            <card param='[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[none:trial_start_date:qk]' show-domain='false' show-null-ctrls='false' type='filter' />
+            <card pane-specification-id='2' param='[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[none:entry_point:nk]' type='color' />
+          </strip>
+        </edge>
+      </cards>
+      <viewpoint>
+        <zoom type='fit-width' />
+        <highlight>
+          <color-one-way>
+            <field>[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[none:customer_uuid:nk]</field>
+            <field>[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[none:entry_point:nk]</field>
+            <field>[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[none:is_first_subscription:nk]</field>
+            <field>[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[none:trial_start_date:qk]</field>
+            <field>[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[yr:trial_start_date:ok]</field>
+          </color-one-way>
+        </highlight>
+      </viewpoint>
+      <simple-id uuid='{5D8F5A3E-BC2D-434B-9195-E065138340B9}' />
+    </window>
+    <window class='worksheet' name='Trial Status'>
+      <cards>
+        <edge name='left'>
+          <strip size='160'>
+            <card type='pages' />
+            <card type='filters' />
+            <card type='marks' />
+          </strip>
+        </edge>
+        <edge name='top'>
+          <strip size='2147483647'>
+            <card type='columns' />
+          </strip>
+          <strip size='2147483647'>
+            <card type='rows' />
+          </strip>
+          <strip size='31'>
+            <card type='title' />
+          </strip>
+        </edge>
+        <edge name='right'>
+          <strip size='160'>
+            <card param='[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[none:trial_status:nk]' type='filter' />
+            <card pane-specification-id='0' param='[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[none:trial_status:nk]' type='color' />
+          </strip>
+        </edge>
+      </cards>
+      <viewpoint>
+        <zoom type='fit-width' />
+        <highlight>
+          <color-one-way>
+            <field>[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[none:customer_uuid:nk]</field>
+            <field>[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[none:trial_status:nk]</field>
+            <field>[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[pcto:ctd:customer_uuid:qk:2]</field>
+            <field>[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[yr:trial_start_date:ok]</field>
+          </color-one-way>
+        </highlight>
+      </viewpoint>
+      <simple-id uuid='{6E2E83C0-B9AC-45A0-9E87-BED16F98D035}' />
+    </window>
+    <window class='worksheet' name='Trial Status (Pie)'>
+      <cards>
+        <edge name='left'>
+          <strip size='160'>
+            <card type='pages' />
+            <card type='filters' />
+            <card type='marks' />
+          </strip>
+        </edge>
+        <edge name='top'>
+          <strip size='2147483647'>
+            <card type='columns' />
+          </strip>
+          <strip size='2147483647'>
+            <card type='rows' />
+          </strip>
+          <strip size='31'>
+            <card type='title' />
+          </strip>
+        </edge>
+        <edge name='right'>
+          <strip size='160'>
+            <card pane-specification-id='0' param='[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[none:trial_status:nk]' type='color' />
+          </strip>
+        </edge>
+      </cards>
+      <viewpoint>
+        <zoom type='fit-width' />
+        <highlight>
+          <color-one-way>
+            <field>[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[none:customer_uuid:nk]</field>
+            <field>[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[none:trial_status:nk]</field>
+            <field>[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[pcto:ctd:customer_uuid:qk:2]</field>
+            <field>[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[yr:trial_start_date:ok]</field>
+          </color-one-way>
+        </highlight>
+      </viewpoint>
+      <simple-id uuid='{0D384403-192D-4616-B2E9-FBA7DD4447BF}' />
+    </window>
+    <window class='worksheet' name='Revoked Duration'>
+      <cards>
+        <edge name='left'>
+          <strip size='160'>
+            <card type='pages' />
+            <card type='filters' />
+            <card type='marks' />
+            <card type='measures' />
+          </strip>
+        </edge>
+        <edge name='top'>
+          <strip size='2147483647'>
+            <card type='columns' />
+          </strip>
+          <strip size='2147483647'>
+            <card type='rows' />
+          </strip>
+          <strip size='31'>
+            <card type='title' />
+          </strip>
+        </edge>
+        <edge name='right'>
+          <strip size='160'>
+            <card param='[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[none:trial_status:nk]' type='filter' />
+            <card pane-specification-id='0' param='[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[pcto:ctd:customer_uuid:qk:1]' type='color' />
+          </strip>
+        </edge>
+      </cards>
+      <viewpoint>
+        <zoom type='fit-width' />
+        <highlight>
+          <color-one-way>
+            <field>[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[:Measure Names]</field>
+            <field>[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[none:customer_uuid:nk]</field>
+            <field>[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[none:free_trial_duration:ok]</field>
+            <field>[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[none:trial_status:nk]</field>
+            <field>[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[yr:trial_start_date:ok]</field>
+          </color-one-way>
+        </highlight>
+      </viewpoint>
+      <simple-id uuid='{1237EBC2-516B-4727-8846-36A359A35CCA}' />
+    </window>
+    <window class='worksheet' name='Distribution of Orders'>
+      <cards>
+        <edge name='left'>
+          <strip size='160'>
+            <card type='pages' />
+            <card type='filters' />
+            <card type='marks' />
+          </strip>
+        </edge>
+        <edge name='top'>
+          <strip size='2147483647'>
+            <card type='columns' />
+          </strip>
+          <strip size='2147483647'>
+            <card type='rows' />
+          </strip>
+          <strip size='31'>
+            <card type='title' />
+          </strip>
+        </edge>
+        <edge name='right'>
+          <strip size='160'>
+            <card param='[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[none:free_trial_duration:ok]' type='filter' />
+            <card param='[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[none:trial_status:nk]' type='filter' />
+          </strip>
+        </edge>
+      </cards>
+      <viewpoint>
+        <zoom type='fit-width' />
+        <highlight>
+          <color-one-way>
+            <field>[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[:Measure Names]</field>
+            <field>[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[none:Calculation_3964504682032857090:ok]</field>
+            <field>[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[none:customer_uuid:nk]</field>
+            <field>[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[none:free_trial_duration:ok]</field>
+            <field>[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[none:trial_status:nk]</field>
+            <field>[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[yr:trial_end_date:ok]</field>
+            <field>[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[yr:trial_start_date:ok]</field>
+          </color-one-way>
+        </highlight>
+      </viewpoint>
+      <simple-id uuid='{7B1BBC71-77B4-4758-AE5A-2B6B2E764D27}' />
+    </window>
+    <window class='worksheet' name='% of Customers with Subsequent Subs'>
+      <cards>
+        <edge name='left'>
+          <strip size='160'>
+            <card type='pages' />
+            <card type='filters' />
+            <card type='marks' />
+          </strip>
+        </edge>
+        <edge name='top'>
+          <strip size='2147483647'>
+            <card type='columns' />
+          </strip>
+          <strip size='2147483647'>
+            <card type='rows' />
+          </strip>
+          <strip size='31'>
+            <card type='title' />
+          </strip>
+        </edge>
+        <edge name='right'>
+          <strip size='160'>
+            <card param='[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[none:trial_status:nk]' type='filter' />
+            <card pane-specification-id='0' param='[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[pcto:ctd:customer_uuid:qk:2]' type='color' />
+            <card param='[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[none:Calculation_3964504681951133697:ok]' type='filter' />
+          </strip>
+        </edge>
+      </cards>
+      <viewpoint>
+        <zoom type='entire-view' />
+        <highlight>
+          <color-one-way>
+            <field>[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[none:Calculation_3964504681951133697:ok]</field>
+            <field>[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[none:customer_uuid:nk]</field>
+            <field>[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[none:entry_point:nk]</field>
+            <field>[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[none:free_trial_duration:ok]</field>
+            <field>[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[none:is_voucher_used:nk]</field>
+            <field>[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[none:payment_plan_duration:nk]</field>
+            <field>[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[none:trial_status:nk]</field>
+            <field>[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[yr:trial_start_date:ok]</field>
+          </color-one-way>
+        </highlight>
+      </viewpoint>
+      <simple-id uuid='{A3F3C39A-A719-446E-BBFF-0DFACCFCD302}' />
+    </window>
+    <window class='dashboard' maximized='true' name='Summary'>
+      <viewpoints>
+        <viewpoint name='% of Customers with Subsequent Subs'>
+          <zoom type='entire-view' />
+        </viewpoint>
+        <viewpoint name='Daily Signups'>
+          <zoom type='entire-view' />
+          <highlight field='[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[none:is_first_subscription:nk]'>
+            <bucket-selection />
+          </highlight>
+        </viewpoint>
+        <viewpoint name='Distribution of Orders'>
+          <zoom type='entire-view' />
+        </viewpoint>
+        <viewpoint name='Entry Point'>
+          <zoom type='entire-view' />
+          <highlight>
+            <color-one-way>
+              <field>[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[none:entry_point:nk]</field>
+            </color-one-way>
+          </highlight>
+        </viewpoint>
+        <viewpoint name='Revoked Duration'>
+          <zoom type='entire-view' />
+        </viewpoint>
+        <viewpoint name='Trial Status'>
+          <zoom type='entire-view' />
+        </viewpoint>
+        <viewpoint name='Trial Status (Pie)'>
+          <zoom type='entire-view' />
+          <selection-collection>
+            <tuple-selection>
+              <tuple-reference>
+                <tuple-descriptor>
+                  <pane-descriptor>
+                    <x-fields />
+                    <y-fields />
+                  </pane-descriptor>
+                  <columns>
+                    <field>[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[ctd:customer_uuid:qk]</field>
+                    <field>[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[none:trial_status:nk]</field>
+                    <field>[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[pcto:ctd:customer_uuid:qk:2]</field>
+                  </columns>
+                </tuple-descriptor>
+                <tuple>
+                  <value>11151</value>
+                  <value>&quot;completed&quot;</value>
+                  <value>0.66748473602298575</value>
+                </tuple>
+              </tuple-reference>
+              <tuple-reference>
+                <tuple-descriptor>
+                  <pane-descriptor>
+                    <x-fields />
+                    <y-fields />
+                  </pane-descriptor>
+                  <columns>
+                    <field>[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[ctd:customer_uuid:qk]</field>
+                    <field>[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[none:trial_status:nk]</field>
+                    <field>[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[pcto:ctd:customer_uuid:qk:2]</field>
+                  </columns>
+                </tuple-descriptor>
+                <tuple>
+                  <value>5555</value>
+                  <value>&quot;revoked&quot;</value>
+                  <value>0.33251526397701425</value>
+                </tuple>
+              </tuple-reference>
+            </tuple-selection>
+          </selection-collection>
+          <highlight>
+            <color-one-way>
+              <field>[federated.03zwpmm0wu2ntl1f6iy7y1f2cykh].[none:trial_status:nk]</field>
+            </color-one-way>
+          </highlight>
+        </viewpoint>
+      </viewpoints>
+      <active id='100' />
+      <simple-id uuid='{E1513786-767C-4504-8CCC-538CE7271F1F}' />
+    </window>
+  </windows>
+</workbook>
