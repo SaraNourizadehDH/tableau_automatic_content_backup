@@ -1,0 +1,2368 @@
+<?xml version='1.0' encoding='utf-8' ?>
+
+<!-- build 20233.25.0106.1650                               -->
+<workbook original-version='18.1' source-build='2023.3.14 (20233.25.0106.1650)' version='18.1' xml:base='https://tableau.deliveryhero.net' xmlns:user='http://www.tableausoftware.com/xml/user'>
+  <document-format-change-manifest>
+    <_.fcp.AccessibleZoneTabOrder.true...AccessibleZoneTabOrder />
+    <_.fcp.AnimationOnByDefault.true...AnimationOnByDefault />
+    <AutoCreateAndUpdateDSDPhoneLayouts />
+    <CascadingFilters />
+    <CascadingFiltersHamburgerUI />
+    <_.fcp.MarkAnimation.true...MarkAnimation />
+    <_.fcp.ObjectModelEncapsulateLegacy.true...ObjectModelEncapsulateLegacy />
+    <_.fcp.ObjectModelExtractV2.true...ObjectModelExtractV2 />
+    <_.fcp.ObjectModelTableType.true...ObjectModelTableType />
+    <_.fcp.SchemaViewerObjectModel.true...SchemaViewerObjectModel />
+    <SetMembershipControl />
+    <SheetIdentifierTracking />
+    <WindowsPersistSimpleIdentifiers />
+    <ZoneBackgroundTransparency />
+  </document-format-change-manifest>
+  <repository-location derived-from='https://tableau.deliveryhero.net/t/Foodora/workbooks/APAPACUserPipelineConversion_17282939210300?rev=1.9' id='APAPACUserPipelineConversion_17282939210300' path='/t/Foodora/workbooks' revision='2.0' site='Foodora' />
+  <preferences />
+  <_.fcp.AnimationOnByDefault.false...style>
+    <_.fcp.AnimationOnByDefault.false..._.fcp.MarkAnimation.true...style-rule element='animation'>
+      <_.fcp.AnimationOnByDefault.false...format attr='animation-on' value='ao-on' />
+    </_.fcp.AnimationOnByDefault.false..._.fcp.MarkAnimation.true...style-rule>
+  </_.fcp.AnimationOnByDefault.false...style>
+  <datasources>
+    <datasource caption='Custom SQL Query (pandata_report)' inline='true' name='federated.1r8isqd0qwepdv17f6bej09ojz5j' version='18.1'>
+      <connection class='federated'>
+        <named-connections>
+          <named-connection caption='BigQuery' name='bigquery.0aw5zdy190hhms1ac5eik0oqlkjj'>
+            <connection CATALOG='fulfillment-dwh-production' EXECCATALOG='dhh---analytics-apac' authentication='oauth' bq-dataset-fetch-rows='' bq-fetch-rows='' bq-fetch-tasks='' bq-large-fetch-rows='' bq-project-fetch-rows='' bq-response-rows='' class='bigquery' connection-dialect='google-sql' project='fulfillment-dwh-production' schema='pandata_report' server-oauth='' username='theeranop.wongtitirote@foodpanda.co.th' workgroup-auth-mode='prompt' />
+          </named-connection>
+        </named-connections>
+        <_.fcp.ObjectModelEncapsulateLegacy.false...relation connection='bigquery.0aw5zdy190hhms1ac5eik0oqlkjj' name='Custom SQL Query' type='text'>WITH lead_table AS (
+  SELECT  
+    lead.global_entity_id AS lead_global_entity_id,
+    lead.grid__c,
+    lead.status,
+    lead.createdbyid, 
+    lead.createddate,  
+    lead.converteddate AS lead_converted_date 
+  FROM `fulfillment-dwh-production.curated_data_shared_salesforce.lead` AS lead
+  WHERE 
+    lead.mark_for_testing_training__c = False
+),
+
+lead_acc_table AS (
+  SELECT 
+    lead_table.lead_global_entity_id,
+    lead_table.grid__c,
+    acc_table.vertical__c, 
+    acc_table.id AS acc_id,
+    lead_table.status,
+    lead_table.createdbyid AS lead_createdbyid, 
+    lead_table.createddate AS lead_createddate, 
+    lead_table.lead_converted_date, 
+    acc_table.self_setup__c
+  FROM `fulfillment-dwh-production.curated_data_shared_salesforce.account` AS acc_table
+  INNER JOIN lead_table 
+  ON lead_table.grid__c = acc_table.grid__c
+  WHERE 
+    acc_table.vertical__c IN (&apos;Restaurant&apos;)
+    AND acc_table.mark_for_testing_training__c = False
+    AND lead_table.createdbyid IN (&apos;0056900000AVz3YAAT&apos;, &apos;0056900000CRtp2AAD&apos;, &apos;0056900000BV0qnAAD&apos;, &apos;0056900000BUli5AAD&apos;, &apos;0056900000BSL0IAAX&apos;)
+    AND lead_table.createddate &gt;&gt;= &apos;2023-01-01&apos;
+    AND lead_table.status IN (&apos;Converted&apos;)
+),
+
+-- Step 1: Remove duplicates and filter out rows with ID-like values
+CleanedHistory AS (
+  SELECT 
+    opp_hist.*,
+    lao.sf_lead_id,
+    lao.sf_account_id,
+    --lao.user_type,
+    lao.opportunity_business_type,
+    lao.opp_stage_name,
+    lao.lead_source,
+    ROW_NUMBER() OVER (PARTITION BY opp_hist.opportunityid, opp_hist.createdbyid, opp_hist.createddate ORDER BY opp_hist.id) AS row_num -- Remove duplicates here
+  FROM `fulfillment-dwh-production.curated_data_shared_salesforce.opportunityfieldhistory` AS opp_hist
+  INNER JOIN `fulfillment-dwh-production.pandata_report.sales_lead_account_opp_aggregated` AS lao
+    ON opp_hist.opportunityid = lao.sf_opportunity_id
+  WHERE lao.opportunity_business_type IN (&apos;New Business&apos;, &apos;Win Back&apos;)
+    AND opp_hist.field IN (&quot;Type&quot;, &quot;Owner&quot;)
+)
+
+, DeduplicatedHistory AS (
+  -- Step 2: Select only rows without duplicates
+  SELECT 
+    CleanedHistory.*,
+    opp_table.closedate AS opp_closedate 
+  FROM CleanedHistory 
+  INNER JOIN
+   `fulfillment-dwh-production.curated_data_shared_salesforce.opportunity` AS opp_table
+   ON CleanedHistory.opportunityid = opp_table.id
+  WHERE row_num = 1 -- Retain only first instance for each combination
+    AND REGEXP_CONTAINS(newvalue, r&apos;^[A-Za-z0-9]+$&apos;) = FALSE -- Filter ID-like values
+)
+
+-- Step 3: Rank the records and calculate the next change date within each opportunity
+, RankedHistory AS (
+  SELECT 
+    *,
+    ROW_NUMBER() OVER (PARTITION BY opportunityid ORDER BY createddate ASC) AS rank_num,  -- Rank rows by date within each opportunity
+    LEAD(createddate) OVER (PARTITION BY opportunityid ORDER BY createddate ASC) AS next_created_date  -- Next change date
+  FROM DeduplicatedHistory
+)
+
+-- Step 4: Replace the newvalue of the first rank with the oldvalue from the next rank
+, AdjustedValues AS (
+  SELECT 
+    *,
+    CASE 
+      WHEN rank_num = 1 THEN LEAD(oldvalue) OVER (PARTITION BY opportunityid ORDER BY createddate ASC)
+      ELSE newvalue 
+    END AS adjusted_newvalue,
+  FROM RankedHistory
+)
+
+-- Step 5: Calculate the ownership duration based on adjusted values and the next created date
+, OwnershipDuration AS (
+  SELECT 
+    opportunityid,
+    createdbyid,
+    createddate,
+    field,
+    oldvalue,
+    adjusted_newvalue AS newvalue,
+    next_created_date, 
+    opp_closedate,
+    sf_lead_id, 
+    sf_account_id,
+    opportunity_business_type, 
+    opp_stage_name,
+    lead_source,
+    rank_num,
+    CASE 
+      WHEN next_created_date IS NOT NULL THEN DATE_DIFF(CAST(next_created_date AS DATE), CAST(createddate AS DATE), DAY)
+      ELSE DATE_DIFF(CURRENT_DATE(), CAST(createddate AS DATE), DAY)
+    END AS days_of_ownership
+  FROM AdjustedValues
+),
+
+
+UniqueUserLayer AS (
+  SELECT 
+    full_name_internal_non_pii,
+    user_type,
+    ROW_NUMBER() OVER (PARTITION BY full_name_internal_non_pii ORDER BY user_type) AS row_num
+  FROM `fulfillment-dwh-production.pandata_report.regional_apac_lead_account_opp_aggregated_users_layer`
+)
+
+
+-- Final result: Ownership information along with the days of ownership
+SELECT
+ lead_acc_table.*,
+ OwnershipDuration.*,
+ UniqueUserLayer.user_type AS lao_user_type
+FROM OwnershipDuration
+INNER JOIN lead_acc_table
+   ON OwnershipDuration.sf_account_id = lead_acc_table.acc_id
+LEFT JOIN UniqueUserLayer
+ ON OwnershipDuration.newvalue = UniqueUserLayer.full_name_internal_non_pii
+ AND UniqueUserLayer.row_num = 1  -- Only join the first occurrence
+ORDER BY OwnershipDuration.sf_account_id</_.fcp.ObjectModelEncapsulateLegacy.false...relation>
+        <_.fcp.ObjectModelEncapsulateLegacy.true...relation connection='bigquery.0aw5zdy190hhms1ac5eik0oqlkjj' name='Custom SQL Query' type='text'>WITH lead_table AS (
+  SELECT  
+    lead.global_entity_id AS lead_global_entity_id,
+    lead.grid__c,
+    lead.status,
+    lead.createdbyid, 
+    lead.createddate,  
+    lead.converteddate AS lead_converted_date 
+  FROM `fulfillment-dwh-production.curated_data_shared_salesforce.lead` AS lead
+  WHERE 
+    lead.mark_for_testing_training__c = False
+),
+
+lead_acc_table AS (
+  SELECT 
+    lead_table.lead_global_entity_id,
+    lead_table.grid__c,
+    acc_table.vertical__c, 
+    acc_table.id AS acc_id,
+    lead_table.status,
+    lead_table.createdbyid AS lead_createdbyid, 
+    lead_table.createddate AS lead_createddate, 
+    lead_table.lead_converted_date, 
+    acc_table.self_setup__c
+  FROM `fulfillment-dwh-production.curated_data_shared_salesforce.account` AS acc_table
+  INNER JOIN lead_table 
+  ON lead_table.grid__c = acc_table.grid__c
+  WHERE 
+    acc_table.vertical__c IN (&apos;Restaurant&apos;)
+    AND acc_table.mark_for_testing_training__c = False
+    AND lead_table.createdbyid IN (&apos;0056900000AVz3YAAT&apos;, &apos;0056900000CRtp2AAD&apos;, &apos;0056900000BV0qnAAD&apos;, &apos;0056900000BUli5AAD&apos;, &apos;0056900000BSL0IAAX&apos;)
+    AND lead_table.createddate &gt;&gt;= &apos;2023-01-01&apos;
+    AND lead_table.status IN (&apos;Converted&apos;)
+),
+
+-- Step 1: Remove duplicates and filter out rows with ID-like values
+CleanedHistory AS (
+  SELECT 
+    opp_hist.*,
+    lao.sf_lead_id,
+    lao.sf_account_id,
+    --lao.user_type,
+    lao.opportunity_business_type,
+    lao.opp_stage_name,
+    lao.lead_source,
+    ROW_NUMBER() OVER (PARTITION BY opp_hist.opportunityid, opp_hist.createdbyid, opp_hist.createddate ORDER BY opp_hist.id) AS row_num -- Remove duplicates here
+  FROM `fulfillment-dwh-production.curated_data_shared_salesforce.opportunityfieldhistory` AS opp_hist
+  INNER JOIN `fulfillment-dwh-production.pandata_report.sales_lead_account_opp_aggregated` AS lao
+    ON opp_hist.opportunityid = lao.sf_opportunity_id
+  WHERE lao.opportunity_business_type IN (&apos;New Business&apos;, &apos;Win Back&apos;)
+    AND opp_hist.field IN (&quot;Type&quot;, &quot;Owner&quot;)
+)
+
+, DeduplicatedHistory AS (
+  -- Step 2: Select only rows without duplicates
+  SELECT 
+    CleanedHistory.*,
+    opp_table.closedate AS opp_closedate 
+  FROM CleanedHistory 
+  INNER JOIN
+   `fulfillment-dwh-production.curated_data_shared_salesforce.opportunity` AS opp_table
+   ON CleanedHistory.opportunityid = opp_table.id
+  WHERE row_num = 1 -- Retain only first instance for each combination
+    AND REGEXP_CONTAINS(newvalue, r&apos;^[A-Za-z0-9]+$&apos;) = FALSE -- Filter ID-like values
+)
+
+-- Step 3: Rank the records and calculate the next change date within each opportunity
+, RankedHistory AS (
+  SELECT 
+    *,
+    ROW_NUMBER() OVER (PARTITION BY opportunityid ORDER BY createddate ASC) AS rank_num,  -- Rank rows by date within each opportunity
+    LEAD(createddate) OVER (PARTITION BY opportunityid ORDER BY createddate ASC) AS next_created_date  -- Next change date
+  FROM DeduplicatedHistory
+)
+
+-- Step 4: Replace the newvalue of the first rank with the oldvalue from the next rank
+, AdjustedValues AS (
+  SELECT 
+    *,
+    CASE 
+      WHEN rank_num = 1 THEN LEAD(oldvalue) OVER (PARTITION BY opportunityid ORDER BY createddate ASC)
+      ELSE newvalue 
+    END AS adjusted_newvalue,
+  FROM RankedHistory
+)
+
+-- Step 5: Calculate the ownership duration based on adjusted values and the next created date
+, OwnershipDuration AS (
+  SELECT 
+    opportunityid,
+    createdbyid,
+    createddate,
+    field,
+    oldvalue,
+    adjusted_newvalue AS newvalue,
+    next_created_date, 
+    opp_closedate,
+    sf_lead_id, 
+    sf_account_id,
+    opportunity_business_type, 
+    opp_stage_name,
+    lead_source,
+    rank_num,
+    CASE 
+      WHEN next_created_date IS NOT NULL THEN DATE_DIFF(CAST(next_created_date AS DATE), CAST(createddate AS DATE), DAY)
+      ELSE DATE_DIFF(CURRENT_DATE(), CAST(createddate AS DATE), DAY)
+    END AS days_of_ownership
+  FROM AdjustedValues
+),
+
+
+UniqueUserLayer AS (
+  SELECT 
+    full_name_internal_non_pii,
+    user_type,
+    ROW_NUMBER() OVER (PARTITION BY full_name_internal_non_pii ORDER BY user_type) AS row_num
+  FROM `fulfillment-dwh-production.pandata_report.regional_apac_lead_account_opp_aggregated_users_layer`
+)
+
+
+-- Final result: Ownership information along with the days of ownership
+SELECT
+ lead_acc_table.*,
+ OwnershipDuration.*,
+ UniqueUserLayer.user_type AS lao_user_type
+FROM OwnershipDuration
+INNER JOIN lead_acc_table
+   ON OwnershipDuration.sf_account_id = lead_acc_table.acc_id
+LEFT JOIN UniqueUserLayer
+ ON OwnershipDuration.newvalue = UniqueUserLayer.full_name_internal_non_pii
+ AND UniqueUserLayer.row_num = 1  -- Only join the first occurrence
+ORDER BY OwnershipDuration.sf_account_id</_.fcp.ObjectModelEncapsulateLegacy.true...relation>
+        <metadata-records>
+          <metadata-record class='column'>
+            <remote-name>lead_global_entity_id</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[lead_global_entity_id]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>lead_global_entity_id</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_2F638664F82B4AFEA826CE2637FDDD97]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>grid__c</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[grid__c]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>grid__c</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_2F638664F82B4AFEA826CE2637FDDD97]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>vertical__c</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[vertical__c]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>vertical__c</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_2F638664F82B4AFEA826CE2637FDDD97]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>acc_id</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[acc_id]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>acc_id</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_2F638664F82B4AFEA826CE2637FDDD97]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>status</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[status]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>status</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_2F638664F82B4AFEA826CE2637FDDD97]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>lead_createdbyid</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[lead_createdbyid]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>lead_createdbyid</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_2F638664F82B4AFEA826CE2637FDDD97]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>lead_createddate</remote-name>
+            <remote-type>7</remote-type>
+            <local-name>[lead_createddate]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>lead_createddate</remote-alias>
+            <local-type>datetime</local-type>
+            <aggregation>Year</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_2F638664F82B4AFEA826CE2637FDDD97]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>lead_converted_date</remote-name>
+            <remote-type>7</remote-type>
+            <local-name>[lead_converted_date]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>lead_converted_date</remote-alias>
+            <local-type>date</local-type>
+            <aggregation>Year</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_2F638664F82B4AFEA826CE2637FDDD97]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>self_setup__c</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[self_setup__c]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>self_setup__c</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_2F638664F82B4AFEA826CE2637FDDD97]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>opportunityid</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[opportunityid]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>opportunityid</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_2F638664F82B4AFEA826CE2637FDDD97]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>createdbyid</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[createdbyid]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>createdbyid</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_2F638664F82B4AFEA826CE2637FDDD97]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>createddate</remote-name>
+            <remote-type>7</remote-type>
+            <local-name>[createddate]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>createddate</remote-alias>
+            <local-type>datetime</local-type>
+            <aggregation>Year</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_2F638664F82B4AFEA826CE2637FDDD97]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>field</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[field]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>field</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_2F638664F82B4AFEA826CE2637FDDD97]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>oldvalue</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[oldvalue]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>oldvalue</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_2F638664F82B4AFEA826CE2637FDDD97]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>newvalue</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[newvalue]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>newvalue</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_2F638664F82B4AFEA826CE2637FDDD97]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>next_created_date</remote-name>
+            <remote-type>7</remote-type>
+            <local-name>[next_created_date]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>next_created_date</remote-alias>
+            <local-type>datetime</local-type>
+            <aggregation>Year</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_2F638664F82B4AFEA826CE2637FDDD97]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>opp_closedate</remote-name>
+            <remote-type>7</remote-type>
+            <local-name>[opp_closedate]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>opp_closedate</remote-alias>
+            <local-type>date</local-type>
+            <aggregation>Year</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_2F638664F82B4AFEA826CE2637FDDD97]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>sf_lead_id</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[sf_lead_id]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>sf_lead_id</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_2F638664F82B4AFEA826CE2637FDDD97]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>sf_account_id</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[sf_account_id]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>sf_account_id</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_2F638664F82B4AFEA826CE2637FDDD97]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>opportunity_business_type</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[opportunity_business_type]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>opportunity_business_type</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_2F638664F82B4AFEA826CE2637FDDD97]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>opp_stage_name</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[opp_stage_name]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>opp_stage_name</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_2F638664F82B4AFEA826CE2637FDDD97]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>lead_source</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[lead_source]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>lead_source</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_2F638664F82B4AFEA826CE2637FDDD97]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>rank_num</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[rank_num]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>rank_num</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_2F638664F82B4AFEA826CE2637FDDD97]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>days_of_ownership</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[days_of_ownership]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>days_of_ownership</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_2F638664F82B4AFEA826CE2637FDDD97]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>lao_user_type</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[lao_user_type]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>lao_user_type</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_2F638664F82B4AFEA826CE2637FDDD97]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+        </metadata-records>
+      </connection>
+      <aliases enabled='yes' />
+      <_.fcp.ObjectModelTableType.true...column caption='Custom SQL Query' datatype='table' name='[__tableau_internal_object_id__].[_2F638664F82B4AFEA826CE2637FDDD97]' role='measure' type='quantitative' />
+      <column caption='Oppty Change Date ' datatype='date' datatype-customized='true' default-format='*m/d/yyyy' name='[createddate]' role='dimension' type='ordinal' />
+      <column caption='User Type' datatype='string' name='[lao_user_type]' role='dimension' type='nominal' />
+      <column datatype='date' default-format='*m/d/yyyy' name='[lead_converted_date]' role='dimension' type='ordinal' />
+      <column datatype='date' datatype-customized='true' default-format='*m/d/yyyy' name='[lead_createddate]' role='dimension' type='ordinal' />
+      <column caption='Global Entity Id' datatype='string' name='[lead_global_entity_id]' role='dimension' type='nominal' />
+      <column caption='opportunity_owner' datatype='string' name='[newvalue]' role='dimension' type='nominal' />
+      <column datatype='date' datatype-customized='true' default-format='*m/d/yyyy' name='[next_created_date]' role='dimension' type='ordinal' />
+      <column datatype='date' default-format='*m/d/yyyy' name='[opp_closedate]' role='dimension' type='ordinal' />
+      <column aggregation='CountD' datatype='string' name='[opportunityid]' role='dimension' type='nominal' />
+      <drill-paths>
+        <drill-path name='User Type '>
+          <field>[lao_user_type]</field>
+          <field>[newvalue]</field>
+        </drill-path>
+      </drill-paths>
+      <extract _.fcp.ObjectModelExtractV2.true...object-id='' count='-1' enabled='true' units='records'>
+        <connection access_mode='readonly' author-locale='en_US' class='hyper' dbname='extract/b7/9b/{66DE02BB-142A-4134-9D73-D5A3D42EAC4E}/federated_1r8isqd0qwepdv17f6bej0.hyper' extract-engine='true' schema='Extract' sslmode='' tablename='Extract' update-time='08/21/2025 07:04:40 AM'>
+          <_.fcp.ObjectModelEncapsulateLegacy.false...relation name='Extract' table='[Extract].[Extract]' type='table' />
+          <_.fcp.ObjectModelEncapsulateLegacy.true...relation name='Extract' table='[Extract].[Extract]' type='table' />
+          <metadata-records>
+            <metadata-record class='column'>
+              <remote-name>lead_global_entity_id</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[lead_global_entity_id]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>lead_global_entity_id</remote-alias>
+              <ordinal>0</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>16</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_2F638664F82B4AFEA826CE2637FDDD97]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>grid__c</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[grid__c]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>grid__c</remote-alias>
+              <ordinal>1</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>566599</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_2F638664F82B4AFEA826CE2637FDDD97]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>vertical__c</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[vertical__c]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>vertical__c</remote-alias>
+              <ordinal>2</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>1</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_2F638664F82B4AFEA826CE2637FDDD97]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>acc_id</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[acc_id]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>acc_id</remote-alias>
+              <ordinal>3</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>566599</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_2F638664F82B4AFEA826CE2637FDDD97]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>status</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[status]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>status</remote-alias>
+              <ordinal>4</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>1</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_2F638664F82B4AFEA826CE2637FDDD97]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>lead_createdbyid</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[lead_createdbyid]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>lead_createdbyid</remote-alias>
+              <ordinal>5</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>5</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_2F638664F82B4AFEA826CE2637FDDD97]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>lead_createddate</remote-name>
+              <remote-type>133</remote-type>
+              <local-name>[lead_createddate]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>lead_createddate</remote-alias>
+              <ordinal>6</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>date</local-type>
+              <aggregation>Year</aggregation>
+              <approx-count>2156</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_2F638664F82B4AFEA826CE2637FDDD97]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>lead_converted_date</remote-name>
+              <remote-type>133</remote-type>
+              <local-name>[lead_converted_date]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>lead_converted_date</remote-alias>
+              <ordinal>7</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>date</local-type>
+              <aggregation>Year</aggregation>
+              <approx-count>2252</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_2F638664F82B4AFEA826CE2637FDDD97]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>self_setup__c</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[self_setup__c]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>self_setup__c</remote-alias>
+              <ordinal>8</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>3</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_2F638664F82B4AFEA826CE2637FDDD97]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>opportunityid</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[opportunityid]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>opportunityid</remote-alias>
+              <ordinal>9</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>620508</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_2F638664F82B4AFEA826CE2637FDDD97]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>createdbyid</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[createdbyid]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>createdbyid</remote-alias>
+              <ordinal>10</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>1522</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_2F638664F82B4AFEA826CE2637FDDD97]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>createddate</remote-name>
+              <remote-type>133</remote-type>
+              <local-name>[createddate]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>createddate</remote-alias>
+              <ordinal>11</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>date</local-type>
+              <aggregation>Year</aggregation>
+              <approx-count>2266</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_2F638664F82B4AFEA826CE2637FDDD97]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>field</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[field]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>field</remote-alias>
+              <ordinal>12</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>2</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_2F638664F82B4AFEA826CE2637FDDD97]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>oldvalue</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[oldvalue]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>oldvalue</remote-alias>
+              <ordinal>13</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>1480</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_2F638664F82B4AFEA826CE2637FDDD97]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>newvalue</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[newvalue]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>newvalue</remote-alias>
+              <ordinal>14</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>1852</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_2F638664F82B4AFEA826CE2637FDDD97]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>next_created_date</remote-name>
+              <remote-type>133</remote-type>
+              <local-name>[next_created_date]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>next_created_date</remote-alias>
+              <ordinal>15</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>date</local-type>
+              <aggregation>Year</aggregation>
+              <approx-count>2827</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_2F638664F82B4AFEA826CE2637FDDD97]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>opp_closedate</remote-name>
+              <remote-type>133</remote-type>
+              <local-name>[opp_closedate]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>opp_closedate</remote-alias>
+              <ordinal>16</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>date</local-type>
+              <aggregation>Year</aggregation>
+              <approx-count>2470</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_2F638664F82B4AFEA826CE2637FDDD97]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>sf_lead_id</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[sf_lead_id]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>sf_lead_id</remote-alias>
+              <ordinal>17</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>566599</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_2F638664F82B4AFEA826CE2637FDDD97]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>sf_account_id</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[sf_account_id]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>sf_account_id</remote-alias>
+              <ordinal>18</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>566599</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_2F638664F82B4AFEA826CE2637FDDD97]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>opportunity_business_type</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[opportunity_business_type]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>opportunity_business_type</remote-alias>
+              <ordinal>19</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>2</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_2F638664F82B4AFEA826CE2637FDDD97]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>opp_stage_name</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[opp_stage_name]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>opp_stage_name</remote-alias>
+              <ordinal>20</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>19</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_2F638664F82B4AFEA826CE2637FDDD97]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>lead_source</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[lead_source]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>lead_source</remote-alias>
+              <ordinal>21</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>7</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_2F638664F82B4AFEA826CE2637FDDD97]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>rank_num</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[rank_num]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>rank_num</remote-alias>
+              <ordinal>22</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>8</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_2F638664F82B4AFEA826CE2637FDDD97]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>days_of_ownership</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[days_of_ownership]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>days_of_ownership</remote-alias>
+              <ordinal>23</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>2731</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_2F638664F82B4AFEA826CE2637FDDD97]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>lao_user_type</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[lao_user_type]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>lao_user_type</remote-alias>
+              <ordinal>24</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>6</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_2F638664F82B4AFEA826CE2637FDDD97]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+          </metadata-records>
+        </connection>
+      </extract>
+      <layout _.fcp.SchemaViewerObjectModel.false...dim-percentage='0.5' _.fcp.SchemaViewerObjectModel.false...measure-percentage='0.4' _.fcp.SchemaViewerObjectModel.true...common-percentage='1' _.fcp.SchemaViewerObjectModel.true...user-set-layout-v2='true' dim-ordering='alphabetic' measure-ordering='alphabetic' show-structure='true' />
+      <semantic-values>
+        <semantic-value key='[Country].[Name]' value='&quot;United States&quot;' />
+      </semantic-values>
+      <filter class='categorical' column='[lead_global_entity_id]' filter-group='2'>
+        <groupfilter function='except' user:ui-domain='database' user:ui-enumeration='inclusive' user:ui-marker='enumerate'>
+          <groupfilter function='level-members' level='[lead_global_entity_id]' />
+          <groupfilter function='union'>
+            <groupfilter function='member' level='[lead_global_entity_id]' member='&quot;FP_KH&quot;' />
+            <groupfilter function='member' level='[lead_global_entity_id]' member='&quot;FP_LA&quot;' />
+            <groupfilter function='member' level='[lead_global_entity_id]' member='&quot;FP_MM&quot;' />
+            <groupfilter function='member' level='[lead_global_entity_id]' member='%null%' />
+          </groupfilter>
+        </groupfilter>
+      </filter>
+      <filter class='categorical' column='[newvalue]' filter-group='2'>
+        <groupfilter function='except' user:ui-domain='database' user:ui-enumeration='exclusive' user:ui-manual-selection='true' user:ui-manual-selection-all-when-empty='true' user:ui-marker='enumerate'>
+          <groupfilter function='level-members' level='[newvalue]' />
+          <groupfilter function='union'>
+            <groupfilter function='member' level='[newvalue]' member='&quot;Contract &amp; Product&quot;' />
+            <groupfilter function='member' level='[newvalue]' member='&quot;Contract Only&quot;' />
+          </groupfilter>
+        </groupfilter>
+      </filter>
+      <_.fcp.ObjectModelEncapsulateLegacy.true...object-graph>
+        <objects>
+          <object caption='Custom SQL Query' id='_2F638664F82B4AFEA826CE2637FDDD97'>
+            <properties context=''>
+              <relation connection='bigquery.0aw5zdy190hhms1ac5eik0oqlkjj' name='Custom SQL Query' type='text'>WITH lead_table AS (
+  SELECT  
+    lead.global_entity_id AS lead_global_entity_id,
+    lead.grid__c,
+    lead.status,
+    lead.createdbyid, 
+    lead.createddate,  
+    lead.converteddate AS lead_converted_date 
+  FROM `fulfillment-dwh-production.curated_data_shared_salesforce.lead` AS lead
+  WHERE 
+    lead.mark_for_testing_training__c = False
+),
+
+lead_acc_table AS (
+  SELECT 
+    lead_table.lead_global_entity_id,
+    lead_table.grid__c,
+    acc_table.vertical__c, 
+    acc_table.id AS acc_id,
+    lead_table.status,
+    lead_table.createdbyid AS lead_createdbyid, 
+    lead_table.createddate AS lead_createddate, 
+    lead_table.lead_converted_date, 
+    acc_table.self_setup__c
+  FROM `fulfillment-dwh-production.curated_data_shared_salesforce.account` AS acc_table
+  INNER JOIN lead_table 
+  ON lead_table.grid__c = acc_table.grid__c
+  WHERE 
+    acc_table.vertical__c IN (&apos;Restaurant&apos;)
+    AND acc_table.mark_for_testing_training__c = False
+    AND lead_table.createdbyid IN (&apos;0056900000AVz3YAAT&apos;, &apos;0056900000CRtp2AAD&apos;, &apos;0056900000BV0qnAAD&apos;, &apos;0056900000BUli5AAD&apos;, &apos;0056900000BSL0IAAX&apos;)
+    AND lead_table.createddate &gt;&gt;= &apos;2023-01-01&apos;
+    AND lead_table.status IN (&apos;Converted&apos;)
+),
+
+-- Step 1: Remove duplicates and filter out rows with ID-like values
+CleanedHistory AS (
+  SELECT 
+    opp_hist.*,
+    lao.sf_lead_id,
+    lao.sf_account_id,
+    --lao.user_type,
+    lao.opportunity_business_type,
+    lao.opp_stage_name,
+    lao.lead_source,
+    ROW_NUMBER() OVER (PARTITION BY opp_hist.opportunityid, opp_hist.createdbyid, opp_hist.createddate ORDER BY opp_hist.id) AS row_num -- Remove duplicates here
+  FROM `fulfillment-dwh-production.curated_data_shared_salesforce.opportunityfieldhistory` AS opp_hist
+  INNER JOIN `fulfillment-dwh-production.pandata_report.sales_lead_account_opp_aggregated` AS lao
+    ON opp_hist.opportunityid = lao.sf_opportunity_id
+  WHERE lao.opportunity_business_type IN (&apos;New Business&apos;, &apos;Win Back&apos;)
+    AND opp_hist.field IN (&quot;Type&quot;, &quot;Owner&quot;)
+)
+
+, DeduplicatedHistory AS (
+  -- Step 2: Select only rows without duplicates
+  SELECT 
+    CleanedHistory.*,
+    opp_table.closedate AS opp_closedate 
+  FROM CleanedHistory 
+  INNER JOIN
+   `fulfillment-dwh-production.curated_data_shared_salesforce.opportunity` AS opp_table
+   ON CleanedHistory.opportunityid = opp_table.id
+  WHERE row_num = 1 -- Retain only first instance for each combination
+    AND REGEXP_CONTAINS(newvalue, r&apos;^[A-Za-z0-9]+$&apos;) = FALSE -- Filter ID-like values
+)
+
+-- Step 3: Rank the records and calculate the next change date within each opportunity
+, RankedHistory AS (
+  SELECT 
+    *,
+    ROW_NUMBER() OVER (PARTITION BY opportunityid ORDER BY createddate ASC) AS rank_num,  -- Rank rows by date within each opportunity
+    LEAD(createddate) OVER (PARTITION BY opportunityid ORDER BY createddate ASC) AS next_created_date  -- Next change date
+  FROM DeduplicatedHistory
+)
+
+-- Step 4: Replace the newvalue of the first rank with the oldvalue from the next rank
+, AdjustedValues AS (
+  SELECT 
+    *,
+    CASE 
+      WHEN rank_num = 1 THEN LEAD(oldvalue) OVER (PARTITION BY opportunityid ORDER BY createddate ASC)
+      ELSE newvalue 
+    END AS adjusted_newvalue,
+  FROM RankedHistory
+)
+
+-- Step 5: Calculate the ownership duration based on adjusted values and the next created date
+, OwnershipDuration AS (
+  SELECT 
+    opportunityid,
+    createdbyid,
+    createddate,
+    field,
+    oldvalue,
+    adjusted_newvalue AS newvalue,
+    next_created_date, 
+    opp_closedate,
+    sf_lead_id, 
+    sf_account_id,
+    opportunity_business_type, 
+    opp_stage_name,
+    lead_source,
+    rank_num,
+    CASE 
+      WHEN next_created_date IS NOT NULL THEN DATE_DIFF(CAST(next_created_date AS DATE), CAST(createddate AS DATE), DAY)
+      ELSE DATE_DIFF(CURRENT_DATE(), CAST(createddate AS DATE), DAY)
+    END AS days_of_ownership
+  FROM AdjustedValues
+),
+
+
+UniqueUserLayer AS (
+  SELECT 
+    full_name_internal_non_pii,
+    user_type,
+    ROW_NUMBER() OVER (PARTITION BY full_name_internal_non_pii ORDER BY user_type) AS row_num
+  FROM `fulfillment-dwh-production.pandata_report.regional_apac_lead_account_opp_aggregated_users_layer`
+)
+
+
+-- Final result: Ownership information along with the days of ownership
+SELECT
+ lead_acc_table.*,
+ OwnershipDuration.*,
+ UniqueUserLayer.user_type AS lao_user_type
+FROM OwnershipDuration
+INNER JOIN lead_acc_table
+   ON OwnershipDuration.sf_account_id = lead_acc_table.acc_id
+LEFT JOIN UniqueUserLayer
+ ON OwnershipDuration.newvalue = UniqueUserLayer.full_name_internal_non_pii
+ AND UniqueUserLayer.row_num = 1  -- Only join the first occurrence
+ORDER BY OwnershipDuration.sf_account_id</relation>
+            </properties>
+            <properties context='extract'>
+              <relation name='Extract' table='[Extract].[Extract]' type='table' />
+            </properties>
+          </object>
+        </objects>
+      </_.fcp.ObjectModelEncapsulateLegacy.true...object-graph>
+    </datasource>
+  </datasources>
+  <worksheets>
+    <worksheet name='Avg_ownership_day '>
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='Custom SQL Query (pandata_report)' name='federated.1r8isqd0qwepdv17f6bej09ojz5j' />
+          </datasources>
+          <datasource-dependencies datasource='federated.1r8isqd0qwepdv17f6bej09ojz5j'>
+            <column-instance column='[createddate]' derivation='Attribute' name='[attr:createddate:ok]' pivot='key' type='ordinal' />
+            <column-instance column='[next_created_date]' derivation='Attribute' name='[attr:next_created_date:ok]' pivot='key' type='ordinal' />
+            <column-instance column='[opp_closedate]' derivation='Attribute' name='[attr:opp_closedate:ok]' pivot='key' type='ordinal' />
+            <column-instance column='[opportunityid]' derivation='Attribute' name='[attr:opportunityid:nk]' pivot='key' type='nominal' />
+            <column-instance column='[days_of_ownership]' derivation='Avg' name='[avg:days_of_ownership:qk]' pivot='key' type='quantitative' />
+            <column caption='Oppty Change Date ' datatype='date' datatype-customized='true' default-format='*m/d/yyyy' name='[createddate]' role='dimension' type='ordinal' />
+            <column datatype='integer' name='[days_of_ownership]' role='measure' type='quantitative' />
+            <column caption='User Type' datatype='string' name='[lao_user_type]' role='dimension' type='nominal' />
+            <column caption='Global Entity Id' datatype='string' name='[lead_global_entity_id]' role='dimension' type='nominal' />
+            <column datatype='string' name='[lead_source]' role='dimension' type='nominal' />
+            <column-instance column='[createddate]' derivation='Month' name='[mn:createddate:ok]' pivot='key' type='ordinal' />
+            <column caption='opportunity_owner' datatype='string' name='[newvalue]' role='dimension' type='nominal' />
+            <column datatype='date' datatype-customized='true' default-format='*m/d/yyyy' name='[next_created_date]' role='dimension' type='ordinal' />
+            <column-instance column='[lao_user_type]' derivation='None' name='[none:lao_user_type:nk]' pivot='key' type='nominal' />
+            <column-instance column='[lead_global_entity_id]' derivation='None' name='[none:lead_global_entity_id:nk]' pivot='key' type='nominal' />
+            <column-instance column='[lead_source]' derivation='None' name='[none:lead_source:nk]' pivot='key' type='nominal' />
+            <column-instance column='[newvalue]' derivation='None' name='[none:newvalue:nk]' pivot='key' type='nominal' />
+            <column-instance column='[opp_stage_name]' derivation='None' name='[none:opp_stage_name:nk]' pivot='key' type='nominal' />
+            <column datatype='date' default-format='*m/d/yyyy' name='[opp_closedate]' role='dimension' type='ordinal' />
+            <column datatype='string' name='[opp_stage_name]' role='dimension' type='nominal' />
+            <column aggregation='CountD' datatype='string' name='[opportunityid]' role='dimension' type='nominal' />
+            <column-instance column='[createddate]' derivation='Year' name='[yr:createddate:ok]' pivot='key' type='ordinal' />
+          </datasource-dependencies>
+          <filter class='categorical' column='[federated.1r8isqd0qwepdv17f6bej09ojz5j].[none:lao_user_type:nk]'>
+            <groupfilter function='level-members' level='[none:lao_user_type:nk]' user:ui-enumeration='all' user:ui-marker='enumerate' />
+          </filter>
+          <filter class='categorical' column='[federated.1r8isqd0qwepdv17f6bej09ojz5j].[none:lead_global_entity_id:nk]'>
+            <groupfilter function='except' user:ui-domain='database' user:ui-enumeration='inclusive' user:ui-marker='enumerate'>
+              <groupfilter function='level-members' level='[none:lead_global_entity_id:nk]' />
+              <groupfilter function='member' level='[none:lead_global_entity_id:nk]' member='%null%' />
+            </groupfilter>
+          </filter>
+          <filter class='categorical' column='[federated.1r8isqd0qwepdv17f6bej09ojz5j].[none:lead_source:nk]'>
+            <groupfilter function='level-members' level='[none:lead_source:nk]' user:ui-enumeration='all' user:ui-marker='enumerate' />
+          </filter>
+          <filter class='categorical' column='[federated.1r8isqd0qwepdv17f6bej09ojz5j].[none:newvalue:nk]'>
+            <groupfilter function='level-members' level='[none:newvalue:nk]' user:ui-enumeration='all' user:ui-marker='enumerate' />
+          </filter>
+          <filter class='categorical' column='[federated.1r8isqd0qwepdv17f6bej09ojz5j].[none:opp_stage_name:nk]'>
+            <groupfilter function='except' user:ui-domain='database' user:ui-enumeration='inclusive' user:ui-marker='enumerate'>
+              <groupfilter function='level-members' level='[none:opp_stage_name:nk]' />
+              <groupfilter function='member' level='[none:opp_stage_name:nk]' member='%null%' />
+            </groupfilter>
+          </filter>
+          <slices>
+            <column>[federated.1r8isqd0qwepdv17f6bej09ojz5j].[none:lead_source:nk]</column>
+            <column>[federated.1r8isqd0qwepdv17f6bej09ojz5j].[none:opp_stage_name:nk]</column>
+            <column>[federated.1r8isqd0qwepdv17f6bej09ojz5j].[none:lao_user_type:nk]</column>
+            <column>[federated.1r8isqd0qwepdv17f6bej09ojz5j].[none:newvalue:nk]</column>
+            <column>[federated.1r8isqd0qwepdv17f6bej09ojz5j].[none:lead_global_entity_id:nk]</column>
+          </slices>
+          <aggregation value='true' />
+        </view>
+        <style>
+          <style-rule element='header'>
+            <format attr='width' field='[federated.1r8isqd0qwepdv17f6bej09ojz5j].[none:newvalue:nk]' value='152' />
+            <format attr='width' field='[federated.1r8isqd0qwepdv17f6bej09ojz5j].[none:lao_user_type:nk]' value='104' />
+          </style-rule>
+          <style-rule element='label'>
+            <format attr='text-format' field='[federated.1r8isqd0qwepdv17f6bej09ojz5j].[mn:createddate:ok]' value='' />
+            <format attr='text-format' field='[federated.1r8isqd0qwepdv17f6bej09ojz5j].[yr:createddate:ok]' value='' />
+          </style-rule>
+          <style-rule element='mark'>
+            <encoding attr='color' field='[federated.1r8isqd0qwepdv17f6bej09ojz5j].[avg:days_of_ownership:qk]' num-steps='5' palette='red_green_gold_diverging_10_0' reverse='true' type='interpolated' />
+          </style-rule>
+          <style-rule element='quick-filter'>
+            <format attr='title' field='[federated.1r8isqd0qwepdv17f6bej09ojz5j].[none:lead_global_entity_id:nk]' value='Global Entity Id '>
+              <formatted-text>
+                <run>Global Entity Id </run>
+              </formatted-text>
+            </format>
+            <format attr='title' field='[federated.1r8isqd0qwepdv17f6bej09ojz5j].[none:lead_source:nk]' value='Lead Source'>
+              <formatted-text>
+                <run>Lead Source</run>
+              </formatted-text>
+            </format>
+            <format attr='title' field='[federated.1r8isqd0qwepdv17f6bej09ojz5j].[none:opp_stage_name:nk]' value='Oppty Stage Name '>
+              <formatted-text>
+                <run>Oppty Stage Name </run>
+              </formatted-text>
+            </format>
+            <format attr='title' field='[federated.1r8isqd0qwepdv17f6bej09ojz5j].[none:lao_user_type:nk]' value='User Type'>
+              <formatted-text>
+                <run>User Type</run>
+              </formatted-text>
+            </format>
+            <format attr='title' field='[federated.1r8isqd0qwepdv17f6bej09ojz5j].[none:newvalue:nk]' value='Oppty Owner'>
+              <formatted-text>
+                <run>Oppty Owner</run>
+              </formatted-text>
+            </format>
+          </style-rule>
+        </style>
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Square' />
+            <encodings>
+              <color column='[federated.1r8isqd0qwepdv17f6bej09ojz5j].[avg:days_of_ownership:qk]' />
+              <tooltip column='[federated.1r8isqd0qwepdv17f6bej09ojz5j].[attr:opportunityid:nk]' />
+              <tooltip column='[federated.1r8isqd0qwepdv17f6bej09ojz5j].[attr:createddate:ok]' />
+              <tooltip column='[federated.1r8isqd0qwepdv17f6bej09ojz5j].[attr:opp_closedate:ok]' />
+              <tooltip column='[federated.1r8isqd0qwepdv17f6bej09ojz5j].[attr:next_created_date:ok]' />
+              <text column='[federated.1r8isqd0qwepdv17f6bej09ojz5j].[avg:days_of_ownership:qk]' />
+            </encodings>
+            <customized-tooltip>
+              <formatted-text>
+                <run fontcolor='#787878'>Month of opportunity_change_date:	</run>
+                <run>Æ&#10;</run>
+                <run fontcolor='#787878'>lao_user_type:&#9;</run>
+                <run bold='true'><![CDATA[<[federated.1r8isqd0qwepdv17f6bej09ojz5j].[none:lao_user_type:nk]>]]></run>
+                <run>Æ&#10;</run>
+                <run fontcolor='#787878'>lead_global_entity_id:&#9;</run>
+                <run bold='true'><![CDATA[<[federated.1r8isqd0qwepdv17f6bej09ojz5j].[none:lead_global_entity_id:nk]>]]></run>
+                <run>Æ&#10;</run>
+                <run fontcolor='#787878'>Year of opportunity_change_date:	</run>
+                <run bold='true'><![CDATA[<[federated.1r8isqd0qwepdv17f6bej09ojz5j].[yr:createddate:ok]>]]></run>
+                <run>Æ&#10;</run>
+                <run fontcolor='#787878'>Avg. days_of_ownership:&#9;</run>
+                <run bold='true'><![CDATA[<[federated.1r8isqd0qwepdv17f6bej09ojz5j].[avg:days_of_ownership:qk]>]]></run>
+              </formatted-text>
+            </customized-tooltip>
+            <style>
+              <style-rule element='mark'>
+                <format attr='mark-labels-show' value='true' />
+              </style-rule>
+            </style>
+          </pane>
+        </panes>
+        <rows>([federated.1r8isqd0qwepdv17f6bej09ojz5j].[none:lead_global_entity_id:nk] / [federated.1r8isqd0qwepdv17f6bej09ojz5j].[none:lao_user_type:nk])</rows>
+        <cols>([federated.1r8isqd0qwepdv17f6bej09ojz5j].[yr:createddate:ok] / [federated.1r8isqd0qwepdv17f6bej09ojz5j].[mn:createddate:ok])</cols>
+      </table>
+      <simple-id uuid='{634E3AD2-022C-4D8A-B048-A7F75CEB4F26}' />
+    </worksheet>
+    <worksheet name='Distinct Count '>
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='Custom SQL Query (pandata_report)' name='federated.1r8isqd0qwepdv17f6bej09ojz5j' />
+          </datasources>
+          <datasource-dependencies datasource='federated.1r8isqd0qwepdv17f6bej09ojz5j'>
+            <column-instance column='[opp_stage_name]' derivation='Attribute' name='[attr:opp_stage_name:nk]' pivot='key' type='nominal' />
+            <column-instance column='[opportunityid]' derivation='Attribute' name='[attr:opportunityid:nk]' pivot='key' type='nominal' />
+            <column-instance column='[sf_lead_id]' derivation='Attribute' name='[attr:sf_lead_id:nk]' pivot='key' type='nominal' />
+            <column caption='Oppty Change Date ' datatype='date' datatype-customized='true' default-format='*m/d/yyyy' name='[createddate]' role='dimension' type='ordinal' />
+            <column-instance column='[opportunityid]' derivation='CountD' name='[ctd:opportunityid:qk]' pivot='key' type='quantitative' />
+            <column caption='User Type' datatype='string' name='[lao_user_type]' role='dimension' type='nominal' />
+            <column caption='Global Entity Id' datatype='string' name='[lead_global_entity_id]' role='dimension' type='nominal' />
+            <column datatype='string' name='[lead_source]' role='dimension' type='nominal' />
+            <column-instance column='[createddate]' derivation='Month' name='[mn:createddate:ok]' pivot='key' type='ordinal' />
+            <column caption='opportunity_owner' datatype='string' name='[newvalue]' role='dimension' type='nominal' />
+            <column-instance column='[lao_user_type]' derivation='None' name='[none:lao_user_type:nk]' pivot='key' type='nominal' />
+            <column-instance column='[lead_global_entity_id]' derivation='None' name='[none:lead_global_entity_id:nk]' pivot='key' type='nominal' />
+            <column-instance column='[lead_source]' derivation='None' name='[none:lead_source:nk]' pivot='key' type='nominal' />
+            <column-instance column='[newvalue]' derivation='None' name='[none:newvalue:nk]' pivot='key' type='nominal' />
+            <column-instance column='[opp_stage_name]' derivation='None' name='[none:opp_stage_name:nk]' pivot='key' type='nominal' />
+            <column datatype='string' name='[opp_stage_name]' role='dimension' type='nominal' />
+            <column aggregation='CountD' datatype='string' name='[opportunityid]' role='dimension' type='nominal' />
+            <column datatype='string' name='[sf_lead_id]' role='dimension' type='nominal' />
+            <column-instance column='[createddate]' derivation='Year' name='[yr:createddate:ok]' pivot='key' type='ordinal' />
+          </datasource-dependencies>
+          <filter class='categorical' column='[federated.1r8isqd0qwepdv17f6bej09ojz5j].[none:lao_user_type:nk]'>
+            <groupfilter function='except' user:ui-domain='cascading' user:ui-enumeration='inclusive' user:ui-marker='enumerate'>
+              <groupfilter function='level-members' level='[none:lao_user_type:nk]' />
+              <groupfilter function='empty-level' member='[none:lao_user_type:nk]' />
+            </groupfilter>
+          </filter>
+          <filter class='categorical' column='[federated.1r8isqd0qwepdv17f6bej09ojz5j].[none:lead_global_entity_id:nk]'>
+            <groupfilter function='union' user:ui-domain='database' user:ui-enumeration='inclusive' user:ui-marker='enumerate'>
+              <groupfilter function='member' level='[none:lead_global_entity_id:nk]' member='&quot;DJ_CZ&quot;' />
+              <groupfilter function='member' level='[none:lead_global_entity_id:nk]' member='&quot;FO_NO&quot;' />
+              <groupfilter function='member' level='[none:lead_global_entity_id:nk]' member='&quot;FP_BD&quot;' />
+              <groupfilter function='member' level='[none:lead_global_entity_id:nk]' member='&quot;FP_HK&quot;' />
+              <groupfilter function='member' level='[none:lead_global_entity_id:nk]' member='&quot;FP_KH&quot;' />
+              <groupfilter function='member' level='[none:lead_global_entity_id:nk]' member='&quot;FP_LA&quot;' />
+              <groupfilter function='member' level='[none:lead_global_entity_id:nk]' member='&quot;FP_MM&quot;' />
+              <groupfilter function='member' level='[none:lead_global_entity_id:nk]' member='&quot;FP_MY&quot;' />
+              <groupfilter function='member' level='[none:lead_global_entity_id:nk]' member='&quot;FP_PH&quot;' />
+              <groupfilter function='member' level='[none:lead_global_entity_id:nk]' member='&quot;FP_PK&quot;' />
+              <groupfilter function='member' level='[none:lead_global_entity_id:nk]' member='&quot;FP_SG&quot;' />
+              <groupfilter function='member' level='[none:lead_global_entity_id:nk]' member='&quot;FP_TH&quot;' />
+              <groupfilter function='member' level='[none:lead_global_entity_id:nk]' member='&quot;FP_TW&quot;' />
+              <groupfilter function='member' level='[none:lead_global_entity_id:nk]' member='&quot;NP_HU&quot;' />
+              <groupfilter function='member' level='[none:lead_global_entity_id:nk]' member='&quot;OP_SE&quot;' />
+              <groupfilter function='member' level='[none:lead_global_entity_id:nk]' member='&quot;PO_FI&quot;' />
+              <groupfilter function='member' level='[none:lead_global_entity_id:nk]' member='&quot;YS_TR&quot;' />
+            </groupfilter>
+          </filter>
+          <filter class='categorical' column='[federated.1r8isqd0qwepdv17f6bej09ojz5j].[none:lead_source:nk]'>
+            <groupfilter function='level-members' level='[none:lead_source:nk]' user:ui-enumeration='all' user:ui-marker='enumerate' />
+          </filter>
+          <filter class='categorical' column='[federated.1r8isqd0qwepdv17f6bej09ojz5j].[none:newvalue:nk]'>
+            <groupfilter function='level-members' level='[none:newvalue:nk]' user:ui-enumeration='all' user:ui-marker='enumerate' />
+          </filter>
+          <filter class='categorical' column='[federated.1r8isqd0qwepdv17f6bej09ojz5j].[none:opp_stage_name:nk]'>
+            <groupfilter function='except' user:ui-domain='database' user:ui-enumeration='inclusive' user:ui-marker='enumerate'>
+              <groupfilter function='level-members' level='[none:opp_stage_name:nk]' />
+              <groupfilter function='member' level='[none:opp_stage_name:nk]' member='%null%' />
+            </groupfilter>
+          </filter>
+          <slices>
+            <column>[federated.1r8isqd0qwepdv17f6bej09ojz5j].[none:lead_source:nk]</column>
+            <column>[federated.1r8isqd0qwepdv17f6bej09ojz5j].[none:opp_stage_name:nk]</column>
+            <column>[federated.1r8isqd0qwepdv17f6bej09ojz5j].[none:lao_user_type:nk]</column>
+            <column>[federated.1r8isqd0qwepdv17f6bej09ojz5j].[none:lead_global_entity_id:nk]</column>
+            <column>[federated.1r8isqd0qwepdv17f6bej09ojz5j].[none:newvalue:nk]</column>
+          </slices>
+          <aggregation value='true' />
+        </view>
+        <style>
+          <style-rule element='header'>
+            <format attr='width' field='[federated.1r8isqd0qwepdv17f6bej09ojz5j].[none:lao_user_type:nk]' value='100' />
+          </style-rule>
+          <style-rule element='mark'>
+            <encoding attr='color' field='[federated.1r8isqd0qwepdv17f6bej09ojz5j].[ctd:opportunityid:qk]' num-steps='5' palette='red_green_gold_diverging_10_0' reverse='true' type='interpolated' />
+          </style-rule>
+          <style-rule element='legend-title-text'>
+            <format attr='color' field='[federated.1r8isqd0qwepdv17f6bej09ojz5j].[ctd:opportunityid:qk]' value='Dcount of opportunityid'>
+              <formatted-text>
+                <run>Dcount of opportunityid</run>
+              </formatted-text>
+            </format>
+          </style-rule>
+          <style-rule element='quick-filter'>
+            <format attr='title' field='[federated.1r8isqd0qwepdv17f6bej09ojz5j].[none:lead_global_entity_id:nk]' value='Global Entity Id '>
+              <formatted-text>
+                <run>Global Entity Id </run>
+              </formatted-text>
+            </format>
+            <format attr='title' field='[federated.1r8isqd0qwepdv17f6bej09ojz5j].[none:lead_source:nk]' value='Lead Source'>
+              <formatted-text>
+                <run>Lead Source</run>
+              </formatted-text>
+            </format>
+            <format attr='title' field='[federated.1r8isqd0qwepdv17f6bej09ojz5j].[none:opp_stage_name:nk]' value='Oppty Stage Name'>
+              <formatted-text>
+                <run>Oppty Stage N</run>
+                <run>ame</run>
+              </formatted-text>
+            </format>
+            <format attr='title' field='[federated.1r8isqd0qwepdv17f6bej09ojz5j].[none:lao_user_type:nk]' value='User Type '>
+              <formatted-text>
+                <run>User Type </run>
+              </formatted-text>
+            </format>
+            <format attr='title' field='[federated.1r8isqd0qwepdv17f6bej09ojz5j].[none:newvalue:nk]' value='Oppty Owner'>
+              <formatted-text>
+                <run>Oppty Owner</run>
+              </formatted-text>
+            </format>
+          </style-rule>
+        </style>
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Square' />
+            <encodings>
+              <color column='[federated.1r8isqd0qwepdv17f6bej09ojz5j].[ctd:opportunityid:qk]' />
+              <text column='[federated.1r8isqd0qwepdv17f6bej09ojz5j].[ctd:opportunityid:qk]' />
+              <lod column='[federated.1r8isqd0qwepdv17f6bej09ojz5j].[attr:opp_stage_name:nk]' />
+              <lod column='[federated.1r8isqd0qwepdv17f6bej09ojz5j].[attr:opportunityid:nk]' />
+              <lod column='[federated.1r8isqd0qwepdv17f6bej09ojz5j].[attr:sf_lead_id:nk]' />
+            </encodings>
+            <customized-tooltip>
+              <formatted-text>
+                <run fontcolor='#787878'>Month of ownership_change_date:	</run>
+                <run bold='true'><![CDATA[<[federated.1r8isqd0qwepdv17f6bej09ojz5j].[mn:ownership_change_date:ok]>]]></run>
+                <run>Æ&#10;</run>
+                <run fontcolor='#787878'>lao_user_type:&#9;</run>
+                <run bold='true'><![CDATA[<[federated.1r8isqd0qwepdv17f6bej09ojz5j].[none:current_owner_full_name:nk]>]]></run>
+                <run>Æ&#10;</run>
+                <run fontcolor='#787878'>ownership_global_entity_id:&#9;</run>
+                <run bold='true'><![CDATA[<[federated.1r8isqd0qwepdv17f6bej09ojz5j].[none:ownership_global_entity_id:nk]>]]></run>
+                <run>Æ&#10;</run>
+                <run fontcolor='#787878'>Year of ownership_change_date:&#9;</run>
+                <run bold='true'><![CDATA[<[federated.1r8isqd0qwepdv17f6bej09ojz5j].[yr:ownership_change_date:ok]>]]></run>
+                <run>Æ&#10;</run>
+                <run fontcolor='#787878'>Avg. days_of_ownership:&#9;</run>
+              </formatted-text>
+            </customized-tooltip>
+            <style>
+              <style-rule element='mark'>
+                <format attr='mark-labels-show' value='true' />
+                <format attr='mark-labels-cull' value='true' />
+              </style-rule>
+            </style>
+          </pane>
+        </panes>
+        <rows>([federated.1r8isqd0qwepdv17f6bej09ojz5j].[none:lead_global_entity_id:nk] / [federated.1r8isqd0qwepdv17f6bej09ojz5j].[none:lao_user_type:nk])</rows>
+        <cols>([federated.1r8isqd0qwepdv17f6bej09ojz5j].[yr:createddate:ok] / [federated.1r8isqd0qwepdv17f6bej09ojz5j].[mn:createddate:ok])</cols>
+      </table>
+      <simple-id uuid='{7A6E6EC1-E4BA-4064-99A3-46B6D561E91E}' />
+    </worksheet>
+  </worksheets>
+  <dashboards>
+    <dashboard _.fcp.AccessibleZoneTabOrder.true...enable-sort-zone-taborder='true' name='Average days of Ownerhip '>
+      <repository-location derived-from='https://tableau.deliveryhero.net/t/Foodora/workbooks/APAPACUserPipelineConversion_17282939210300/AveragedaysofOwnerhip?rev=' id='AveragedaysofOwnerhip' path='/t/Foodora/workbooks/APAPACUserPipelineConversion_17282939210300' revision='' site='Foodora' />
+      <style />
+      <size maxheight='768' maxwidth='1366' minheight='768' minwidth='1366' preset-index='0' sizing-mode='fixed' />
+      <datasources>
+        <datasource caption='Custom SQL Query (pandata_report)' name='federated.1r8isqd0qwepdv17f6bej09ojz5j' />
+      </datasources>
+      <datasource-dependencies datasource='federated.1r8isqd0qwepdv17f6bej09ojz5j'>
+        <column caption='User Type' datatype='string' name='[lao_user_type]' role='dimension' type='nominal' />
+        <column caption='Global Entity Id' datatype='string' name='[lead_global_entity_id]' role='dimension' type='nominal' />
+        <column datatype='string' name='[lead_source]' role='dimension' type='nominal' />
+        <column caption='opportunity_owner' datatype='string' name='[newvalue]' role='dimension' type='nominal' />
+        <column-instance column='[lao_user_type]' derivation='None' name='[none:lao_user_type:nk]' pivot='key' type='nominal' />
+        <column-instance column='[lead_global_entity_id]' derivation='None' name='[none:lead_global_entity_id:nk]' pivot='key' type='nominal' />
+        <column-instance column='[lead_source]' derivation='None' name='[none:lead_source:nk]' pivot='key' type='nominal' />
+        <column-instance column='[newvalue]' derivation='None' name='[none:newvalue:nk]' pivot='key' type='nominal' />
+        <column-instance column='[opp_stage_name]' derivation='None' name='[none:opp_stage_name:nk]' pivot='key' type='nominal' />
+        <column datatype='string' name='[opp_stage_name]' role='dimension' type='nominal' />
+      </datasource-dependencies>
+      <zones>
+        <zone h='100000' id='5' type-v2='layout-basic' w='100000' x='0' y='0'>
+          <zone h='97916' id='66' param='horz' type-v2='layout-flow' w='98828' x='586' y='1042'>
+            <zone h='97916' id='64' type-v2='layout-basic' w='98828' x='586' y='1042'>
+              <zone h='6771' id='49' param='horz' type-v2='layout-flow' w='98828' x='586' y='1042'>
+                <zone h='6771' id='47' type-v2='layout-basic' w='98828' x='586' y='1042'>
+                  <zone h='6771' id='35' param='horz' type-v2='layout-flow' w='98828' x='586' y='1042'>
+                    <zone h='6771' id='33' type-v2='layout-basic' w='98828' x='586' y='1042'>
+                      <zone h='6771' id='20' param='horz' type-v2='layout-flow' w='98828' x='586' y='1042'>
+                        <zone h='6771' id='18' type-v2='layout-basic' w='98828' x='586' y='1042'>
+                          <zone forceUpdate='true' h='6771' id='4' type-v2='text' w='12002' x='586' y='1042'>
+                            <formatted-text>
+                              <run fontalignment='1' fontcolor='#ffffff' fontname='Tableau Bold' fontsize='14'>Foodpanda</run>
+                            </formatted-text>
+                            <zone-style>
+                              <format attr='border-color' value='#000000' />
+                              <format attr='border-style' value='none' />
+                              <format attr='border-width' value='0' />
+                              <format attr='margin' value='4' />
+                              <format attr='background-color' value='#f54a93' />
+                            </zone-style>
+                          </zone>
+                          <zone forceUpdate='true' h='6771' id='3' type-v2='text' w='86826' x='12588' y='1042'>
+                            <formatted-text>
+                              <run fontalignment='1' fontcolor='#000000' fontname='Tableau Bold' fontsize='15'>Average Days of Ownership in Pipeline</run>
+                            </formatted-text>
+                            <zone-style>
+                              <format attr='border-color' value='#000000' />
+                              <format attr='border-style' value='none' />
+                              <format attr='border-width' value='0' />
+                              <format attr='margin' value='4' />
+                              <format attr='background-color' value='#f5f5f5' />
+                            </zone-style>
+                          </zone>
+                        </zone>
+                      </zone>
+                    </zone>
+                  </zone>
+                </zone>
+              </zone>
+              <zone h='91145' id='63' name='Avg_ownership_day ' show-title='false' w='86822' x='12592' y='7813'>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+              <zone fixed-size='160' h='82942' id='65' is-fixed='true' param='vert' type-v2='layout-flow' w='12006' x='586' y='16016'>
+                <zone h='16537' id='68' name='Avg_ownership_day ' param='[federated.1r8isqd0qwepdv17f6bej09ojz5j].[none:lead_source:nk]' type-v2='filter' w='12006' x='586' y='16016'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                  </zone-style>
+                </zone>
+                <zone h='6771' id='69' mode='checkdropdown' name='Avg_ownership_day ' param='[federated.1r8isqd0qwepdv17f6bej09ojz5j].[none:opp_stage_name:nk]' type-v2='filter' w='12006' x='586' y='32553'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                  </zone-style>
+                </zone>
+                <zone h='21485' id='70' name='Avg_ownership_day ' param='[federated.1r8isqd0qwepdv17f6bej09ojz5j].[none:lao_user_type:nk]' type-v2='filter' values='cascading' w='12006' x='586' y='39324'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                  </zone-style>
+                </zone>
+                <zone h='6771' id='82' mode='pattern' name='Avg_ownership_day ' param='[federated.1r8isqd0qwepdv17f6bej09ojz5j].[none:newvalue:nk]' type-v2='filter' values='cascading' w='12006' x='586' y='60809'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                  </zone-style>
+                </zone>
+                <zone fixed-size='58' h='8594' id='72' is-fixed='true' name='Avg_ownership_day ' pane-specification-id='0' param='[federated.1r8isqd0qwepdv17f6bej09ojz5j].[avg:days_of_ownership:qk]' type-v2='color' w='12006' x='586' y='67580'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                  </zone-style>
+                </zone>
+              </zone>
+              <zone h='8203' id='81' mode='checkdropdown' name='Avg_ownership_day ' param='[federated.1r8isqd0qwepdv17f6bej09ojz5j].[none:lead_global_entity_id:nk]' type-v2='filter' values='database' w='12006' x='586' y='7813'>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+            </zone>
+          </zone>
+          <zone-style>
+            <format attr='border-color' value='#000000' />
+            <format attr='border-style' value='none' />
+            <format attr='border-width' value='0' />
+            <format attr='margin' value='8' />
+          </zone-style>
+        </zone>
+      </zones>
+      <devicelayouts>
+        <devicelayout auto-generated='true' name='Phone'>
+          <size maxheight='800' minheight='800' sizing-mode='vscroll' />
+          <zones>
+            <zone h='100000' id='108' type-v2='layout-basic' w='100000' x='0' y='0'>
+              <zone h='84000' id='107' param='vert' type-v2='layout-flow' w='84000' x='8000' y='8000'>
+                <zone forceUpdate='true' h='6771' id='4' type-v2='text' w='12002' x='586' y='1042'>
+                  <formatted-text>
+                    <run fontalignment='1' fontcolor='#ffffff' fontname='Tableau Bold' fontsize='14'>Foodpanda</run>
+                  </formatted-text>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                    <format attr='background-color' value='#f54a93' />
+                  </zone-style>
+                </zone>
+                <zone forceUpdate='true' h='6771' id='3' type-v2='text' w='86826' x='12588' y='1042'>
+                  <formatted-text>
+                    <run fontalignment='1' fontcolor='#000000' fontname='Tableau Bold' fontsize='15'>Average Days of Ownership in Pipeline</run>
+                  </formatted-text>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                    <format attr='background-color' value='#f5f5f5' />
+                  </zone-style>
+                </zone>
+                <zone h='16537' id='68' mode='checkdropdown' name='Avg_ownership_day ' param='[federated.1r8isqd0qwepdv17f6bej09ojz5j].[none:lead_source:nk]' type-v2='filter' w='12006' x='586' y='16016'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone h='6771' id='69' mode='checkdropdown' name='Avg_ownership_day ' param='[federated.1r8isqd0qwepdv17f6bej09ojz5j].[none:opp_stage_name:nk]' type-v2='filter' w='12006' x='586' y='32553'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone h='21485' id='70' mode='checkdropdown' name='Avg_ownership_day ' param='[federated.1r8isqd0qwepdv17f6bej09ojz5j].[none:lao_user_type:nk]' type-v2='filter' values='cascading' w='12006' x='586' y='39324'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone h='6771' id='82' mode='pattern' name='Avg_ownership_day ' param='[federated.1r8isqd0qwepdv17f6bej09ojz5j].[none:newvalue:nk]' type-v2='filter' values='cascading' w='12006' x='586' y='60809'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone h='8203' id='81' mode='checkdropdown' name='Avg_ownership_day ' param='[federated.1r8isqd0qwepdv17f6bej09ojz5j].[none:lead_global_entity_id:nk]' type-v2='filter' values='database' w='12006' x='586' y='7813'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone fixed-size='280' h='91145' id='63' is-fixed='true' name='Avg_ownership_day ' show-title='false' w='86822' x='12592' y='7813'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone fixed-size='58' h='8594' id='72' name='Avg_ownership_day ' pane-specification-id='0' param='[federated.1r8isqd0qwepdv17f6bej09ojz5j].[avg:days_of_ownership:qk]' type-v2='color' w='12006' x='586' y='67580'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+              </zone>
+              <zone-style>
+                <format attr='border-color' value='#000000' />
+                <format attr='border-style' value='none' />
+                <format attr='border-width' value='0' />
+                <format attr='margin' value='8' />
+              </zone-style>
+            </zone>
+          </zones>
+        </devicelayout>
+      </devicelayouts>
+      <simple-id uuid='{DF4A5BCC-4887-4A73-B524-08A79FFE3A90}' />
+    </dashboard>
+    <dashboard _.fcp.AccessibleZoneTabOrder.true...enable-sort-zone-taborder='true' name='Data Quality '>
+      <repository-location derived-from='https://tableau.deliveryhero.net/t/Foodora/workbooks/APAPACUserPipelineConversion_17282939210300/DataQuality?rev=' id='DataQuality' path='/t/Foodora/workbooks/APAPACUserPipelineConversion_17282939210300' revision='' site='Foodora' />
+      <style />
+      <size maxheight='768' maxwidth='1366' minheight='768' minwidth='1366' preset-index='0' sizing-mode='fixed' />
+      <zones>
+        <zone h='100000' id='5' type-v2='layout-basic' w='100000' x='0' y='0'>
+          <zone forceUpdate='true' h='7161' id='4' type-v2='text' w='12006' x='586' y='1042'>
+            <formatted-text>
+              <run fontalignment='1' fontcolor='#ffffff' fontname='Tableau Bold' fontsize='14'>Foodpanda</run>
+            </formatted-text>
+            <zone-style>
+              <format attr='border-color' value='#000000' />
+              <format attr='border-style' value='none' />
+              <format attr='border-width' value='0' />
+              <format attr='margin' value='4' />
+              <format attr='background-color' value='#f54a93' />
+            </zone-style>
+          </zone>
+          <zone forceUpdate='true' h='7161' id='3' type-v2='text' w='86822' x='12592' y='1042'>
+            <formatted-text>
+              <run fontalignment='1' fontcolor='#000000' fontname='Tableau Bold' fontsize='15'>Data Quality</run>
+              <run fontalignment='1'>Æ&#10;</run>
+            </formatted-text>
+            <zone-style>
+              <format attr='border-color' value='#000000' />
+              <format attr='border-style' value='none' />
+              <format attr='border-width' value='0' />
+              <format attr='margin' value='4' />
+              <format attr='background-color' value='#f5f5f5' />
+            </zone-style>
+          </zone>
+          <zone h='90755' id='6' param='vert' type-v2='layout-flow' w='98828' x='586' y='8203' />
+          <zone-style>
+            <format attr='border-color' value='#000000' />
+            <format attr='border-style' value='none' />
+            <format attr='border-width' value='0' />
+            <format attr='margin' value='8' />
+          </zone-style>
+        </zone>
+      </zones>
+      <devicelayouts>
+        <devicelayout auto-generated='true' name='Phone'>
+          <size maxheight='700' minheight='700' sizing-mode='vscroll' />
+          <zones>
+            <zone h='100000' id='96' type-v2='layout-basic' w='100000' x='0' y='0'>
+              <zone h='84000' id='95' param='vert' type-v2='layout-flow' w='84000' x='8000' y='8000'>
+                <zone forceUpdate='true' h='7161' id='4' type-v2='text' w='12006' x='586' y='1042'>
+                  <formatted-text>
+                    <run fontalignment='1' fontcolor='#ffffff' fontname='Tableau Bold' fontsize='14'>Foodpanda</run>
+                  </formatted-text>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                    <format attr='background-color' value='#f54a93' />
+                  </zone-style>
+                </zone>
+                <zone forceUpdate='true' h='7161' id='3' type-v2='text' w='86822' x='12592' y='1042'>
+                  <formatted-text>
+                    <run fontalignment='1' fontcolor='#000000' fontname='Tableau Bold' fontsize='15'>Data Quality</run>
+                    <run fontalignment='1'>Æ&#10;</run>
+                  </formatted-text>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                    <format attr='background-color' value='#f5f5f5' />
+                  </zone-style>
+                </zone>
+              </zone>
+              <zone-style>
+                <format attr='border-color' value='#000000' />
+                <format attr='border-style' value='none' />
+                <format attr='border-width' value='0' />
+                <format attr='margin' value='8' />
+              </zone-style>
+            </zone>
+          </zones>
+        </devicelayout>
+      </devicelayouts>
+      <simple-id uuid='{D65F275F-1EE0-4C12-B4D7-DAAE04BA835E}' />
+    </dashboard>
+    <dashboard _.fcp.AccessibleZoneTabOrder.true...enable-sort-zone-taborder='true' name='Discription/ Metric Definitions'>
+      <repository-location derived-from='https://tableau.deliveryhero.net/t/Foodora/workbooks/APAPACUserPipelineConversion_17282939210300/DiscriptionMetricDefinitions?rev=' id='DiscriptionMetricDefinitions' path='/t/Foodora/workbooks/APAPACUserPipelineConversion_17282939210300' revision='' site='Foodora' />
+      <style>
+        <style-rule element='dash-text'>
+          <format attr='text-align' id='dash-text_7' value='left' />
+          <format attr='vertical-align' id='dash-text_7' value='center' />
+        </style-rule>
+      </style>
+      <size maxheight='768' maxwidth='1366' minheight='768' minwidth='1366' preset-index='0' sizing-mode='fixed' />
+      <zones>
+        <zone h='100000' id='5' type-v2='layout-basic' w='100000' x='0' y='0'>
+          <zone forceUpdate='true' h='7161' id='4' type-v2='text' w='12006' x='586' y='1042'>
+            <formatted-text>
+              <run fontalignment='1' fontcolor='#ffffff' fontname='Tableau Bold' fontsize='14'>Foodpanda</run>
+            </formatted-text>
+            <zone-style>
+              <format attr='border-color' value='#000000' />
+              <format attr='border-style' value='none' />
+              <format attr='border-width' value='0' />
+              <format attr='margin' value='4' />
+              <format attr='background-color' value='#f54a93' />
+            </zone-style>
+          </zone>
+          <zone forceUpdate='true' h='7161' id='3' type-v2='text' w='86822' x='12592' y='1042'>
+            <formatted-text>
+              <run fontalignment='1' fontcolor='#000000' fontname='Tableau Bold' fontsize='15'>Description/ Metrics Definitions </run>
+              <run fontalignment='1'>Æ&#10;</run>
+            </formatted-text>
+            <zone-style>
+              <format attr='border-color' value='#000000' />
+              <format attr='border-style' value='none' />
+              <format attr='border-width' value='0' />
+              <format attr='margin' value='4' />
+              <format attr='background-color' value='#f5f5f5' />
+            </zone-style>
+          </zone>
+          <zone h='90755' id='6' param='vert' type-v2='layout-flow' w='98828' x='586' y='8203'>
+            <zone fixed-size='657' forceUpdate='true' h='86589' id='7' is-fixed='true' type-v2='text' w='98828' x='586' y='8203'>
+              <formatted-text>
+                <run bold='true' fontcolor='#000000' fontsize='12'>Description: </run>
+                <run>Æ&#10;</run>
+                <run bold='true' fontcolor='#000000'>Dashboard - Average days of Ownership:  </run>
+                <run fontcolor='#000000'>illustrates the average days of ownership of a opportunity that a  user has taken over in the pipeline </run>
+                <run>Æ&#10;</run>
+                <run bold='true' fontcolor='#000000'>Dashboard - Distinct Count of Ownership: </run>
+                <run fontcolor='#000000'>illustrates the distinct count of opportunity that a user has processed in the pipeline </run>
+                <run>Æ&#10;&#10;&#10;</run>
+                <run bold='true' fontcolor='#000000' fontsize='12'>Metrics Definition: </run>
+                <run>Æ&#10;</run>
+                <run bold='true' fontcolor='#000000'>Days of ownerhsip: </run>
+                <run fontcolor='#000000'>represents how many days the current owner holds the opportunity before passing it to another user or until the opportunity is closed </run>
+                <run>Æ&#10;</run>
+                <run bold='true' fontcolor='#000000'>Avg. days of ownership: </run>
+                <run fontcolor='#000000'>the average of the sum of the time intervals between each ownership transfer, measured from the date of transfer from the previous owner to the current owner</run>
+                <run>Æ&#10;&#10;&#10;</run>
+                <run bold='true' fontcolor='#000000' underline='true'>Data only show:</run>
+                <run>Æ&#10;</run>
+                <run fontcolor='#000000'>lead created date on or after 2023-01-01; </run>
+                <run>Æ&#10;</run>
+                <run fontcolor='#000000'>leads created by id in &apos;0056900000AVz3YAAT&apos;, &apos;0056900000CRtp2AAD&apos;, &apos;0056900000BV0qnAAD&apos;, &apos;0056900000BUli5AAD&apos;, &apos;0056900000BSL0IAAX&apos;;</run>
+                <run>Æ&#10;</run>
+                <run fontcolor='#000000'>lead status: converted ;</run>
+                <run>Æ&#10;</run>
+                <run fontcolor='#000000'>business type in &apos;New Business&apos;, &apos;Win Back&apos;; </run>
+                <run>Æ&#10;</run>
+                <run fontcolor='#000000'>vertical: Restaurant</run>
+                <run>Æ&#10;</run>
+                <run fontcolor='#000000'>mark_for_testing_training__c: False </run>
+                <run>Æ&#10;</run>
+              </formatted-text>
+              <zone-style>
+                <format attr='border-color' value='#000000' />
+                <format attr='border-style' value='none' />
+                <format attr='border-width' value='0' />
+                <format attr='margin' value='4' />
+              </zone-style>
+            </zone>
+          </zone>
+          <zone-style>
+            <format attr='border-color' value='#000000' />
+            <format attr='border-style' value='none' />
+            <format attr='border-width' value='0' />
+            <format attr='margin' value='8' />
+          </zone-style>
+        </zone>
+      </zones>
+      <devicelayouts>
+        <devicelayout auto-generated='true' name='Phone'>
+          <size maxheight='700' minheight='700' sizing-mode='vscroll' />
+          <zones>
+            <zone h='100000' id='65' type-v2='layout-basic' w='100000' x='0' y='0'>
+              <zone h='97916' id='64' param='vert' type-v2='layout-flow' w='98828' x='586' y='1042'>
+                <zone forceUpdate='true' h='7161' id='4' type-v2='text' w='12006' x='586' y='1042'>
+                  <formatted-text>
+                    <run fontalignment='1' fontcolor='#ffffff' fontname='Tableau Bold' fontsize='14'>Foodpanda</run>
+                  </formatted-text>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                    <format attr='background-color' value='#f54a93' />
+                  </zone-style>
+                </zone>
+                <zone forceUpdate='true' h='7161' id='3' type-v2='text' w='86822' x='12592' y='1042'>
+                  <formatted-text>
+                    <run fontalignment='1' fontcolor='#000000' fontname='Tableau Bold' fontsize='15'>Description/ Metrics Definitions </run>
+                    <run fontalignment='1'>Æ&#10;</run>
+                  </formatted-text>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                    <format attr='background-color' value='#f5f5f5' />
+                  </zone-style>
+                </zone>
+                <zone fixed-size='657' forceUpdate='true' h='86589' id='7' type-v2='text' w='98828' x='586' y='8203'>
+                  <formatted-text>
+                    <run bold='true' fontcolor='#000000' fontsize='12'>Description: </run>
+                    <run>Æ&#10;</run>
+                    <run bold='true' fontcolor='#000000'>Dashboard - Average days of Ownership:  </run>
+                    <run fontcolor='#000000'>illustrates the average days of ownership of a opportunity that a  user has taken over in the pipeline </run>
+                    <run>Æ&#10;</run>
+                    <run bold='true' fontcolor='#000000'>Dashboard - Distinct Count of Ownership: </run>
+                    <run fontcolor='#000000'>illustrates the distinct count of opportunity that a user has processed in the pipeline </run>
+                    <run>Æ&#10;&#10;&#10;</run>
+                    <run bold='true' fontcolor='#000000' fontsize='12'>Metrics Definition: </run>
+                    <run>Æ&#10;</run>
+                    <run bold='true' fontcolor='#000000'>Days of ownerhsip: </run>
+                    <run fontcolor='#000000'>represents how many days the current owner holds the opportunity before passing it to another user or until the opportunity is closed </run>
+                    <run>Æ&#10;</run>
+                    <run bold='true' fontcolor='#000000'>Avg. days of ownership: </run>
+                    <run fontcolor='#000000'>the average of the sum of the time intervals between each ownership transfer, measured from the date of transfer from the previous owner to the current owner</run>
+                    <run>Æ&#10;&#10;&#10;</run>
+                    <run bold='true' fontcolor='#000000' underline='true'>Data only show:</run>
+                    <run>Æ&#10;</run>
+                    <run fontcolor='#000000'>lead created date on or after 2023-01-01; </run>
+                    <run>Æ&#10;</run>
+                    <run fontcolor='#000000'>leads created by id in &apos;0056900000AVz3YAAT&apos;, &apos;0056900000CRtp2AAD&apos;, &apos;0056900000BV0qnAAD&apos;, &apos;0056900000BUli5AAD&apos;, &apos;0056900000BSL0IAAX&apos;;</run>
+                    <run>Æ&#10;</run>
+                    <run fontcolor='#000000'>lead status: converted ;</run>
+                    <run>Æ&#10;</run>
+                    <run fontcolor='#000000'>business type in &apos;New Business&apos;, &apos;Win Back&apos;; </run>
+                    <run>Æ&#10;</run>
+                    <run fontcolor='#000000'>vertical: Restaurant</run>
+                    <run>Æ&#10;</run>
+                    <run fontcolor='#000000'>mark_for_testing_training__c: False </run>
+                    <run>Æ&#10;</run>
+                  </formatted-text>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+              </zone>
+              <zone-style>
+                <format attr='border-color' value='#000000' />
+                <format attr='border-style' value='none' />
+                <format attr='border-width' value='0' />
+                <format attr='margin' value='8' />
+              </zone-style>
+            </zone>
+          </zones>
+        </devicelayout>
+      </devicelayouts>
+      <simple-id uuid='{139A9946-0DFD-4B83-91C5-17C09851990A}' />
+    </dashboard>
+    <dashboard _.fcp.AccessibleZoneTabOrder.true...enable-sort-zone-taborder='true' name='Distinct Count of Ownership'>
+      <repository-location derived-from='https://tableau.deliveryhero.net/t/Foodora/workbooks/APAPACUserPipelineConversion_17282939210300/DistinctCountofOwnership?rev=' id='DistinctCountofOwnership' path='/t/Foodora/workbooks/APAPACUserPipelineConversion_17282939210300' revision='' site='Foodora' />
+      <style />
+      <size maxheight='768' maxwidth='1366' minheight='768' minwidth='1366' preset-index='0' sizing-mode='fixed' />
+      <datasources>
+        <datasource caption='Custom SQL Query (pandata_report)' name='federated.1r8isqd0qwepdv17f6bej09ojz5j' />
+      </datasources>
+      <datasource-dependencies datasource='federated.1r8isqd0qwepdv17f6bej09ojz5j'>
+        <column caption='User Type' datatype='string' name='[lao_user_type]' role='dimension' type='nominal' />
+        <column caption='Global Entity Id' datatype='string' name='[lead_global_entity_id]' role='dimension' type='nominal' />
+        <column datatype='string' name='[lead_source]' role='dimension' type='nominal' />
+        <column caption='opportunity_owner' datatype='string' name='[newvalue]' role='dimension' type='nominal' />
+        <column-instance column='[lao_user_type]' derivation='None' name='[none:lao_user_type:nk]' pivot='key' type='nominal' />
+        <column-instance column='[lead_global_entity_id]' derivation='None' name='[none:lead_global_entity_id:nk]' pivot='key' type='nominal' />
+        <column-instance column='[lead_source]' derivation='None' name='[none:lead_source:nk]' pivot='key' type='nominal' />
+        <column-instance column='[newvalue]' derivation='None' name='[none:newvalue:nk]' pivot='key' type='nominal' />
+        <column-instance column='[opp_stage_name]' derivation='None' name='[none:opp_stage_name:nk]' pivot='key' type='nominal' />
+        <column datatype='string' name='[opp_stage_name]' role='dimension' type='nominal' />
+      </datasource-dependencies>
+      <zones>
+        <zone h='100000' id='5' type-v2='layout-basic' w='100000' x='0' y='0'>
+          <zone h='97916' id='70' param='horz' type-v2='layout-flow' w='98828' x='586' y='1042'>
+            <zone h='97916' id='68' type-v2='layout-basic' w='98828' x='586' y='1042'>
+              <zone h='6771' id='66' param='horz' type-v2='layout-flow' w='98828' x='586' y='1042'>
+                <zone h='6771' id='64' type-v2='layout-basic' w='98828' x='586' y='1042'>
+                  <zone h='6771' id='49' param='horz' type-v2='layout-flow' w='98828' x='586' y='1042'>
+                    <zone h='6771' id='47' type-v2='layout-basic' w='98828' x='586' y='1042'>
+                      <zone h='6771' id='35' param='horz' type-v2='layout-flow' w='98828' x='586' y='1042'>
+                        <zone h='6771' id='33' type-v2='layout-basic' w='98828' x='586' y='1042'>
+                          <zone h='6771' id='20' param='horz' type-v2='layout-flow' w='98828' x='586' y='1042'>
+                            <zone h='6771' id='18' type-v2='layout-basic' w='98828' x='586' y='1042'>
+                              <zone forceUpdate='true' h='6771' id='4' type-v2='text' w='12001' x='586' y='1042'>
+                                <formatted-text>
+                                  <run fontalignment='1' fontcolor='#ffffff' fontname='Tableau Bold' fontsize='14'>Foodpanda</run>
+                                </formatted-text>
+                                <zone-style>
+                                  <format attr='border-color' value='#000000' />
+                                  <format attr='border-style' value='none' />
+                                  <format attr='border-width' value='0' />
+                                  <format attr='margin' value='4' />
+                                  <format attr='background-color' value='#f54a93' />
+                                </zone-style>
+                              </zone>
+                              <zone forceUpdate='true' h='6771' id='3' type-v2='text' w='86827' x='12587' y='1042'>
+                                <formatted-text>
+                                  <run fontalignment='1' fontcolor='#000000' fontname='Tableau Bold' fontsize='15'>Distinct Count of Ownership in Pipeline</run>
+                                  <run fontalignment='1'>Æ&#10;</run>
+                                </formatted-text>
+                                <zone-style>
+                                  <format attr='border-color' value='#000000' />
+                                  <format attr='border-style' value='none' />
+                                  <format attr='border-width' value='0' />
+                                  <format attr='margin' value='4' />
+                                  <format attr='background-color' value='#f5f5f5' />
+                                </zone-style>
+                              </zone>
+                            </zone>
+                          </zone>
+                        </zone>
+                      </zone>
+                    </zone>
+                  </zone>
+                </zone>
+              </zone>
+              <zone h='91145' id='67' name='Distinct Count ' show-title='false' w='86822' x='12592' y='7813'>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+              <zone fixed-size='160' h='91145' id='69' is-fixed='true' param='vert' type-v2='layout-flow' w='12006' x='586' y='7813'>
+                <zone fixed-size='57' h='8464' id='86' is-fixed='true' mode='checkdropdown' name='Distinct Count ' param='[federated.1r8isqd0qwepdv17f6bej09ojz5j].[none:lead_global_entity_id:nk]' type-v2='filter' values='database' w='12006' x='586' y='7813'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                  </zone-style>
+                </zone>
+                <zone h='16537' id='72' name='Distinct Count ' param='[federated.1r8isqd0qwepdv17f6bej09ojz5j].[none:lead_source:nk]' type-v2='filter' w='12006' x='586' y='16277'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                  </zone-style>
+                </zone>
+                <zone h='6771' id='73' mode='checkdropdown' name='Distinct Count ' param='[federated.1r8isqd0qwepdv17f6bej09ojz5j].[none:opp_stage_name:nk]' type-v2='filter' w='12006' x='586' y='32814'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                  </zone-style>
+                </zone>
+                <zone h='21485' id='74' name='Distinct Count ' param='[federated.1r8isqd0qwepdv17f6bej09ojz5j].[none:lao_user_type:nk]' type-v2='filter' values='cascading' w='12006' x='586' y='39585'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                  </zone-style>
+                </zone>
+                <zone h='6771' id='97' mode='pattern' name='Distinct Count ' param='[federated.1r8isqd0qwepdv17f6bej09ojz5j].[none:newvalue:nk]' type-v2='filter' values='cascading' w='12006' x='586' y='61070'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                  </zone-style>
+                </zone>
+                <zone h='8464' id='76' name='Distinct Count ' pane-specification-id='0' param='[federated.1r8isqd0qwepdv17f6bej09ojz5j].[ctd:opportunityid:qk]' type-v2='color' w='12006' x='586' y='67841'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                  </zone-style>
+                </zone>
+              </zone>
+            </zone>
+          </zone>
+          <zone-style>
+            <format attr='border-color' value='#000000' />
+            <format attr='border-style' value='none' />
+            <format attr='border-width' value='0' />
+            <format attr='margin' value='8' />
+          </zone-style>
+        </zone>
+      </zones>
+      <devicelayouts>
+        <devicelayout auto-generated='true' name='Phone'>
+          <size maxheight='800' minheight='800' sizing-mode='vscroll' />
+          <zones>
+            <zone h='100000' id='113' type-v2='layout-basic' w='100000' x='0' y='0'>
+              <zone h='97916' id='112' param='vert' type-v2='layout-flow' w='98828' x='586' y='1042'>
+                <zone forceUpdate='true' h='6771' id='4' type-v2='text' w='12001' x='586' y='1042'>
+                  <formatted-text>
+                    <run fontalignment='1' fontcolor='#ffffff' fontname='Tableau Bold' fontsize='14'>Foodpanda</run>
+                  </formatted-text>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                    <format attr='background-color' value='#f54a93' />
+                  </zone-style>
+                </zone>
+                <zone forceUpdate='true' h='6771' id='3' type-v2='text' w='86827' x='12587' y='1042'>
+                  <formatted-text>
+                    <run fontalignment='1' fontcolor='#000000' fontname='Tableau Bold' fontsize='15'>Distinct Count of Ownership in Pipeline</run>
+                    <run fontalignment='1'>Æ&#10;</run>
+                  </formatted-text>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                    <format attr='background-color' value='#f5f5f5' />
+                  </zone-style>
+                </zone>
+                <zone fixed-size='57' h='8464' id='86' mode='checkdropdown' name='Distinct Count ' param='[federated.1r8isqd0qwepdv17f6bej09ojz5j].[none:lead_global_entity_id:nk]' type-v2='filter' values='database' w='12006' x='586' y='7813'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone h='16537' id='72' mode='checkdropdown' name='Distinct Count ' param='[federated.1r8isqd0qwepdv17f6bej09ojz5j].[none:lead_source:nk]' type-v2='filter' w='12006' x='586' y='16277'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone h='6771' id='73' mode='checkdropdown' name='Distinct Count ' param='[federated.1r8isqd0qwepdv17f6bej09ojz5j].[none:opp_stage_name:nk]' type-v2='filter' w='12006' x='586' y='32814'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone h='21485' id='74' mode='checkdropdown' name='Distinct Count ' param='[federated.1r8isqd0qwepdv17f6bej09ojz5j].[none:lao_user_type:nk]' type-v2='filter' values='cascading' w='12006' x='586' y='39585'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone h='6771' id='97' mode='pattern' name='Distinct Count ' param='[federated.1r8isqd0qwepdv17f6bej09ojz5j].[none:newvalue:nk]' type-v2='filter' values='cascading' w='12006' x='586' y='61070'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone fixed-size='280' h='91145' id='67' is-fixed='true' name='Distinct Count ' show-title='false' w='86822' x='12592' y='7813'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone h='8464' id='76' name='Distinct Count ' pane-specification-id='0' param='[federated.1r8isqd0qwepdv17f6bej09ojz5j].[ctd:opportunityid:qk]' type-v2='color' w='12006' x='586' y='67841'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+              </zone>
+              <zone-style>
+                <format attr='border-color' value='#000000' />
+                <format attr='border-style' value='none' />
+                <format attr='border-width' value='0' />
+                <format attr='margin' value='8' />
+              </zone-style>
+            </zone>
+          </zones>
+        </devicelayout>
+      </devicelayouts>
+      <simple-id uuid='{2ED763C8-E5F4-47EA-BF72-D4BA96DF6480}' />
+    </dashboard>
+  </dashboards>
+  <windows source-height='30'>
+    <window class='dashboard' name='Discription/ Metric Definitions'>
+      <viewpoints />
+      <active id='7' />
+      <simple-id uuid='{1CF278CE-6323-4103-BF92-5EFEF771D835}' />
+    </window>
+    <window class='dashboard' name='Distinct Count of Ownership'>
+      <viewpoints>
+        <viewpoint name='Distinct Count ' />
+      </viewpoints>
+      <active id='67' />
+      <simple-id uuid='{0FE5C9F9-BAC3-4255-AD2A-9EB60654FD58}' />
+    </window>
+    <window class='dashboard' name='Average days of Ownerhip '>
+      <viewpoints>
+        <viewpoint name='Avg_ownership_day ' />
+      </viewpoints>
+      <active id='-1' />
+      <simple-id uuid='{38F507EF-DE8D-4445-B6B0-6296F8D0BD42}' />
+    </window>
+    <window class='worksheet' maximized='true' name='Distinct Count '>
+      <cards>
+        <edge name='left'>
+          <strip size='300'>
+            <card type='pages' />
+            <card type='filters' />
+            <card type='marks' />
+          </strip>
+        </edge>
+        <edge name='top'>
+          <strip size='2147483647'>
+            <card type='columns' />
+          </strip>
+          <strip size='2147483647'>
+            <card type='rows' />
+          </strip>
+          <strip size='31'>
+            <card type='title' />
+          </strip>
+        </edge>
+        <edge name='right'>
+          <strip size='160'>
+            <card mode='checkdropdown' param='[federated.1r8isqd0qwepdv17f6bej09ojz5j].[none:lead_global_entity_id:nk]' type='filter' />
+            <card param='[federated.1r8isqd0qwepdv17f6bej09ojz5j].[none:lead_source:nk]' type='filter' />
+            <card param='[federated.1r8isqd0qwepdv17f6bej09ojz5j].[none:lao_user_type:nk]' type='filter' values='cascading' />
+            <card mode='checkdropdown' param='[federated.1r8isqd0qwepdv17f6bej09ojz5j].[none:opp_stage_name:nk]' type='filter' />
+            <card mode='checkdropdown' param='[federated.1r8isqd0qwepdv17f6bej09ojz5j].[none:newvalue:nk]' type='filter' values='cascading' />
+            <card pane-specification-id='0' param='[federated.1r8isqd0qwepdv17f6bej09ojz5j].[ctd:opportunityid:qk]' type='color' />
+          </strip>
+        </edge>
+      </cards>
+      <viewpoint>
+        <highlight>
+          <color-one-way>
+            <field>[federated.1r8isqd0qwepdv17f6bej09ojz5j].[attr:next_change_date:ok]</field>
+            <field>[federated.1r8isqd0qwepdv17f6bej09ojz5j].[attr:opportunity_close_date:ok]</field>
+            <field>[federated.1r8isqd0qwepdv17f6bej09ojz5j].[ctd:days_of_ownership:qk]</field>
+            <field>[federated.1r8isqd0qwepdv17f6bej09ojz5j].[mn:ownership_change_date:ok]</field>
+            <field>[federated.1r8isqd0qwepdv17f6bej09ojz5j].[none:current_owner_full_name:nk]</field>
+            <field>[federated.1r8isqd0qwepdv17f6bej09ojz5j].[none:lao_user_type:nk]</field>
+            <field>[federated.1r8isqd0qwepdv17f6bej09ojz5j].[none:lead_global_entity_id:nk]</field>
+            <field>[federated.1r8isqd0qwepdv17f6bej09ojz5j].[none:lead_source:nk]</field>
+            <field>[federated.1r8isqd0qwepdv17f6bej09ojz5j].[none:newvalue:nk]</field>
+            <field>[federated.1r8isqd0qwepdv17f6bej09ojz5j].[none:opp_stage_name:nk]</field>
+            <field>[federated.1r8isqd0qwepdv17f6bej09ojz5j].[none:opportunityid:nk]</field>
+            <field>[federated.1r8isqd0qwepdv17f6bej09ojz5j].[none:ownership_global_entity_id:nk]</field>
+            <field>[federated.1r8isqd0qwepdv17f6bej09ojz5j].[none:sf_lead_id:nk]</field>
+            <field>[federated.1r8isqd0qwepdv17f6bej09ojz5j].[none:unique_owner:nk]</field>
+            <field>[federated.1r8isqd0qwepdv17f6bej09ojz5j].[none:user_type:nk]</field>
+            <field>[federated.1r8isqd0qwepdv17f6bej09ojz5j].[yr:createddate:ok]</field>
+            <field>[federated.1r8isqd0qwepdv17f6bej09ojz5j].[yr:next_change_date:ok]</field>
+            <field>[federated.1r8isqd0qwepdv17f6bej09ojz5j].[yr:opportunity_close_date:ok]</field>
+            <field>[federated.1r8isqd0qwepdv17f6bej09ojz5j].[yr:ownership_change_date:ok]</field>
+          </color-one-way>
+        </highlight>
+      </viewpoint>
+      <simple-id uuid='{F525C6DC-F25E-4853-8094-94C59B3ACA18}' />
+    </window>
+    <window class='worksheet' name='Avg_ownership_day '>
+      <cards>
+        <edge name='left'>
+          <strip size='300'>
+            <card type='pages' />
+            <card type='filters' />
+            <card type='marks' />
+          </strip>
+        </edge>
+        <edge name='top'>
+          <strip size='2147483647'>
+            <card type='columns' />
+          </strip>
+          <strip size='2147483647'>
+            <card type='rows' />
+          </strip>
+          <strip size='31'>
+            <card type='title' />
+          </strip>
+        </edge>
+        <edge name='right'>
+          <strip size='160'>
+            <card mode='checkdropdown' param='[federated.1r8isqd0qwepdv17f6bej09ojz5j].[none:lead_global_entity_id:nk]' type='filter' />
+            <card param='[federated.1r8isqd0qwepdv17f6bej09ojz5j].[none:lao_user_type:nk]' type='filter' values='cascading' />
+            <card param='[federated.1r8isqd0qwepdv17f6bej09ojz5j].[none:lead_source:nk]' type='filter' />
+            <card mode='checkdropdown' param='[federated.1r8isqd0qwepdv17f6bej09ojz5j].[none:opp_stage_name:nk]' type='filter' />
+            <card mode='pattern' param='[federated.1r8isqd0qwepdv17f6bej09ojz5j].[none:newvalue:nk]' type='filter' values='cascading' />
+            <card pane-specification-id='0' param='[federated.1r8isqd0qwepdv17f6bej09ojz5j].[avg:days_of_ownership:qk]' type='color' />
+          </strip>
+        </edge>
+      </cards>
+      <viewpoint>
+        <selection-collection>
+          <tuple-selection>
+            <tuple-reference>
+              <tuple-descriptor>
+                <pane-descriptor>
+                  <x-fields>
+                    <field>[federated.1r8isqd0qwepdv17f6bej09ojz5j].[yr:createddate:ok]</field>
+                    <field>[federated.1r8isqd0qwepdv17f6bej09ojz5j].[mn:createddate:ok]</field>
+                  </x-fields>
+                  <y-fields>
+                    <field>[federated.1r8isqd0qwepdv17f6bej09ojz5j].[none:lead_global_entity_id:nk]</field>
+                    <field>[federated.1r8isqd0qwepdv17f6bej09ojz5j].[none:lao_user_type:nk]</field>
+                  </y-fields>
+                </pane-descriptor>
+                <columns>
+                  <field>[federated.1r8isqd0qwepdv17f6bej09ojz5j].[avg:days_of_ownership:qk]</field>
+                  <field>[federated.1r8isqd0qwepdv17f6bej09ojz5j].[mn:createddate:ok]</field>
+                  <field>[federated.1r8isqd0qwepdv17f6bej09ojz5j].[none:lao_user_type:nk]</field>
+                  <field>[federated.1r8isqd0qwepdv17f6bej09ojz5j].[none:lead_global_entity_id:nk]</field>
+                  <field>[federated.1r8isqd0qwepdv17f6bej09ojz5j].[yr:createddate:ok]</field>
+                  <field>[federated.1r8isqd0qwepdv17f6bej09ojz5j].[attr:createddate:ok]</field>
+                  <field>[federated.1r8isqd0qwepdv17f6bej09ojz5j].[attr:next_created_date:ok]</field>
+                  <field>[federated.1r8isqd0qwepdv17f6bej09ojz5j].[attr:opp_closedate:ok]</field>
+                  <field>[federated.1r8isqd0qwepdv17f6bej09ojz5j].[attr:opportunityid:nk]</field>
+                </columns>
+              </tuple-descriptor>
+              <tuple>
+                <value>341.04411764705884</value>
+                <value>1</value>
+                <value>&quot;field rep&quot;</value>
+                <value>&quot;FP_BD&quot;</value>
+                <value>2023</value>
+                <value>%many-values%</value>
+                <value>%many-values%</value>
+                <value>%many-values%</value>
+                <value>%many-values%</value>
+              </tuple>
+            </tuple-reference>
+          </tuple-selection>
+        </selection-collection>
+        <highlight>
+          <color-one-way>
+            <field>[federated.1r8isqd0qwepdv17f6bej09ojz5j].[attr:next_change_date:ok]</field>
+            <field>[federated.1r8isqd0qwepdv17f6bej09ojz5j].[attr:opportunity_close_date:ok]</field>
+            <field>[federated.1r8isqd0qwepdv17f6bej09ojz5j].[avg:days_of_ownership:qk]</field>
+            <field>[federated.1r8isqd0qwepdv17f6bej09ojz5j].[dy:createddate:ok]</field>
+            <field>[federated.1r8isqd0qwepdv17f6bej09ojz5j].[mn:ownership_change_date:ok]</field>
+            <field>[federated.1r8isqd0qwepdv17f6bej09ojz5j].[none:current_owner_full_name:nk]</field>
+            <field>[federated.1r8isqd0qwepdv17f6bej09ojz5j].[none:lao_user_type:nk]</field>
+            <field>[federated.1r8isqd0qwepdv17f6bej09ojz5j].[none:lead_global_entity_id:nk]</field>
+            <field>[federated.1r8isqd0qwepdv17f6bej09ojz5j].[none:lead_source:nk]</field>
+            <field>[federated.1r8isqd0qwepdv17f6bej09ojz5j].[none:newvalue:nk]</field>
+            <field>[federated.1r8isqd0qwepdv17f6bej09ojz5j].[none:opp_stage_name:nk]</field>
+            <field>[federated.1r8isqd0qwepdv17f6bej09ojz5j].[none:opportunityid:nk]</field>
+            <field>[federated.1r8isqd0qwepdv17f6bej09ojz5j].[none:ownership_global_entity_id:nk]</field>
+            <field>[federated.1r8isqd0qwepdv17f6bej09ojz5j].[none:sf_lead_id:nk]</field>
+            <field>[federated.1r8isqd0qwepdv17f6bej09ojz5j].[none:unique_owner:nk]</field>
+            <field>[federated.1r8isqd0qwepdv17f6bej09ojz5j].[none:user_type:nk]</field>
+            <field>[federated.1r8isqd0qwepdv17f6bej09ojz5j].[qr:createddate:ok]</field>
+            <field>[federated.1r8isqd0qwepdv17f6bej09ojz5j].[yr:next_change_date:ok]</field>
+            <field>[federated.1r8isqd0qwepdv17f6bej09ojz5j].[yr:next_created_date:ok]</field>
+            <field>[federated.1r8isqd0qwepdv17f6bej09ojz5j].[yr:opp_closedate:ok]</field>
+            <field>[federated.1r8isqd0qwepdv17f6bej09ojz5j].[yr:opportunity_close_date:ok]</field>
+            <field>[federated.1r8isqd0qwepdv17f6bej09ojz5j].[yr:ownership_change_date:ok]</field>
+          </color-one-way>
+        </highlight>
+      </viewpoint>
+      <simple-id uuid='{80111380-0160-4631-88C5-45A01C55E469}' />
+    </window>
+    <window class='dashboard' name='Data Quality '>
+      <viewpoints />
+      <active id='-1' />
+      <simple-id uuid='{4E3AD04E-AA92-4489-83F0-399B32CF78CE}' />
+    </window>
+  </windows>
+</workbook>
