@@ -1,0 +1,2515 @@
+<?xml version='1.0' encoding='utf-8' ?>
+
+<!-- build 20221.22.1108.1355                               -->
+<workbook original-version='18.1' source-build='2022.4.0 (20224.22.1117.1841)' source-platform='mac' version='18.1' xml:base='https://tableau.deliveryhero.net' xmlns:user='http://www.tableausoftware.com/xml/user'>
+  <document-format-change-manifest>
+    <_.fcp.AccessibleZoneTabOrder.true...AccessibleZoneTabOrder />
+    <_.fcp.AnimationOnByDefault.true...AnimationOnByDefault />
+    <AutoCreateAndUpdateDSDPhoneLayouts />
+    <Hyper_NormalizedExtracts />
+    <_.fcp.Layers.true...Layers />
+    <MapboxVectorStylesAndLayers />
+    <_.fcp.MarkAnimation.true...MarkAnimation />
+    <_.fcp.ObjectModelEncapsulateLegacy.true...ObjectModelEncapsulateLegacy />
+    <_.fcp.ObjectModelExtractV2.true...ObjectModelExtractV2 />
+    <_.fcp.ObjectModelTableType.true...ObjectModelTableType />
+    <_.fcp.SchemaViewerObjectModel.true...SchemaViewerObjectModel />
+    <SetMembershipControl />
+    <SheetIdentifierTracking />
+    <WindowsPersistSimpleIdentifiers />
+    <ZoneBackgroundTransparency />
+  </document-format-change-manifest>
+  <repository-location derived-from='https://tableau.deliveryhero.net/t/GlobalStandardReporting/workbooks/Alshaya_HS_SA_deep_dive?rev=1.0' id='Alshaya_HS_SA_deep_dive' path='/t/GlobalStandardReporting/workbooks' revision='1.1' site='GlobalStandardReporting' />
+  <preferences>
+    <preference name='ui.encoding.shelf.height' value='24' />
+    <preference name='ui.shelf.height' value='26' />
+  </preferences>
+  <_.fcp.AnimationOnByDefault.false...style>
+    <_.fcp.AnimationOnByDefault.false..._.fcp.MarkAnimation.true...style-rule element='animation'>
+      <_.fcp.AnimationOnByDefault.false...format attr='animation-on' value='ao-on' />
+    </_.fcp.AnimationOnByDefault.false..._.fcp.MarkAnimation.true...style-rule>
+  </_.fcp.AnimationOnByDefault.false...style>
+  <datasources>
+    <datasource hasconnection='false' inline='true' name='Parameters' version='18.1'>
+      <aliases enabled='yes' />
+      <column caption='distance' datatype='real' name='[Parameter 1]' param-domain-type='any' role='measure' type='quantitative' value='5000.'>
+        <calculation class='tableau' formula='5000.' />
+      </column>
+    </datasource>
+    <datasource caption='Custom SQL Query (gfs_bi)' inline='true' name='federated.0zmzvxs1m5jly913i00b01fm8pnh' version='18.1'>
+      <connection class='federated'>
+        <named-connections>
+          <named-connection caption='BigQuery' name='bigquery.1ahfbfq1dybynt1fga5wl03g0uyz'>
+            <connection CATALOG='gfs-tech' EXECCATALOG='gfs-tech' authentication='oauth' bq-dataset-fetch-rows='' bq-fetch-rows='' bq-fetch-tasks='' bq-large-fetch-rows='' bq-project-fetch-rows='' bq-response-rows='' class='bigquery' connection-dialect='google-sql' project='gfs-tech' schema='gfs_bi' server-oauth='' username='burak.guler@deliveryhero.com' workgroup-auth-mode='prompt' />
+          </named-connection>
+          <named-connection caption='BigQuery (2)' name='bigquery.0l5muq6095wteb18pvsn81ae504r'>
+            <connection CATALOG='fulfillment-dwh-production' EXECCATALOG='gfs-data-reporting' authentication='oauth' bq-dataset-fetch-rows='' bq-fetch-rows='' bq-fetch-tasks='' bq-large-fetch-rows='' bq-project-fetch-rows='' bq-response-rows='' class='bigquery' connection-dialect='google-sql' project='fulfillment-dwh-production' schema='rl_gfs' server-oauth='' username='burak.guler@deliveryhero.com' workgroup-auth-mode='prompt' />
+          </named-connection>
+        </named-connections>
+        <_.fcp.ObjectModelEncapsulateLegacy.false...relation join='inner' type='join'>
+          <clause type='join'>
+            <expression op='='>
+              <expression op='[Custom SQL Query].[global_entity_id]' />
+              <expression op='[tableau_user_entitlement].[global_entity_id]' />
+            </expression>
+          </clause>
+          <relation connection='bigquery.1ahfbfq1dybynt1fga5wl03g0uyz' name='Custom SQL Query' type='text'><![CDATA[WITH logo AS (
+  SELECT
+          entity.id    global_entity_id,
+          vendor_code  vendor_id,
+          order_code order_id,
+           (SELECT MAX(delivery.delivery_distance)
+           FROM UNNEST(rider.deliveries) delivery
+           WHERE delivery.is_primary) delivery_distance,
+          SUM(CASE WHEN is_preorder IS FALSE THEN TIMESTAMP_DIFF(o.vendor.picked_up_at, o.vendor.sending_to_vendor_at, MINUTE) -- as received_by_vendor is unavailable, sending to vendor is used as replacement
+          END) AS prep_time_tb,
+          COUNT(CASE WHEN is_rider_order AND ROUND((SELECT MAX(delivery.timings.vendor_late)
+                                                  FROM UNNEST(rider.deliveries) delivery
+                                                  WHERE delivery.is_primary)/60, 0) >> 5 THEN order_code END) as vendor_late_5_min_count,
+          --Removed delivery time, cause accepted_by_vendor_at is often NULL, for our vendors always NULLs
+          --SUM(ROUND(CASE WHEN is_rider_order AND NOT is_preorder THEN
+           -- DATE_DIFF(COALESCE(o.vendor.near_dropoff_at, o.vendor.delivered_at),COALESCE(o.vendor.accepted_by_vendor_at, o.vendor.implicitly_accepted_by_vendor_at), minute)
+           -- END,0)) AS actual_delivery_time
+        FROM `fulfillment-dwh-production.curated_data_shared.orders_v2` o
+        JOIN gfs-tech.gfs_bi.ksa_alshaya_vendor_facility_distance v ON v.vendor_id = o.vendor_code AND v.global_entity_id = o.entity.id
+        WHERE o.vendor.cancelled_at IS NULL AND entity.id IN ('HS_SA', 'TB_KW', 'TB_AE', 'TB_QA', 'TB_BH') AND o.created_date >>= '2023-05-01'-- AND v.facility_distance/1000 <<= 5
+        GROUP BY 1, 2, 3, 4
+),
+
+availability AS (
+SELECT
+        entity_id AS global_entity_id,
+        vendor_code AS vendor_id,
+        created_date,
+        SUM(ac.slot.offline_seconds/60) AS offline_minutes,
+        AVG(ac.slot.schedule_seconds/60) AS schedule_minutes
+      FROM `fulfillment-dwh-production.curated_data_shared.vendor_availability_connectivity` ac
+      WHERE created_date >>= '2023-05-01' AND entity_id IN ('HS_SA', 'TB_KW', 'TB_AE', 'TB_QA', 'TB_BH')
+      GROUP BY 1, 2, 3
+)
+, pre AS (
+SELECT
+base.global_entity_id,
+base.vendor_id,
+location_name,
+distance_km, 
+COUNT(distinct base.vendor_id) AS vendor_count,
+SUM(successful_orders) AS successful_orders,
+SUM(prep_time_tb_count) AS prep_time_tb_count,
+SUM(prep_time_tb_sum) AS prep_time_tb_sum,
+SUM(delivery_distance_count) AS delivery_distance_count,
+SUM(delivery_distance_sum) AS delivery_distance_sum,
+SUM(vendor_late_5_min_count) AS vendor_late_5_min_count,
+SUM(failed_orders_vendor) AS failed_orders_vendor,
+SUM(total_orders) AS total_orders,
+SUM(a.offline_minutes) AS offline_minutes,
+SUM(a.schedule_minutes) AS schedule_minutes
+FROM
+(SELECT
+o.global_entity_id,
+o.vendor_id,
+v.location_name,
+CASE WHEN v.facility_distance/1000 << 2 THEN 'below 2 km'
+     WHEN v.facility_distance/1000 BETWEEN 2 AND 3 THEN '2-3km'
+     WHEN v.facility_distance/1000 BETWEEN 3 AND 4 THEN '3-4km'
+     WHEN v.facility_distance/1000 BETWEEN 4 AND 5 THEN '4-5km'
+     ELSE '>> 5km'
+     END AS distance_km,
+DATE(o.placed_at_local) AS report_date,
+COUNT(distinct CASE WHEN o.is_sent THEN o.order_id END) AS successful_orders,
+COUNT(logo.prep_time_tb) AS prep_time_tb_count,
+SUM(logo.prep_time_tb) AS prep_time_tb_sum,
+--COUNT(logo.actual_delivery_time) AS actual_delivery_time_min_count,
+--SUM(logo.actual_delivery_time) AS actual_delivery_time_min_sum,
+COUNT(delivery_distance) AS delivery_distance_count,
+SUM(delivery_distance) AS delivery_distance_sum,
+SUM(logo.vendor_late_5_min_count) AS vendor_late_5_min_count,
+COUNT(DISTINCT CASE WHEN o.failure_owner = "VENDOR" THEN o.order_id END) AS failed_orders_vendor,
+COUNT(DISTINCT o.order_id) AS total_orders,
+--AVG(CASE WHEN 1 - IFNULL(a.offline_minutes, 0)/a.schedule_minutes = 0
+  --  THEN NULL ELSE a.offline_minutes END) AS offline_minutes,
+--AVG(CASE WHEN 1 - IFNULL(a.offline_minutes, 0)/ a.schedule_minutes = 0
+      --THEN NULL ELSE a.schedule_minutes END) AS schedule_minutes
+FROM `fulfillment-dwh-production.curated_data_shared_central_dwh.orders` o
+JOIN gfs-tech.gfs_bi.ksa_alshaya_vendor_facility_distance v ON v.vendor_id = o.vendor_id AND v.global_entity_id = o.global_entity_id
+LEFT JOIN logo ON logo.global_entity_id=o.global_entity_id AND o.order_id=logo.order_id
+--LEFT JOIN availability a ON o.global_entity_id = a.global_entity_id AND o.vendor_id = a.vendor_id AND DATE(o.placed_at_local) = a.created_date
+WHERE o.global_entity_id IN('HS_SA', 'TB_KW', 'TB_AE', 'TB_QA', 'TB_BH') AND DATE(o.placed_at_local) >>= '2023-05-01' --AND v.facility_distance/1000 <<= 5
+GROUP BY 1,2,3,4, 5) base
+LEFT JOIN availability a ON base.vendor_id = a.vendor_id AND base.report_date = a.created_date
+GROUP BY 1,2,3, 4
+)
+SELECT * FROM pre JOIN gfs-tech.gfs_bi.ksa_alshaya_vendor_facility_distance f using (global_entity_id, vendor_id, location_name)]]></relation>
+          <relation connection='bigquery.0l5muq6095wteb18pvsn81ae504r' name='tableau_user_entitlement' table='[fulfillment-dwh-production.rl_gfs].[tableau_user_entitlement]' type='table' />
+        </_.fcp.ObjectModelEncapsulateLegacy.false...relation>
+        <_.fcp.ObjectModelEncapsulateLegacy.true...relation join='inner' type='join'>
+          <clause type='join'>
+            <expression op='='>
+              <expression op='[Custom SQL Query].[global_entity_id]' />
+              <expression op='[tableau_user_entitlement].[global_entity_id]' />
+            </expression>
+          </clause>
+          <relation connection='bigquery.1ahfbfq1dybynt1fga5wl03g0uyz' name='Custom SQL Query' type='text'><![CDATA[WITH logo AS (
+  SELECT
+          entity.id    global_entity_id,
+          vendor_code  vendor_id,
+          order_code order_id,
+           (SELECT MAX(delivery.delivery_distance)
+           FROM UNNEST(rider.deliveries) delivery
+           WHERE delivery.is_primary) delivery_distance,
+          SUM(CASE WHEN is_preorder IS FALSE THEN TIMESTAMP_DIFF(o.vendor.picked_up_at, o.vendor.sending_to_vendor_at, MINUTE) -- as received_by_vendor is unavailable, sending to vendor is used as replacement
+          END) AS prep_time_tb,
+          COUNT(CASE WHEN is_rider_order AND ROUND((SELECT MAX(delivery.timings.vendor_late)
+                                                  FROM UNNEST(rider.deliveries) delivery
+                                                  WHERE delivery.is_primary)/60, 0) >> 5 THEN order_code END) as vendor_late_5_min_count,
+          --Removed delivery time, cause accepted_by_vendor_at is often NULL, for our vendors always NULLs
+          --SUM(ROUND(CASE WHEN is_rider_order AND NOT is_preorder THEN
+           -- DATE_DIFF(COALESCE(o.vendor.near_dropoff_at, o.vendor.delivered_at),COALESCE(o.vendor.accepted_by_vendor_at, o.vendor.implicitly_accepted_by_vendor_at), minute)
+           -- END,0)) AS actual_delivery_time
+        FROM `fulfillment-dwh-production.curated_data_shared.orders_v2` o
+        JOIN gfs-tech.gfs_bi.ksa_alshaya_vendor_facility_distance v ON v.vendor_id = o.vendor_code AND v.global_entity_id = o.entity.id
+        WHERE o.vendor.cancelled_at IS NULL AND entity.id IN ('HS_SA', 'TB_KW', 'TB_AE', 'TB_QA', 'TB_BH') AND o.created_date >>= '2023-05-01'-- AND v.facility_distance/1000 <<= 5
+        GROUP BY 1, 2, 3, 4
+),
+
+availability AS (
+SELECT
+        entity_id AS global_entity_id,
+        vendor_code AS vendor_id,
+        created_date,
+        SUM(ac.slot.offline_seconds/60) AS offline_minutes,
+        AVG(ac.slot.schedule_seconds/60) AS schedule_minutes
+      FROM `fulfillment-dwh-production.curated_data_shared.vendor_availability_connectivity` ac
+      WHERE created_date >>= '2023-05-01' AND entity_id IN ('HS_SA', 'TB_KW', 'TB_AE', 'TB_QA', 'TB_BH')
+      GROUP BY 1, 2, 3
+)
+, pre AS (
+SELECT
+base.global_entity_id,
+base.vendor_id,
+location_name,
+distance_km, 
+COUNT(distinct base.vendor_id) AS vendor_count,
+SUM(successful_orders) AS successful_orders,
+SUM(prep_time_tb_count) AS prep_time_tb_count,
+SUM(prep_time_tb_sum) AS prep_time_tb_sum,
+SUM(delivery_distance_count) AS delivery_distance_count,
+SUM(delivery_distance_sum) AS delivery_distance_sum,
+SUM(vendor_late_5_min_count) AS vendor_late_5_min_count,
+SUM(failed_orders_vendor) AS failed_orders_vendor,
+SUM(total_orders) AS total_orders,
+SUM(a.offline_minutes) AS offline_minutes,
+SUM(a.schedule_minutes) AS schedule_minutes
+FROM
+(SELECT
+o.global_entity_id,
+o.vendor_id,
+v.location_name,
+CASE WHEN v.facility_distance/1000 << 2 THEN 'below 2 km'
+     WHEN v.facility_distance/1000 BETWEEN 2 AND 3 THEN '2-3km'
+     WHEN v.facility_distance/1000 BETWEEN 3 AND 4 THEN '3-4km'
+     WHEN v.facility_distance/1000 BETWEEN 4 AND 5 THEN '4-5km'
+     ELSE '>> 5km'
+     END AS distance_km,
+DATE(o.placed_at_local) AS report_date,
+COUNT(distinct CASE WHEN o.is_sent THEN o.order_id END) AS successful_orders,
+COUNT(logo.prep_time_tb) AS prep_time_tb_count,
+SUM(logo.prep_time_tb) AS prep_time_tb_sum,
+--COUNT(logo.actual_delivery_time) AS actual_delivery_time_min_count,
+--SUM(logo.actual_delivery_time) AS actual_delivery_time_min_sum,
+COUNT(delivery_distance) AS delivery_distance_count,
+SUM(delivery_distance) AS delivery_distance_sum,
+SUM(logo.vendor_late_5_min_count) AS vendor_late_5_min_count,
+COUNT(DISTINCT CASE WHEN o.failure_owner = "VENDOR" THEN o.order_id END) AS failed_orders_vendor,
+COUNT(DISTINCT o.order_id) AS total_orders,
+--AVG(CASE WHEN 1 - IFNULL(a.offline_minutes, 0)/a.schedule_minutes = 0
+  --  THEN NULL ELSE a.offline_minutes END) AS offline_minutes,
+--AVG(CASE WHEN 1 - IFNULL(a.offline_minutes, 0)/ a.schedule_minutes = 0
+      --THEN NULL ELSE a.schedule_minutes END) AS schedule_minutes
+FROM `fulfillment-dwh-production.curated_data_shared_central_dwh.orders` o
+JOIN gfs-tech.gfs_bi.ksa_alshaya_vendor_facility_distance v ON v.vendor_id = o.vendor_id AND v.global_entity_id = o.global_entity_id
+LEFT JOIN logo ON logo.global_entity_id=o.global_entity_id AND o.order_id=logo.order_id
+--LEFT JOIN availability a ON o.global_entity_id = a.global_entity_id AND o.vendor_id = a.vendor_id AND DATE(o.placed_at_local) = a.created_date
+WHERE o.global_entity_id IN('HS_SA', 'TB_KW', 'TB_AE', 'TB_QA', 'TB_BH') AND DATE(o.placed_at_local) >>= '2023-05-01' --AND v.facility_distance/1000 <<= 5
+GROUP BY 1,2,3,4, 5) base
+LEFT JOIN availability a ON base.vendor_id = a.vendor_id AND base.report_date = a.created_date
+GROUP BY 1,2,3, 4
+)
+SELECT * FROM pre JOIN gfs-tech.gfs_bi.ksa_alshaya_vendor_facility_distance f using (global_entity_id, vendor_id, location_name)]]></relation>
+          <relation connection='bigquery.0l5muq6095wteb18pvsn81ae504r' name='tableau_user_entitlement' table='[fulfillment-dwh-production.rl_gfs].[tableau_user_entitlement]' type='table' />
+        </_.fcp.ObjectModelEncapsulateLegacy.true...relation>
+        <cols>
+          <map key='[brand]' value='[Custom SQL Query].[brand]' />
+          <map key='[delivery_distance_count]' value='[Custom SQL Query].[delivery_distance_count]' />
+          <map key='[delivery_distance_sum]' value='[Custom SQL Query].[delivery_distance_sum]' />
+          <map key='[distance_km]' value='[Custom SQL Query].[distance_km]' />
+          <map key='[f_latitude]' value='[Custom SQL Query].[f_latitude]' />
+          <map key='[f_longitude]' value='[Custom SQL Query].[f_longitude]' />
+          <map key='[facility_distance]' value='[Custom SQL Query].[facility_distance]' />
+          <map key='[failed_orders_vendor]' value='[Custom SQL Query].[failed_orders_vendor]' />
+          <map key='[global_entity_id (tableau_user_entitlement)]' value='[tableau_user_entitlement].[global_entity_id]' />
+          <map key='[global_entity_id]' value='[Custom SQL Query].[global_entity_id]' />
+          <map key='[location_name]' value='[Custom SQL Query].[location_name]' />
+          <map key='[location_status]' value='[Custom SQL Query].[location_status]' />
+          <map key='[offline_minutes]' value='[Custom SQL Query].[offline_minutes]' />
+          <map key='[orders]' value='[Custom SQL Query].[orders]' />
+          <map key='[prep_time_tb_count]' value='[Custom SQL Query].[prep_time_tb_count]' />
+          <map key='[prep_time_tb_sum]' value='[Custom SQL Query].[prep_time_tb_sum]' />
+          <map key='[rn]' value='[Custom SQL Query].[rn]' />
+          <map key='[schedule_minutes]' value='[Custom SQL Query].[schedule_minutes]' />
+          <map key='[successful_orders]' value='[Custom SQL Query].[successful_orders]' />
+          <map key='[total_orders]' value='[Custom SQL Query].[total_orders]' />
+          <map key='[username]' value='[tableau_user_entitlement].[username]' />
+          <map key='[v_latitude]' value='[Custom SQL Query].[v_latitude]' />
+          <map key='[v_longitude]' value='[Custom SQL Query].[v_longitude]' />
+          <map key='[vendor_count]' value='[Custom SQL Query].[vendor_count]' />
+          <map key='[vendor_id]' value='[Custom SQL Query].[vendor_id]' />
+          <map key='[vendor_late_5_min_count]' value='[Custom SQL Query].[vendor_late_5_min_count]' />
+        </cols>
+        <metadata-records>
+          <metadata-record class='column'>
+            <remote-name>global_entity_id</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[global_entity_id]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>global_entity_id</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_3D9696AA087544A1BA43AA42CBCFB2DB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>vendor_id</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[vendor_id]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>vendor_id</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_3D9696AA087544A1BA43AA42CBCFB2DB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>location_name</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[location_name]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>location_name</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_3D9696AA087544A1BA43AA42CBCFB2DB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>distance_km</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[distance_km]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>distance_km</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_3D9696AA087544A1BA43AA42CBCFB2DB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>vendor_count</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[vendor_count]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>vendor_count</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_3D9696AA087544A1BA43AA42CBCFB2DB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>successful_orders</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[successful_orders]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>successful_orders</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_3D9696AA087544A1BA43AA42CBCFB2DB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>prep_time_tb_count</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[prep_time_tb_count]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>prep_time_tb_count</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_3D9696AA087544A1BA43AA42CBCFB2DB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>prep_time_tb_sum</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[prep_time_tb_sum]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>prep_time_tb_sum</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_3D9696AA087544A1BA43AA42CBCFB2DB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>delivery_distance_count</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[delivery_distance_count]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>delivery_distance_count</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_3D9696AA087544A1BA43AA42CBCFB2DB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>delivery_distance_sum</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[delivery_distance_sum]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>delivery_distance_sum</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_3D9696AA087544A1BA43AA42CBCFB2DB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>vendor_late_5_min_count</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[vendor_late_5_min_count]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>vendor_late_5_min_count</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_3D9696AA087544A1BA43AA42CBCFB2DB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>failed_orders_vendor</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[failed_orders_vendor]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>failed_orders_vendor</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_3D9696AA087544A1BA43AA42CBCFB2DB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>total_orders</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[total_orders]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>total_orders</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_3D9696AA087544A1BA43AA42CBCFB2DB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>offline_minutes</remote-name>
+            <remote-type>5</remote-type>
+            <local-name>[offline_minutes]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>offline_minutes</remote-alias>
+            <local-type>real</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_3D9696AA087544A1BA43AA42CBCFB2DB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>schedule_minutes</remote-name>
+            <remote-type>5</remote-type>
+            <local-name>[schedule_minutes]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>schedule_minutes</remote-alias>
+            <local-type>real</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_3D9696AA087544A1BA43AA42CBCFB2DB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>brand</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[brand]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>brand</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_3D9696AA087544A1BA43AA42CBCFB2DB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>v_latitude</remote-name>
+            <remote-type>5</remote-type>
+            <local-name>[v_latitude]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>v_latitude</remote-alias>
+            <local-type>real</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_3D9696AA087544A1BA43AA42CBCFB2DB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>v_longitude</remote-name>
+            <remote-type>5</remote-type>
+            <local-name>[v_longitude]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>v_longitude</remote-alias>
+            <local-type>real</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_3D9696AA087544A1BA43AA42CBCFB2DB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>orders</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[orders]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>orders</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_3D9696AA087544A1BA43AA42CBCFB2DB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>location_status</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[location_status]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>location_status</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_3D9696AA087544A1BA43AA42CBCFB2DB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>f_latitude</remote-name>
+            <remote-type>5</remote-type>
+            <local-name>[f_latitude]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>f_latitude</remote-alias>
+            <local-type>real</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_3D9696AA087544A1BA43AA42CBCFB2DB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>f_longitude</remote-name>
+            <remote-type>5</remote-type>
+            <local-name>[f_longitude]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>f_longitude</remote-alias>
+            <local-type>real</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_3D9696AA087544A1BA43AA42CBCFB2DB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>facility_distance</remote-name>
+            <remote-type>5</remote-type>
+            <local-name>[facility_distance]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>facility_distance</remote-alias>
+            <local-type>real</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_3D9696AA087544A1BA43AA42CBCFB2DB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>rn</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[rn]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>rn</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_3D9696AA087544A1BA43AA42CBCFB2DB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>username</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[username]</local-name>
+            <parent-name>[tableau_user_entitlement]</parent-name>
+            <remote-alias>username</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_3D9696AA087544A1BA43AA42CBCFB2DB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>global_entity_id</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[global_entity_id (tableau_user_entitlement)]</local-name>
+            <parent-name>[tableau_user_entitlement]</parent-name>
+            <remote-alias>global_entity_id</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_3D9696AA087544A1BA43AA42CBCFB2DB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+        </metadata-records>
+      </connection>
+      <aliases enabled='yes' />
+      <column caption='Entitlement' datatype='boolean' name='[Calculation_1499487597472423936]' role='dimension' type='nominal'>
+        <calculation class='tableau' formula='[username] = USERNAME()' />
+      </column>
+      <column caption='Facility Point' datatype='spatial' name='[Calculation_841047258189598724]' role='measure' type='nominal'>
+        <calculation class='tableau' formula='MAKEPOINT([f_latitude], [f_longitude])' />
+      </column>
+      <column caption='Vendor Point' datatype='spatial' name='[Calculation_841047258189856773]' role='measure' type='nominal'>
+        <calculation class='tableau' formula='MAKEPOINT([v_latitude], [v_longitude])' />
+      </column>
+      <column caption='AVG Prep' datatype='real' name='[Calculation_841047258190594054]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='[prep_time_tb_sum]/ [prep_time_tb_count]' />
+      </column>
+      <column caption='Fail Rate' datatype='real' name='[Calculation_841047258192064519]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='[failed_orders_vendor]/ [successful_orders]' />
+      </column>
+      <column caption='Vendor Late 5 min Rate' datatype='real' name='[Calculation_841047258192650248]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='[vendor_late_5_min_count]/ [successful_orders]' />
+      </column>
+      <_.fcp.ObjectModelTableType.true...column caption='Custom SQL Query' datatype='table' name='[__tableau_internal_object_id__].[_3D9696AA087544A1BA43AA42CBCFB2DB]' role='measure' type='quantitative' />
+      <column aggregation='Avg' datatype='real' name='[f_latitude]' role='measure' semantic-role='[Geographical].[Latitude]' type='quantitative' />
+      <column aggregation='Avg' datatype='real' name='[f_longitude]' role='measure' semantic-role='[Geographical].[Longitude]' type='quantitative' />
+      <column caption='Global Entity Id (Tableau User Entitlement)' datatype='string' name='[global_entity_id (tableau_user_entitlement)]' role='dimension' type='nominal' />
+      <column caption='Username' datatype='string' name='[username]' role='dimension' type='nominal' />
+      <column aggregation='Avg' datatype='real' name='[v_latitude]' role='measure' semantic-role='[Geographical].[Latitude]' type='quantitative' />
+      <column aggregation='Avg' datatype='real' name='[v_longitude]' role='measure' semantic-role='[Geographical].[Longitude]' type='quantitative' />
+      <column-instance column='[f_latitude]' derivation='Avg' name='[avg:f_latitude:qk]' pivot='key' type='quantitative' />
+      <column-instance column='[f_longitude]' derivation='Avg' name='[avg:f_longitude:qk]' pivot='key' type='quantitative' />
+      <column-instance column='[v_latitude]' derivation='Avg' name='[avg:v_latitude:qk]' pivot='key' type='quantitative' />
+      <column-instance column='[Calculation_1499487597472423936]' derivation='None' name='[none:Calculation_1499487597472423936:nk]' pivot='key' type='nominal' />
+      <extract _.fcp.ObjectModelExtractV2.true...object-id='' count='-1' enabled='true' type='normalized' units='records'>
+        <connection class='hyper' dbname='extract/15/93/{F58C1BA7-4CD2-43E6-AFCF-9076B392AD9F}/federated_0zmzvxs1m5jly913i00b01.hyper' default-settings='yes' extract-engine='true' schema='Extract' tablename='Extract' update-time='06/06/2023 12:12:57 PM'>
+          <_.fcp.ObjectModelEncapsulateLegacy.false...relation join='inner' type='join'>
+            <clause type='join'>
+              <expression op='='>
+                <expression op='[Custom SQL Query].[global_entity_id]' />
+                <expression op='[tableau_user_entitlement].[global_entity_id]' />
+              </expression>
+            </clause>
+            <relation name='Custom SQL Query' table='[Extract].[Custom SQL Query]' type='table' />
+            <relation name='tableau_user_entitlement' table='[Extract].[tableau_user_entitlement]' type='table' />
+          </_.fcp.ObjectModelEncapsulateLegacy.false...relation>
+          <_.fcp.ObjectModelEncapsulateLegacy.true...relation join='inner' type='join'>
+            <clause type='join'>
+              <expression op='='>
+                <expression op='[Custom SQL Query].[global_entity_id]' />
+                <expression op='[tableau_user_entitlement].[global_entity_id]' />
+              </expression>
+            </clause>
+            <relation name='Custom SQL Query' table='[Extract].[Custom SQL Query]' type='table' />
+            <relation name='tableau_user_entitlement' table='[Extract].[tableau_user_entitlement]' type='table' />
+          </_.fcp.ObjectModelEncapsulateLegacy.true...relation>
+          <cols>
+            <map key='[brand]' value='[Custom SQL Query].[brand]' />
+            <map key='[delivery_distance_count]' value='[Custom SQL Query].[delivery_distance_count]' />
+            <map key='[delivery_distance_sum]' value='[Custom SQL Query].[delivery_distance_sum]' />
+            <map key='[distance_km]' value='[Custom SQL Query].[distance_km]' />
+            <map key='[f_latitude]' value='[Custom SQL Query].[f_latitude]' />
+            <map key='[f_longitude]' value='[Custom SQL Query].[f_longitude]' />
+            <map key='[facility_distance]' value='[Custom SQL Query].[facility_distance]' />
+            <map key='[failed_orders_vendor]' value='[Custom SQL Query].[failed_orders_vendor]' />
+            <map key='[global_entity_id (tableau_user_entitlement)]' value='[tableau_user_entitlement].[global_entity_id]' />
+            <map key='[global_entity_id]' value='[Custom SQL Query].[global_entity_id]' />
+            <map key='[location_name]' value='[Custom SQL Query].[location_name]' />
+            <map key='[location_status]' value='[Custom SQL Query].[location_status]' />
+            <map key='[offline_minutes]' value='[Custom SQL Query].[offline_minutes]' />
+            <map key='[orders]' value='[Custom SQL Query].[orders]' />
+            <map key='[prep_time_tb_count]' value='[Custom SQL Query].[prep_time_tb_count]' />
+            <map key='[prep_time_tb_sum]' value='[Custom SQL Query].[prep_time_tb_sum]' />
+            <map key='[rn]' value='[Custom SQL Query].[rn]' />
+            <map key='[schedule_minutes]' value='[Custom SQL Query].[schedule_minutes]' />
+            <map key='[successful_orders]' value='[Custom SQL Query].[successful_orders]' />
+            <map key='[total_orders]' value='[Custom SQL Query].[total_orders]' />
+            <map key='[username]' value='[tableau_user_entitlement].[username]' />
+            <map key='[v_latitude]' value='[Custom SQL Query].[v_latitude]' />
+            <map key='[v_longitude]' value='[Custom SQL Query].[v_longitude]' />
+            <map key='[vendor_count]' value='[Custom SQL Query].[vendor_count]' />
+            <map key='[vendor_id]' value='[Custom SQL Query].[vendor_id]' />
+            <map key='[vendor_late_5_min_count]' value='[Custom SQL Query].[vendor_late_5_min_count]' />
+          </cols>
+          <refresh>
+            <refresh-event add-from-file-path='Custom SQL Query (gfs_bi)' increment-value='%null%' refresh-type='create' rows-inserted='27172' timestamp-start='2023-06-06 12:12:44.786' />
+          </refresh>
+          <metadata-records>
+            <metadata-record class='column'>
+              <remote-name>global_entity_id</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[global_entity_id]</local-name>
+              <parent-name>[Custom SQL Query]</parent-name>
+              <remote-alias>global_entity_id</remote-alias>
+              <ordinal>0</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>5</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='binary' />
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_3D9696AA087544A1BA43AA42CBCFB2DB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>vendor_id</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[vendor_id]</local-name>
+              <parent-name>[Custom SQL Query]</parent-name>
+              <remote-alias>vendor_id</remote-alias>
+              <ordinal>1</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>107</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='binary' />
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_3D9696AA087544A1BA43AA42CBCFB2DB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>location_name</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[location_name]</local-name>
+              <parent-name>[Custom SQL Query]</parent-name>
+              <remote-alias>location_name</remote-alias>
+              <ordinal>2</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>33</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='binary' />
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_3D9696AA087544A1BA43AA42CBCFB2DB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>distance_km</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[distance_km]</local-name>
+              <parent-name>[Custom SQL Query]</parent-name>
+              <remote-alias>distance_km</remote-alias>
+              <ordinal>3</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>5</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='binary' />
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_3D9696AA087544A1BA43AA42CBCFB2DB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>vendor_count</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[vendor_count]</local-name>
+              <parent-name>[Custom SQL Query]</parent-name>
+              <remote-alias>vendor_count</remote-alias>
+              <ordinal>4</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>1</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_3D9696AA087544A1BA43AA42CBCFB2DB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>successful_orders</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[successful_orders]</local-name>
+              <parent-name>[Custom SQL Query]</parent-name>
+              <remote-alias>successful_orders</remote-alias>
+              <ordinal>5</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>106</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_3D9696AA087544A1BA43AA42CBCFB2DB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>prep_time_tb_count</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[prep_time_tb_count]</local-name>
+              <parent-name>[Custom SQL Query]</parent-name>
+              <remote-alias>prep_time_tb_count</remote-alias>
+              <ordinal>6</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>105</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_3D9696AA087544A1BA43AA42CBCFB2DB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>prep_time_tb_sum</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[prep_time_tb_sum]</local-name>
+              <parent-name>[Custom SQL Query]</parent-name>
+              <remote-alias>prep_time_tb_sum</remote-alias>
+              <ordinal>7</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>107</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_3D9696AA087544A1BA43AA42CBCFB2DB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>delivery_distance_count</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[delivery_distance_count]</local-name>
+              <parent-name>[Custom SQL Query]</parent-name>
+              <remote-alias>delivery_distance_count</remote-alias>
+              <ordinal>8</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>105</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_3D9696AA087544A1BA43AA42CBCFB2DB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>delivery_distance_sum</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[delivery_distance_sum]</local-name>
+              <parent-name>[Custom SQL Query]</parent-name>
+              <remote-alias>delivery_distance_sum</remote-alias>
+              <ordinal>9</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>107</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_3D9696AA087544A1BA43AA42CBCFB2DB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>vendor_late_5_min_count</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[vendor_late_5_min_count]</local-name>
+              <parent-name>[Custom SQL Query]</parent-name>
+              <remote-alias>vendor_late_5_min_count</remote-alias>
+              <ordinal>10</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>104</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_3D9696AA087544A1BA43AA42CBCFB2DB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>failed_orders_vendor</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[failed_orders_vendor]</local-name>
+              <parent-name>[Custom SQL Query]</parent-name>
+              <remote-alias>failed_orders_vendor</remote-alias>
+              <ordinal>11</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>23</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_3D9696AA087544A1BA43AA42CBCFB2DB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>total_orders</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[total_orders]</local-name>
+              <parent-name>[Custom SQL Query]</parent-name>
+              <remote-alias>total_orders</remote-alias>
+              <ordinal>12</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>106</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_3D9696AA087544A1BA43AA42CBCFB2DB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>offline_minutes</remote-name>
+              <remote-type>5</remote-type>
+              <local-name>[offline_minutes]</local-name>
+              <parent-name>[Custom SQL Query]</parent-name>
+              <remote-alias>offline_minutes</remote-alias>
+              <ordinal>13</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>real</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>85</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_3D9696AA087544A1BA43AA42CBCFB2DB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>schedule_minutes</remote-name>
+              <remote-type>5</remote-type>
+              <local-name>[schedule_minutes]</local-name>
+              <parent-name>[Custom SQL Query]</parent-name>
+              <remote-alias>schedule_minutes</remote-alias>
+              <ordinal>14</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>real</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>64</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_3D9696AA087544A1BA43AA42CBCFB2DB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>brand</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[brand]</local-name>
+              <parent-name>[Custom SQL Query]</parent-name>
+              <remote-alias>brand</remote-alias>
+              <ordinal>15</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>3</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='binary' />
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_3D9696AA087544A1BA43AA42CBCFB2DB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>v_latitude</remote-name>
+              <remote-type>5</remote-type>
+              <local-name>[v_latitude]</local-name>
+              <parent-name>[Custom SQL Query]</parent-name>
+              <remote-alias>v_latitude</remote-alias>
+              <ordinal>16</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>real</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>103</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_3D9696AA087544A1BA43AA42CBCFB2DB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>v_longitude</remote-name>
+              <remote-type>5</remote-type>
+              <local-name>[v_longitude]</local-name>
+              <parent-name>[Custom SQL Query]</parent-name>
+              <remote-alias>v_longitude</remote-alias>
+              <ordinal>17</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>real</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>103</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_3D9696AA087544A1BA43AA42CBCFB2DB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>orders</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[orders]</local-name>
+              <parent-name>[Custom SQL Query]</parent-name>
+              <remote-alias>orders</remote-alias>
+              <ordinal>18</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>106</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_3D9696AA087544A1BA43AA42CBCFB2DB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>location_status</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[location_status]</local-name>
+              <parent-name>[Custom SQL Query]</parent-name>
+              <remote-alias>location_status</remote-alias>
+              <ordinal>19</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>4</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='binary' />
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_3D9696AA087544A1BA43AA42CBCFB2DB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>f_latitude</remote-name>
+              <remote-type>5</remote-type>
+              <local-name>[f_latitude]</local-name>
+              <parent-name>[Custom SQL Query]</parent-name>
+              <remote-alias>f_latitude</remote-alias>
+              <ordinal>20</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>real</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>33</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_3D9696AA087544A1BA43AA42CBCFB2DB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>f_longitude</remote-name>
+              <remote-type>5</remote-type>
+              <local-name>[f_longitude]</local-name>
+              <parent-name>[Custom SQL Query]</parent-name>
+              <remote-alias>f_longitude</remote-alias>
+              <ordinal>21</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>real</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>33</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_3D9696AA087544A1BA43AA42CBCFB2DB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>facility_distance</remote-name>
+              <remote-type>5</remote-type>
+              <local-name>[facility_distance]</local-name>
+              <parent-name>[Custom SQL Query]</parent-name>
+              <remote-alias>facility_distance</remote-alias>
+              <ordinal>22</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>real</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>103</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_3D9696AA087544A1BA43AA42CBCFB2DB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>rn</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[rn]</local-name>
+              <parent-name>[Custom SQL Query]</parent-name>
+              <remote-alias>rn</remote-alias>
+              <ordinal>23</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>1</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_3D9696AA087544A1BA43AA42CBCFB2DB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>username</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[username]</local-name>
+              <parent-name>[tableau_user_entitlement]</parent-name>
+              <remote-alias>username</remote-alias>
+              <ordinal>24</ordinal>
+              <family>tableau_user_entitlement</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>1176</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='binary' />
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_3D9696AA087544A1BA43AA42CBCFB2DB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>global_entity_id</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[global_entity_id (tableau_user_entitlement)]</local-name>
+              <parent-name>[tableau_user_entitlement]</parent-name>
+              <remote-alias>global_entity_id</remote-alias>
+              <ordinal>25</ordinal>
+              <family>tableau_user_entitlement</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>59</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='binary' />
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_3D9696AA087544A1BA43AA42CBCFB2DB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+          </metadata-records>
+        </connection>
+      </extract>
+      <layout _.fcp.SchemaViewerObjectModel.false...dim-percentage='0.5' _.fcp.SchemaViewerObjectModel.false...measure-percentage='0.4' dim-ordering='alphabetic' measure-ordering='alphabetic' show-structure='true' />
+      <style>
+        <style-rule element='mark'>
+          <encoding attr='color' field='[:Measure Names]' type='palette'>
+            <map to='#3ca8bc'>
+              <bucket>&quot;[federated.0zmzvxs1m5jly913i00b01fm8pnh]&quot;</bucket>
+            </map>
+            <map to='#4e79a7'>
+              <bucket>&quot;[federated.0zmzvxs1m5jly913i00b01fm8pnh].[avg:f_latitude:qk]&quot;</bucket>
+            </map>
+            <map to='#e15759'>
+              <bucket>&quot;[federated.0zmzvxs1m5jly913i00b01fm8pnh].[avg:f_longitude:qk]&quot;</bucket>
+            </map>
+            <map to='#f28e2b'>
+              <bucket>&quot;[federated.0zmzvxs1m5jly913i00b01fm8pnh].[avg:v_latitude:qk]&quot;</bucket>
+            </map>
+          </encoding>
+        </style-rule>
+      </style>
+      <semantic-values>
+        <semantic-value key='[Country].[Name]' value='&quot;United States&quot;' />
+      </semantic-values>
+      <date-options start-of-week='monday' />
+      <field-sort-info field-sort-order-type='custom-order'>
+        <field-sort-custom-order field='global_entity_id' />
+        <field-sort-custom-order field='vendor_id' />
+        <field-sort-custom-order field='location_name' />
+        <field-sort-custom-order field='distance_km' />
+        <field-sort-custom-order field='vendor_count' />
+        <field-sort-custom-order field='successful_orders' />
+        <field-sort-custom-order field='prep_time_tb_count' />
+        <field-sort-custom-order field='Calculation_841047258190594054' />
+        <field-sort-custom-order field='prep_time_tb_sum' />
+        <field-sort-custom-order field='delivery_distance_count' />
+        <field-sort-custom-order field='delivery_distance_sum' />
+        <field-sort-custom-order field='vendor_late_5_min_count' />
+        <field-sort-custom-order field='Calculation_841047258192650248' />
+        <field-sort-custom-order field='failed_orders_vendor' />
+        <field-sort-custom-order field='Calculation_841047258192064519' />
+        <field-sort-custom-order field='total_orders' />
+        <field-sort-custom-order field='offline_minutes' />
+        <field-sort-custom-order field='schedule_minutes' />
+        <field-sort-custom-order field='v_latitude' />
+        <field-sort-custom-order field='Calculation_841047258189856773' />
+        <field-sort-custom-order field='v_longitude' />
+        <field-sort-custom-order field='orders' />
+        <field-sort-custom-order field='location_status' />
+        <field-sort-custom-order field='f_latitude' />
+        <field-sort-custom-order field='Calculation_841047258189598724' />
+        <field-sort-custom-order field='f_longitude' />
+        <field-sort-custom-order field='facility_distance' />
+        <field-sort-custom-order field='rn' />
+      </field-sort-info>
+      <filter class='categorical' column='[none:Calculation_1499487597472423936:nk]' filter-group='2'>
+        <groupfilter function='member' level='[none:Calculation_1499487597472423936:nk]' member='true' user:ui-domain='relevant' user:ui-enumeration='inclusive' user:ui-marker='enumerate' />
+      </filter>
+      <_.fcp.ObjectModelEncapsulateLegacy.true...object-graph>
+        <objects>
+          <object caption='Custom SQL Query' id='_3D9696AA087544A1BA43AA42CBCFB2DB'>
+            <properties context=''>
+              <relation join='inner' type='join'>
+                <clause type='join'>
+                  <expression op='='>
+                    <expression op='[Custom SQL Query].[global_entity_id]' />
+                    <expression op='[tableau_user_entitlement].[global_entity_id]' />
+                  </expression>
+                </clause>
+                <relation connection='bigquery.1ahfbfq1dybynt1fga5wl03g0uyz' name='Custom SQL Query' type='text'><![CDATA[WITH logo AS (
+  SELECT
+          entity.id    global_entity_id,
+          vendor_code  vendor_id,
+          order_code order_id,
+           (SELECT MAX(delivery.delivery_distance)
+           FROM UNNEST(rider.deliveries) delivery
+           WHERE delivery.is_primary) delivery_distance,
+          SUM(CASE WHEN is_preorder IS FALSE THEN TIMESTAMP_DIFF(o.vendor.picked_up_at, o.vendor.sending_to_vendor_at, MINUTE) -- as received_by_vendor is unavailable, sending to vendor is used as replacement
+          END) AS prep_time_tb,
+          COUNT(CASE WHEN is_rider_order AND ROUND((SELECT MAX(delivery.timings.vendor_late)
+                                                  FROM UNNEST(rider.deliveries) delivery
+                                                  WHERE delivery.is_primary)/60, 0) >> 5 THEN order_code END) as vendor_late_5_min_count,
+          --Removed delivery time, cause accepted_by_vendor_at is often NULL, for our vendors always NULLs
+          --SUM(ROUND(CASE WHEN is_rider_order AND NOT is_preorder THEN
+           -- DATE_DIFF(COALESCE(o.vendor.near_dropoff_at, o.vendor.delivered_at),COALESCE(o.vendor.accepted_by_vendor_at, o.vendor.implicitly_accepted_by_vendor_at), minute)
+           -- END,0)) AS actual_delivery_time
+        FROM `fulfillment-dwh-production.curated_data_shared.orders_v2` o
+        JOIN gfs-tech.gfs_bi.ksa_alshaya_vendor_facility_distance v ON v.vendor_id = o.vendor_code AND v.global_entity_id = o.entity.id
+        WHERE o.vendor.cancelled_at IS NULL AND entity.id IN ('HS_SA', 'TB_KW', 'TB_AE', 'TB_QA', 'TB_BH') AND o.created_date >>= '2023-05-01'-- AND v.facility_distance/1000 <<= 5
+        GROUP BY 1, 2, 3, 4
+),
+
+availability AS (
+SELECT
+        entity_id AS global_entity_id,
+        vendor_code AS vendor_id,
+        created_date,
+        SUM(ac.slot.offline_seconds/60) AS offline_minutes,
+        AVG(ac.slot.schedule_seconds/60) AS schedule_minutes
+      FROM `fulfillment-dwh-production.curated_data_shared.vendor_availability_connectivity` ac
+      WHERE created_date >>= '2023-05-01' AND entity_id IN ('HS_SA', 'TB_KW', 'TB_AE', 'TB_QA', 'TB_BH')
+      GROUP BY 1, 2, 3
+)
+, pre AS (
+SELECT
+base.global_entity_id,
+base.vendor_id,
+location_name,
+distance_km, 
+COUNT(distinct base.vendor_id) AS vendor_count,
+SUM(successful_orders) AS successful_orders,
+SUM(prep_time_tb_count) AS prep_time_tb_count,
+SUM(prep_time_tb_sum) AS prep_time_tb_sum,
+SUM(delivery_distance_count) AS delivery_distance_count,
+SUM(delivery_distance_sum) AS delivery_distance_sum,
+SUM(vendor_late_5_min_count) AS vendor_late_5_min_count,
+SUM(failed_orders_vendor) AS failed_orders_vendor,
+SUM(total_orders) AS total_orders,
+SUM(a.offline_minutes) AS offline_minutes,
+SUM(a.schedule_minutes) AS schedule_minutes
+FROM
+(SELECT
+o.global_entity_id,
+o.vendor_id,
+v.location_name,
+CASE WHEN v.facility_distance/1000 << 2 THEN 'below 2 km'
+     WHEN v.facility_distance/1000 BETWEEN 2 AND 3 THEN '2-3km'
+     WHEN v.facility_distance/1000 BETWEEN 3 AND 4 THEN '3-4km'
+     WHEN v.facility_distance/1000 BETWEEN 4 AND 5 THEN '4-5km'
+     ELSE '>> 5km'
+     END AS distance_km,
+DATE(o.placed_at_local) AS report_date,
+COUNT(distinct CASE WHEN o.is_sent THEN o.order_id END) AS successful_orders,
+COUNT(logo.prep_time_tb) AS prep_time_tb_count,
+SUM(logo.prep_time_tb) AS prep_time_tb_sum,
+--COUNT(logo.actual_delivery_time) AS actual_delivery_time_min_count,
+--SUM(logo.actual_delivery_time) AS actual_delivery_time_min_sum,
+COUNT(delivery_distance) AS delivery_distance_count,
+SUM(delivery_distance) AS delivery_distance_sum,
+SUM(logo.vendor_late_5_min_count) AS vendor_late_5_min_count,
+COUNT(DISTINCT CASE WHEN o.failure_owner = "VENDOR" THEN o.order_id END) AS failed_orders_vendor,
+COUNT(DISTINCT o.order_id) AS total_orders,
+--AVG(CASE WHEN 1 - IFNULL(a.offline_minutes, 0)/a.schedule_minutes = 0
+  --  THEN NULL ELSE a.offline_minutes END) AS offline_minutes,
+--AVG(CASE WHEN 1 - IFNULL(a.offline_minutes, 0)/ a.schedule_minutes = 0
+      --THEN NULL ELSE a.schedule_minutes END) AS schedule_minutes
+FROM `fulfillment-dwh-production.curated_data_shared_central_dwh.orders` o
+JOIN gfs-tech.gfs_bi.ksa_alshaya_vendor_facility_distance v ON v.vendor_id = o.vendor_id AND v.global_entity_id = o.global_entity_id
+LEFT JOIN logo ON logo.global_entity_id=o.global_entity_id AND o.order_id=logo.order_id
+--LEFT JOIN availability a ON o.global_entity_id = a.global_entity_id AND o.vendor_id = a.vendor_id AND DATE(o.placed_at_local) = a.created_date
+WHERE o.global_entity_id IN('HS_SA', 'TB_KW', 'TB_AE', 'TB_QA', 'TB_BH') AND DATE(o.placed_at_local) >>= '2023-05-01' --AND v.facility_distance/1000 <<= 5
+GROUP BY 1,2,3,4, 5) base
+LEFT JOIN availability a ON base.vendor_id = a.vendor_id AND base.report_date = a.created_date
+GROUP BY 1,2,3, 4
+)
+SELECT * FROM pre JOIN gfs-tech.gfs_bi.ksa_alshaya_vendor_facility_distance f using (global_entity_id, vendor_id, location_name)]]></relation>
+                <relation connection='bigquery.0l5muq6095wteb18pvsn81ae504r' name='tableau_user_entitlement' table='[fulfillment-dwh-production.rl_gfs].[tableau_user_entitlement]' type='table' />
+              </relation>
+            </properties>
+            <properties context='extract'>
+              <relation join='inner' type='join'>
+                <clause type='join'>
+                  <expression op='='>
+                    <expression op='[Custom SQL Query].[global_entity_id]' />
+                    <expression op='[tableau_user_entitlement].[global_entity_id]' />
+                  </expression>
+                </clause>
+                <relation name='Custom SQL Query' table='[Extract].[Custom SQL Query]' type='table' />
+                <relation name='tableau_user_entitlement' table='[Extract].[tableau_user_entitlement]' type='table' />
+              </relation>
+            </properties>
+          </object>
+        </objects>
+      </_.fcp.ObjectModelEncapsulateLegacy.true...object-graph>
+    </datasource>
+  </datasources>
+  <mapsources>
+    <mapsource name='Tableau' />
+  </mapsources>
+  <shared-views>
+    <shared-view name='federated.0zmzvxs1m5jly913i00b01fm8pnh'>
+      <datasources>
+        <datasource caption='Custom SQL Query (gfs_bi)' name='federated.0zmzvxs1m5jly913i00b01fm8pnh' />
+      </datasources>
+      <datasource-dependencies datasource='federated.0zmzvxs1m5jly913i00b01fm8pnh'>
+        <column datatype='string' name='[brand]' role='dimension' type='nominal' />
+        <column datatype='string' name='[global_entity_id]' role='dimension' type='nominal' />
+        <column-instance column='[brand]' derivation='None' name='[none:brand:nk]' pivot='key' type='nominal' />
+        <column-instance column='[global_entity_id]' derivation='None' name='[none:global_entity_id:nk]' pivot='key' type='nominal' />
+      </datasource-dependencies>
+      <filter class='categorical' column='[federated.0zmzvxs1m5jly913i00b01fm8pnh].[none:brand:nk]'>
+        <groupfilter function='member' level='[none:brand:nk]' member='&quot;Shake Shack&quot;' user:ui-domain='database' user:ui-enumeration='inclusive' user:ui-marker='enumerate' />
+        <target field='[federated.0zmzvxs1m5jly913i00b01fm8pnh].[none:brand:nk]' />
+      </filter>
+      <filter class='categorical' column='[federated.0zmzvxs1m5jly913i00b01fm8pnh].[none:global_entity_id:nk]'>
+        <groupfilter function='member' level='[none:global_entity_id:nk]' member='&quot;TB_AE&quot;' user:ui-domain='database' user:ui-enumeration='inclusive' user:ui-marker='enumerate' />
+        <target field='[federated.0zmzvxs1m5jly913i00b01fm8pnh].[none:global_entity_id:nk]' />
+      </filter>
+    </shared-view>
+  </shared-views>
+  <worksheets>
+    <worksheet name='Fail Rate'>
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='Custom SQL Query (gfs_bi)' name='federated.0zmzvxs1m5jly913i00b01fm8pnh' />
+          </datasources>
+          <mapsources>
+            <mapsource name='Tableau' />
+          </mapsources>
+          <datasource-dependencies datasource='federated.0zmzvxs1m5jly913i00b01fm8pnh'>
+            <column caption='Facility Point' datatype='spatial' name='[Calculation_841047258189598724]' role='measure' type='nominal'>
+              <calculation class='tableau' formula='MAKEPOINT([f_latitude], [f_longitude])' />
+            </column>
+            <column caption='Vendor Point' datatype='spatial' name='[Calculation_841047258189856773]' role='measure' type='nominal'>
+              <calculation class='tableau' formula='MAKEPOINT([v_latitude], [v_longitude])' />
+            </column>
+            <column caption='Fail Rate' datatype='real' name='[Calculation_841047258192064519]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='[failed_orders_vendor]/ [successful_orders]' />
+            </column>
+            <column datatype='string' name='[brand]' role='dimension' type='nominal' />
+            <column-instance column='[Calculation_841047258189598724]' derivation='Collect' name='[clct:Calculation_841047258189598724:nk]' pivot='key' type='nominal' />
+            <column-instance column='[Calculation_841047258189856773]' derivation='Collect' name='[clct:Calculation_841047258189856773:nk]' pivot='key' type='nominal' />
+            <column aggregation='Avg' datatype='real' name='[f_latitude]' role='measure' semantic-role='[Geographical].[Latitude]' type='quantitative' />
+            <column aggregation='Avg' datatype='real' name='[f_longitude]' role='measure' semantic-role='[Geographical].[Longitude]' type='quantitative' />
+            <column datatype='integer' name='[failed_orders_vendor]' role='measure' type='quantitative' />
+            <column datatype='string' name='[global_entity_id]' role='dimension' type='nominal' />
+            <column datatype='string' name='[location_name]' role='dimension' type='nominal' />
+            <column-instance column='[brand]' derivation='None' name='[none:brand:nk]' pivot='key' type='nominal' />
+            <column-instance column='[global_entity_id]' derivation='None' name='[none:global_entity_id:nk]' pivot='key' type='nominal' />
+            <column-instance column='[location_name]' derivation='None' name='[none:location_name:nk]' pivot='key' type='nominal' />
+            <column-instance column='[vendor_id]' derivation='None' name='[none:vendor_id:nk]' pivot='key' type='nominal' />
+            <column datatype='integer' name='[successful_orders]' role='measure' type='quantitative' />
+            <column-instance column='[Calculation_841047258192064519]' derivation='Sum' name='[sum:Calculation_841047258192064519:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[successful_orders]' derivation='Sum' name='[sum:successful_orders:qk]' pivot='key' type='quantitative' />
+            <column aggregation='Avg' datatype='real' name='[v_latitude]' role='measure' semantic-role='[Geographical].[Latitude]' type='quantitative' />
+            <column aggregation='Avg' datatype='real' name='[v_longitude]' role='measure' semantic-role='[Geographical].[Longitude]' type='quantitative' />
+            <column datatype='string' name='[vendor_id]' role='dimension' type='nominal' />
+          </datasource-dependencies>
+          <slices>
+            <column>[federated.0zmzvxs1m5jly913i00b01fm8pnh].[none:brand:nk]</column>
+            <column>[federated.0zmzvxs1m5jly913i00b01fm8pnh].[none:global_entity_id:nk]</column>
+          </slices>
+          <aggregation value='true' />
+        </view>
+        <style>
+          <style-rule element='axis'>
+            <encoding attr='space' class='0' field='[federated.0zmzvxs1m5jly913i00b01fm8pnh].[Longitude (generated)]' field-type='quantitative' max='5241074.6332353624' min='5148100.3311316203' projection='EPSG:3857' range-type='fixed' scope='cols' type='space' />
+            <encoding attr='space' class='0' field='[federated.0zmzvxs1m5jly913i00b01fm8pnh].[Latitude (generated)]' field-type='quantitative' max='2863819.5974110579' min='2814156.0158179128' projection='EPSG:3857' range-type='fixed' scope='rows' type='space' />
+          </style-rule>
+          <style-rule element='mark'>
+            <encoding attr='color' center='0.01' field='[federated.0zmzvxs1m5jly913i00b01fm8pnh].[sum:Calculation_841047258192064519:qk]' max='0.02' palette='red_green_gold_diverging_10_0' reverse='true' type='interpolated' />
+          </style-rule>
+          <style-rule element='map-layer'>
+            <format attr='enabled' id='b01002_001e' value='false' />
+            <format attr='enabled' id='b01002_002e' value='false' />
+            <format attr='enabled' id='b01002_003e' value='false' />
+            <format attr='enabled' id='dp02_0001e' value='false' />
+            <format attr='enabled' id='dp02_0015e' value='false' />
+            <format attr='enabled' id='dp03_0027e_plus_dp03_0029e' value='false' />
+            <format attr='enabled' id='dp03_0028e' value='false' />
+            <format attr='enabled' id='dp03_0030e_plus_dp03_0031e' value='false' />
+            <format attr='enabled' id='dp03_0062e' value='false' />
+            <format attr='enabled' id='dp03_0088e' value='false' />
+            <format attr='enabled' id='dp04_0001e' value='false' />
+            <format attr='enabled' id='dp04_0046e' value='false' />
+            <format attr='enabled' id='dp04_0047e' value='false' />
+            <format attr='enabled' id='dp04_0089e' value='false' />
+            <format attr='enabled' id='dp05_0001e' value='false' />
+            <format attr='enabled' id='dp05_0002e_div_dp05_0003e' value='false' />
+            <format attr='enabled' id='dp05_0032e' value='false' />
+            <format attr='enabled' id='dp05_0033e' value='false' />
+            <format attr='enabled' id='dp05_0034e' value='false' />
+            <format attr='enabled' id='dp05_0039e' value='false' />
+            <format attr='enabled' id='dp05_0047e' value='false' />
+            <format attr='enabled' id='dp05_0053e' value='false' />
+            <format attr='enabled' id='dp05_0066e' value='false' />
+            <format attr='enabled' id='dp05_0077e' value='false' />
+          </style-rule>
+          <style-rule element='map'>
+            <format attr='washout' value='0' />
+            <format attr='map-style' value='streets' />
+          </style-rule>
+          <style-rule element='map-data-layer'>
+            <format attr='palette' value='tableau-map-blue-green-light' />
+            <format attr='geo-area-type' value='State' />
+          </style-rule>
+        </style>
+        <panes _.fcp.Layers.true...customization-axis='layer'>
+          <_.fcp.Layers.true...pane id='2' selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Shape' />
+          </_.fcp.Layers.true...pane>
+          <pane _.fcp.Layers.true...generated-title='Facility Point' id='1' selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Shape' />
+            <mark-sizing mark-sizing-setting='marks-scaling-off' />
+            <encodings>
+              <text column='[federated.0zmzvxs1m5jly913i00b01fm8pnh].[none:location_name:nk]' />
+              <color column='[federated.0zmzvxs1m5jly913i00b01fm8pnh].[:Measure Names]' />
+              <lod column='[federated.0zmzvxs1m5jly913i00b01fm8pnh].[clct:Calculation_841047258189598724:nk]' />
+            </encodings>
+            <style>
+              <style-rule element='mark'>
+                <format attr='mark-labels-show' value='true' />
+                <format attr='mark-labels-cull' value='true' />
+                <format attr='shape' value=':filled/asterisk' />
+                <format attr='size' value='1.5052486658096313' />
+              </style-rule>
+            </style>
+          </pane>
+          <_.fcp.Layers.true...pane generated-title='Vendor Point' id='3' selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Shape' />
+            <mark-sizing mark-sizing-setting='marks-scaling-off' />
+            <encodings>
+              <color column='[federated.0zmzvxs1m5jly913i00b01fm8pnh].[sum:Calculation_841047258192064519:qk]' />
+              <size column='[federated.0zmzvxs1m5jly913i00b01fm8pnh].[sum:successful_orders:qk]' />
+              <lod column='[federated.0zmzvxs1m5jly913i00b01fm8pnh].[clct:Calculation_841047258189856773:nk]' />
+              <lod column='[federated.0zmzvxs1m5jly913i00b01fm8pnh].[none:vendor_id:nk]' />
+            </encodings>
+            <style>
+              <style-rule element='mark'>
+                <format attr='size' value='1.637182354927063' />
+                <format attr='shape' value=':filled/circle' />
+              </style-rule>
+            </style>
+          </_.fcp.Layers.true...pane>
+        </panes>
+        <rows>[federated.0zmzvxs1m5jly913i00b01fm8pnh].[Latitude (generated)]</rows>
+        <cols>[federated.0zmzvxs1m5jly913i00b01fm8pnh].[Longitude (generated)]</cols>
+      </table>
+      <simple-id uuid='{063CB835-9752-40C5-932C-5FA1A9BA932C}' />
+    </worksheet>
+    <worksheet name='Offline Time'>
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='Custom SQL Query (gfs_bi)' name='federated.0zmzvxs1m5jly913i00b01fm8pnh' />
+          </datasources>
+          <mapsources>
+            <mapsource name='Tableau' />
+          </mapsources>
+          <datasource-dependencies datasource='federated.0zmzvxs1m5jly913i00b01fm8pnh'>
+            <column caption='Facility Point' datatype='spatial' name='[Calculation_841047258189598724]' role='measure' type='nominal'>
+              <calculation class='tableau' formula='MAKEPOINT([f_latitude], [f_longitude])' />
+            </column>
+            <column caption='Vendor Point' datatype='spatial' name='[Calculation_841047258189856773]' role='measure' type='nominal'>
+              <calculation class='tableau' formula='MAKEPOINT([v_latitude], [v_longitude])' />
+            </column>
+            <column datatype='string' name='[brand]' role='dimension' type='nominal' />
+            <column-instance column='[Calculation_841047258189598724]' derivation='Collect' name='[clct:Calculation_841047258189598724:nk]' pivot='key' type='nominal' />
+            <column-instance column='[Calculation_841047258189856773]' derivation='Collect' name='[clct:Calculation_841047258189856773:nk]' pivot='key' type='nominal' />
+            <column aggregation='Avg' datatype='real' name='[f_latitude]' role='measure' semantic-role='[Geographical].[Latitude]' type='quantitative' />
+            <column aggregation='Avg' datatype='real' name='[f_longitude]' role='measure' semantic-role='[Geographical].[Longitude]' type='quantitative' />
+            <column datatype='string' name='[global_entity_id]' role='dimension' type='nominal' />
+            <column datatype='string' name='[location_name]' role='dimension' type='nominal' />
+            <column-instance column='[brand]' derivation='None' name='[none:brand:nk]' pivot='key' type='nominal' />
+            <column-instance column='[global_entity_id]' derivation='None' name='[none:global_entity_id:nk]' pivot='key' type='nominal' />
+            <column-instance column='[location_name]' derivation='None' name='[none:location_name:nk]' pivot='key' type='nominal' />
+            <column-instance column='[vendor_id]' derivation='None' name='[none:vendor_id:nk]' pivot='key' type='nominal' />
+            <column datatype='real' name='[offline_minutes]' role='measure' type='quantitative' />
+            <column datatype='integer' name='[successful_orders]' role='measure' type='quantitative' />
+            <column-instance column='[offline_minutes]' derivation='Sum' name='[sum:offline_minutes:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[successful_orders]' derivation='Sum' name='[sum:successful_orders:qk]' pivot='key' type='quantitative' />
+            <column aggregation='Avg' datatype='real' name='[v_latitude]' role='measure' semantic-role='[Geographical].[Latitude]' type='quantitative' />
+            <column aggregation='Avg' datatype='real' name='[v_longitude]' role='measure' semantic-role='[Geographical].[Longitude]' type='quantitative' />
+            <column datatype='string' name='[vendor_id]' role='dimension' type='nominal' />
+          </datasource-dependencies>
+          <slices>
+            <column>[federated.0zmzvxs1m5jly913i00b01fm8pnh].[none:brand:nk]</column>
+            <column>[federated.0zmzvxs1m5jly913i00b01fm8pnh].[none:global_entity_id:nk]</column>
+          </slices>
+          <aggregation value='true' />
+        </view>
+        <style>
+          <style-rule element='axis'>
+            <encoding attr='space' class='0' field='[federated.0zmzvxs1m5jly913i00b01fm8pnh].[Longitude (generated)]' field-type='quantitative' max='4384405.9582574414' min='4334983.2568950215' projection='EPSG:3857' range-type='fixed' scope='cols' type='space' />
+            <encoding attr='space' class='0' field='[federated.0zmzvxs1m5jly913i00b01fm8pnh].[Latitude (generated)]' field-type='quantitative' max='2475021.6411940404' min='2438727.755140184' projection='EPSG:3857' range-type='fixed' scope='rows' type='space' />
+          </style-rule>
+          <style-rule element='mark'>
+            <encoding attr='color' center='360.0' field='[federated.0zmzvxs1m5jly913i00b01fm8pnh].[sum:offline_minutes:qk]' palette='red_green_gold_diverging_10_0' reverse='true' type='interpolated' />
+          </style-rule>
+          <style-rule element='map-layer'>
+            <format attr='enabled' id='b01002_001e' value='false' />
+            <format attr='enabled' id='b01002_002e' value='false' />
+            <format attr='enabled' id='b01002_003e' value='false' />
+            <format attr='enabled' id='dp02_0001e' value='false' />
+            <format attr='enabled' id='dp02_0015e' value='false' />
+            <format attr='enabled' id='dp03_0027e_plus_dp03_0029e' value='false' />
+            <format attr='enabled' id='dp03_0028e' value='false' />
+            <format attr='enabled' id='dp03_0030e_plus_dp03_0031e' value='false' />
+            <format attr='enabled' id='dp03_0062e' value='false' />
+            <format attr='enabled' id='dp03_0088e' value='false' />
+            <format attr='enabled' id='dp04_0001e' value='false' />
+            <format attr='enabled' id='dp04_0046e' value='false' />
+            <format attr='enabled' id='dp04_0047e' value='false' />
+            <format attr='enabled' id='dp04_0089e' value='false' />
+            <format attr='enabled' id='dp05_0001e' value='false' />
+            <format attr='enabled' id='dp05_0002e_div_dp05_0003e' value='false' />
+            <format attr='enabled' id='dp05_0032e' value='false' />
+            <format attr='enabled' id='dp05_0033e' value='false' />
+            <format attr='enabled' id='dp05_0034e' value='false' />
+            <format attr='enabled' id='dp05_0039e' value='false' />
+            <format attr='enabled' id='dp05_0047e' value='false' />
+            <format attr='enabled' id='dp05_0053e' value='false' />
+            <format attr='enabled' id='dp05_0066e' value='false' />
+            <format attr='enabled' id='dp05_0077e' value='false' />
+          </style-rule>
+          <style-rule element='map'>
+            <format attr='washout' value='0' />
+            <format attr='map-style' value='streets' />
+          </style-rule>
+          <style-rule element='map-data-layer'>
+            <format attr='palette' value='tableau-map-blue-green-light' />
+            <format attr='geo-area-type' value='State' />
+          </style-rule>
+        </style>
+        <panes _.fcp.Layers.true...customization-axis='layer'>
+          <_.fcp.Layers.true...pane id='2' selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Shape' />
+          </_.fcp.Layers.true...pane>
+          <pane _.fcp.Layers.true...generated-title='Facility Point' id='1' selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Shape' />
+            <mark-sizing mark-sizing-setting='marks-scaling-off' />
+            <encodings>
+              <text column='[federated.0zmzvxs1m5jly913i00b01fm8pnh].[none:location_name:nk]' />
+              <color column='[federated.0zmzvxs1m5jly913i00b01fm8pnh].[:Measure Names]' />
+              <lod column='[federated.0zmzvxs1m5jly913i00b01fm8pnh].[clct:Calculation_841047258189598724:nk]' />
+            </encodings>
+            <style>
+              <style-rule element='mark'>
+                <format attr='mark-labels-show' value='true' />
+                <format attr='mark-labels-cull' value='true' />
+                <format attr='shape' value=':filled/asterisk' />
+                <format attr='size' value='1.5052486658096313' />
+              </style-rule>
+            </style>
+          </pane>
+          <_.fcp.Layers.true...pane generated-title='Vendor Point' id='3' selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Shape' />
+            <mark-sizing mark-sizing-setting='marks-scaling-off' />
+            <encodings>
+              <color column='[federated.0zmzvxs1m5jly913i00b01fm8pnh].[sum:offline_minutes:qk]' />
+              <size column='[federated.0zmzvxs1m5jly913i00b01fm8pnh].[sum:successful_orders:qk]' />
+              <lod column='[federated.0zmzvxs1m5jly913i00b01fm8pnh].[clct:Calculation_841047258189856773:nk]' />
+              <lod column='[federated.0zmzvxs1m5jly913i00b01fm8pnh].[none:vendor_id:nk]' />
+            </encodings>
+            <style>
+              <style-rule element='mark'>
+                <format attr='size' value='1.637182354927063' />
+                <format attr='shape' value=':filled/circle' />
+              </style-rule>
+            </style>
+          </_.fcp.Layers.true...pane>
+        </panes>
+        <rows>[federated.0zmzvxs1m5jly913i00b01fm8pnh].[Latitude (generated)]</rows>
+        <cols>[federated.0zmzvxs1m5jly913i00b01fm8pnh].[Longitude (generated)]</cols>
+      </table>
+      <simple-id uuid='{2DEFB356-82D0-43CF-A014-1565A2D3CEFE}' />
+    </worksheet>
+    <worksheet name='Preptime Map'>
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='Custom SQL Query (gfs_bi)' name='federated.0zmzvxs1m5jly913i00b01fm8pnh' />
+          </datasources>
+          <mapsources>
+            <mapsource name='Tableau' />
+          </mapsources>
+          <datasource-dependencies datasource='federated.0zmzvxs1m5jly913i00b01fm8pnh'>
+            <column caption='Facility Point' datatype='spatial' name='[Calculation_841047258189598724]' role='measure' type='nominal'>
+              <calculation class='tableau' formula='MAKEPOINT([f_latitude], [f_longitude])' />
+            </column>
+            <column caption='Vendor Point' datatype='spatial' name='[Calculation_841047258189856773]' role='measure' type='nominal'>
+              <calculation class='tableau' formula='MAKEPOINT([v_latitude], [v_longitude])' />
+            </column>
+            <column caption='AVG Prep' datatype='real' name='[Calculation_841047258190594054]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='[prep_time_tb_sum]/ [prep_time_tb_count]' />
+            </column>
+            <column datatype='string' name='[brand]' role='dimension' type='nominal' />
+            <column-instance column='[Calculation_841047258189598724]' derivation='Collect' name='[clct:Calculation_841047258189598724:nk]' pivot='key' type='nominal' />
+            <column-instance column='[Calculation_841047258189856773]' derivation='Collect' name='[clct:Calculation_841047258189856773:nk]' pivot='key' type='nominal' />
+            <column aggregation='Avg' datatype='real' name='[f_latitude]' role='measure' semantic-role='[Geographical].[Latitude]' type='quantitative' />
+            <column aggregation='Avg' datatype='real' name='[f_longitude]' role='measure' semantic-role='[Geographical].[Longitude]' type='quantitative' />
+            <column datatype='string' name='[global_entity_id]' role='dimension' type='nominal' />
+            <column datatype='string' name='[location_name]' role='dimension' type='nominal' />
+            <column-instance column='[brand]' derivation='None' name='[none:brand:nk]' pivot='key' type='nominal' />
+            <column-instance column='[global_entity_id]' derivation='None' name='[none:global_entity_id:nk]' pivot='key' type='nominal' />
+            <column-instance column='[location_name]' derivation='None' name='[none:location_name:nk]' pivot='key' type='nominal' />
+            <column-instance column='[vendor_id]' derivation='None' name='[none:vendor_id:nk]' pivot='key' type='nominal' />
+            <column datatype='integer' name='[prep_time_tb_count]' role='measure' type='quantitative' />
+            <column datatype='integer' name='[prep_time_tb_sum]' role='measure' type='quantitative' />
+            <column datatype='integer' name='[successful_orders]' role='measure' type='quantitative' />
+            <column-instance column='[Calculation_841047258190594054]' derivation='Sum' name='[sum:Calculation_841047258190594054:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[successful_orders]' derivation='Sum' name='[sum:successful_orders:qk]' pivot='key' type='quantitative' />
+            <column aggregation='Avg' datatype='real' name='[v_latitude]' role='measure' semantic-role='[Geographical].[Latitude]' type='quantitative' />
+            <column aggregation='Avg' datatype='real' name='[v_longitude]' role='measure' semantic-role='[Geographical].[Longitude]' type='quantitative' />
+            <column datatype='string' name='[vendor_id]' role='dimension' type='nominal' />
+          </datasource-dependencies>
+          <slices>
+            <column>[federated.0zmzvxs1m5jly913i00b01fm8pnh].[none:brand:nk]</column>
+            <column>[federated.0zmzvxs1m5jly913i00b01fm8pnh].[none:global_entity_id:nk]</column>
+          </slices>
+          <aggregation value='true' />
+        </view>
+        <style>
+          <style-rule element='axis'>
+            <encoding attr='space' class='0' field='[federated.0zmzvxs1m5jly913i00b01fm8pnh].[Longitude (generated)]' field-type='quantitative' max='6256589.4599726032' min='6111272.9022488687' projection='EPSG:3857' range-type='fixed' scope='cols' type='space' />
+            <encoding attr='space' class='0' field='[federated.0zmzvxs1m5jly913i00b01fm8pnh].[Latitude (generated)]' field-type='quantitative' max='2918179.8761545164' min='2829190.7878458658' projection='EPSG:3857' range-type='fixed' scope='rows' type='space' />
+          </style-rule>
+          <style-rule element='mark'>
+            <encoding attr='color' field='[federated.0zmzvxs1m5jly913i00b01fm8pnh].[sum:Calculation_841047258190594054:qk]' palette='red_green_gold_diverging_10_0' reverse='true' type='interpolated' />
+          </style-rule>
+          <style-rule element='map-layer'>
+            <format attr='enabled' id='b01002_001e' value='false' />
+            <format attr='enabled' id='b01002_002e' value='false' />
+            <format attr='enabled' id='b01002_003e' value='false' />
+            <format attr='enabled' id='dp02_0001e' value='false' />
+            <format attr='enabled' id='dp02_0015e' value='false' />
+            <format attr='enabled' id='dp03_0027e_plus_dp03_0029e' value='false' />
+            <format attr='enabled' id='dp03_0028e' value='false' />
+            <format attr='enabled' id='dp03_0030e_plus_dp03_0031e' value='false' />
+            <format attr='enabled' id='dp03_0062e' value='false' />
+            <format attr='enabled' id='dp03_0088e' value='false' />
+            <format attr='enabled' id='dp04_0001e' value='false' />
+            <format attr='enabled' id='dp04_0046e' value='false' />
+            <format attr='enabled' id='dp04_0047e' value='false' />
+            <format attr='enabled' id='dp04_0089e' value='false' />
+            <format attr='enabled' id='dp05_0001e' value='false' />
+            <format attr='enabled' id='dp05_0002e_div_dp05_0003e' value='false' />
+            <format attr='enabled' id='dp05_0032e' value='false' />
+            <format attr='enabled' id='dp05_0033e' value='false' />
+            <format attr='enabled' id='dp05_0034e' value='false' />
+            <format attr='enabled' id='dp05_0039e' value='false' />
+            <format attr='enabled' id='dp05_0047e' value='false' />
+            <format attr='enabled' id='dp05_0053e' value='false' />
+            <format attr='enabled' id='dp05_0066e' value='false' />
+            <format attr='enabled' id='dp05_0077e' value='false' />
+          </style-rule>
+          <style-rule element='map'>
+            <format attr='washout' value='0' />
+            <format attr='map-style' value='streets' />
+          </style-rule>
+          <style-rule element='map-data-layer'>
+            <format attr='palette' value='tableau-map-blue-green-light' />
+            <format attr='geo-area-type' value='State' />
+          </style-rule>
+        </style>
+        <panes _.fcp.Layers.true...customization-axis='layer'>
+          <_.fcp.Layers.true...pane id='2' selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Shape' />
+          </_.fcp.Layers.true...pane>
+          <pane _.fcp.Layers.true...generated-title='Facility Point' id='1' selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Shape' />
+            <mark-sizing mark-sizing-setting='marks-scaling-off' />
+            <encodings>
+              <text column='[federated.0zmzvxs1m5jly913i00b01fm8pnh].[none:location_name:nk]' />
+              <color column='[federated.0zmzvxs1m5jly913i00b01fm8pnh].[:Measure Names]' />
+              <lod column='[federated.0zmzvxs1m5jly913i00b01fm8pnh].[clct:Calculation_841047258189598724:nk]' />
+            </encodings>
+            <style>
+              <style-rule element='mark'>
+                <format attr='mark-labels-show' value='true' />
+                <format attr='mark-labels-cull' value='true' />
+                <format attr='shape' value=':filled/asterisk' />
+                <format attr='size' value='2.9944751262664795' />
+              </style-rule>
+            </style>
+          </pane>
+          <_.fcp.Layers.true...pane generated-title='Vendor Point' id='3' selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Shape' />
+            <mark-sizing mark-sizing-setting='marks-scaling-off' />
+            <encodings>
+              <color column='[federated.0zmzvxs1m5jly913i00b01fm8pnh].[sum:Calculation_841047258190594054:qk]' />
+              <size column='[federated.0zmzvxs1m5jly913i00b01fm8pnh].[sum:successful_orders:qk]' />
+              <lod column='[federated.0zmzvxs1m5jly913i00b01fm8pnh].[clct:Calculation_841047258189856773:nk]' />
+              <lod column='[federated.0zmzvxs1m5jly913i00b01fm8pnh].[none:vendor_id:nk]' />
+            </encodings>
+            <style>
+              <style-rule element='mark'>
+                <format attr='size' value='1.637182354927063' />
+                <format attr='shape' value=':filled/circle' />
+              </style-rule>
+            </style>
+          </_.fcp.Layers.true...pane>
+        </panes>
+        <rows>[federated.0zmzvxs1m5jly913i00b01fm8pnh].[Latitude (generated)]</rows>
+        <cols>[federated.0zmzvxs1m5jly913i00b01fm8pnh].[Longitude (generated)]</cols>
+      </table>
+      <simple-id uuid='{F6CC43FC-6562-4C1A-A95B-1B69C4B5EF5D}' />
+    </worksheet>
+    <worksheet name='Vendor Late 5 min'>
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='Custom SQL Query (gfs_bi)' name='federated.0zmzvxs1m5jly913i00b01fm8pnh' />
+          </datasources>
+          <mapsources>
+            <mapsource name='Tableau' />
+          </mapsources>
+          <datasource-dependencies datasource='federated.0zmzvxs1m5jly913i00b01fm8pnh'>
+            <column caption='Facility Point' datatype='spatial' name='[Calculation_841047258189598724]' role='measure' type='nominal'>
+              <calculation class='tableau' formula='MAKEPOINT([f_latitude], [f_longitude])' />
+            </column>
+            <column caption='Vendor Point' datatype='spatial' name='[Calculation_841047258189856773]' role='measure' type='nominal'>
+              <calculation class='tableau' formula='MAKEPOINT([v_latitude], [v_longitude])' />
+            </column>
+            <column caption='Vendor Late 5 min Rate' datatype='real' name='[Calculation_841047258192650248]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='[vendor_late_5_min_count]/ [successful_orders]' />
+            </column>
+            <column datatype='string' name='[brand]' role='dimension' type='nominal' />
+            <column-instance column='[Calculation_841047258189598724]' derivation='Collect' name='[clct:Calculation_841047258189598724:nk]' pivot='key' type='nominal' />
+            <column-instance column='[Calculation_841047258189856773]' derivation='Collect' name='[clct:Calculation_841047258189856773:nk]' pivot='key' type='nominal' />
+            <column aggregation='Avg' datatype='real' name='[f_latitude]' role='measure' semantic-role='[Geographical].[Latitude]' type='quantitative' />
+            <column aggregation='Avg' datatype='real' name='[f_longitude]' role='measure' semantic-role='[Geographical].[Longitude]' type='quantitative' />
+            <column datatype='string' name='[global_entity_id]' role='dimension' type='nominal' />
+            <column datatype='string' name='[location_name]' role='dimension' type='nominal' />
+            <column-instance column='[brand]' derivation='None' name='[none:brand:nk]' pivot='key' type='nominal' />
+            <column-instance column='[global_entity_id]' derivation='None' name='[none:global_entity_id:nk]' pivot='key' type='nominal' />
+            <column-instance column='[location_name]' derivation='None' name='[none:location_name:nk]' pivot='key' type='nominal' />
+            <column-instance column='[vendor_id]' derivation='None' name='[none:vendor_id:nk]' pivot='key' type='nominal' />
+            <column datatype='integer' name='[successful_orders]' role='measure' type='quantitative' />
+            <column-instance column='[Calculation_841047258192650248]' derivation='Sum' name='[sum:Calculation_841047258192650248:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[successful_orders]' derivation='Sum' name='[sum:successful_orders:qk]' pivot='key' type='quantitative' />
+            <column aggregation='Avg' datatype='real' name='[v_latitude]' role='measure' semantic-role='[Geographical].[Latitude]' type='quantitative' />
+            <column aggregation='Avg' datatype='real' name='[v_longitude]' role='measure' semantic-role='[Geographical].[Longitude]' type='quantitative' />
+            <column datatype='string' name='[vendor_id]' role='dimension' type='nominal' />
+            <column datatype='integer' name='[vendor_late_5_min_count]' role='measure' type='quantitative' />
+          </datasource-dependencies>
+          <slices>
+            <column>[federated.0zmzvxs1m5jly913i00b01fm8pnh].[none:brand:nk]</column>
+            <column>[federated.0zmzvxs1m5jly913i00b01fm8pnh].[none:global_entity_id:nk]</column>
+          </slices>
+          <aggregation value='true' />
+        </view>
+        <style>
+          <style-rule element='axis'>
+            <encoding attr='space' class='0' field='[federated.0zmzvxs1m5jly913i00b01fm8pnh].[Longitude (generated)]' field-type='quantitative' max='5248446.2070615897' min='5137546.4407194275' projection='EPSG:3857' range-type='fixed' scope='cols' type='space' />
+            <encoding attr='space' class='0' field='[federated.0zmzvxs1m5jly913i00b01fm8pnh].[Latitude (generated)]' field-type='quantitative' max='2857712.9969205735' min='2798474.2667578124' projection='EPSG:3857' range-type='fixed' scope='rows' type='space' />
+          </style-rule>
+          <style-rule element='mark'>
+            <encoding attr='color' field='[federated.0zmzvxs1m5jly913i00b01fm8pnh].[sum:Calculation_841047258192650248:qk]' palette='red_green_gold_diverging_10_0' reverse='true' type='interpolated' />
+          </style-rule>
+          <style-rule element='map-layer'>
+            <format attr='enabled' id='b01002_001e' value='false' />
+            <format attr='enabled' id='b01002_002e' value='false' />
+            <format attr='enabled' id='b01002_003e' value='false' />
+            <format attr='enabled' id='dp02_0001e' value='false' />
+            <format attr='enabled' id='dp02_0015e' value='false' />
+            <format attr='enabled' id='dp03_0027e_plus_dp03_0029e' value='false' />
+            <format attr='enabled' id='dp03_0028e' value='false' />
+            <format attr='enabled' id='dp03_0030e_plus_dp03_0031e' value='false' />
+            <format attr='enabled' id='dp03_0062e' value='false' />
+            <format attr='enabled' id='dp03_0088e' value='false' />
+            <format attr='enabled' id='dp04_0001e' value='false' />
+            <format attr='enabled' id='dp04_0046e' value='false' />
+            <format attr='enabled' id='dp04_0047e' value='false' />
+            <format attr='enabled' id='dp04_0089e' value='false' />
+            <format attr='enabled' id='dp05_0001e' value='false' />
+            <format attr='enabled' id='dp05_0002e_div_dp05_0003e' value='false' />
+            <format attr='enabled' id='dp05_0032e' value='false' />
+            <format attr='enabled' id='dp05_0033e' value='false' />
+            <format attr='enabled' id='dp05_0034e' value='false' />
+            <format attr='enabled' id='dp05_0039e' value='false' />
+            <format attr='enabled' id='dp05_0047e' value='false' />
+            <format attr='enabled' id='dp05_0053e' value='false' />
+            <format attr='enabled' id='dp05_0066e' value='false' />
+            <format attr='enabled' id='dp05_0077e' value='false' />
+          </style-rule>
+          <style-rule element='map'>
+            <format attr='washout' value='0' />
+            <format attr='map-style' value='streets' />
+          </style-rule>
+          <style-rule element='map-data-layer'>
+            <format attr='palette' value='tableau-map-blue-green-light' />
+            <format attr='geo-area-type' value='State' />
+          </style-rule>
+        </style>
+        <panes _.fcp.Layers.true...customization-axis='layer'>
+          <_.fcp.Layers.true...pane id='2' selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Shape' />
+          </_.fcp.Layers.true...pane>
+          <pane _.fcp.Layers.true...generated-title='Facility Point' id='1' selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Shape' />
+            <mark-sizing mark-sizing-setting='marks-scaling-off' />
+            <encodings>
+              <text column='[federated.0zmzvxs1m5jly913i00b01fm8pnh].[none:location_name:nk]' />
+              <color column='[federated.0zmzvxs1m5jly913i00b01fm8pnh].[:Measure Names]' />
+              <lod column='[federated.0zmzvxs1m5jly913i00b01fm8pnh].[clct:Calculation_841047258189598724:nk]' />
+            </encodings>
+            <style>
+              <style-rule element='mark'>
+                <format attr='mark-labels-show' value='true' />
+                <format attr='mark-labels-cull' value='true' />
+                <format attr='shape' value=':filled/asterisk' />
+                <format attr='size' value='1.5052486658096313' />
+              </style-rule>
+            </style>
+          </pane>
+          <_.fcp.Layers.true...pane generated-title='Vendor Point' id='3' selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Shape' />
+            <mark-sizing mark-sizing-setting='marks-scaling-off' />
+            <encodings>
+              <color column='[federated.0zmzvxs1m5jly913i00b01fm8pnh].[sum:Calculation_841047258192650248:qk]' />
+              <size column='[federated.0zmzvxs1m5jly913i00b01fm8pnh].[sum:successful_orders:qk]' />
+              <lod column='[federated.0zmzvxs1m5jly913i00b01fm8pnh].[clct:Calculation_841047258189856773:nk]' />
+              <lod column='[federated.0zmzvxs1m5jly913i00b01fm8pnh].[none:vendor_id:nk]' />
+            </encodings>
+            <style>
+              <style-rule element='mark'>
+                <format attr='size' value='1.637182354927063' />
+                <format attr='shape' value=':filled/circle' />
+              </style-rule>
+            </style>
+          </_.fcp.Layers.true...pane>
+        </panes>
+        <rows>[federated.0zmzvxs1m5jly913i00b01fm8pnh].[Latitude (generated)]</rows>
+        <cols>[federated.0zmzvxs1m5jly913i00b01fm8pnh].[Longitude (generated)]</cols>
+      </table>
+      <simple-id uuid='{0478A84D-41FA-4878-BD82-07AA19823F1E}' />
+    </worksheet>
+  </worksheets>
+  <dashboards>
+    <dashboard _.fcp.AccessibleZoneTabOrder.true...enable-sort-zone-taborder='true' name='Fail Rates'>
+      <repository-location derived-from='https://tableau.deliveryhero.net/t/GlobalStandardReporting/workbooks/KFC_HS_SA_deep_dive/FailRates?rev=' id='FailRates' path='/t/GlobalStandardReporting/workbooks/Alshaya_HS_SA_deep_dive' revision='' site='GlobalStandardReporting' />
+      <style />
+      <size maxheight='800' maxwidth='1000' minheight='800' minwidth='1000' />
+      <datasources>
+        <datasource caption='Custom SQL Query (gfs_bi)' name='federated.0zmzvxs1m5jly913i00b01fm8pnh' />
+      </datasources>
+      <datasource-dependencies datasource='federated.0zmzvxs1m5jly913i00b01fm8pnh'>
+        <column datatype='string' name='[brand]' role='dimension' type='nominal' />
+        <column datatype='string' name='[global_entity_id]' role='dimension' type='nominal' />
+        <column-instance column='[brand]' derivation='None' name='[none:brand:nk]' pivot='key' type='nominal' />
+        <column-instance column='[global_entity_id]' derivation='None' name='[none:global_entity_id:nk]' pivot='key' type='nominal' />
+      </datasource-dependencies>
+      <zones>
+        <zone h='100000' id='4' type-v2='layout-basic' w='100000' x='0' y='0'>
+          <zone h='98000' id='16' param='horz' type-v2='layout-flow' w='98400' x='800' y='1000'>
+            <zone h='98000' id='7' param='horz' type-v2='layout-flow' w='82400' x='800' y='1000'>
+              <zone h='98000' id='5' type-v2='layout-basic' w='82400' x='800' y='1000'>
+                <zone h='79000' id='3' name='Fail Rate' w='82400' x='800' y='20000'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                  </zone-style>
+                </zone>
+                <zone h='9374' id='10' name='Fail Rate' pane-specification-id='3' param='[federated.0zmzvxs1m5jly913i00b01fm8pnh].[sum:Calculation_841047258192064519:qk]' type-v2='color' w='82400' x='800' y='1000'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                  </zone-style>
+                </zone>
+                <zone h='9626' id='9' name='Fail Rate' pane-specification-id='3' param='[federated.0zmzvxs1m5jly913i00b01fm8pnh].[sum:successful_orders:qk]' type-v2='size' w='82400' x='800' y='10374'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                  </zone-style>
+                </zone>
+              </zone>
+            </zone>
+            <zone fixed-size='160' h='98000' id='15' is-fixed='true' param='vert' type-v2='layout-flow' w='16000' x='83200' y='1000'>
+              <zone h='13500' id='17' name='Fail Rate' param='[federated.0zmzvxs1m5jly913i00b01fm8pnh].[none:brand:nk]' type-v2='filter' values='database' w='16000' x='83200' y='1000'>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+              <zone h='18250' id='26' name='Fail Rate' param='[federated.0zmzvxs1m5jly913i00b01fm8pnh].[none:global_entity_id:nk]' type-v2='filter' values='database' w='16000' x='83200' y='14500'>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+            </zone>
+          </zone>
+          <zone-style>
+            <format attr='border-color' value='#000000' />
+            <format attr='border-style' value='none' />
+            <format attr='border-width' value='0' />
+            <format attr='margin' value='8' />
+          </zone-style>
+        </zone>
+      </zones>
+      <devicelayouts>
+        <devicelayout auto-generated='true' name='Phone'>
+          <size maxheight='700' minheight='700' sizing-mode='vscroll' />
+          <zones>
+            <zone h='100000' id='30' type-v2='layout-basic' w='100000' x='0' y='0'>
+              <zone h='98000' id='29' param='vert' type-v2='layout-flow' w='98400' x='800' y='1000'>
+                <zone h='13500' id='17' mode='checkdropdown' name='Fail Rate' param='[federated.0zmzvxs1m5jly913i00b01fm8pnh].[none:brand:nk]' type-v2='filter' values='database' w='16000' x='83200' y='1000'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone h='18250' id='26' mode='checkdropdown' name='Fail Rate' param='[federated.0zmzvxs1m5jly913i00b01fm8pnh].[none:global_entity_id:nk]' type-v2='filter' values='database' w='16000' x='83200' y='14500'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone fixed-size='280' h='79000' id='3' is-fixed='true' name='Fail Rate' w='82400' x='800' y='20000'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone h='9374' id='10' name='Fail Rate' pane-specification-id='3' param='[federated.0zmzvxs1m5jly913i00b01fm8pnh].[sum:Calculation_841047258192064519:qk]' type-v2='color' w='82400' x='800' y='1000'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone h='9626' id='9' name='Fail Rate' pane-specification-id='3' param='[federated.0zmzvxs1m5jly913i00b01fm8pnh].[sum:successful_orders:qk]' type-v2='size' w='82400' x='800' y='10374'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+              </zone>
+              <zone-style>
+                <format attr='border-color' value='#000000' />
+                <format attr='border-style' value='none' />
+                <format attr='border-width' value='0' />
+                <format attr='margin' value='8' />
+              </zone-style>
+            </zone>
+          </zones>
+        </devicelayout>
+      </devicelayouts>
+      <simple-id uuid='{EC62B773-7934-4728-A1B3-37CC6D137135}' />
+    </dashboard>
+    <dashboard _.fcp.AccessibleZoneTabOrder.true...enable-sort-zone-taborder='true' name='Offline Times'>
+      <repository-location derived-from='https://tableau.deliveryhero.net/t/GlobalStandardReporting/workbooks/KFC_HS_SA_deep_dive/OfflineTimes?rev=' id='OfflineTimes' path='/t/GlobalStandardReporting/workbooks/Alshaya_HS_SA_deep_dive' revision='' site='GlobalStandardReporting' />
+      <style />
+      <size maxheight='800' maxwidth='1000' minheight='800' minwidth='1000' />
+      <datasources>
+        <datasource caption='Custom SQL Query (gfs_bi)' name='federated.0zmzvxs1m5jly913i00b01fm8pnh' />
+      </datasources>
+      <datasource-dependencies datasource='federated.0zmzvxs1m5jly913i00b01fm8pnh'>
+        <column datatype='string' name='[brand]' role='dimension' type='nominal' />
+        <column datatype='string' name='[global_entity_id]' role='dimension' type='nominal' />
+        <column-instance column='[brand]' derivation='None' name='[none:brand:nk]' pivot='key' type='nominal' />
+        <column-instance column='[global_entity_id]' derivation='None' name='[none:global_entity_id:nk]' pivot='key' type='nominal' />
+      </datasource-dependencies>
+      <zones>
+        <zone h='100000' id='4' type-v2='layout-basic' w='100000' x='0' y='0'>
+          <zone h='88625' id='7' param='horz' type-v2='layout-flow' w='85600' x='800' y='10375'>
+            <zone h='88625' id='5' type-v2='layout-basic' w='85600' x='800' y='10375'>
+              <zone h='84250' id='3' name='Offline Time' w='85600' x='800' y='14750'>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+              <zone h='4375' id='9' name='Offline Time' pane-specification-id='3' param='[federated.0zmzvxs1m5jly913i00b01fm8pnh].[sum:successful_orders:qk]' type-v2='size' w='85600' x='800' y='10375'>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+            </zone>
+          </zone>
+          <zone h='9375' id='11' param='horz' type-v2='layout-flow' w='85600' x='800' y='1000'>
+            <zone h='9375' id='10' name='Offline Time' pane-specification-id='3' param='[federated.0zmzvxs1m5jly913i00b01fm8pnh].[sum:offline_minutes:qk]' type-v2='color' w='85600' x='800' y='1000'>
+              <zone-style>
+                <format attr='border-color' value='#000000' />
+                <format attr='border-style' value='none' />
+                <format attr='border-width' value='0' />
+                <format attr='margin' value='4' />
+              </zone-style>
+            </zone>
+          </zone>
+          <zone h='15250' id='16' name='Offline Time' param='[federated.0zmzvxs1m5jly913i00b01fm8pnh].[none:brand:nk]' type-v2='filter' values='database' w='12800' x='86400' y='1000'>
+            <zone-style>
+              <format attr='border-color' value='#000000' />
+              <format attr='border-style' value='none' />
+              <format attr='border-width' value='0' />
+              <format attr='margin' value='4' />
+            </zone-style>
+          </zone>
+          <zone h='82750' id='25' name='Offline Time' param='[federated.0zmzvxs1m5jly913i00b01fm8pnh].[none:global_entity_id:nk]' type-v2='filter' values='database' w='12800' x='86400' y='16250'>
+            <zone-style>
+              <format attr='border-color' value='#000000' />
+              <format attr='border-style' value='none' />
+              <format attr='border-width' value='0' />
+              <format attr='margin' value='4' />
+            </zone-style>
+          </zone>
+          <zone-style>
+            <format attr='border-color' value='#000000' />
+            <format attr='border-style' value='none' />
+            <format attr='border-width' value='0' />
+            <format attr='margin' value='8' />
+          </zone-style>
+        </zone>
+      </zones>
+      <devicelayouts>
+        <devicelayout auto-generated='true' name='Phone'>
+          <size maxheight='700' minheight='700' sizing-mode='vscroll' />
+          <zones>
+            <zone h='100000' id='29' type-v2='layout-basic' w='100000' x='0' y='0'>
+              <zone h='98000' id='28' param='vert' type-v2='layout-flow' w='98400' x='800' y='1000'>
+                <zone h='15250' id='16' mode='checkdropdown' name='Offline Time' param='[federated.0zmzvxs1m5jly913i00b01fm8pnh].[none:brand:nk]' type-v2='filter' values='database' w='12800' x='86400' y='1000'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone h='82750' id='25' mode='checkdropdown' name='Offline Time' param='[federated.0zmzvxs1m5jly913i00b01fm8pnh].[none:global_entity_id:nk]' type-v2='filter' values='database' w='12800' x='86400' y='16250'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone fixed-size='280' h='84250' id='3' is-fixed='true' name='Offline Time' w='85600' x='800' y='14750'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone h='4375' id='9' name='Offline Time' pane-specification-id='3' param='[federated.0zmzvxs1m5jly913i00b01fm8pnh].[sum:successful_orders:qk]' type-v2='size' w='85600' x='800' y='10375'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone h='9375' id='10' name='Offline Time' pane-specification-id='3' param='[federated.0zmzvxs1m5jly913i00b01fm8pnh].[sum:offline_minutes:qk]' type-v2='color' w='85600' x='800' y='1000'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+              </zone>
+              <zone-style>
+                <format attr='border-color' value='#000000' />
+                <format attr='border-style' value='none' />
+                <format attr='border-width' value='0' />
+                <format attr='margin' value='8' />
+              </zone-style>
+            </zone>
+          </zones>
+        </devicelayout>
+      </devicelayouts>
+      <simple-id uuid='{544D1BAC-395C-4518-A070-313FD26FEC07}' />
+    </dashboard>
+    <dashboard _.fcp.AccessibleZoneTabOrder.true...enable-sort-zone-taborder='true' name='Prep Time'>
+      <repository-location derived-from='https://tableau.deliveryhero.net/t/GlobalStandardReporting/workbooks/KFC_HS_SA_deep_dive/PrepTime?rev=' id='PrepTime' path='/t/GlobalStandardReporting/workbooks/Alshaya_HS_SA_deep_dive' revision='' site='GlobalStandardReporting' />
+      <style />
+      <size maxheight='800' maxwidth='1000' minheight='800' minwidth='1000' />
+      <datasources>
+        <datasource caption='Custom SQL Query (gfs_bi)' name='federated.0zmzvxs1m5jly913i00b01fm8pnh' />
+      </datasources>
+      <datasource-dependencies datasource='federated.0zmzvxs1m5jly913i00b01fm8pnh'>
+        <column datatype='string' name='[brand]' role='dimension' type='nominal' />
+        <column datatype='string' name='[global_entity_id]' role='dimension' type='nominal' />
+        <column-instance column='[brand]' derivation='None' name='[none:brand:nk]' pivot='key' type='nominal' />
+        <column-instance column='[global_entity_id]' derivation='None' name='[none:global_entity_id:nk]' pivot='key' type='nominal' />
+      </datasource-dependencies>
+      <zones>
+        <zone h='100000' id='4' type-v2='layout-basic' w='100000' x='0' y='0'>
+          <zone h='98000' id='21' param='horz' type-v2='layout-flow' w='98400' x='800' y='1000'>
+            <zone h='98000' id='19' type-v2='layout-basic' w='82400' x='800' y='1000'>
+              <zone h='82250' id='7' param='horz' type-v2='layout-flow' w='82400' x='800' y='16750'>
+                <zone h='82250' id='5' type-v2='layout-basic' w='82400' x='800' y='16750'>
+                  <zone h='82250' id='3' name='Preptime Map' w='82400' x='800' y='16750'>
+                    <zone-style>
+                      <format attr='border-color' value='#000000' />
+                      <format attr='border-style' value='none' />
+                      <format attr='border-width' value='0' />
+                      <format attr='margin' value='4' />
+                    </zone-style>
+                  </zone>
+                </zone>
+              </zone>
+              <zone h='9375' id='10' name='Preptime Map' pane-specification-id='3' param='[federated.0zmzvxs1m5jly913i00b01fm8pnh].[sum:Calculation_841047258190594054:qk]' single-line='false' type-v2='color' w='82400' x='800' y='1000'>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+              <zone h='6375' id='9' name='Preptime Map' pane-specification-id='3' param='[federated.0zmzvxs1m5jly913i00b01fm8pnh].[sum:successful_orders:qk]' type-v2='size' w='82400' x='800' y='10375'>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+            </zone>
+            <zone fixed-size='160' h='98000' id='20' is-fixed='true' param='vert' type-v2='layout-flow' w='16000' x='83200' y='1000'>
+              <zone h='13500' id='22' name='Preptime Map' param='[federated.0zmzvxs1m5jly913i00b01fm8pnh].[none:brand:nk]' type-v2='filter' values='database' w='16000' x='83200' y='1000'>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+              <zone h='18250' id='31' name='Preptime Map' param='[federated.0zmzvxs1m5jly913i00b01fm8pnh].[none:global_entity_id:nk]' type-v2='filter' values='database' w='16000' x='83200' y='14500'>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+            </zone>
+          </zone>
+          <zone-style>
+            <format attr='border-color' value='#000000' />
+            <format attr='border-style' value='none' />
+            <format attr='border-width' value='0' />
+            <format attr='margin' value='8' />
+          </zone-style>
+        </zone>
+      </zones>
+      <devicelayouts>
+        <devicelayout auto-generated='true' name='Phone'>
+          <size maxheight='700' minheight='700' sizing-mode='vscroll' />
+          <zones>
+            <zone h='100000' id='35' type-v2='layout-basic' w='100000' x='0' y='0'>
+              <zone h='98000' id='34' param='vert' type-v2='layout-flow' w='98400' x='800' y='1000'>
+                <zone h='13500' id='22' mode='checkdropdown' name='Preptime Map' param='[federated.0zmzvxs1m5jly913i00b01fm8pnh].[none:brand:nk]' type-v2='filter' values='database' w='16000' x='83200' y='1000'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone h='18250' id='31' mode='checkdropdown' name='Preptime Map' param='[federated.0zmzvxs1m5jly913i00b01fm8pnh].[none:global_entity_id:nk]' type-v2='filter' values='database' w='16000' x='83200' y='14500'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone fixed-size='280' h='82250' id='3' is-fixed='true' name='Preptime Map' w='82400' x='800' y='16750'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone h='9375' id='10' name='Preptime Map' pane-specification-id='3' param='[federated.0zmzvxs1m5jly913i00b01fm8pnh].[sum:Calculation_841047258190594054:qk]' single-line='false' type-v2='color' w='82400' x='800' y='1000'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone h='6375' id='9' name='Preptime Map' pane-specification-id='3' param='[federated.0zmzvxs1m5jly913i00b01fm8pnh].[sum:successful_orders:qk]' type-v2='size' w='82400' x='800' y='10375'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+              </zone>
+              <zone-style>
+                <format attr='border-color' value='#000000' />
+                <format attr='border-style' value='none' />
+                <format attr='border-width' value='0' />
+                <format attr='margin' value='8' />
+              </zone-style>
+            </zone>
+          </zones>
+        </devicelayout>
+      </devicelayouts>
+      <simple-id uuid='{0719BD0B-7D25-4A85-AC1E-5A3E07F47111}' />
+    </dashboard>
+    <dashboard _.fcp.AccessibleZoneTabOrder.true...enable-sort-zone-taborder='true' name='Vendor Late'>
+      <repository-location derived-from='https://tableau.deliveryhero.net/t/GlobalStandardReporting/workbooks/KFC_HS_SA_deep_dive/VendorLate?rev=' id='VendorLate' path='/t/GlobalStandardReporting/workbooks/Alshaya_HS_SA_deep_dive' revision='' site='GlobalStandardReporting' />
+      <style />
+      <size maxheight='800' maxwidth='1000' minheight='800' minwidth='1000' />
+      <datasources>
+        <datasource caption='Custom SQL Query (gfs_bi)' name='federated.0zmzvxs1m5jly913i00b01fm8pnh' />
+      </datasources>
+      <datasource-dependencies datasource='federated.0zmzvxs1m5jly913i00b01fm8pnh'>
+        <column datatype='string' name='[brand]' role='dimension' type='nominal' />
+        <column datatype='string' name='[global_entity_id]' role='dimension' type='nominal' />
+        <column-instance column='[brand]' derivation='None' name='[none:brand:nk]' pivot='key' type='nominal' />
+        <column-instance column='[global_entity_id]' derivation='None' name='[none:global_entity_id:nk]' pivot='key' type='nominal' />
+      </datasource-dependencies>
+      <zones>
+        <zone h='100000' id='4' type-v2='layout-basic' w='100000' x='0' y='0'>
+          <zone h='98000' id='16' param='horz' type-v2='layout-flow' w='98400' x='800' y='1000'>
+            <zone h='98000' id='7' param='horz' type-v2='layout-flow' w='82400' x='800' y='1000'>
+              <zone h='98000' id='5' type-v2='layout-basic' w='82400' x='800' y='1000'>
+                <zone h='82125' id='3' name='Vendor Late 5 min' w='82400' x='800' y='16875'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                  </zone-style>
+                </zone>
+                <zone h='9374' id='10' name='Vendor Late 5 min' pane-specification-id='3' param='[federated.0zmzvxs1m5jly913i00b01fm8pnh].[sum:Calculation_841047258192650248:qk]' type-v2='color' w='82400' x='800' y='1000'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                  </zone-style>
+                </zone>
+                <zone fixed-size='112' h='6501' id='9' is-fixed='true' name='Vendor Late 5 min' pane-specification-id='3' param='[federated.0zmzvxs1m5jly913i00b01fm8pnh].[sum:successful_orders:qk]' type-v2='size' w='82400' x='800' y='10374'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                  </zone-style>
+                </zone>
+              </zone>
+            </zone>
+            <zone fixed-size='160' h='98000' id='15' is-fixed='true' param='vert' type-v2='layout-flow' w='16000' x='83200' y='1000'>
+              <zone h='13500' id='17' name='Vendor Late 5 min' param='[federated.0zmzvxs1m5jly913i00b01fm8pnh].[none:brand:nk]' type-v2='filter' values='database' w='16000' x='83200' y='1000'>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+              <zone h='18250' id='26' name='Vendor Late 5 min' param='[federated.0zmzvxs1m5jly913i00b01fm8pnh].[none:global_entity_id:nk]' type-v2='filter' values='database' w='16000' x='83200' y='14500'>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+            </zone>
+          </zone>
+          <zone-style>
+            <format attr='border-color' value='#000000' />
+            <format attr='border-style' value='none' />
+            <format attr='border-width' value='0' />
+            <format attr='margin' value='8' />
+          </zone-style>
+        </zone>
+      </zones>
+      <devicelayouts>
+        <devicelayout auto-generated='true' name='Phone'>
+          <size maxheight='700' minheight='700' sizing-mode='vscroll' />
+          <zones>
+            <zone h='100000' id='30' type-v2='layout-basic' w='100000' x='0' y='0'>
+              <zone h='98000' id='29' param='vert' type-v2='layout-flow' w='98400' x='800' y='1000'>
+                <zone h='13500' id='17' mode='checkdropdown' name='Vendor Late 5 min' param='[federated.0zmzvxs1m5jly913i00b01fm8pnh].[none:brand:nk]' type-v2='filter' values='database' w='16000' x='83200' y='1000'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone h='18250' id='26' mode='checkdropdown' name='Vendor Late 5 min' param='[federated.0zmzvxs1m5jly913i00b01fm8pnh].[none:global_entity_id:nk]' type-v2='filter' values='database' w='16000' x='83200' y='14500'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone fixed-size='280' h='82125' id='3' is-fixed='true' name='Vendor Late 5 min' w='82400' x='800' y='16875'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone h='9374' id='10' name='Vendor Late 5 min' pane-specification-id='3' param='[federated.0zmzvxs1m5jly913i00b01fm8pnh].[sum:Calculation_841047258192650248:qk]' type-v2='color' w='82400' x='800' y='1000'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone fixed-size='112' h='6501' id='9' name='Vendor Late 5 min' pane-specification-id='3' param='[federated.0zmzvxs1m5jly913i00b01fm8pnh].[sum:successful_orders:qk]' type-v2='size' w='82400' x='800' y='10374'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+              </zone>
+              <zone-style>
+                <format attr='border-color' value='#000000' />
+                <format attr='border-style' value='none' />
+                <format attr='border-width' value='0' />
+                <format attr='margin' value='8' />
+              </zone-style>
+            </zone>
+          </zones>
+        </devicelayout>
+      </devicelayouts>
+      <simple-id uuid='{1ECBAEFA-1CB3-46D2-856F-CC84287B47BE}' />
+    </dashboard>
+  </dashboards>
+  <windows source-height='30'>
+    <window class='dashboard' maximized='true' name='Prep Time'>
+      <viewpoints>
+        <viewpoint name='Preptime Map'>
+          <zoom type='entire-view' />
+          <default-map-tool-selection tool='1' />
+        </viewpoint>
+      </viewpoints>
+      <active id='-1' />
+      <simple-id uuid='{38D74887-8219-45E1-A0E3-6674022680FC}' />
+    </window>
+    <window class='dashboard' name='Vendor Late'>
+      <viewpoints>
+        <viewpoint name='Vendor Late 5 min'>
+          <zoom type='entire-view' />
+        </viewpoint>
+      </viewpoints>
+      <active id='3' />
+      <simple-id uuid='{9DF32D06-B840-47BC-B537-89746F46BCFD}' />
+    </window>
+    <window class='dashboard' name='Fail Rates'>
+      <viewpoints>
+        <viewpoint name='Fail Rate'>
+          <zoom type='entire-view' />
+        </viewpoint>
+      </viewpoints>
+      <active id='3' />
+      <simple-id uuid='{5A0CE6C3-3FAF-4A04-B4DA-37262C7494C2}' />
+    </window>
+    <window class='dashboard' name='Offline Times'>
+      <viewpoints>
+        <viewpoint name='Offline Time'>
+          <zoom type='entire-view' />
+        </viewpoint>
+      </viewpoints>
+      <active id='-1' />
+      <simple-id uuid='{1FB27BD6-1004-47C9-956F-A59CE4D9F8FB}' />
+    </window>
+    <window class='worksheet' hidden='true' name='Fail Rate'>
+      <cards>
+        <edge name='left'>
+          <strip size='160'>
+            <card type='pages' />
+            <card type='filters' />
+            <card type='marks' />
+          </strip>
+        </edge>
+        <edge name='top'>
+          <strip size='2147483647'>
+            <card type='columns' />
+          </strip>
+          <strip size='2147483647'>
+            <card type='rows' />
+          </strip>
+          <strip size='31'>
+            <card type='title' />
+          </strip>
+        </edge>
+        <edge name='right'>
+          <strip size='160'>
+            <card pane-specification-id='1' param='[federated.0zmzvxs1m5jly913i00b01fm8pnh].[:Measure Names]' type='color' />
+            <card pane-specification-id='3' param='[federated.0zmzvxs1m5jly913i00b01fm8pnh].[sum:successful_orders:qk]' type='size' />
+            <card pane-specification-id='3' param='[federated.0zmzvxs1m5jly913i00b01fm8pnh].[sum:Calculation_841047258192064519:qk]' type='color' />
+          </strip>
+        </edge>
+      </cards>
+      <viewpoint>
+        <highlight>
+          <color-one-way>
+            <field>[federated.0zmzvxs1m5jly913i00b01fm8pnh].[none:location_name:nk]</field>
+            <field>[federated.0zmzvxs1m5jly913i00b01fm8pnh].[none:vendor_id:nk]</field>
+            <field>[federated.0zmzvxs1m5jly913i00b01fm8pnh].[sum:Calculation_841047258192064519:qk]</field>
+          </color-one-way>
+        </highlight>
+        <default-map-tool-selection tool='1' />
+      </viewpoint>
+      <simple-id uuid='{5EC7EADD-5380-4D81-825A-968F3DC13DC1}' />
+    </window>
+    <window class='worksheet' hidden='true' name='Offline Time'>
+      <cards>
+        <edge name='left'>
+          <strip size='160'>
+            <card type='pages' />
+            <card type='filters' />
+            <card type='marks' />
+          </strip>
+        </edge>
+        <edge name='top'>
+          <strip size='2147483647'>
+            <card type='columns' />
+          </strip>
+          <strip size='2147483647'>
+            <card type='rows' />
+          </strip>
+          <strip size='31'>
+            <card type='title' />
+          </strip>
+        </edge>
+        <edge name='right'>
+          <strip size='160'>
+            <card param='[federated.0zmzvxs1m5jly913i00b01fm8pnh].[none:brand:nk]' type='filter' />
+            <card pane-specification-id='1' param='[federated.0zmzvxs1m5jly913i00b01fm8pnh].[:Measure Names]' type='color' />
+            <card pane-specification-id='3' param='[federated.0zmzvxs1m5jly913i00b01fm8pnh].[sum:successful_orders:qk]' type='size' />
+            <card pane-specification-id='3' param='[federated.0zmzvxs1m5jly913i00b01fm8pnh].[sum:offline_minutes:qk]' type='color' />
+          </strip>
+        </edge>
+      </cards>
+      <viewpoint>
+        <highlight>
+          <color-one-way>
+            <field>[federated.0zmzvxs1m5jly913i00b01fm8pnh].[none:location_name:nk]</field>
+            <field>[federated.0zmzvxs1m5jly913i00b01fm8pnh].[none:vendor_id:nk]</field>
+            <field>[federated.0zmzvxs1m5jly913i00b01fm8pnh].[sum:offline_minutes:qk]</field>
+          </color-one-way>
+        </highlight>
+        <default-map-tool-selection tool='1' />
+      </viewpoint>
+      <simple-id uuid='{74E9D275-E64D-4391-9F1C-314DAC9BEB06}' />
+    </window>
+    <window class='worksheet' hidden='true' name='Preptime Map'>
+      <cards>
+        <edge name='left'>
+          <strip size='160'>
+            <card type='pages' />
+            <card type='filters' />
+            <card type='marks' />
+          </strip>
+        </edge>
+        <edge name='top'>
+          <strip size='2147483647'>
+            <card type='columns' />
+          </strip>
+          <strip size='2147483647'>
+            <card type='rows' />
+          </strip>
+          <strip size='31'>
+            <card type='title' />
+          </strip>
+        </edge>
+        <edge name='right'>
+          <strip size='160'>
+            <card param='[federated.0zmzvxs1m5jly913i00b01fm8pnh].[none:brand:nk]' type='filter' />
+            <card pane-specification-id='1' param='[federated.0zmzvxs1m5jly913i00b01fm8pnh].[:Measure Names]' type='color' />
+            <card pane-specification-id='3' param='[federated.0zmzvxs1m5jly913i00b01fm8pnh].[sum:successful_orders:qk]' type='size' />
+            <card pane-specification-id='3' param='[federated.0zmzvxs1m5jly913i00b01fm8pnh].[sum:Calculation_841047258190594054:qk]' type='color' />
+          </strip>
+        </edge>
+      </cards>
+      <viewpoint>
+        <highlight>
+          <color-one-way>
+            <field>[federated.0zmzvxs1m5jly913i00b01fm8pnh].[none:Calculation_1499487597472423936:nk]</field>
+            <field>[federated.0zmzvxs1m5jly913i00b01fm8pnh].[none:global_entity_id:nk]</field>
+            <field>[federated.0zmzvxs1m5jly913i00b01fm8pnh].[none:location_name:nk]</field>
+            <field>[federated.0zmzvxs1m5jly913i00b01fm8pnh].[none:vendor_id:nk]</field>
+          </color-one-way>
+        </highlight>
+        <default-map-tool-selection tool='1' />
+      </viewpoint>
+      <simple-id uuid='{4D7FFD6A-F640-45AC-9AD0-9020A49BB0AA}' />
+    </window>
+    <window class='worksheet' hidden='true' name='Vendor Late 5 min'>
+      <cards>
+        <edge name='left'>
+          <strip size='160'>
+            <card type='pages' />
+            <card type='filters' />
+            <card type='marks' />
+          </strip>
+        </edge>
+        <edge name='top'>
+          <strip size='2147483647'>
+            <card type='columns' />
+          </strip>
+          <strip size='2147483647'>
+            <card type='rows' />
+          </strip>
+          <strip size='31'>
+            <card type='title' />
+          </strip>
+        </edge>
+        <edge name='right'>
+          <strip size='160'>
+            <card pane-specification-id='1' param='[federated.0zmzvxs1m5jly913i00b01fm8pnh].[:Measure Names]' type='color' />
+            <card pane-specification-id='3' param='[federated.0zmzvxs1m5jly913i00b01fm8pnh].[sum:successful_orders:qk]' type='size' />
+            <card pane-specification-id='3' param='[federated.0zmzvxs1m5jly913i00b01fm8pnh].[sum:Calculation_841047258192650248:qk]' type='color' />
+          </strip>
+        </edge>
+      </cards>
+      <viewpoint>
+        <highlight>
+          <color-one-way>
+            <field>[federated.0zmzvxs1m5jly913i00b01fm8pnh].[none:location_name:nk]</field>
+            <field>[federated.0zmzvxs1m5jly913i00b01fm8pnh].[none:vendor_id:nk]</field>
+            <field>[federated.0zmzvxs1m5jly913i00b01fm8pnh].[sum:Calculation_841047258192650248:qk]</field>
+          </color-one-way>
+        </highlight>
+        <default-map-tool-selection tool='1' />
+      </viewpoint>
+      <simple-id uuid='{49420995-11A7-4332-AE49-FCDD3597E50A}' />
+    </window>
+  </windows>
+</workbook>

@@ -1,0 +1,2483 @@
+<?xml version='1.0' encoding='utf-8' ?>
+
+<!-- build 20221.22.1108.1355                               -->
+<workbook original-version='18.1' source-build='2022.1.9 (20221.22.1108.1355)' version='18.1' xml:base='https://tableau.deliveryhero.net' xmlns:user='http://www.tableausoftware.com/xml/user'>
+  <document-format-change-manifest>
+    <_.fcp.AccessibleZoneTabOrder.true...AccessibleZoneTabOrder />
+    <_.fcp.AnimationOnByDefault.true...AnimationOnByDefault />
+    <AutoCreateAndUpdateDSDPhoneLayouts />
+    <Hyper_NormalizedExtracts />
+    <_.fcp.MarkAnimation.true...MarkAnimation />
+    <_.fcp.ObjectModelEncapsulateLegacy.true...ObjectModelEncapsulateLegacy />
+    <_.fcp.ObjectModelExtractV2.true...ObjectModelExtractV2 />
+    <_.fcp.ObjectModelTableType.true...ObjectModelTableType />
+    <_.fcp.SchemaViewerObjectModel.true...SchemaViewerObjectModel />
+    <SetMembershipControl />
+    <SheetIdentifierTracking />
+    <WindowsPersistSimpleIdentifiers />
+    <WorksheetBackgroundTransparency />
+    <ZoneBackgroundTransparency />
+  </document-format-change-manifest>
+  <repository-location derived-from='https://tableau.deliveryhero.net/t/GlobalStandardReporting/workbooks/SalesManagerAnalysis?rev=2.2' id='SalesManagerAnalysis' path='/t/GlobalStandardReporting/workbooks' revision='2.3' site='GlobalStandardReporting' />
+  <preferences />
+  <_.fcp.AnimationOnByDefault.false...style>
+    <_.fcp.AnimationOnByDefault.false..._.fcp.MarkAnimation.true...style-rule element='animation'>
+      <_.fcp.AnimationOnByDefault.false...format attr='animation-on' value='ao-on' />
+    </_.fcp.AnimationOnByDefault.false..._.fcp.MarkAnimation.true...style-rule>
+  </_.fcp.AnimationOnByDefault.false...style>
+  <datasources>
+    <datasource caption='Test_Activation' inline='true' name='federated.14cwxyc09olo4q10b2jl01bimk1v' version='18.1'>
+      <connection class='federated'>
+        <named-connections>
+          <named-connection caption='BigQuery' name='bigquery.10ucgbn07qemmj10qxv800dvazvd'>
+            <connection CATALOG='fulfillment-dwh-production' EXECCATALOG='dh-vt-rsc-6006' authentication='oauth' bq-dataset-fetch-rows='' bq-fetch-rows='' bq-fetch-tasks='' bq-large-fetch-rows='' bq-project-fetch-rows='' bq-response-rows='' class='bigquery' connection-dialect='google-sql' project='fulfillment-dwh-production' schema='curated_data_shared_govops' server-oauth='' username='johann.grobler@deliveryhero.com' workgroup-auth-mode='prompt' />
+          </named-connection>
+        </named-connections>
+        <_.fcp.ObjectModelEncapsulateLegacy.false...relation join='inner' type='join'>
+          <clause type='join'>
+            <expression op='='>
+              <expression op='[Custom SQL Query].[global_entity_id]' />
+              <expression op='[tableau_gsr_entitlements_global_entity_id].[global_entity_id]' />
+            </expression>
+          </clause>
+          <relation connection='bigquery.10ucgbn07qemmj10qxv800dvazvd' name='Custom SQL Query' type='text'><![CDATA[WITH rest_base AS (
+  SELECT DISTINCT a.id
+    , a.entity_id AS global_entity_id
+    , datetime(a.created_at,d.timezone) AS created_at
+    , CAST(DATE_TRUNC(DATETIME(a.created_at,d.timezone),day) AS DATE)AS created_at_date
+    , CAST(DATE_TRUNC(DATETIME(a.created_at,d.timezone),WEEK(MONDAY)) AS DATE) AS week_date
+    , CAST(DATE_TRUNC(DATETIME(a.created_at,d.timezone),month) AS DATE) AS month_date
+    , a.restaurant_id AS vendor_id
+    , a.supplier_id
+    , a.status
+  FROM `fulfillment-dwh-production.dl_sales_revenue.rsc_app_data_orders` a 
+  LEFT JOIN `fulfillment-dwh-production.dl_sales_revenue.rsc_app_data_suppliers` b  
+  ON a.entity_id = b.entity_id 
+    AND b.id = a.supplier_id
+  LEFT JOIN `fulfillment-dwh-production.dl_sales_revenue.rsc_app_data_restaurants` c 
+  ON a.entity_id = c.entity_id 
+    AND c.id = a.restaurant_id
+  INNER JOIN  `fulfillment-dwh-production.curated_data_shared_data_stream.timezones`d
+    ON d.global_entity_id = a.entity_id
+  LEFT JOIN fulfillment-dwh-production.rl_sales_revenue.rsc_vendor_period_exclusion_table e 
+  ON e.global_entity_id = a.entity_id
+    AND e.vendor_id = a.restaurant_id
+  WHERE a.deleted = FALSE
+    AND DATE(a.merge_layer_updated_at)>> '2022-11-01'
+    AND NOT CONTAINS_SUBSTR(LOWER(b.name), 'test_')
+    AND NOT CONTAINS_SUBSTR(LOWER(b.name), 'demo_') 
+    AND a.status NOT LIKE '%cancel%'
+    AND a.status NOT LIKE '%rejected%'
+    AND b.name not like '%stock_balance%'
+    AND NOT (a.entity_id = 'PY_CL' AND (a.supplier_id = 8 OR a.supplier_id = 21 OR a.supplier_id = 103))
+    AND NOT b.is_packaging = TRUE
+    AND NOT (e.vendor_id IS NOT NULL AND DATE(a.created_at) >>= e.exclusion_period_start_date AND DATE(a.created_at) << e.exclusion_period_end_date)
+    AND (
+      (a.entity_id = 'FP_HK' AND LOWER(b.name) NOT LIKE '%foodpanda rest%') 
+      OR a.entity_id = 'FP_SG' 
+      OR (a.entity_id = 'MJM_AT' AND LOWER(b.name) NOT LIKE '%mjam%') 
+      OR (
+        a.entity_id= 'PY_CL' 
+        AND LOWER(b.name) <<>>'efe test supplier' 
+        AND LOWER(b.name) <<>> 'valentin cl email' 
+        AND a.created_at >> '2022-01-16'
+      )
+      OR a.entity_id = 'FP_MY'
+      OR a.entity_id = 'FP_TH'
+      OR a.entity_id = 'TB_QA'
+    )
+), activation_base AS (
+  SELECT a.*
+  , DENSE_RANK() OVER (PARTITION BY global_entity_id, vendor_id ORDER BY created_at_date) AS order_day
+  FROM rest_base a
+), activation_stats AS (
+  SELECT global_entity_id
+    , vendor_id
+    , MIN(
+      CASE 
+        WHEN order_day = 2
+          THEN  created_at_date
+      END) AS activation_date
+    , MIN(
+      CASE 
+        WHEN order_day = 2
+          THEN week_date
+      END) AS activation_week  
+    , MIN(
+      CASE 
+        WHEN order_day = 2
+          THEN month_date
+      END) AS activation_month  
+    , COUNT(DISTINCT
+      CASE
+        WHEN order_day <<= 2
+          THEN supplier_id
+      END) AS no_activation_suppliers
+    , 'Traditional' AS activation_critieria
+  FROM activation_base
+  GROUP BY 1,2
+), vendor_supp_strict AS (
+  SELECT global_entity_id
+    , vendor_id
+    , supplier_id
+    , MIN(created_at) AS min_vendor_supp_date_time
+  FROM rest_base 
+  GROUP BY 1,2,3
+), sf_salesmanager as (
+select global_entity_id,
+vendor_code__c, 
+bb.ownername,
+case when strpos(vendor_code__c, '-')>> 0 
+then substr(vendor_code__c,strpos(vendor_code__c, '-')+1)
+else vendor_code__c
+end as clean_
+from fulfillment-dwh-production.curated_data_shared_salesforce_rsc.lead bb
+where vendor_code__c is not null
+), vendor_supp_rank_strict AS (
+  SELECT global_entity_id
+  , vendor_id
+  , supplier_id
+  , min_vendor_supp_date_time
+  , COUNT(vendor_id) OVER (PARTITION BY global_entity_id, vendor_id ORDER BY min_vendor_supp_date_time) AS supp_vendor_rank
+  FROM vendor_supp_strict  a
+), strict_criteria_base AS (
+  SELECT a.global_entity_id
+  , a.vendor_id
+  , MIN(
+    CASE 
+      WHEN order_day = 3
+        THEN created_at_date
+    END) AS order_day_3_date
+  , MIN(
+    CASE 
+      WHEN order_day = 5
+        THEN created_at_date 
+    END) AS order_day_5_date
+  , MIN(
+    CASE 
+      WHEN b.supp_vendor_rank = 2
+        THEN DATE(min_vendor_supp_date_time)
+    END) AS order_day_2nd_supplier
+  FROM activation_base a
+  LEFT JOIN vendor_supp_rank_strict b 
+  ON a.global_entity_id = b.global_entity_id 
+    AND a.vendor_id = b.vendor_id
+  GROUP BY 1,2
+), selection_critieria AS (
+   SELECT global_entity_id
+  , vendor_id
+  , CASE
+      WHEN order_day_2nd_supplier <<= order_day_3_date
+        THEN order_day_3_date
+      WHEN order_day_2nd_supplier >> order_day_3_date AND order_day_2nd_supplier << order_day_5_date
+        THEN order_day_2nd_supplier
+    ELSE order_day_5_date
+    END AS activation_date
+  FROM strict_criteria_base
+), strct_final AS (
+ SELECT a.*
+    , CAST(DATE_TRUNC(activation_date,WEEK(MONDAY)) AS DATE) AS activation_week
+    , CAST(DATE_TRUNC(activation_date,MONTH) AS DATE) AS activation_month
+    , COUNT(DISTINCT 
+      CASE 
+        WHEN b.created_at_date <<= activation_date
+          THEN supplier_id
+      END) AS no_activation_suppliers
+    , 'Strict' AS activation_critieria
+  FROM selection_critieria a
+  INNER JOIN activation_base b 
+  ON a.global_entity_id = b.global_entity_id 
+    AND a.vendor_id = b.vendor_id
+
+  GROUP BY 1,2,3
+)
+SELECT a.global_entity_id
+  , a.vendor_id
+  , b.code AS vendor_code
+  , b.name AS vendor_name
+  , a.activation_date
+  , a.activation_week
+  , COUNT(
+    CASE 
+      WHEN c.week_date >> a.activation_week
+      AND c.week_date <<= DATE_ADD(a.activation_week, INTERVAL 1 week)
+      THEN c.id
+      END) AS order_w1_after_activation
+  , COUNT(
+    CASE 
+      WHEN c.week_date >> DATE_ADD(a.activation_week, INTERVAL 1 week)
+      AND c.week_date <<= DATE_ADD(a.activation_week, INTERVAL 2 week)
+      THEN c.id
+      END) AS order_w2_after_activation
+  , CASE
+      WHEN DATE_ADD(a.activation_week, INTERVAL 2 week) <<= CURRENT_DATE()
+      THEN 1
+      ELSE 0
+      END AS activation_lenght_W1
+  ,   CASE
+      WHEN DATE_ADD(a.activation_week, INTERVAL 3 week) <<= CURRENT_DATE()
+      THEN 1
+      ELSE 0
+      END AS activation_lenght_W2
+  , a.activation_month
+  , a.no_activation_suppliers
+  , a.activation_critieria
+  , d.ownername as sales_manager
+FROM activation_stats a
+INNER JOIN `fulfillment-dwh-production.dl_sales_revenue.rsc_app_data_restaurants` b
+ON a.global_entity_id = b.entity_id
+  AND a.vendor_id = b.id
+INNER JOIN activation_base c 
+ON a.global_entity_id = c.global_entity_id 
+  AND a.vendor_id = c.vendor_id
+LEFT JOIN sf_salesmanager d 
+ON d.global_entity_id = b.entity_id
+  AND d.clean_ = b.code
+WHERE activation_date IS NOT NULL
+  AND activation_date >> DATE_SUB(DATE_TRUNC(CURRENT_DATE(), month), INTERVAL 6 MONTH)
+GROUP BY 1,2,3,4,5,6,9,10,11,12,13,14
+
+UNION ALL
+
+SELECT a.global_entity_id
+  , a.vendor_id
+  , b.code AS vendor_code
+  , b.name AS vendor_name
+  , a.activation_date
+  , a.activation_week
+  , COUNT(
+    CASE 
+      WHEN c.week_date >> a.activation_week
+      AND c.week_date <<= DATE_ADD(a.activation_week, INTERVAL 1 week)
+      THEN c.id
+      END )AS order_w1_after_activation
+  , COUNT(
+    CASE 
+      WHEN c.week_date >> DATE_ADD(a.activation_week, INTERVAL 1 week)
+      AND c.week_date <<= DATE_ADD(a.activation_week, INTERVAL 2 week)
+      THEN c.id
+      END) AS order_w2_after_activation
+  , CASE
+      WHEN DATE_ADD(a.activation_week, INTERVAL 2 week) <<= CURRENT_DATE()
+      THEN 1
+      ELSE 0
+      END AS activation_lenght_W1
+  , CASE
+      WHEN DATE_ADD(a.activation_week, INTERVAL 3 week) <<= CURRENT_DATE()
+      THEN 1
+      ELSE 0
+      END AS activation_lenght_W2
+  , a.activation_month
+  , a.no_activation_suppliers
+  , a.activation_critieria
+  , d.ownername as sales_manager
+FROM strct_final a
+INNER JOIN `fulfillment-dwh-production.dl_sales_revenue.rsc_app_data_restaurants` b
+ON a.global_entity_id = b.entity_id
+  AND a.vendor_id = b.id
+INNER JOIN activation_base c 
+ON a.global_entity_id = c.global_entity_id 
+  AND a.vendor_id = c.vendor_id
+LEFT JOIN sf_salesmanager d 
+ON d.global_entity_id = b.entity_id
+  AND d.clean_ = b.code
+WHERE activation_date IS NOT NULL
+  AND activation_date >> DATE_SUB(DATE_TRUNC(CURRENT_DATE(), month), INTERVAL 6 MONTH)
+GROUP BY 1,2,3,4,5,6,9,10,11,12,13,14]]></relation>
+          <relation connection='bigquery.10ucgbn07qemmj10qxv800dvazvd' name='tableau_gsr_entitlements_global_entity_id' table='[fulfillment-dwh-production.curated_data_shared_govops].[tableau_gsr_entitlements_global_entity_id]' type='table' />
+        </_.fcp.ObjectModelEncapsulateLegacy.false...relation>
+        <_.fcp.ObjectModelEncapsulateLegacy.true...relation join='inner' type='join'>
+          <clause type='join'>
+            <expression op='='>
+              <expression op='[Custom SQL Query].[global_entity_id]' />
+              <expression op='[tableau_gsr_entitlements_global_entity_id].[global_entity_id]' />
+            </expression>
+          </clause>
+          <relation connection='bigquery.10ucgbn07qemmj10qxv800dvazvd' name='Custom SQL Query' type='text'><![CDATA[WITH rest_base AS (
+  SELECT DISTINCT a.id
+    , a.entity_id AS global_entity_id
+    , datetime(a.created_at,d.timezone) AS created_at
+    , CAST(DATE_TRUNC(DATETIME(a.created_at,d.timezone),day) AS DATE)AS created_at_date
+    , CAST(DATE_TRUNC(DATETIME(a.created_at,d.timezone),WEEK(MONDAY)) AS DATE) AS week_date
+    , CAST(DATE_TRUNC(DATETIME(a.created_at,d.timezone),month) AS DATE) AS month_date
+    , a.restaurant_id AS vendor_id
+    , a.supplier_id
+    , a.status
+  FROM `fulfillment-dwh-production.dl_sales_revenue.rsc_app_data_orders` a 
+  LEFT JOIN `fulfillment-dwh-production.dl_sales_revenue.rsc_app_data_suppliers` b  
+  ON a.entity_id = b.entity_id 
+    AND b.id = a.supplier_id
+  LEFT JOIN `fulfillment-dwh-production.dl_sales_revenue.rsc_app_data_restaurants` c 
+  ON a.entity_id = c.entity_id 
+    AND c.id = a.restaurant_id
+  INNER JOIN  `fulfillment-dwh-production.curated_data_shared_data_stream.timezones`d
+    ON d.global_entity_id = a.entity_id
+  LEFT JOIN fulfillment-dwh-production.rl_sales_revenue.rsc_vendor_period_exclusion_table e 
+  ON e.global_entity_id = a.entity_id
+    AND e.vendor_id = a.restaurant_id
+  WHERE a.deleted = FALSE
+    AND DATE(a.merge_layer_updated_at)>> '2022-11-01'
+    AND NOT CONTAINS_SUBSTR(LOWER(b.name), 'test_')
+    AND NOT CONTAINS_SUBSTR(LOWER(b.name), 'demo_') 
+    AND a.status NOT LIKE '%cancel%'
+    AND a.status NOT LIKE '%rejected%'
+    AND b.name not like '%stock_balance%'
+    AND NOT (a.entity_id = 'PY_CL' AND (a.supplier_id = 8 OR a.supplier_id = 21 OR a.supplier_id = 103))
+    AND NOT b.is_packaging = TRUE
+    AND NOT (e.vendor_id IS NOT NULL AND DATE(a.created_at) >>= e.exclusion_period_start_date AND DATE(a.created_at) << e.exclusion_period_end_date)
+    AND (
+      (a.entity_id = 'FP_HK' AND LOWER(b.name) NOT LIKE '%foodpanda rest%') 
+      OR a.entity_id = 'FP_SG' 
+      OR (a.entity_id = 'MJM_AT' AND LOWER(b.name) NOT LIKE '%mjam%') 
+      OR (
+        a.entity_id= 'PY_CL' 
+        AND LOWER(b.name) <<>>'efe test supplier' 
+        AND LOWER(b.name) <<>> 'valentin cl email' 
+        AND a.created_at >> '2022-01-16'
+      )
+      OR a.entity_id = 'FP_MY'
+      OR a.entity_id = 'FP_TH'
+      OR a.entity_id = 'TB_QA'
+    )
+), activation_base AS (
+  SELECT a.*
+  , DENSE_RANK() OVER (PARTITION BY global_entity_id, vendor_id ORDER BY created_at_date) AS order_day
+  FROM rest_base a
+), activation_stats AS (
+  SELECT global_entity_id
+    , vendor_id
+    , MIN(
+      CASE 
+        WHEN order_day = 2
+          THEN  created_at_date
+      END) AS activation_date
+    , MIN(
+      CASE 
+        WHEN order_day = 2
+          THEN week_date
+      END) AS activation_week  
+    , MIN(
+      CASE 
+        WHEN order_day = 2
+          THEN month_date
+      END) AS activation_month  
+    , COUNT(DISTINCT
+      CASE
+        WHEN order_day <<= 2
+          THEN supplier_id
+      END) AS no_activation_suppliers
+    , 'Traditional' AS activation_critieria
+  FROM activation_base
+  GROUP BY 1,2
+), vendor_supp_strict AS (
+  SELECT global_entity_id
+    , vendor_id
+    , supplier_id
+    , MIN(created_at) AS min_vendor_supp_date_time
+  FROM rest_base 
+  GROUP BY 1,2,3
+), sf_salesmanager as (
+select global_entity_id,
+vendor_code__c, 
+bb.ownername,
+case when strpos(vendor_code__c, '-')>> 0 
+then substr(vendor_code__c,strpos(vendor_code__c, '-')+1)
+else vendor_code__c
+end as clean_
+from fulfillment-dwh-production.curated_data_shared_salesforce_rsc.lead bb
+where vendor_code__c is not null
+), vendor_supp_rank_strict AS (
+  SELECT global_entity_id
+  , vendor_id
+  , supplier_id
+  , min_vendor_supp_date_time
+  , COUNT(vendor_id) OVER (PARTITION BY global_entity_id, vendor_id ORDER BY min_vendor_supp_date_time) AS supp_vendor_rank
+  FROM vendor_supp_strict  a
+), strict_criteria_base AS (
+  SELECT a.global_entity_id
+  , a.vendor_id
+  , MIN(
+    CASE 
+      WHEN order_day = 3
+        THEN created_at_date
+    END) AS order_day_3_date
+  , MIN(
+    CASE 
+      WHEN order_day = 5
+        THEN created_at_date 
+    END) AS order_day_5_date
+  , MIN(
+    CASE 
+      WHEN b.supp_vendor_rank = 2
+        THEN DATE(min_vendor_supp_date_time)
+    END) AS order_day_2nd_supplier
+  FROM activation_base a
+  LEFT JOIN vendor_supp_rank_strict b 
+  ON a.global_entity_id = b.global_entity_id 
+    AND a.vendor_id = b.vendor_id
+  GROUP BY 1,2
+), selection_critieria AS (
+   SELECT global_entity_id
+  , vendor_id
+  , CASE
+      WHEN order_day_2nd_supplier <<= order_day_3_date
+        THEN order_day_3_date
+      WHEN order_day_2nd_supplier >> order_day_3_date AND order_day_2nd_supplier << order_day_5_date
+        THEN order_day_2nd_supplier
+    ELSE order_day_5_date
+    END AS activation_date
+  FROM strict_criteria_base
+), strct_final AS (
+ SELECT a.*
+    , CAST(DATE_TRUNC(activation_date,WEEK(MONDAY)) AS DATE) AS activation_week
+    , CAST(DATE_TRUNC(activation_date,MONTH) AS DATE) AS activation_month
+    , COUNT(DISTINCT 
+      CASE 
+        WHEN b.created_at_date <<= activation_date
+          THEN supplier_id
+      END) AS no_activation_suppliers
+    , 'Strict' AS activation_critieria
+  FROM selection_critieria a
+  INNER JOIN activation_base b 
+  ON a.global_entity_id = b.global_entity_id 
+    AND a.vendor_id = b.vendor_id
+
+  GROUP BY 1,2,3
+)
+SELECT a.global_entity_id
+  , a.vendor_id
+  , b.code AS vendor_code
+  , b.name AS vendor_name
+  , a.activation_date
+  , a.activation_week
+  , COUNT(
+    CASE 
+      WHEN c.week_date >> a.activation_week
+      AND c.week_date <<= DATE_ADD(a.activation_week, INTERVAL 1 week)
+      THEN c.id
+      END) AS order_w1_after_activation
+  , COUNT(
+    CASE 
+      WHEN c.week_date >> DATE_ADD(a.activation_week, INTERVAL 1 week)
+      AND c.week_date <<= DATE_ADD(a.activation_week, INTERVAL 2 week)
+      THEN c.id
+      END) AS order_w2_after_activation
+  , CASE
+      WHEN DATE_ADD(a.activation_week, INTERVAL 2 week) <<= CURRENT_DATE()
+      THEN 1
+      ELSE 0
+      END AS activation_lenght_W1
+  ,   CASE
+      WHEN DATE_ADD(a.activation_week, INTERVAL 3 week) <<= CURRENT_DATE()
+      THEN 1
+      ELSE 0
+      END AS activation_lenght_W2
+  , a.activation_month
+  , a.no_activation_suppliers
+  , a.activation_critieria
+  , d.ownername as sales_manager
+FROM activation_stats a
+INNER JOIN `fulfillment-dwh-production.dl_sales_revenue.rsc_app_data_restaurants` b
+ON a.global_entity_id = b.entity_id
+  AND a.vendor_id = b.id
+INNER JOIN activation_base c 
+ON a.global_entity_id = c.global_entity_id 
+  AND a.vendor_id = c.vendor_id
+LEFT JOIN sf_salesmanager d 
+ON d.global_entity_id = b.entity_id
+  AND d.clean_ = b.code
+WHERE activation_date IS NOT NULL
+  AND activation_date >> DATE_SUB(DATE_TRUNC(CURRENT_DATE(), month), INTERVAL 6 MONTH)
+GROUP BY 1,2,3,4,5,6,9,10,11,12,13,14
+
+UNION ALL
+
+SELECT a.global_entity_id
+  , a.vendor_id
+  , b.code AS vendor_code
+  , b.name AS vendor_name
+  , a.activation_date
+  , a.activation_week
+  , COUNT(
+    CASE 
+      WHEN c.week_date >> a.activation_week
+      AND c.week_date <<= DATE_ADD(a.activation_week, INTERVAL 1 week)
+      THEN c.id
+      END )AS order_w1_after_activation
+  , COUNT(
+    CASE 
+      WHEN c.week_date >> DATE_ADD(a.activation_week, INTERVAL 1 week)
+      AND c.week_date <<= DATE_ADD(a.activation_week, INTERVAL 2 week)
+      THEN c.id
+      END) AS order_w2_after_activation
+  , CASE
+      WHEN DATE_ADD(a.activation_week, INTERVAL 2 week) <<= CURRENT_DATE()
+      THEN 1
+      ELSE 0
+      END AS activation_lenght_W1
+  , CASE
+      WHEN DATE_ADD(a.activation_week, INTERVAL 3 week) <<= CURRENT_DATE()
+      THEN 1
+      ELSE 0
+      END AS activation_lenght_W2
+  , a.activation_month
+  , a.no_activation_suppliers
+  , a.activation_critieria
+  , d.ownername as sales_manager
+FROM strct_final a
+INNER JOIN `fulfillment-dwh-production.dl_sales_revenue.rsc_app_data_restaurants` b
+ON a.global_entity_id = b.entity_id
+  AND a.vendor_id = b.id
+INNER JOIN activation_base c 
+ON a.global_entity_id = c.global_entity_id 
+  AND a.vendor_id = c.vendor_id
+LEFT JOIN sf_salesmanager d 
+ON d.global_entity_id = b.entity_id
+  AND d.clean_ = b.code
+WHERE activation_date IS NOT NULL
+  AND activation_date >> DATE_SUB(DATE_TRUNC(CURRENT_DATE(), month), INTERVAL 6 MONTH)
+GROUP BY 1,2,3,4,5,6,9,10,11,12,13,14]]></relation>
+          <relation connection='bigquery.10ucgbn07qemmj10qxv800dvazvd' name='tableau_gsr_entitlements_global_entity_id' table='[fulfillment-dwh-production.curated_data_shared_govops].[tableau_gsr_entitlements_global_entity_id]' type='table' />
+        </_.fcp.ObjectModelEncapsulateLegacy.true...relation>
+        <cols>
+          <map key='[access_group]' value='[tableau_gsr_entitlements_global_entity_id].[access_group]' />
+          <map key='[activation_critieria]' value='[Custom SQL Query].[activation_critieria]' />
+          <map key='[activation_date]' value='[Custom SQL Query].[activation_date]' />
+          <map key='[activation_lenght_W1]' value='[Custom SQL Query].[activation_lenght_W1]' />
+          <map key='[activation_lenght_W2]' value='[Custom SQL Query].[activation_lenght_W2]' />
+          <map key='[activation_month]' value='[Custom SQL Query].[activation_month]' />
+          <map key='[activation_week]' value='[Custom SQL Query].[activation_week]' />
+          <map key='[global_entity_id (tableau_gsr_entitlements_global_entity_id)]' value='[tableau_gsr_entitlements_global_entity_id].[global_entity_id]' />
+          <map key='[global_entity_id]' value='[Custom SQL Query].[global_entity_id]' />
+          <map key='[no_activation_suppliers]' value='[Custom SQL Query].[no_activation_suppliers]' />
+          <map key='[order_w1_after_activation]' value='[Custom SQL Query].[order_w1_after_activation]' />
+          <map key='[order_w2_after_activation]' value='[Custom SQL Query].[order_w2_after_activation]' />
+          <map key='[sales_manager]' value='[Custom SQL Query].[sales_manager]' />
+          <map key='[username]' value='[tableau_gsr_entitlements_global_entity_id].[username]' />
+          <map key='[vendor_code]' value='[Custom SQL Query].[vendor_code]' />
+          <map key='[vendor_id]' value='[Custom SQL Query].[vendor_id]' />
+          <map key='[vendor_name]' value='[Custom SQL Query].[vendor_name]' />
+        </cols>
+        <metadata-records>
+          <metadata-record class='column'>
+            <remote-name>global_entity_id</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[global_entity_id]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>global_entity_id</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_96795CEF4D7C46BF9698BB2D606A027C]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>vendor_id</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[vendor_id]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>vendor_id</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_96795CEF4D7C46BF9698BB2D606A027C]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>vendor_code</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[vendor_code]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>vendor_code</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_96795CEF4D7C46BF9698BB2D606A027C]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>vendor_name</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[vendor_name]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>vendor_name</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_96795CEF4D7C46BF9698BB2D606A027C]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>activation_date</remote-name>
+            <remote-type>7</remote-type>
+            <local-name>[activation_date]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>activation_date</remote-alias>
+            <local-type>date</local-type>
+            <aggregation>Year</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_96795CEF4D7C46BF9698BB2D606A027C]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>activation_week</remote-name>
+            <remote-type>7</remote-type>
+            <local-name>[activation_week]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>activation_week</remote-alias>
+            <local-type>date</local-type>
+            <aggregation>Year</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_96795CEF4D7C46BF9698BB2D606A027C]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>order_w1_after_activation</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[order_w1_after_activation]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>order_w1_after_activation</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_96795CEF4D7C46BF9698BB2D606A027C]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>order_w2_after_activation</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[order_w2_after_activation]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>order_w2_after_activation</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_96795CEF4D7C46BF9698BB2D606A027C]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>activation_lenght_W1</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[activation_lenght_W1]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>activation_lenght_W1</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_96795CEF4D7C46BF9698BB2D606A027C]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>activation_lenght_W2</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[activation_lenght_W2]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>activation_lenght_W2</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_96795CEF4D7C46BF9698BB2D606A027C]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>activation_month</remote-name>
+            <remote-type>7</remote-type>
+            <local-name>[activation_month]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>activation_month</remote-alias>
+            <local-type>date</local-type>
+            <aggregation>Year</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_96795CEF4D7C46BF9698BB2D606A027C]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>no_activation_suppliers</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[no_activation_suppliers]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>no_activation_suppliers</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_96795CEF4D7C46BF9698BB2D606A027C]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>activation_critieria</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[activation_critieria]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>activation_critieria</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_96795CEF4D7C46BF9698BB2D606A027C]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>sales_manager</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[sales_manager]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>sales_manager</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_96795CEF4D7C46BF9698BB2D606A027C]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>username</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[username]</local-name>
+            <parent-name>[tableau_gsr_entitlements_global_entity_id]</parent-name>
+            <remote-alias>username</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_96795CEF4D7C46BF9698BB2D606A027C]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>access_group</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[access_group]</local-name>
+            <parent-name>[tableau_gsr_entitlements_global_entity_id]</parent-name>
+            <remote-alias>access_group</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_96795CEF4D7C46BF9698BB2D606A027C]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>global_entity_id</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[global_entity_id (tableau_gsr_entitlements_global_entity_id)]</local-name>
+            <parent-name>[tableau_gsr_entitlements_global_entity_id]</parent-name>
+            <remote-alias>global_entity_id</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_96795CEF4D7C46BF9698BB2D606A027C]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+        </metadata-records>
+      </connection>
+      <aliases enabled='yes' />
+      <column caption='Pos_count_w1' datatype='real' name='[Calculation_902690288425512960]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='count(&#13;&#10;if [order_w1_after_activation] &gt; 0&#13;&#10;and [activation_lenght_W1] = 1&#13;&#10;then 1&#13;&#10;end&#13;&#10;)/&#13;&#10;COUNT(if[activation_lenght_W1] = 1&#13;&#10;then 1&#13;&#10;END&#13;&#10;)' />
+      </column>
+      <column caption='User Entitlement' datatype='boolean' name='[Calculation_927741563900006400]' role='dimension' type='nominal'>
+        <calculation class='tableau' formula='[username]= USERNAME()' />
+      </column>
+      <column caption='Pos_count_w2' datatype='real' name='[Pos_count_w1 (copy)_902690288465768449]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='count(&#13;&#10;if [order_w2_after_activation] &gt; 0&#13;&#10;and  [activation_lenght_W2] =1 &#13;&#10;then 1&#13;&#10;end&#13;&#10;)/&#13;&#10;count(&#13;&#10;if [activation_lenght_W2] =1 &#13;&#10;then 1&#13;&#10;end&#13;&#10;)' />
+      </column>
+      <_.fcp.ObjectModelTableType.true...column caption='Custom SQL Query' datatype='table' name='[__tableau_internal_object_id__].[_96795CEF4D7C46BF9698BB2D606A027C]' role='measure' type='quantitative' />
+      <column caption='Access Group' datatype='string' name='[access_group]' role='dimension' type='nominal' />
+      <column datatype='date' default-format='*mm/yyyy' name='[activation_month]' role='dimension' type='ordinal' />
+      <column caption='Global Entity Id (Tableau Gsr Entitlements Global Entity Id)' datatype='string' hidden='true' name='[global_entity_id (tableau_gsr_entitlements_global_entity_id)]' role='dimension' type='nominal' />
+      <column datatype='string' name='[global_entity_id]' role='dimension' type='nominal' />
+      <column datatype='integer' name='[no_activation_suppliers]' role='measure' type='quantitative' />
+      <column datatype='integer' name='[order_w1_after_activation]' role='measure' type='quantitative' />
+      <column datatype='integer' name='[order_w2_after_activation]' role='measure' type='quantitative' />
+      <column caption='Username' datatype='string' hidden='true' name='[username]' role='dimension' type='nominal' />
+      <column caption='Rest_Code' datatype='string' name='[vendor_code]' role='dimension' type='nominal' />
+      <column datatype='integer' name='[vendor_id]' role='measure' type='quantitative' />
+      <column caption='Rest_Name' datatype='string' name='[vendor_name]' role='dimension' type='nominal' />
+      <column-instance column='[__tableau_internal_object_id__].[_96795CEF4D7C46BF9698BB2D606A027C]' derivation='Count' name='[__tableau_internal_object_id__].[cnt:_96795CEF4D7C46BF9698BB2D606A027C:qk]' pivot='key' type='quantitative' />
+      <column-instance column='[no_activation_suppliers]' derivation='Avg' name='[avg:no_activation_suppliers:qk]' pivot='key' type='quantitative' />
+      <column-instance column='[vendor_id]' derivation='Count' name='[cnt:vendor_id:qk]' pivot='key' type='quantitative' />
+      <column-instance column='[no_activation_suppliers]' derivation='Sum' name='[sum:no_activation_suppliers:qk]' pivot='key' type='quantitative' />
+      <column-instance column='[order_w1_after_activation]' derivation='Sum' name='[sum:order_w1_after_activation:qk]' pivot='key' type='quantitative' />
+      <column-instance column='[order_w2_after_activation]' derivation='Sum' name='[sum:order_w2_after_activation:qk]' pivot='key' type='quantitative' />
+      <column-instance column='[vendor_id]' derivation='Sum' name='[sum:vendor_id:qk]' pivot='key' type='quantitative' />
+      <column-instance column='[Calculation_902690288425512960]' derivation='User' name='[usr:Calculation_902690288425512960:qk]' pivot='key' type='quantitative' />
+      <column-instance column='[Pos_count_w1 (copy)_902690288465768449]' derivation='User' name='[usr:Pos_count_w1 (copy)_902690288465768449:qk]' pivot='key' type='quantitative' />
+      <extract _.fcp.ObjectModelExtractV2.true...object-id='' count='-1' enabled='true' type='normalized' units='records'>
+        <connection access_mode='readonly' author-locale='en_US' class='hyper' dbname='extract/fe/c1/{0275571E-C7CC-47AD-9DBD-AC4D151AC41D}/federated_14cwxyc09olo4q10b2jl01.hyper' extract-engine='true' schema='Extract' sf-has-unconstrained-join='yes' sslmode='' tablename='Extract' update-time='08/26/2023 03:00:44 AM'>
+          <_.fcp.ObjectModelEncapsulateLegacy.false...relation join='inner' type='join'>
+            <clause type='join'>
+              <expression op='='>
+                <expression op='[Custom SQL Query].[global_entity_id]' />
+                <expression op='[tableau_gsr_entitlements_global_entity_id].[global_entity_id]' />
+              </expression>
+            </clause>
+            <relation name='Custom SQL Query' table='[Extract].[Custom SQL Query]' type='table' />
+            <relation name='tableau_gsr_entitlements_global_entity_id' table='[Extract].[tableau_gsr_entitlements_global_entity_id]' type='table' />
+          </_.fcp.ObjectModelEncapsulateLegacy.false...relation>
+          <_.fcp.ObjectModelEncapsulateLegacy.true...relation join='inner' type='join'>
+            <clause type='join'>
+              <expression op='='>
+                <expression op='[Custom SQL Query].[global_entity_id]' />
+                <expression op='[tableau_gsr_entitlements_global_entity_id].[global_entity_id]' />
+              </expression>
+            </clause>
+            <relation name='Custom SQL Query' table='[Extract].[Custom SQL Query]' type='table' />
+            <relation name='tableau_gsr_entitlements_global_entity_id' table='[Extract].[tableau_gsr_entitlements_global_entity_id]' type='table' />
+          </_.fcp.ObjectModelEncapsulateLegacy.true...relation>
+          <cols>
+            <map key='[access_group]' value='[tableau_gsr_entitlements_global_entity_id].[access_group]' />
+            <map key='[activation_critieria]' value='[Custom SQL Query].[activation_critieria]' />
+            <map key='[activation_date]' value='[Custom SQL Query].[activation_date]' />
+            <map key='[activation_lenght_W1]' value='[Custom SQL Query].[activation_lenght_W1]' />
+            <map key='[activation_lenght_W2]' value='[Custom SQL Query].[activation_lenght_W2]' />
+            <map key='[activation_month]' value='[Custom SQL Query].[activation_month]' />
+            <map key='[activation_week]' value='[Custom SQL Query].[activation_week]' />
+            <map key='[global_entity_id (tableau_gsr_entitlements_global_entity_id)]' value='[tableau_gsr_entitlements_global_entity_id].[global_entity_id]' />
+            <map key='[global_entity_id]' value='[Custom SQL Query].[global_entity_id]' />
+            <map key='[no_activation_suppliers]' value='[Custom SQL Query].[no_activation_suppliers]' />
+            <map key='[order_w1_after_activation]' value='[Custom SQL Query].[order_w1_after_activation]' />
+            <map key='[order_w2_after_activation]' value='[Custom SQL Query].[order_w2_after_activation]' />
+            <map key='[sales_manager]' value='[Custom SQL Query].[sales_manager]' />
+            <map key='[username]' value='[tableau_gsr_entitlements_global_entity_id].[username]' />
+            <map key='[vendor_code]' value='[Custom SQL Query].[vendor_code]' />
+            <map key='[vendor_id]' value='[Custom SQL Query].[vendor_id]' />
+            <map key='[vendor_name]' value='[Custom SQL Query].[vendor_name]' />
+          </cols>
+          <metadata-records>
+            <metadata-record class='column'>
+              <remote-name>global_entity_id</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[global_entity_id]</local-name>
+              <parent-name>[Custom SQL Query]</parent-name>
+              <remote-alias>global_entity_id</remote-alias>
+              <ordinal>0</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>5</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_96795CEF4D7C46BF9698BB2D606A027C]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>vendor_id</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[vendor_id]</local-name>
+              <parent-name>[Custom SQL Query]</parent-name>
+              <remote-alias>vendor_id</remote-alias>
+              <ordinal>1</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>1275</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_96795CEF4D7C46BF9698BB2D606A027C]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>vendor_code</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[vendor_code]</local-name>
+              <parent-name>[Custom SQL Query]</parent-name>
+              <remote-alias>vendor_code</remote-alias>
+              <ordinal>2</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>1275</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_96795CEF4D7C46BF9698BB2D606A027C]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>vendor_name</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[vendor_name]</local-name>
+              <parent-name>[Custom SQL Query]</parent-name>
+              <remote-alias>vendor_name</remote-alias>
+              <ordinal>3</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>1273</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_96795CEF4D7C46BF9698BB2D606A027C]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>activation_date</remote-name>
+              <remote-type>133</remote-type>
+              <local-name>[activation_date]</local-name>
+              <parent-name>[Custom SQL Query]</parent-name>
+              <remote-alias>activation_date</remote-alias>
+              <ordinal>4</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>date</local-type>
+              <aggregation>Year</aggregation>
+              <approx-count>195</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_96795CEF4D7C46BF9698BB2D606A027C]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>activation_week</remote-name>
+              <remote-type>133</remote-type>
+              <local-name>[activation_week]</local-name>
+              <parent-name>[Custom SQL Query]</parent-name>
+              <remote-alias>activation_week</remote-alias>
+              <ordinal>5</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>date</local-type>
+              <aggregation>Year</aggregation>
+              <approx-count>28</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_96795CEF4D7C46BF9698BB2D606A027C]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>order_w1_after_activation</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[order_w1_after_activation]</local-name>
+              <parent-name>[Custom SQL Query]</parent-name>
+              <remote-alias>order_w1_after_activation</remote-alias>
+              <ordinal>6</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>39</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_96795CEF4D7C46BF9698BB2D606A027C]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>order_w2_after_activation</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[order_w2_after_activation]</local-name>
+              <parent-name>[Custom SQL Query]</parent-name>
+              <remote-alias>order_w2_after_activation</remote-alias>
+              <ordinal>7</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>37</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_96795CEF4D7C46BF9698BB2D606A027C]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>activation_lenght_W1</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[activation_lenght_W1]</local-name>
+              <parent-name>[Custom SQL Query]</parent-name>
+              <remote-alias>activation_lenght_W1</remote-alias>
+              <ordinal>8</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>1</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_96795CEF4D7C46BF9698BB2D606A027C]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>activation_lenght_W2</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[activation_lenght_W2]</local-name>
+              <parent-name>[Custom SQL Query]</parent-name>
+              <remote-alias>activation_lenght_W2</remote-alias>
+              <ordinal>9</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>2</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_96795CEF4D7C46BF9698BB2D606A027C]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>activation_month</remote-name>
+              <remote-type>133</remote-type>
+              <local-name>[activation_month]</local-name>
+              <parent-name>[Custom SQL Query]</parent-name>
+              <remote-alias>activation_month</remote-alias>
+              <ordinal>10</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>date</local-type>
+              <aggregation>Year</aggregation>
+              <approx-count>7</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_96795CEF4D7C46BF9698BB2D606A027C]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>no_activation_suppliers</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[no_activation_suppliers]</local-name>
+              <parent-name>[Custom SQL Query]</parent-name>
+              <remote-alias>no_activation_suppliers</remote-alias>
+              <ordinal>11</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>13</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_96795CEF4D7C46BF9698BB2D606A027C]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>activation_critieria</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[activation_critieria]</local-name>
+              <parent-name>[Custom SQL Query]</parent-name>
+              <remote-alias>activation_critieria</remote-alias>
+              <ordinal>12</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>2</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_96795CEF4D7C46BF9698BB2D606A027C]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>sales_manager</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[sales_manager]</local-name>
+              <parent-name>[Custom SQL Query]</parent-name>
+              <remote-alias>sales_manager</remote-alias>
+              <ordinal>13</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>36</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_96795CEF4D7C46BF9698BB2D606A027C]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>username</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[username]</local-name>
+              <parent-name>[tableau_gsr_entitlements_global_entity_id]</parent-name>
+              <remote-alias>username</remote-alias>
+              <ordinal>14</ordinal>
+              <family>tableau_gsr_entitlements_global_entity_id</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>19213</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_96795CEF4D7C46BF9698BB2D606A027C]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>access_group</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[access_group]</local-name>
+              <parent-name>[tableau_gsr_entitlements_global_entity_id]</parent-name>
+              <remote-alias>access_group</remote-alias>
+              <ordinal>15</ordinal>
+              <family>tableau_gsr_entitlements_global_entity_id</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>15</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_96795CEF4D7C46BF9698BB2D606A027C]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>global_entity_id</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[global_entity_id (tableau_gsr_entitlements_global_entity_id)]</local-name>
+              <parent-name>[tableau_gsr_entitlements_global_entity_id]</parent-name>
+              <remote-alias>global_entity_id</remote-alias>
+              <ordinal>16</ordinal>
+              <family>tableau_gsr_entitlements_global_entity_id</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>59</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_96795CEF4D7C46BF9698BB2D606A027C]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+          </metadata-records>
+        </connection>
+      </extract>
+      <layout _.fcp.SchemaViewerObjectModel.false...dim-percentage='0.5' _.fcp.SchemaViewerObjectModel.false...measure-percentage='0.4' dim-ordering='alphabetic' measure-ordering='alphabetic' show-structure='true' />
+      <style>
+        <style-rule element='mark'>
+          <encoding attr='color' field='[:Measure Names]' type='palette'>
+            <map to='#4e79a7'>
+              <bucket>&quot;[federated.14cwxyc09olo4q10b2jl01bimk1v].[avg:no_activation_suppliers:qk]&quot;</bucket>
+            </map>
+            <map to='#4e79a7'>
+              <bucket>&quot;[federated.14cwxyc09olo4q10b2jl01bimk1v].[sum:vendor_id:qk]&quot;</bucket>
+            </map>
+            <map to='#59a14f'>
+              <bucket>&quot;[federated.14cwxyc09olo4q10b2jl01bimk1v]&quot;</bucket>
+            </map>
+            <map to='#76b7b2'>
+              <bucket>&quot;[federated.14cwxyc09olo4q10b2jl01bimk1v].[usr:Pos_count_w1 (copy)_902690288465768449:qk]&quot;</bucket>
+            </map>
+            <map to='#9c755f'>
+              <bucket>&quot;[federated.14cwxyc09olo4q10b2jl01bimk1v].[sum:order_w1_after_activation:qk]&quot;</bucket>
+            </map>
+            <map to='#b07aa1'>
+              <bucket>&quot;[federated.14cwxyc09olo4q10b2jl01bimk1v].[__tableau_internal_object_id__].[cnt:Entity!Combo_DD871257361D47EBA5B3B1E77F35A25D:qk]&quot;</bucket>
+            </map>
+            <map to='#bab0ac'>
+              <bucket>&quot;[federated.14cwxyc09olo4q10b2jl01bimk1v].[sum:order_w2_after_activation:qk]&quot;</bucket>
+            </map>
+            <map to='#e15759'>
+              <bucket>&quot;[federated.14cwxyc09olo4q10b2jl01bimk1v].[usr:Calculation_902690288425512960:qk]&quot;</bucket>
+            </map>
+            <map to='#edc948'>
+              <bucket>&quot;[federated.14cwxyc09olo4q10b2jl01bimk1v].[__tableau_internal_object_id__].[cnt:_96795CEF4D7C46BF9698BB2D606A027C:qk]&quot;</bucket>
+            </map>
+            <map to='#f28e2b'>
+              <bucket>&quot;[federated.14cwxyc09olo4q10b2jl01bimk1v].[cnt:vendor_id:qk]&quot;</bucket>
+            </map>
+            <map to='#ff9da7'>
+              <bucket>&quot;[federated.14cwxyc09olo4q10b2jl01bimk1v].[sum:no_activation_suppliers:qk]&quot;</bucket>
+            </map>
+          </encoding>
+        </style-rule>
+      </style>
+      <semantic-values>
+        <semantic-value key='[Country].[Name]' value='&quot;Germany&quot;' />
+      </semantic-values>
+      <field-sort-info field-sort-order-type='custom-order'>
+        <field-sort-custom-order field='global_entity_id' />
+        <field-sort-custom-order field='vendor_id' />
+        <field-sort-custom-order field='vendor_code' />
+        <field-sort-custom-order field='activation_date' />
+        <field-sort-custom-order field='activation_week' />
+        <field-sort-custom-order field='order_w1_after_activation' />
+        <field-sort-custom-order field='Calculation_902690288425512960' />
+        <field-sort-custom-order field='Pos_count_w1 (copy)_902690288465768449' />
+        <field-sort-custom-order field='order_w2_after_activation' />
+        <field-sort-custom-order field='activation_month' />
+        <field-sort-custom-order field='no_activation_suppliers' />
+        <field-sort-custom-order field='activation_critieria' />
+      </field-sort-info>
+      <filter class='categorical' column='[Calculation_927741563900006400]' filter-group='2'>
+        <groupfilter function='member' level='[Calculation_927741563900006400]' member='true' user:ui-domain='database' user:ui-enumeration='inclusive' user:ui-marker='enumerate' />
+      </filter>
+      <filter class='categorical' column='[access_group]' filter-group='2'>
+        <groupfilter function='member' level='[access_group]' member='&quot;Sales&quot;' user:ui-domain='database' user:ui-enumeration='inclusive' user:ui-marker='enumerate' />
+      </filter>
+      <filter class='categorical' column='[global_entity_id]' filter-group='2'>
+        <groupfilter expression='ISNULL([global_entity_id]) OR (NOT(CONTAINS(LOWER([global_entity_id]), LOWER(&apos;FP_TH&apos;))))' function='filter' user:ui-enumeration='exclusive' user:ui-pattern-include-all-when-empty='true' user:ui-pattern_text='FP_TH' user:ui-pattern_type='contains'>
+          <groupfilter function='level-members' level='[global_entity_id]' user:ui-enumeration='all' user:ui-marker='enumerate' />
+        </groupfilter>
+      </filter>
+      <_.fcp.ObjectModelEncapsulateLegacy.true...object-graph>
+        <objects>
+          <object caption='Custom SQL Query' id='_96795CEF4D7C46BF9698BB2D606A027C'>
+            <properties context=''>
+              <relation join='inner' type='join'>
+                <clause type='join'>
+                  <expression op='='>
+                    <expression op='[Custom SQL Query].[global_entity_id]' />
+                    <expression op='[tableau_gsr_entitlements_global_entity_id].[global_entity_id]' />
+                  </expression>
+                </clause>
+                <relation connection='bigquery.10ucgbn07qemmj10qxv800dvazvd' name='Custom SQL Query' type='text'><![CDATA[WITH rest_base AS (
+  SELECT DISTINCT a.id
+    , a.entity_id AS global_entity_id
+    , datetime(a.created_at,d.timezone) AS created_at
+    , CAST(DATE_TRUNC(DATETIME(a.created_at,d.timezone),day) AS DATE)AS created_at_date
+    , CAST(DATE_TRUNC(DATETIME(a.created_at,d.timezone),WEEK(MONDAY)) AS DATE) AS week_date
+    , CAST(DATE_TRUNC(DATETIME(a.created_at,d.timezone),month) AS DATE) AS month_date
+    , a.restaurant_id AS vendor_id
+    , a.supplier_id
+    , a.status
+  FROM `fulfillment-dwh-production.dl_sales_revenue.rsc_app_data_orders` a 
+  LEFT JOIN `fulfillment-dwh-production.dl_sales_revenue.rsc_app_data_suppliers` b  
+  ON a.entity_id = b.entity_id 
+    AND b.id = a.supplier_id
+  LEFT JOIN `fulfillment-dwh-production.dl_sales_revenue.rsc_app_data_restaurants` c 
+  ON a.entity_id = c.entity_id 
+    AND c.id = a.restaurant_id
+  INNER JOIN  `fulfillment-dwh-production.curated_data_shared_data_stream.timezones`d
+    ON d.global_entity_id = a.entity_id
+  LEFT JOIN fulfillment-dwh-production.rl_sales_revenue.rsc_vendor_period_exclusion_table e 
+  ON e.global_entity_id = a.entity_id
+    AND e.vendor_id = a.restaurant_id
+  WHERE a.deleted = FALSE
+    AND DATE(a.merge_layer_updated_at)>> '2022-11-01'
+    AND NOT CONTAINS_SUBSTR(LOWER(b.name), 'test_')
+    AND NOT CONTAINS_SUBSTR(LOWER(b.name), 'demo_') 
+    AND a.status NOT LIKE '%cancel%'
+    AND a.status NOT LIKE '%rejected%'
+    AND b.name not like '%stock_balance%'
+    AND NOT (a.entity_id = 'PY_CL' AND (a.supplier_id = 8 OR a.supplier_id = 21 OR a.supplier_id = 103))
+    AND NOT b.is_packaging = TRUE
+    AND NOT (e.vendor_id IS NOT NULL AND DATE(a.created_at) >>= e.exclusion_period_start_date AND DATE(a.created_at) << e.exclusion_period_end_date)
+    AND (
+      (a.entity_id = 'FP_HK' AND LOWER(b.name) NOT LIKE '%foodpanda rest%') 
+      OR a.entity_id = 'FP_SG' 
+      OR (a.entity_id = 'MJM_AT' AND LOWER(b.name) NOT LIKE '%mjam%') 
+      OR (
+        a.entity_id= 'PY_CL' 
+        AND LOWER(b.name) <<>>'efe test supplier' 
+        AND LOWER(b.name) <<>> 'valentin cl email' 
+        AND a.created_at >> '2022-01-16'
+      )
+      OR a.entity_id = 'FP_MY'
+      OR a.entity_id = 'FP_TH'
+      OR a.entity_id = 'TB_QA'
+    )
+), activation_base AS (
+  SELECT a.*
+  , DENSE_RANK() OVER (PARTITION BY global_entity_id, vendor_id ORDER BY created_at_date) AS order_day
+  FROM rest_base a
+), activation_stats AS (
+  SELECT global_entity_id
+    , vendor_id
+    , MIN(
+      CASE 
+        WHEN order_day = 2
+          THEN  created_at_date
+      END) AS activation_date
+    , MIN(
+      CASE 
+        WHEN order_day = 2
+          THEN week_date
+      END) AS activation_week  
+    , MIN(
+      CASE 
+        WHEN order_day = 2
+          THEN month_date
+      END) AS activation_month  
+    , COUNT(DISTINCT
+      CASE
+        WHEN order_day <<= 2
+          THEN supplier_id
+      END) AS no_activation_suppliers
+    , 'Traditional' AS activation_critieria
+  FROM activation_base
+  GROUP BY 1,2
+), vendor_supp_strict AS (
+  SELECT global_entity_id
+    , vendor_id
+    , supplier_id
+    , MIN(created_at) AS min_vendor_supp_date_time
+  FROM rest_base 
+  GROUP BY 1,2,3
+), sf_salesmanager as (
+select global_entity_id,
+vendor_code__c, 
+bb.ownername,
+case when strpos(vendor_code__c, '-')>> 0 
+then substr(vendor_code__c,strpos(vendor_code__c, '-')+1)
+else vendor_code__c
+end as clean_
+from fulfillment-dwh-production.curated_data_shared_salesforce_rsc.lead bb
+where vendor_code__c is not null
+), vendor_supp_rank_strict AS (
+  SELECT global_entity_id
+  , vendor_id
+  , supplier_id
+  , min_vendor_supp_date_time
+  , COUNT(vendor_id) OVER (PARTITION BY global_entity_id, vendor_id ORDER BY min_vendor_supp_date_time) AS supp_vendor_rank
+  FROM vendor_supp_strict  a
+), strict_criteria_base AS (
+  SELECT a.global_entity_id
+  , a.vendor_id
+  , MIN(
+    CASE 
+      WHEN order_day = 3
+        THEN created_at_date
+    END) AS order_day_3_date
+  , MIN(
+    CASE 
+      WHEN order_day = 5
+        THEN created_at_date 
+    END) AS order_day_5_date
+  , MIN(
+    CASE 
+      WHEN b.supp_vendor_rank = 2
+        THEN DATE(min_vendor_supp_date_time)
+    END) AS order_day_2nd_supplier
+  FROM activation_base a
+  LEFT JOIN vendor_supp_rank_strict b 
+  ON a.global_entity_id = b.global_entity_id 
+    AND a.vendor_id = b.vendor_id
+  GROUP BY 1,2
+), selection_critieria AS (
+   SELECT global_entity_id
+  , vendor_id
+  , CASE
+      WHEN order_day_2nd_supplier <<= order_day_3_date
+        THEN order_day_3_date
+      WHEN order_day_2nd_supplier >> order_day_3_date AND order_day_2nd_supplier << order_day_5_date
+        THEN order_day_2nd_supplier
+    ELSE order_day_5_date
+    END AS activation_date
+  FROM strict_criteria_base
+), strct_final AS (
+ SELECT a.*
+    , CAST(DATE_TRUNC(activation_date,WEEK(MONDAY)) AS DATE) AS activation_week
+    , CAST(DATE_TRUNC(activation_date,MONTH) AS DATE) AS activation_month
+    , COUNT(DISTINCT 
+      CASE 
+        WHEN b.created_at_date <<= activation_date
+          THEN supplier_id
+      END) AS no_activation_suppliers
+    , 'Strict' AS activation_critieria
+  FROM selection_critieria a
+  INNER JOIN activation_base b 
+  ON a.global_entity_id = b.global_entity_id 
+    AND a.vendor_id = b.vendor_id
+
+  GROUP BY 1,2,3
+)
+SELECT a.global_entity_id
+  , a.vendor_id
+  , b.code AS vendor_code
+  , b.name AS vendor_name
+  , a.activation_date
+  , a.activation_week
+  , COUNT(
+    CASE 
+      WHEN c.week_date >> a.activation_week
+      AND c.week_date <<= DATE_ADD(a.activation_week, INTERVAL 1 week)
+      THEN c.id
+      END) AS order_w1_after_activation
+  , COUNT(
+    CASE 
+      WHEN c.week_date >> DATE_ADD(a.activation_week, INTERVAL 1 week)
+      AND c.week_date <<= DATE_ADD(a.activation_week, INTERVAL 2 week)
+      THEN c.id
+      END) AS order_w2_after_activation
+  , CASE
+      WHEN DATE_ADD(a.activation_week, INTERVAL 2 week) <<= CURRENT_DATE()
+      THEN 1
+      ELSE 0
+      END AS activation_lenght_W1
+  ,   CASE
+      WHEN DATE_ADD(a.activation_week, INTERVAL 3 week) <<= CURRENT_DATE()
+      THEN 1
+      ELSE 0
+      END AS activation_lenght_W2
+  , a.activation_month
+  , a.no_activation_suppliers
+  , a.activation_critieria
+  , d.ownername as sales_manager
+FROM activation_stats a
+INNER JOIN `fulfillment-dwh-production.dl_sales_revenue.rsc_app_data_restaurants` b
+ON a.global_entity_id = b.entity_id
+  AND a.vendor_id = b.id
+INNER JOIN activation_base c 
+ON a.global_entity_id = c.global_entity_id 
+  AND a.vendor_id = c.vendor_id
+LEFT JOIN sf_salesmanager d 
+ON d.global_entity_id = b.entity_id
+  AND d.clean_ = b.code
+WHERE activation_date IS NOT NULL
+  AND activation_date >> DATE_SUB(DATE_TRUNC(CURRENT_DATE(), month), INTERVAL 6 MONTH)
+GROUP BY 1,2,3,4,5,6,9,10,11,12,13,14
+
+UNION ALL
+
+SELECT a.global_entity_id
+  , a.vendor_id
+  , b.code AS vendor_code
+  , b.name AS vendor_name
+  , a.activation_date
+  , a.activation_week
+  , COUNT(
+    CASE 
+      WHEN c.week_date >> a.activation_week
+      AND c.week_date <<= DATE_ADD(a.activation_week, INTERVAL 1 week)
+      THEN c.id
+      END )AS order_w1_after_activation
+  , COUNT(
+    CASE 
+      WHEN c.week_date >> DATE_ADD(a.activation_week, INTERVAL 1 week)
+      AND c.week_date <<= DATE_ADD(a.activation_week, INTERVAL 2 week)
+      THEN c.id
+      END) AS order_w2_after_activation
+  , CASE
+      WHEN DATE_ADD(a.activation_week, INTERVAL 2 week) <<= CURRENT_DATE()
+      THEN 1
+      ELSE 0
+      END AS activation_lenght_W1
+  , CASE
+      WHEN DATE_ADD(a.activation_week, INTERVAL 3 week) <<= CURRENT_DATE()
+      THEN 1
+      ELSE 0
+      END AS activation_lenght_W2
+  , a.activation_month
+  , a.no_activation_suppliers
+  , a.activation_critieria
+  , d.ownername as sales_manager
+FROM strct_final a
+INNER JOIN `fulfillment-dwh-production.dl_sales_revenue.rsc_app_data_restaurants` b
+ON a.global_entity_id = b.entity_id
+  AND a.vendor_id = b.id
+INNER JOIN activation_base c 
+ON a.global_entity_id = c.global_entity_id 
+  AND a.vendor_id = c.vendor_id
+LEFT JOIN sf_salesmanager d 
+ON d.global_entity_id = b.entity_id
+  AND d.clean_ = b.code
+WHERE activation_date IS NOT NULL
+  AND activation_date >> DATE_SUB(DATE_TRUNC(CURRENT_DATE(), month), INTERVAL 6 MONTH)
+GROUP BY 1,2,3,4,5,6,9,10,11,12,13,14]]></relation>
+                <relation connection='bigquery.10ucgbn07qemmj10qxv800dvazvd' name='tableau_gsr_entitlements_global_entity_id' table='[fulfillment-dwh-production.curated_data_shared_govops].[tableau_gsr_entitlements_global_entity_id]' type='table' />
+              </relation>
+            </properties>
+            <properties context='extract'>
+              <relation join='inner' type='join'>
+                <clause type='join'>
+                  <expression op='='>
+                    <expression op='[Custom SQL Query].[global_entity_id]' />
+                    <expression op='[tableau_gsr_entitlements_global_entity_id].[global_entity_id]' />
+                  </expression>
+                </clause>
+                <relation name='Custom SQL Query' table='[Extract].[Custom SQL Query]' type='table' />
+                <relation name='tableau_gsr_entitlements_global_entity_id' table='[Extract].[tableau_gsr_entitlements_global_entity_id]' type='table' />
+              </relation>
+            </properties>
+          </object>
+        </objects>
+      </_.fcp.ObjectModelEncapsulateLegacy.true...object-graph>
+    </datasource>
+  </datasources>
+  <worksheets>
+    <worksheet name='Activation Suppliers'>
+      <layout-options>
+        <title>
+          <formatted-text>
+            <run bold='true' fontsize='11'>Average number of activation suppliers</run>
+          </formatted-text>
+        </title>
+      </layout-options>
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='Test_Activation' name='federated.14cwxyc09olo4q10b2jl01bimk1v' />
+          </datasources>
+          <datasource-dependencies datasource='federated.14cwxyc09olo4q10b2jl01bimk1v'>
+            <column datatype='string' name='[activation_critieria]' role='dimension' type='nominal' />
+            <column datatype='date' default-format='*mm/yyyy' name='[activation_month]' role='dimension' type='ordinal' />
+            <column-instance column='[no_activation_suppliers]' derivation='Avg' name='[avg:no_activation_suppliers:qk]' pivot='key' type='quantitative' />
+            <column datatype='string' name='[global_entity_id]' role='dimension' type='nominal' />
+            <column datatype='integer' name='[no_activation_suppliers]' role='measure' type='quantitative' />
+            <column-instance column='[activation_critieria]' derivation='None' name='[none:activation_critieria:nk]' pivot='key' type='nominal' />
+            <column-instance column='[activation_month]' derivation='None' name='[none:activation_month:ok]' pivot='key' type='ordinal' />
+            <column-instance column='[global_entity_id]' derivation='None' name='[none:global_entity_id:nk]' pivot='key' type='nominal' />
+            <column-instance column='[sales_manager]' derivation='None' name='[none:sales_manager:nk]' pivot='key' type='nominal' />
+            <column datatype='string' name='[sales_manager]' role='dimension' type='nominal' />
+          </datasource-dependencies>
+          <filter class='categorical' column='[federated.14cwxyc09olo4q10b2jl01bimk1v].[none:activation_critieria:nk]' filter-group='4'>
+            <groupfilter function='member' level='[none:activation_critieria:nk]' member='&quot;Traditional&quot;' user:ui-domain='database' user:ui-enumeration='inclusive' user:ui-marker='enumerate' />
+          </filter>
+          <filter class='categorical' column='[federated.14cwxyc09olo4q10b2jl01bimk1v].[none:activation_month:ok]' filter-group='3'>
+            <groupfilter function='empty-level' member='[none:activation_month:ok]' />
+            <preset type='last-values' />
+          </filter>
+          <filter class='categorical' column='[federated.14cwxyc09olo4q10b2jl01bimk1v].[none:global_entity_id:nk]' filter-group='5'>
+            <groupfilter function='level-members' level='[none:global_entity_id:nk]' user:ui-enumeration='all' user:ui-marker='enumerate' />
+          </filter>
+          <slices>
+            <column>[federated.14cwxyc09olo4q10b2jl01bimk1v].[none:activation_month:ok]</column>
+            <column>[federated.14cwxyc09olo4q10b2jl01bimk1v].[none:activation_critieria:nk]</column>
+            <column>[federated.14cwxyc09olo4q10b2jl01bimk1v].[none:global_entity_id:nk]</column>
+          </slices>
+          <aggregation value='true' />
+        </view>
+        <style>
+          <style-rule element='axis'>
+            <format attr='display' class='0' field='[federated.14cwxyc09olo4q10b2jl01bimk1v].[avg:no_activation_suppliers:qk]' scope='rows' value='false' />
+            <format attr='tick-color' scope='cols' value='#00000000' />
+            <format attr='line-pattern-only' scope='cols' value='solid' />
+            <format attr='line-visibility' scope='cols' value='off' />
+            <format attr='stroke-size' value='4' />
+            <format attr='stroke-color' value='#555555' />
+            <format attr='stroke-size' scope='cols' value='0' />
+            <format attr='stroke-size' scope='rows' value='0' />
+            <format attr='line-visibility' scope='rows' value='off' />
+          </style-rule>
+          <style-rule element='cell'>
+            <format attr='width' field='[federated.14cwxyc09olo4q10b2jl01bimk1v].[none:sales_manager:nk]' value='77' />
+            <format attr='text-format' field='[federated.14cwxyc09olo4q10b2jl01bimk1v].[avg:no_activation_suppliers:qk]' value='n#,##0.0;-#,##0.0' />
+            <format attr='font-size' data-class='subtotal' scope='rows' value='8' />
+            <format attr='font-size' field='[federated.14cwxyc09olo4q10b2jl01bimk1v].[avg:no_activation_suppliers:qk]' value='8' />
+          </style-rule>
+          <style-rule element='header'>
+            <format attr='border-width' data-class='total' scope='cols' value='0' />
+            <format attr='border-style' data-class='total' scope='cols' value='none' />
+          </style-rule>
+          <style-rule element='label'>
+            <format attr='font-size' field='[federated.14cwxyc09olo4q10b2jl01bimk1v].[none:sales_manager:nk]' value='8' />
+          </style-rule>
+          <style-rule element='pane'>
+            <format attr='border-color' scope='cols' value='#555555' />
+            <format attr='border-width' scope='cols' value='0' />
+            <format attr='border-style' scope='cols' value='none' />
+          </style-rule>
+          <style-rule element='worksheet'>
+            <format attr='display-field-labels' scope='cols' value='false' />
+          </style-rule>
+          <style-rule element='dropline'>
+            <format attr='stroke-size' scope='cols' value='0' />
+            <format attr='line-visibility' scope='cols' value='off' />
+          </style-rule>
+          <style-rule element='refline'>
+            <format attr='stroke-size' scope='cols' value='0' />
+            <format attr='line-visibility' scope='cols' value='off' />
+          </style-rule>
+          <style-rule element='gridline'>
+            <format attr='stroke-size' scope='rows' value='0' />
+            <format attr='line-visibility' scope='rows' value='off' />
+            <format attr='stroke-color' scope='cols' value='#666666' />
+            <format attr='line-pattern-only' scope='cols' value='solid' />
+            <format attr='stroke-size' scope='cols' value='0' />
+            <format attr='line-visibility' scope='cols' value='off' />
+          </style-rule>
+          <style-rule element='zeroline'>
+            <format attr='stroke-size' scope='cols' value='0' />
+            <format attr='line-visibility' scope='cols' value='off' />
+          </style-rule>
+          <style-rule element='table-div'>
+            <format attr='stroke-color' scope='cols' value='#555555' />
+            <format attr='line-visibility' scope='cols' value='on' />
+            <format attr='line-pattern-only' scope='cols' value='solid' />
+            <format attr='div-level' scope='cols' value='1' />
+            <format attr='stroke-size' scope='cols' value='1' />
+          </style-rule>
+        </style>
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Line' />
+            <encodings>
+              <text column='[federated.14cwxyc09olo4q10b2jl01bimk1v].[avg:no_activation_suppliers:qk]' />
+            </encodings>
+            <style>
+              <style-rule element='mark'>
+                <format attr='mark-labels-show' value='true' />
+                <format attr='mark-labels-cull' value='true' />
+                <format attr='mark-color' value='#e15759' />
+              </style-rule>
+              <style-rule element='pane'>
+                <format attr='minwidth' value='-1' />
+                <format attr='maxwidth' value='-1' />
+              </style-rule>
+            </style>
+          </pane>
+        </panes>
+        <rows>[federated.14cwxyc09olo4q10b2jl01bimk1v].[avg:no_activation_suppliers:qk]</rows>
+        <cols>[federated.14cwxyc09olo4q10b2jl01bimk1v].[none:sales_manager:nk]</cols>
+      </table>
+      <simple-id uuid='{96391A4B-ABDA-4438-80BC-8B0A3D7B0A19}' />
+    </worksheet>
+    <worksheet name='Order W1_W2'>
+      <layout-options>
+        <title>
+          <formatted-text>
+            <run bold='true' fontsize='11'>% of Restaurants who ordered  in calendar Week </run>
+            <run bold='true' fontcolor='#e15759' fontsize='11'>W1</run>
+            <run bold='true' fontsize='11'> &amp; </run>
+            <run bold='true' fontcolor='#499894' fontsize='11'>W2</run>
+            <run bold='true' fontsize='11'> after activation</run>
+            <run bold='true' fontsize='9'> (calendar week starting on Monday)</run>
+          </formatted-text>
+        </title>
+      </layout-options>
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='Test_Activation' name='federated.14cwxyc09olo4q10b2jl01bimk1v' />
+          </datasources>
+          <datasource-dependencies datasource='federated.14cwxyc09olo4q10b2jl01bimk1v'>
+            <column caption='Pos_count_w1' datatype='real' name='[Calculation_902690288425512960]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='count(&#13;&#10;if [order_w1_after_activation] &gt; 0&#13;&#10;and [activation_lenght_W1] = 1&#13;&#10;then 1&#13;&#10;end&#13;&#10;)/&#13;&#10;COUNT(if[activation_lenght_W1] = 1&#13;&#10;then 1&#13;&#10;END&#13;&#10;)' />
+            </column>
+            <column caption='Pos_count_w2' datatype='real' name='[Pos_count_w1 (copy)_902690288465768449]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='count(&#13;&#10;if [order_w2_after_activation] &gt; 0&#13;&#10;and  [activation_lenght_W2] =1 &#13;&#10;then 1&#13;&#10;end&#13;&#10;)/&#13;&#10;count(&#13;&#10;if [activation_lenght_W2] =1 &#13;&#10;then 1&#13;&#10;end&#13;&#10;)' />
+            </column>
+            <column datatype='string' name='[activation_critieria]' role='dimension' type='nominal' />
+            <column datatype='integer' name='[activation_lenght_W1]' role='measure' type='quantitative' />
+            <column datatype='integer' name='[activation_lenght_W2]' role='measure' type='quantitative' />
+            <column datatype='date' default-format='*mm/yyyy' name='[activation_month]' role='dimension' type='ordinal' />
+            <column datatype='string' name='[global_entity_id]' role='dimension' type='nominal' />
+            <column-instance column='[activation_critieria]' derivation='None' name='[none:activation_critieria:nk]' pivot='key' type='nominal' />
+            <column-instance column='[activation_month]' derivation='None' name='[none:activation_month:ok]' pivot='key' type='ordinal' />
+            <column-instance column='[global_entity_id]' derivation='None' name='[none:global_entity_id:nk]' pivot='key' type='nominal' />
+            <column-instance column='[sales_manager]' derivation='None' name='[none:sales_manager:nk]' pivot='key' type='nominal' />
+            <column datatype='integer' name='[order_w1_after_activation]' role='measure' type='quantitative' />
+            <column datatype='integer' name='[order_w2_after_activation]' role='measure' type='quantitative' />
+            <column datatype='string' name='[sales_manager]' role='dimension' type='nominal' />
+            <column-instance column='[Calculation_902690288425512960]' derivation='User' name='[usr:Calculation_902690288425512960:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[Pos_count_w1 (copy)_902690288465768449]' derivation='User' name='[usr:Pos_count_w1 (copy)_902690288465768449:qk]' pivot='key' type='quantitative' />
+          </datasource-dependencies>
+          <filter class='categorical' column='[federated.14cwxyc09olo4q10b2jl01bimk1v].[:Measure Names]'>
+            <groupfilter function='union' user:op='manual'>
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.14cwxyc09olo4q10b2jl01bimk1v].[usr:Calculation_902690288425512960:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.14cwxyc09olo4q10b2jl01bimk1v].[usr:Pos_count_w1 (copy)_902690288465768449:qk]&quot;' />
+            </groupfilter>
+          </filter>
+          <filter class='categorical' column='[federated.14cwxyc09olo4q10b2jl01bimk1v].[none:activation_critieria:nk]' filter-group='4'>
+            <groupfilter function='member' level='[none:activation_critieria:nk]' member='&quot;Traditional&quot;' user:ui-domain='database' user:ui-enumeration='inclusive' user:ui-marker='enumerate' />
+          </filter>
+          <filter class='categorical' column='[federated.14cwxyc09olo4q10b2jl01bimk1v].[none:activation_month:ok]' filter-group='3'>
+            <groupfilter function='empty-level' member='[none:activation_month:ok]' />
+            <preset type='last-values' />
+          </filter>
+          <filter class='categorical' column='[federated.14cwxyc09olo4q10b2jl01bimk1v].[none:global_entity_id:nk]' filter-group='5'>
+            <groupfilter function='level-members' level='[none:global_entity_id:nk]' user:ui-enumeration='all' user:ui-marker='enumerate' />
+          </filter>
+          <slices>
+            <column>[federated.14cwxyc09olo4q10b2jl01bimk1v].[:Measure Names]</column>
+            <column>[federated.14cwxyc09olo4q10b2jl01bimk1v].[none:activation_month:ok]</column>
+            <column>[federated.14cwxyc09olo4q10b2jl01bimk1v].[none:activation_critieria:nk]</column>
+            <column>[federated.14cwxyc09olo4q10b2jl01bimk1v].[none:global_entity_id:nk]</column>
+          </slices>
+          <aggregation value='true' />
+        </view>
+        <style>
+          <style-rule element='axis'>
+            <format attr='display' class='0' field='[federated.14cwxyc09olo4q10b2jl01bimk1v].[Multiple Values]' scope='rows' value='false' />
+            <format attr='border-color' value='#b0b0b0' />
+            <format attr='border-width' value='1' />
+            <format attr='hnaxis' value='true' />
+            <format attr='line-pattern-only' scope='rows' value='solid' />
+            <format attr='stroke-color' scope='rows' value='#555555' />
+            <format attr='stroke-size' scope='rows' value='0' />
+            <format attr='line-visibility' scope='rows' value='off' />
+          </style-rule>
+          <style-rule element='cell'>
+            <format attr='text-format' field='[federated.14cwxyc09olo4q10b2jl01bimk1v].[usr:Pos_count_w1 (copy)_902690288465768449:qk]' value='p0%' />
+            <format attr='text-format' field='[federated.14cwxyc09olo4q10b2jl01bimk1v].[usr:Calculation_902690288425512960:qk]' value='p0%' />
+            <format attr='font-size' field='[federated.14cwxyc09olo4q10b2jl01bimk1v].[Multiple Values]' value='8' />
+            <format attr='vertical-align' data-class='subtotal' field='[federated.14cwxyc09olo4q10b2jl01bimk1v].[Multiple Values]' value='bottom' />
+            <format attr='text-align' field='[federated.14cwxyc09olo4q10b2jl01bimk1v].[Multiple Values]' value='left' />
+          </style-rule>
+          <style-rule element='label'>
+            <format attr='display' field='[federated.14cwxyc09olo4q10b2jl01bimk1v].[:Measure Names]' value='false' />
+            <format attr='display' field='[federated.14cwxyc09olo4q10b2jl01bimk1v].[none:sales_manager:nk]' value='false' />
+            <format attr='text-orientation' field='[federated.14cwxyc09olo4q10b2jl01bimk1v].[none:sales_manager:nk]' value='0' />
+            <format attr='font-size' scope='rows' value='8' />
+            <format attr='font-size' scope='cols' value='8' />
+          </style-rule>
+          <style-rule element='worksheet'>
+            <format attr='display-field-labels' scope='cols' value='false' />
+          </style-rule>
+          <style-rule element='dropline'>
+            <format attr='stroke-size' scope='cols' value='0' />
+            <format attr='line-visibility' scope='cols' value='off' />
+          </style-rule>
+          <style-rule element='refline'>
+            <format attr='stroke-size' scope='cols' value='0' />
+            <format attr='line-visibility' scope='cols' value='off' />
+          </style-rule>
+          <style-rule element='gridline'>
+            <format attr='stroke-size' scope='rows' value='0' />
+            <format attr='line-visibility' scope='rows' value='off' />
+            <format attr='line-pattern-only' scope='cols' value='solid' />
+            <format attr='stroke-size' scope='cols' value='0' />
+            <format attr='line-visibility' scope='cols' value='off' />
+          </style-rule>
+          <style-rule element='table-div'>
+            <format attr='stroke-color' scope='cols' value='#555555' />
+            <format attr='line-visibility' scope='cols' value='on' />
+            <format attr='line-pattern-only' scope='cols' value='solid' />
+            <format attr='stroke-size' scope='cols' value='1' />
+            <format attr='div-level' scope='cols' value='1' />
+            <format attr='stroke-size' scope='rows' value='0' />
+            <format attr='line-visibility' scope='rows' value='off' />
+          </style-rule>
+          <style-rule element='header-div'>
+            <format attr='stroke-size' scope='cols' value='0' />
+            <format attr='line-visibility' scope='cols' value='off' />
+          </style-rule>
+        </style>
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Automatic' />
+            <encodings>
+              <color column='[federated.14cwxyc09olo4q10b2jl01bimk1v].[:Measure Names]' />
+              <text column='[federated.14cwxyc09olo4q10b2jl01bimk1v].[Multiple Values]' />
+            </encodings>
+            <style>
+              <style-rule element='mark'>
+                <format attr='mark-labels-show' value='true' />
+                <format attr='mark-labels-cull' value='true' />
+              </style-rule>
+              <style-rule element='pane'>
+                <format attr='aspect' value='1' />
+              </style-rule>
+            </style>
+          </pane>
+        </panes>
+        <rows>[federated.14cwxyc09olo4q10b2jl01bimk1v].[Multiple Values]</rows>
+        <cols>([federated.14cwxyc09olo4q10b2jl01bimk1v].[none:sales_manager:nk] / [federated.14cwxyc09olo4q10b2jl01bimk1v].[:Measure Names])</cols>
+      </table>
+      <simple-id uuid='{674F83CF-037C-4866-8FAE-E3342388E477}' />
+    </worksheet>
+    <worksheet name='Restaurants without Listed Sales Manager'>
+      <layout-options>
+        <title>
+          <formatted-text>
+            <run bold='true' fontsize='12'>&lt;Sheet Name&gt;</run>
+          </formatted-text>
+        </title>
+      </layout-options>
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='Test_Activation' name='federated.14cwxyc09olo4q10b2jl01bimk1v' />
+          </datasources>
+          <datasource-dependencies datasource='federated.14cwxyc09olo4q10b2jl01bimk1v'>
+            <column datatype='string' name='[activation_critieria]' role='dimension' type='nominal' />
+            <column datatype='string' name='[global_entity_id]' role='dimension' type='nominal' />
+            <column-instance column='[activation_critieria]' derivation='None' name='[none:activation_critieria:nk]' pivot='key' type='nominal' />
+            <column-instance column='[global_entity_id]' derivation='None' name='[none:global_entity_id:nk]' pivot='key' type='nominal' />
+            <column-instance column='[sales_manager]' derivation='None' name='[none:sales_manager:nk]' pivot='key' type='nominal' />
+            <column-instance column='[vendor_code]' derivation='None' name='[none:vendor_code:nk]' pivot='key' type='nominal' />
+            <column-instance column='[vendor_name]' derivation='None' name='[none:vendor_name:nk]' pivot='key' type='nominal' />
+            <column datatype='string' name='[sales_manager]' role='dimension' type='nominal' />
+            <column caption='Rest_Code' datatype='string' name='[vendor_code]' role='dimension' type='nominal' />
+            <column caption='Rest_Name' datatype='string' name='[vendor_name]' role='dimension' type='nominal' />
+          </datasource-dependencies>
+          <filter class='categorical' column='[federated.14cwxyc09olo4q10b2jl01bimk1v].[none:sales_manager:nk]'>
+            <groupfilter function='union' user:ui-domain='database' user:ui-enumeration='inclusive' user:ui-marker='enumerate'>
+              <groupfilter function='member' level='[none:sales_manager:nk]' member='%null%' />
+              <groupfilter function='member' level='[none:sales_manager:nk]' member='&quot;-&quot;' />
+            </groupfilter>
+          </filter>
+          <slices>
+            <column>[federated.14cwxyc09olo4q10b2jl01bimk1v].[none:sales_manager:nk]</column>
+          </slices>
+          <aggregation value='true' />
+        </view>
+        <style>
+          <style-rule element='cell'>
+            <format attr='width' value='5' />
+          </style-rule>
+          <style-rule element='header'>
+            <format attr='width' field='[federated.14cwxyc09olo4q10b2jl01bimk1v].[none:sales_manager:nk]' value='160' />
+            <format attr='width' field='[federated.14cwxyc09olo4q10b2jl01bimk1v].[none:vendor_code:nk]' value='220' />
+            <format attr='width' field='[federated.14cwxyc09olo4q10b2jl01bimk1v].[none:vendor_name:nk]' value='464' />
+          </style-rule>
+          <style-rule element='label'>
+            <format attr='display' field='[federated.14cwxyc09olo4q10b2jl01bimk1v].[none:sales_manager:nk]' value='false' />
+          </style-rule>
+        </style>
+        <panes>
+          <pane id='1' selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Polygon' />
+            <encodings>
+              <lod column='[federated.14cwxyc09olo4q10b2jl01bimk1v].[none:vendor_code:nk]' />
+              <lod column='[federated.14cwxyc09olo4q10b2jl01bimk1v].[none:activation_critieria:nk]' />
+            </encodings>
+            <style>
+              <style-rule element='mark'>
+                <format attr='mark-labels-show' value='false' />
+              </style-rule>
+              <style-rule element='pane'>
+                <format attr='minwidth' value='-1' />
+                <format attr='maxwidth' value='-1' />
+                <format attr='minwidth' value='-1' />
+                <format attr='maxwidth' value='-1' />
+              </style-rule>
+            </style>
+          </pane>
+        </panes>
+        <rows>([federated.14cwxyc09olo4q10b2jl01bimk1v].[none:vendor_code:nk] / ([federated.14cwxyc09olo4q10b2jl01bimk1v].[none:vendor_name:nk] / [federated.14cwxyc09olo4q10b2jl01bimk1v].[none:sales_manager:nk]))</rows>
+        <cols />
+      </table>
+      <simple-id uuid='{4DE1D882-E1A1-4E18-B86B-03F4094673A3}' />
+    </worksheet>
+    <worksheet name='Sheet 5'>
+      <table>
+        <view>
+          <datasources />
+          <aggregation value='true' />
+        </view>
+        <style />
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Automatic' />
+          </pane>
+        </panes>
+        <rows />
+        <cols />
+      </table>
+      <simple-id uuid='{124BA582-A04B-4695-B2D9-158569FC8E20}' />
+    </worksheet>
+    <worksheet name='Total Activations'>
+      <layout-options>
+        <title>
+          <formatted-text>
+            <run bold='true' fontsize='11'>Total activations </run>
+          </formatted-text>
+        </title>
+      </layout-options>
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='Test_Activation' name='federated.14cwxyc09olo4q10b2jl01bimk1v' />
+          </datasources>
+          <datasource-dependencies datasource='federated.14cwxyc09olo4q10b2jl01bimk1v'>
+            <column datatype='string' name='[activation_critieria]' role='dimension' type='nominal' />
+            <column datatype='date' default-format='*mm/yyyy' name='[activation_month]' role='dimension' type='ordinal' />
+            <column-instance column='[vendor_id]' derivation='Count' name='[cnt:vendor_id:qk]' pivot='key' type='quantitative' />
+            <column datatype='string' name='[global_entity_id]' role='dimension' type='nominal' />
+            <column-instance column='[activation_critieria]' derivation='None' name='[none:activation_critieria:nk]' pivot='key' type='nominal' />
+            <column-instance column='[activation_month]' derivation='None' name='[none:activation_month:ok]' pivot='key' type='ordinal' />
+            <column-instance column='[global_entity_id]' derivation='None' name='[none:global_entity_id:nk]' pivot='key' type='nominal' />
+            <column-instance column='[sales_manager]' derivation='None' name='[none:sales_manager:nk]' pivot='key' type='nominal' />
+            <column datatype='string' name='[sales_manager]' role='dimension' type='nominal' />
+            <column datatype='integer' name='[vendor_id]' role='measure' type='quantitative' />
+          </datasource-dependencies>
+          <filter class='categorical' column='[federated.14cwxyc09olo4q10b2jl01bimk1v].[none:activation_critieria:nk]' filter-group='4'>
+            <groupfilter function='member' level='[none:activation_critieria:nk]' member='&quot;Traditional&quot;' user:ui-domain='database' user:ui-enumeration='inclusive' user:ui-marker='enumerate' />
+          </filter>
+          <filter class='categorical' column='[federated.14cwxyc09olo4q10b2jl01bimk1v].[none:activation_month:ok]' filter-group='3'>
+            <groupfilter function='empty-level' member='[none:activation_month:ok]' />
+            <preset type='last-values' />
+          </filter>
+          <filter class='categorical' column='[federated.14cwxyc09olo4q10b2jl01bimk1v].[none:global_entity_id:nk]' filter-group='5'>
+            <groupfilter function='level-members' level='[none:global_entity_id:nk]' user:ui-enumeration='all' user:ui-marker='enumerate' />
+          </filter>
+          <slices>
+            <column>[federated.14cwxyc09olo4q10b2jl01bimk1v].[none:activation_month:ok]</column>
+            <column>[federated.14cwxyc09olo4q10b2jl01bimk1v].[none:activation_critieria:nk]</column>
+            <column>[federated.14cwxyc09olo4q10b2jl01bimk1v].[none:global_entity_id:nk]</column>
+          </slices>
+          <aggregation value='true' />
+        </view>
+        <style>
+          <style-rule element='axis'>
+            <format attr='display' class='0' field='[federated.14cwxyc09olo4q10b2jl01bimk1v].[cnt:vendor_id:qk]' scope='rows' value='false' />
+            <format attr='stroke-color' value='#555555' />
+            <format attr='line-visibility' value='on' />
+            <format attr='line-pattern-only' value='solid' />
+            <format attr='stroke-size' value='4' />
+            <format attr='stroke-size' scope='cols' value='0' />
+            <format attr='line-visibility' scope='cols' value='off' />
+            <format attr='tick-color' scope='cols' value='#00000000' />
+            <format attr='stroke-size' scope='rows' value='1' />
+          </style-rule>
+          <style-rule element='cell'>
+            <format attr='width' field='[federated.14cwxyc09olo4q10b2jl01bimk1v].[none:sales_manager:nk]' value='131' />
+            <format attr='font-size' field='[federated.14cwxyc09olo4q10b2jl01bimk1v].[cnt:vendor_id:qk]' value='8' />
+          </style-rule>
+          <style-rule element='label'>
+            <format attr='font-size' field='[federated.14cwxyc09olo4q10b2jl01bimk1v].[none:sales_manager:nk]' value='8' />
+          </style-rule>
+          <style-rule element='pane'>
+            <format attr='border-color' scope='cols' value='#555555' />
+            <format attr='border-width' scope='cols' value='0' />
+            <format attr='border-style' scope='cols' value='none' />
+          </style-rule>
+          <style-rule element='worksheet'>
+            <format attr='display-field-labels' scope='cols' value='false' />
+          </style-rule>
+          <style-rule element='gridline'>
+            <format attr='stroke-size' scope='rows' value='0' />
+            <format attr='stroke-color' scope='cols' value='#666666' />
+            <format attr='line-visibility' value='on' />
+            <format attr='line-pattern-only' value='solid' />
+            <format attr='stroke-size' scope='cols' value='0' />
+            <format attr='line-visibility' scope='cols' value='off' />
+          </style-rule>
+          <style-rule element='table-div'>
+            <format attr='stroke-color' scope='cols' value='#555555' />
+            <format attr='stroke-size' scope='cols' value='1' />
+            <format attr='line-visibility' scope='cols' value='on' />
+            <format attr='line-pattern-only' scope='cols' value='solid' />
+            <format attr='div-level' scope='cols' value='1' />
+          </style-rule>
+          <style-rule element='quick-filter'>
+            <format attr='title' field='[federated.14cwxyc09olo4q10b2jl01bimk1v].[none:global_entity_id:nk]' value='Market' />
+            <format attr='title' field='[federated.14cwxyc09olo4q10b2jl01bimk1v].[none:activation_month:ok]' value='Activation Month' />
+            <format attr='title' field='[federated.14cwxyc09olo4q10b2jl01bimk1v].[none:activation_critieria:nk]' value='Activation Criteria' />
+          </style-rule>
+        </style>
+        <panes>
+          <pane id='1' selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Bar' />
+            <encodings>
+              <text column='[federated.14cwxyc09olo4q10b2jl01bimk1v].[cnt:vendor_id:qk]' />
+              <color column='[federated.14cwxyc09olo4q10b2jl01bimk1v].[:Measure Names]' />
+            </encodings>
+            <style>
+              <style-rule element='mark'>
+                <format attr='mark-labels-show' value='true' />
+                <format attr='mark-labels-cull' value='true' />
+              </style-rule>
+              <style-rule element='pane'>
+                <format attr='minwidth' value='-1' />
+                <format attr='maxwidth' value='-1' />
+              </style-rule>
+            </style>
+          </pane>
+        </panes>
+        <rows>[federated.14cwxyc09olo4q10b2jl01bimk1v].[cnt:vendor_id:qk]</rows>
+        <cols>[federated.14cwxyc09olo4q10b2jl01bimk1v].[none:sales_manager:nk]</cols>
+      </table>
+      <simple-id uuid='{4B7F4BD9-A840-446D-842E-EDE0ECFD6331}' />
+    </worksheet>
+  </worksheets>
+  <dashboards>
+    <dashboard _.fcp.AccessibleZoneTabOrder.true...enable-sort-zone-taborder='true' name='Definitions'>
+      <repository-location derived-from='https://tableau.deliveryhero.net/t/GlobalStandardReporting/workbooks/SalesManagerAnalysis/Definitions?rev=' id='Definitions' path='/t/GlobalStandardReporting/workbooks/SalesManagerAnalysis' revision='' site='GlobalStandardReporting' />
+      <style />
+      <size maxheight='768' maxwidth='1366' minheight='768' minwidth='1366' preset-index='0' sizing-mode='fixed' />
+      <zones>
+        <zone h='100000' id='8' type-v2='layout-basic' w='100000' x='0' y='0'>
+          <zone forceUpdate='true' h='83203' id='7' type-v2='text' w='98828' x='586' y='15755'>
+            <formatted-text>
+              <run bold='true' fontcolor='#000000' fontsize='14'>Dashboard Definitions:</run>
+              <run>Æ&#10;&#10;</run>
+              <run bold='true' fontsize='10'>Dashboard Section 1: Filters sections (Top part of dashboard with dropdown filters)</run>
+              <run>Æ&#10;</run>
+              <run fontsize='10'>____________________________________________________________________________________________________</run>
+              <run>Æ&#10;</run>
+              <run bold='true' fontsize='10'>Activation criteria filter:</run>
+              <run>Æ&#10;</run>
+              <run bold='true' fontsize='10'>Traditional - </run>
+              <run fontsize='10'>Activation takes place with the first uncancelled order on the 2nd order day</run>
+              <run>Æ&#10;</run>
+              <run bold='true' fontsize='10'>Strict - Activation takes place on:</run>
+              <run>Æ&#10;</run>
+              <run fontsize='10'>     a. The first uncancelled order on the 3rd order day, if the restaurant has ordered from at least 2 different suppliers between order day 1 - 3</run>
+              <run>Æ&#10;</run>
+              <run fontsize='10'>     b. The first uncancelled order on the 5th order day if the restaurant has ordered only from 1 supplier between order day 1 - 5</run>
+              <run>Æ&#10;&#10;</run>
+              <run bold='true' fontsize='10'>Dashboard Section 2: Metrics and visuals section</run>
+              <run>Æ&#10;</run>
+              <run fontsize='10'>_____________________________________________________________________________________________________</run>
+              <run>Æ&#10;</run>
+              <run bold='true' fontsize='10'>Total activations:</run>
+              <run>Æ&#10;</run>
+              <run fontsize='10'>Total number of activations as per selected criteria</run>
+              <run>Æ&#10;&#10;</run>
+              <run bold='true' fontsize='10'>% Restaurants who ordered in W1 and W2 after activation:</run>
+              <run>Æ&#10;</run>
+              <run fontsize='10'> If a restaurant has at least 1 uncancelled order in the respective first calendar week after activation W1(starting on a Monday) , or second calendar week after after activation W2 this will count towards this metric</run>
+              <run>Æ&#10;&#10;</run>
+              <run bold='true' fontsize='10'>Average activation suppliers:</run>
+              <run>Æ&#10;</run>
+              <run fontsize='10'>(Total number of distinct suppliers that received an uncancelled order, up until and including the activation day) / (Total number of restaurants activated)</run>
+            </formatted-text>
+            <zone-style>
+              <format attr='border-color' value='#000000' />
+              <format attr='border-style' value='solid' />
+              <format attr='border-width' value='1' />
+              <format attr='margin' value='4' />
+            </zone-style>
+          </zone>
+          <zone forceUpdate='true' h='14713' id='9' type-v2='text' w='98828' x='586' y='1042'>
+            <formatted-text>
+              <run bold='true' fontcolor='#000000' fontsize='14'>Dashboard Scope:</run>
+              <run>Æ&#10;</run>
+              <run fontsize='10'>Only uncancelled orders are considered</run>
+              <run>Æ&#10;</run>
+              <run fontsize='10'>Sales Manager will have a &apos;Null&apos; Value if the account management input Gsheet does not contain the Sales Manager</run>
+              <run bold='true' fontsize='10'> linked to a restaurant</run>
+            </formatted-text>
+            <zone-style>
+              <format attr='border-color' value='#000000' />
+              <format attr='border-style' value='solid' />
+              <format attr='border-width' value='1' />
+              <format attr='margin' value='4' />
+            </zone-style>
+          </zone>
+          <zone-style>
+            <format attr='border-color' value='#000000' />
+            <format attr='border-style' value='none' />
+            <format attr='border-width' value='0' />
+            <format attr='margin' value='8' />
+          </zone-style>
+        </zone>
+      </zones>
+      <devicelayouts>
+        <devicelayout auto-generated='true' name='Phone'>
+          <size maxheight='700' minheight='700' sizing-mode='vscroll' />
+          <zones>
+            <zone h='100000' id='105' type-v2='layout-basic' w='100000' x='0' y='0'>
+              <zone h='84000' id='104' param='vert' type-v2='layout-flow' w='84000' x='8000' y='8000'>
+                <zone forceUpdate='true' h='14713' id='9' type-v2='text' w='98828' x='586' y='1042'>
+                  <formatted-text>
+                    <run bold='true' fontcolor='#000000' fontsize='14'>Dashboard Scope:</run>
+                    <run>Æ&#10;</run>
+                    <run fontsize='10'>Only uncancelled orders are considered</run>
+                    <run>Æ&#10;</run>
+                    <run fontsize='10'>Sales Manager will have a &apos;Null&apos; Value if the account management input Gsheet does not contain the Sales Manager</run>
+                    <run bold='true' fontsize='10'> linked to a restaurant</run>
+                  </formatted-text>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='solid' />
+                    <format attr='border-width' value='1' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone forceUpdate='true' h='83203' id='7' type-v2='text' w='98828' x='586' y='15755'>
+                  <formatted-text>
+                    <run bold='true' fontcolor='#000000' fontsize='14'>Dashboard Definitions:</run>
+                    <run>Æ&#10;&#10;</run>
+                    <run bold='true' fontsize='10'>Dashboard Section 1: Filters sections (Top part of dashboard with dropdown filters)</run>
+                    <run>Æ&#10;</run>
+                    <run fontsize='10'>____________________________________________________________________________________________________</run>
+                    <run>Æ&#10;</run>
+                    <run bold='true' fontsize='10'>Activation criteria filter:</run>
+                    <run>Æ&#10;</run>
+                    <run bold='true' fontsize='10'>Traditional - </run>
+                    <run fontsize='10'>Activation takes place with the first uncancelled order on the 2nd order day</run>
+                    <run>Æ&#10;</run>
+                    <run bold='true' fontsize='10'>Strict - Activation takes place on:</run>
+                    <run>Æ&#10;</run>
+                    <run fontsize='10'>     a. The first uncancelled order on the 3rd order day, if the restaurant has ordered from at least 2 different suppliers between order day 1 - 3</run>
+                    <run>Æ&#10;</run>
+                    <run fontsize='10'>     b. The first uncancelled order on the 5th order day if the restaurant has ordered only from 1 supplier between order day 1 - 5</run>
+                    <run>Æ&#10;&#10;</run>
+                    <run bold='true' fontsize='10'>Dashboard Section 2: Metrics and visuals section</run>
+                    <run>Æ&#10;</run>
+                    <run fontsize='10'>_____________________________________________________________________________________________________</run>
+                    <run>Æ&#10;</run>
+                    <run bold='true' fontsize='10'>Total activations:</run>
+                    <run>Æ&#10;</run>
+                    <run fontsize='10'>Total number of activations as per selected criteria</run>
+                    <run>Æ&#10;&#10;</run>
+                    <run bold='true' fontsize='10'>% Restaurants who ordered in W1 and W2 after activation:</run>
+                    <run>Æ&#10;</run>
+                    <run fontsize='10'> If a restaurant has at least 1 uncancelled order in the respective first calendar week after activation W1(starting on a Monday) , or second calendar week after after activation W2 this will count towards this metric</run>
+                    <run>Æ&#10;&#10;</run>
+                    <run bold='true' fontsize='10'>Average activation suppliers:</run>
+                    <run>Æ&#10;</run>
+                    <run fontsize='10'>(Total number of distinct suppliers that received an uncancelled order, up until and including the activation day) / (Total number of restaurants activated)</run>
+                  </formatted-text>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='solid' />
+                    <format attr='border-width' value='1' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+              </zone>
+              <zone-style>
+                <format attr='border-color' value='#000000' />
+                <format attr='border-style' value='none' />
+                <format attr='border-width' value='0' />
+                <format attr='margin' value='8' />
+              </zone-style>
+            </zone>
+          </zones>
+        </devicelayout>
+      </devicelayouts>
+      <simple-id uuid='{F5CFF911-0A53-47FE-A5E6-57F75BF3EAFB}' />
+    </dashboard>
+    <dashboard _.fcp.AccessibleZoneTabOrder.true...enable-sort-zone-taborder='true' name='Rests without Sales Listed Manager'>
+      <repository-location derived-from='https://tableau.deliveryhero.net/t/GlobalStandardReporting/workbooks/SalesManagerAnalysis/RestswithoutSalesListedManager?rev=' id='RestswithoutSalesListedManager' path='/t/GlobalStandardReporting/workbooks/SalesManagerAnalysis' revision='' site='GlobalStandardReporting' />
+      <style />
+      <size maxheight='768' maxwidth='1366' minheight='768' minwidth='1366' preset-index='0' sizing-mode='fixed' />
+      <datasources>
+        <datasource caption='Test_Activation' name='federated.14cwxyc09olo4q10b2jl01bimk1v' />
+      </datasources>
+      <datasource-dependencies datasource='federated.14cwxyc09olo4q10b2jl01bimk1v'>
+        <column datatype='string' name='[global_entity_id]' role='dimension' type='nominal' />
+        <column-instance column='[global_entity_id]' derivation='None' name='[none:global_entity_id:nk]' pivot='key' type='nominal' />
+      </datasource-dependencies>
+      <zones>
+        <zone h='100000' id='4' type-v2='layout-basic' w='100000' x='0' y='0'>
+          <zone h='89062' id='7' param='horz' type-v2='layout-flow' w='98828' x='586' y='9896'>
+            <zone h='89062' id='5' type-v2='layout-basic' w='98828' x='586' y='9896'>
+              <zone h='89062' id='89' name='Restaurants without Listed Sales Manager' w='98828' x='586' y='9896'>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+            </zone>
+          </zone>
+          <zone h='8854' id='18' param='horz' type-v2='layout-flow' w='98828' x='586' y='1042'>
+            <zone-style>
+              <format attr='border-color' value='#555555' />
+              <format attr='border-style' value='solid' />
+              <format attr='border-width' value='1' />
+            </zone-style>
+          </zone>
+          <zone-style>
+            <format attr='border-color' value='#000000' />
+            <format attr='border-style' value='none' />
+            <format attr='border-width' value='0' />
+            <format attr='margin' value='8' />
+          </zone-style>
+        </zone>
+        <zone h='6510' id='8' mode='checkdropdown' name='Restaurants without Listed Sales Manager' param='[federated.14cwxyc09olo4q10b2jl01bimk1v].[none:global_entity_id:nk]' type-v2='filter' w='12152' x='2123' y='1953' />
+      </zones>
+      <devicelayouts>
+        <devicelayout auto-generated='true' name='Phone'>
+          <size maxheight='700' minheight='700' sizing-mode='vscroll' />
+          <zones>
+            <zone h='100000' id='133' type-v2='layout-basic' w='100000' x='0' y='0'>
+              <zone h='97916' id='132' param='vert' type-v2='layout-flow' w='98828' x='586' y='1042'>
+                <zone h='6510' id='8' mode='checkdropdown' name='Restaurants without Listed Sales Manager' param='[federated.14cwxyc09olo4q10b2jl01bimk1v].[none:global_entity_id:nk]' type-v2='filter' w='12152' x='2123' y='1953'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone fixed-size='280' h='89062' id='89' is-fixed='true' name='Restaurants without Listed Sales Manager' w='98828' x='586' y='9896'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+              </zone>
+              <zone-style>
+                <format attr='border-color' value='#000000' />
+                <format attr='border-style' value='none' />
+                <format attr='border-width' value='0' />
+                <format attr='margin' value='8' />
+              </zone-style>
+            </zone>
+          </zones>
+        </devicelayout>
+      </devicelayouts>
+      <simple-id uuid='{BC0B7D50-221A-4ABF-815A-613A010AE18F}' />
+    </dashboard>
+    <dashboard _.fcp.AccessibleZoneTabOrder.true...enable-sort-zone-taborder='true' name='Sales Manager Analysis'>
+      <repository-location derived-from='https://tableau.deliveryhero.net/t/GlobalStandardReporting/workbooks/SalesManagerAnalysis/SalesManagerAnalysis?rev=' id='SalesManagerAnalysis' path='/t/GlobalStandardReporting/workbooks/SalesManagerAnalysis' revision='' site='GlobalStandardReporting' />
+      <style />
+      <size maxheight='768' maxwidth='1366' minheight='768' minwidth='1366' preset-index='0' sizing-mode='fixed' />
+      <datasources>
+        <datasource caption='Test_Activation' name='federated.14cwxyc09olo4q10b2jl01bimk1v' />
+      </datasources>
+      <datasource-dependencies datasource='federated.14cwxyc09olo4q10b2jl01bimk1v'>
+        <column datatype='string' name='[activation_critieria]' role='dimension' type='nominal' />
+        <column datatype='date' default-format='*mm/yyyy' name='[activation_month]' role='dimension' type='ordinal' />
+        <column datatype='string' name='[global_entity_id]' role='dimension' type='nominal' />
+        <column-instance column='[activation_critieria]' derivation='None' name='[none:activation_critieria:nk]' pivot='key' type='nominal' />
+        <column-instance column='[activation_month]' derivation='None' name='[none:activation_month:ok]' pivot='key' type='ordinal' />
+        <column-instance column='[global_entity_id]' derivation='None' name='[none:global_entity_id:nk]' pivot='key' type='nominal' />
+      </datasource-dependencies>
+      <zones>
+        <zone h='100000' id='4' type-v2='layout-basic' w='100000' x='0' y='0'>
+          <zone h='89062' id='7' param='horz' type-v2='layout-flow' w='98828' x='586' y='9896'>
+            <zone h='89062' id='5' type-v2='layout-basic' w='98828' x='586' y='9896'>
+              <zone h='28333' id='3' name='Total Activations' w='98828' x='586' y='9896'>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+              <zone h='24197' id='11' name='Activation Suppliers' w='98828' x='586' y='74761'>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+              <zone h='36532' id='12' name='Order W1_W2' w='98828' x='586' y='38229'>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+            </zone>
+          </zone>
+          <zone h='8854' id='18' param='horz' type-v2='layout-flow' w='98828' x='586' y='1042'>
+            <zone-style>
+              <format attr='border-color' value='#555555' />
+              <format attr='border-style' value='solid' />
+              <format attr='border-width' value='1' />
+            </zone-style>
+          </zone>
+          <zone-style>
+            <format attr='border-color' value='#000000' />
+            <format attr='border-style' value='none' />
+            <format attr='border-width' value='0' />
+            <format attr='margin' value='8' />
+          </zone-style>
+        </zone>
+        <zone fixed-size='271' h='6510' id='10' is-fixed='true' mode='dropdown' name='Total Activations' param='[federated.14cwxyc09olo4q10b2jl01bimk1v].[none:activation_critieria:nk]' show-all='false' type-v2='filter' w='12299' x='30966' y='1953' />
+        <zone fixed-size='268' h='6510' id='9' is-fixed='true' mode='checkdropdown' name='Total Activations' param='[federated.14cwxyc09olo4q10b2jl01bimk1v].[none:activation_month:ok]' type-v2='filter' w='12299' x='16252' y='1953' />
+        <zone h='6510' id='8' mode='checkdropdown' name='Total Activations' param='[federated.14cwxyc09olo4q10b2jl01bimk1v].[none:global_entity_id:nk]' type-v2='filter' w='12152' x='2123' y='1953' />
+      </zones>
+      <devicelayouts>
+        <devicelayout auto-generated='true' name='Phone'>
+          <size maxheight='900' minheight='900' sizing-mode='vscroll' />
+          <zones>
+            <zone h='100000' id='132' type-v2='layout-basic' w='100000' x='0' y='0'>
+              <zone h='97916' id='131' param='vert' type-v2='layout-flow' w='98828' x='586' y='1042'>
+                <zone fixed-size='271' h='6510' id='10' mode='dropdown' name='Total Activations' param='[federated.14cwxyc09olo4q10b2jl01bimk1v].[none:activation_critieria:nk]' show-all='false' type-v2='filter' w='12299' x='30966' y='1953'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone fixed-size='268' h='6510' id='9' mode='checkdropdown' name='Total Activations' param='[federated.14cwxyc09olo4q10b2jl01bimk1v].[none:activation_month:ok]' type-v2='filter' w='12299' x='16252' y='1953'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone h='6510' id='8' mode='checkdropdown' name='Total Activations' param='[federated.14cwxyc09olo4q10b2jl01bimk1v].[none:global_entity_id:nk]' type-v2='filter' w='12152' x='2123' y='1953'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone fixed-size='210' h='28333' id='3' is-fixed='true' name='Total Activations' w='98828' x='586' y='9896'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone fixed-size='272' h='36532' id='12' is-fixed='true' name='Order W1_W2' w='98828' x='586' y='38229'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone fixed-size='178' h='24197' id='11' is-fixed='true' name='Activation Suppliers' w='98828' x='586' y='74761'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+              </zone>
+              <zone-style>
+                <format attr='border-color' value='#000000' />
+                <format attr='border-style' value='none' />
+                <format attr='border-width' value='0' />
+                <format attr='margin' value='8' />
+              </zone-style>
+            </zone>
+          </zones>
+        </devicelayout>
+      </devicelayouts>
+      <simple-id uuid='{78BEA804-8FF6-4E75-B21F-B112D00BB88B}' />
+    </dashboard>
+  </dashboards>
+  <windows source-height='30'>
+    <window class='worksheet' name='Total Activations'>
+      <cards>
+        <edge name='left'>
+          <strip size='240'>
+            <card type='pages' />
+            <card type='filters' />
+            <card type='marks' />
+          </strip>
+        </edge>
+        <edge name='top'>
+          <strip size='48'>
+            <card type='columns' />
+          </strip>
+          <strip size='48'>
+            <card type='rows' />
+          </strip>
+          <strip size='42'>
+            <card type='title' />
+          </strip>
+        </edge>
+        <edge name='right'>
+          <strip size='240'>
+            <card pane-specification-id='1' param='[federated.14cwxyc09olo4q10b2jl01bimk1v].[:Measure Names]' type='color' />
+          </strip>
+        </edge>
+      </cards>
+      <viewpoint>
+        <highlight>
+          <color-one-way>
+            <field>[federated.14cwxyc09olo4q10b2jl01bimk1v].[none:Sales Manager:nk]</field>
+            <field>[federated.14cwxyc09olo4q10b2jl01bimk1v].[none:activation_critieria:nk]</field>
+            <field>[federated.14cwxyc09olo4q10b2jl01bimk1v].[none:activation_month:qk]</field>
+            <field>[federated.14cwxyc09olo4q10b2jl01bimk1v].[none:global_entity_id:nk]</field>
+            <field>[federated.14cwxyc09olo4q10b2jl01bimk1v].[yr:activation_month:ok]</field>
+          </color-one-way>
+        </highlight>
+      </viewpoint>
+      <simple-id uuid='{977CB74A-9FD5-4CA8-841C-BFAB0032AFDC}' />
+    </window>
+    <window class='worksheet' name='Activation Suppliers'>
+      <cards>
+        <edge name='left'>
+          <strip size='240'>
+            <card type='pages' />
+            <card type='filters' />
+            <card type='marks' />
+          </strip>
+        </edge>
+        <edge name='top'>
+          <strip size='48'>
+            <card type='columns' />
+          </strip>
+          <strip size='48'>
+            <card type='rows' />
+          </strip>
+          <strip size='42'>
+            <card type='title' />
+          </strip>
+        </edge>
+      </cards>
+      <viewpoint>
+        <highlight>
+          <color-one-way>
+            <field>[federated.14cwxyc09olo4q10b2jl01bimk1v].[none:Sales Manager:nk]</field>
+            <field>[federated.14cwxyc09olo4q10b2jl01bimk1v].[none:activation_critieria:nk]</field>
+            <field>[federated.14cwxyc09olo4q10b2jl01bimk1v].[none:activation_month:qk]</field>
+            <field>[federated.14cwxyc09olo4q10b2jl01bimk1v].[none:global_entity_id:nk]</field>
+            <field>[federated.14cwxyc09olo4q10b2jl01bimk1v].[yr:activation_month:ok]</field>
+          </color-one-way>
+        </highlight>
+      </viewpoint>
+      <simple-id uuid='{4F61AA85-CB4A-43D1-8D37-002344349F38}' />
+    </window>
+    <window class='worksheet' name='Order W1_W2'>
+      <cards>
+        <edge name='left'>
+          <strip size='240'>
+            <card type='pages' />
+            <card type='filters' />
+            <card type='marks' />
+            <card type='measures' />
+          </strip>
+        </edge>
+        <edge name='top'>
+          <strip size='48'>
+            <card type='columns' />
+          </strip>
+          <strip size='48'>
+            <card type='rows' />
+          </strip>
+          <strip size='42'>
+            <card type='title' />
+          </strip>
+        </edge>
+        <edge name='right'>
+          <strip size='240'>
+            <card pane-specification-id='0' param='[federated.14cwxyc09olo4q10b2jl01bimk1v].[:Measure Names]' type='color' />
+          </strip>
+        </edge>
+      </cards>
+      <viewpoint>
+        <highlight>
+          <color-one-way>
+            <field>[federated.14cwxyc09olo4q10b2jl01bimk1v].[:Measure Names]</field>
+            <field>[federated.14cwxyc09olo4q10b2jl01bimk1v].[none:Sales Manager:nk]</field>
+            <field>[federated.14cwxyc09olo4q10b2jl01bimk1v].[none:activation_critieria:nk]</field>
+            <field>[federated.14cwxyc09olo4q10b2jl01bimk1v].[none:activation_month:qk]</field>
+            <field>[federated.14cwxyc09olo4q10b2jl01bimk1v].[none:global_entity_id:nk]</field>
+            <field>[federated.14cwxyc09olo4q10b2jl01bimk1v].[yr:activation_month:ok]</field>
+          </color-one-way>
+        </highlight>
+      </viewpoint>
+      <simple-id uuid='{9F2704A8-0064-4F9C-BF44-8310F42FED3C}' />
+    </window>
+    <window class='dashboard' maximized='true' name='Sales Manager Analysis'>
+      <viewpoints>
+        <viewpoint name='Activation Suppliers'>
+          <zoom type='entire-view' />
+        </viewpoint>
+        <viewpoint name='Order W1_W2'>
+          <zoom type='entire-view' />
+          <highlight field='[federated.14cwxyc09olo4q10b2jl01bimk1v].[:Measure Names]'>
+            <bucket-selection />
+          </highlight>
+        </viewpoint>
+        <viewpoint name='Total Activations'>
+          <zoom type='entire-view' />
+        </viewpoint>
+      </viewpoints>
+      <active id='-1' />
+      <simple-id uuid='{C1761EE0-09D2-4F19-BF7A-A0D71458A7FE}' />
+    </window>
+    <window class='dashboard' name='Rests without Sales Listed Manager'>
+      <viewpoints>
+        <viewpoint name='Restaurants without Listed Sales Manager' />
+      </viewpoints>
+      <active id='-1' />
+      <simple-id uuid='{C3FF29BA-397C-4F16-9869-C6AE940CB66F}' />
+    </window>
+    <window class='dashboard' name='Definitions'>
+      <viewpoints />
+      <active id='-1' />
+      <simple-id uuid='{A38AF8BD-9F9B-4DEC-B7F0-B3DD8088A29A}' />
+    </window>
+    <window class='worksheet' name='Restaurants without Listed Sales Manager'>
+      <cards>
+        <edge name='left'>
+          <strip size='320'>
+            <card type='pages' />
+            <card type='filters' />
+            <card type='marks' />
+          </strip>
+        </edge>
+        <edge name='top'>
+          <strip size='48'>
+            <card type='columns' />
+          </strip>
+          <strip size='48'>
+            <card type='rows' />
+          </strip>
+          <strip size='30'>
+            <card type='title' />
+          </strip>
+        </edge>
+      </cards>
+      <viewpoint>
+        <highlight>
+          <color-one-way>
+            <field>[federated.14cwxyc09olo4q10b2jl01bimk1v].[none:Sales Manager (Entity!Combo1):nk]</field>
+            <field>[federated.14cwxyc09olo4q10b2jl01bimk1v].[none:Sales Manager:nk]</field>
+            <field>[federated.14cwxyc09olo4q10b2jl01bimk1v].[none:activation_critieria:nk]</field>
+            <field>[federated.14cwxyc09olo4q10b2jl01bimk1v].[none:activation_month:qk]</field>
+            <field>[federated.14cwxyc09olo4q10b2jl01bimk1v].[none:activation_week:ok]</field>
+            <field>[federated.14cwxyc09olo4q10b2jl01bimk1v].[none:global_entity_id:nk]</field>
+            <field>[federated.14cwxyc09olo4q10b2jl01bimk1v].[none:vendor_code:nk]</field>
+            <field>[federated.14cwxyc09olo4q10b2jl01bimk1v].[none:vendor_name:nk]</field>
+            <field>[federated.14cwxyc09olo4q10b2jl01bimk1v].[yr:activation_week:ok]</field>
+          </color-one-way>
+        </highlight>
+      </viewpoint>
+      <simple-id uuid='{E20297E9-519F-468D-8618-DD4DE8EEDD99}' />
+    </window>
+    <window class='worksheet' name='Sheet 5'>
+      <cards>
+        <edge name='left'>
+          <strip size='159'>
+            <card type='pages' />
+            <card type='filters' />
+            <card type='marks' />
+          </strip>
+        </edge>
+        <edge name='top'>
+          <strip size='2147483647'>
+            <card type='columns' />
+          </strip>
+          <strip size='2147483647'>
+            <card type='rows' />
+          </strip>
+          <strip size='30'>
+            <card type='title' />
+          </strip>
+        </edge>
+      </cards>
+      <simple-id uuid='{6A76EBC2-482B-437D-B59E-C8FF64CB0E80}' />
+    </window>
+  </windows>
+</workbook>

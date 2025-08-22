@@ -1,0 +1,3499 @@
+<?xml version='1.0' encoding='utf-8' ?>
+
+<!-- build 20233.25.0106.1650                               -->
+<workbook original-version='18.1' source-build='2023.3.14 (20233.25.0106.1650)' source-platform='mac' version='18.1' xml:base='https://tableau.deliveryhero.net' xmlns:user='http://www.tableausoftware.com/xml/user'>
+  <document-format-change-manifest>
+    <_.fcp.AccessibleZoneTabOrder.true...AccessibleZoneTabOrder />
+    <_.fcp.AnimationOnByDefault.true...AnimationOnByDefault />
+    <AutoCreateAndUpdateDSDPhoneLayouts />
+    <IntuitiveSorting />
+    <IntuitiveSorting_SP2 />
+    <_.fcp.MarkAnimation.true...MarkAnimation />
+    <_.fcp.ObjectModelEncapsulateLegacy.true...ObjectModelEncapsulateLegacy />
+    <_.fcp.ObjectModelTableType.true...ObjectModelTableType />
+    <_.fcp.PatternedLineMarks.true...PatternedLineMarks />
+    <_.fcp.SchemaViewerObjectModel.true...SchemaViewerObjectModel />
+    <SetMembershipControl />
+    <SheetIdentifierTracking />
+    <_.fcp.SingleValuePerNestSorting.true...SingleValuePerNestSorting />
+    <SortTagCleanup />
+    <WindowsPersistSimpleIdentifiers />
+    <WorksheetBackgroundTransparency />
+    <ZoneBackgroundTransparency />
+  </document-format-change-manifest>
+  <repository-location derived-from='https://tableau.deliveryhero.net/t/GlobalStandardReporting/workbooks/MAB_dashboard?rev=1.0' id='MAB_dashboard' path='/t/GlobalStandardReporting/workbooks' revision='1.1' site='GlobalStandardReporting' />
+  <preferences>
+    <preference name='ui.encoding.shelf.height' value='24' />
+    <preference name='ui.shelf.height' value='26' />
+  </preferences>
+  <_.fcp.AnimationOnByDefault.false...style>
+    <_.fcp.AnimationOnByDefault.false..._.fcp.MarkAnimation.true...style-rule element='animation'>
+      <_.fcp.AnimationOnByDefault.false...format attr='animation-on' value='ao-on' />
+    </_.fcp.AnimationOnByDefault.false..._.fcp.MarkAnimation.true...style-rule>
+  </_.fcp.AnimationOnByDefault.false...style>
+  <datasources>
+    <datasource hasconnection='false' inline='true' name='Parameters' version='18.1'>
+      <aliases enabled='yes' />
+      <column caption='Credible Interval Lower' datatype='real' name='[Parameter 1]' param-domain-type='range' role='measure' type='quantitative' value='5003.3560977201914'>
+        <calculation class='tableau' formula='5003.3560977201914' />
+        <range max='16446.357380075999' min='-105.42233296977548' />
+      </column>
+      <column caption='Credible Interval Upper' datatype='real' name='[Parameter 2]' param-domain-type='range' role='measure' type='quantitative' value='17645.253904322319'>
+        <calculation class='tableau' formula='17645.253904322319' />
+        <range max='18904.773990360023' min='-25.907603545022472' />
+      </column>
+    </datasource>
+    <datasource caption='logistics-customer-staging' inline='true' name='federated.0o0p4c21kx9b7415g30f615h6tmg' version='18.1'>
+      <connection class='federated'>
+        <named-connections>
+          <named-connection caption='BigQuery' name='bigquery.08336el06pyp4d14fxi3s1y2ueio'>
+            <connection CATALOG='fulfillment-dwh-production' EXECCATALOG='logistics-customer-staging' authentication='oauth' class='bigquery' connection-dialect='google-sql' project='DataHub Production' schema='dl' server-oauth='server-custom' username='bertrand.flanet@deliveryhero.com' workgroup-auth-mode='prompt' />
+          </named-connection>
+        </named-connections>
+        <_.fcp.ObjectModelEncapsulateLegacy.false...relation connection='bigquery.08336el06pyp4d14fxi3s1y2ueio' name='Custom SQL Query' type='text'><![CDATA[-- Access data from:
+-- `logistics-data-storage-staging.pricing_multi_armed_bandit.mab_bayesian_updating_results`
+
+-- `logistics-data-storage-staging.pricing_multi_armed_bandit.mab_dps_payload`
+
+-- `logistics-data-storage-staging.pricing_multi_armed_bandit.mab_new_variant`
+
+
+WITH parse AS(
+SELECT 
+         created_at
+       , created_date
+       , analysed_date
+       , entity_id
+       , test_name
+       , test_id
+       , JSON_VALUE(dps_payload, '$.target_kpi') AS target_kpi
+       , JSON_VALUE(kpi, '$.name') AS kpi
+       , JSON_VALUE(variant, '$.variant_name') AS variant_name
+       , JSON_VALUE(variant, '$.winning_probability') AS winning_probability
+
+  FROM `logistics-data-storage-staging.pricing_multi_armed_bandit.mab_dps_payload`, --`log-data-science-production.pricing_multi_armed_bandit.mab_dps_payload`,
+  UNNEST(CAST(JSON_QUERY_ARRAY(dps_payload, '$.kpis') AS ARRAY<<STRING>>)) AS kpi,
+  UNNEST(CAST(JSON_QUERY_ARRAY(kpi, '$.winning_variant_probabilities') AS ARRAY<<STRING>>)) AS variant
+),
+
+dps_exp AS(
+SELECT
+          A.name test_name
+        , A.id
+        , A.country_code
+        , date(max(updated_at)) created_date
+        , JSON_EXTRACT_SCALAR(variant_share, '$.variant') variant
+        , CAST(JSON_EXTRACT_SCALAR(variant_share, '$.share') as numeric) share
+
+FROM `fulfillment-dwh-production.hl.dynamic_pricing_experiment` A, 
+ UNNEST(JSON_EXTRACT_ARRAY(shares, '$.variant_shares')) AS variant_share
+WHERE LOWER(experiment_type)="ab_mab"
+AND created_at>>='2023-01-01'
+AND already_executed = TRUE
+GROUP BY ALL
+),
+
+base AS(
+  SELECT 
+         -- From 'ds_pricing_multi_armed_bandit_mab_bayesian_updating_results'
+          bay.created_date
+        , bay.created_at
+        , MAX(bay.analysed_date) AS analysed_date
+        , bay.entity_id
+        , bay.test_id -- changed to deagregated
+        , bay.test_name
+        , MAX(bay.version) AS version
+        , bay.target_kpi AS kpi
+        , AVG(bay.p_var_greater_all) AS winning_probability
+        , bay.variant AS variant_name
+        , AVG(bayesian_mean) AS bayesian_mean
+        , AVG(lower_quartile) AS lower_quartile
+        , AVG(upper_quartile) AS upper_quartile
+        , AVG(bay.hdi_lower_bound) AS hdi_lower_bound
+        , AVG(bay.hdi_upper_bound) AS hdi_upper_bound
+
+        -- From 'pricing_multi_armed_bandit.mab_dps_payload'
+       , MAX(p.target_kpi) AS target_kpi
+       
+       --From `fulfillment-dwh-production.hl.dynamic_pricing_experiment`
+       , AVG(share) AS share
+
+FROM `fulfillment-dwh-production.dl.ds_pricing_multi_armed_bandit_mab_bayesian_updating_results` bay
+  LEFT JOIN parse p
+  ON   p.entity_id = bay.entity_id
+      AND p.created_date = bay.created_date
+      AND p.test_name = bay.test_name
+      AND p.test_id = bay.test_id
+      AND p.kpi = bay.target_kpi
+      AND p.variant_name = bay.variant
+  
+  LEFT JOIN dps_exp dps
+  ON  dps.country_code = bay.country_code
+      AND dps.test_name = bay.test_name
+      AND dps.id = bay.test_id
+      AND dps.created_date = bay.created_date
+      AND dps.variant = bay.variant
+
+WHERE bay.test_name IN(
+	SELECT test_name
+	FROM dps_exp
+)
+
+
+GROUP BY ALL
+),
+
+base2 AS(
+SELECT 
+  created_date
+, created_at
+, analysed_date
+, entity_id
+, test_id
+, test_name
+, version
+, kpi
+, winning_probability
+, variant_name
+, bayesian_mean
+, hdi_lower_bound
+, hdi_upper_bound
+, lower_quartile
+, upper_quartile
+, target_kpi
+, COALESCE(share, LAST_VALUE(share IGNORE NULLS) OVER(PARTITION BY entity_id, test_name, kpi, variant_name ORDER BY created_date ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)) AS share
+
+FROM base
+)
+
+
+
+
+-- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+-- Generate dates and value for 3 days before each test starts
+, enriched_data AS(
+    SELECT 
+        created_date,
+        created_at,
+        entity_id,
+        test_name,
+        test_id,
+        version,
+        target_kpi,
+        kpi,
+        variant_name,
+        share,
+        hdi_lower_bound,
+        hdi_upper_bound,
+        FIRST_VALUE(created_date) OVER (PARTITION BY entity_id, test_name, kpi ORDER BY created_date ASC) AS first_created_date,
+        COUNT(DISTINCT variant_name) OVER (PARTITION BY entity_id, test_name, kpi, created_date) AS variant_count,
+    FROM base
+),
+
+processed_data1 AS(
+SELECT 
+    DATE_SUB(first_created_date, INTERVAL 1 DAY) AS created_date,  -- Shift date back
+    MAX(created_at) AS created_at,
+    DATE_SUB(first_created_date, INTERVAL 3 DAY) AS analysed_date,
+    entity_id,
+    MIN(test_id) AS test_id,
+    test_name,
+    MIN(version) AS version,
+    kpi,
+    1.0 / variant_count AS winning_probability,  -- Compute new Bayesian mean
+    variant_name,
+    NULL AS bayesian_mean,
+    NULL AS hdi_lower_bound,
+    NULL AS hdi_upper_bound,
+    NULL AS lower_quartile,
+    NULL AS upper_quartile,
+    ANY_VALUE(target_kpi) AS target_kpi,
+    NULL AS share,
+    --NULL AS uplift_percentage
+
+FROM enriched_data
+GROUP BY entity_id, test_name, kpi, variant_name, first_created_date, variant_count
+),
+
+processed_data2 AS(
+SELECT 
+    DATE_SUB(first_created_date, INTERVAL 2 DAY) AS created_date,  -- Shift date back
+    MAX(created_at) AS created_at,
+    DATE_SUB(first_created_date, INTERVAL 4 DAY) AS analysed_date,
+    entity_id,
+    MIN(test_id) AS test_id,
+    test_name,
+    MIN(version) AS version,
+    kpi,
+    1.0 / variant_count AS winning_probability,  -- Compute new Bayesian mean
+    variant_name,
+    NULL AS bayesian_mean,
+    NULL AS hdi_lower_bound,
+    NULL AS hdi_upper_bound,
+    NULL AS lower_quartile,
+    NULL AS upper_quartile,
+    ANY_VALUE(target_kpi) AS target_kpi,
+    NULL AS share,
+    --NULL AS uplift_percentage
+
+FROM enriched_data
+GROUP BY entity_id, test_name, kpi, variant_name, first_created_date, variant_count
+),
+
+processed_data3 AS(
+SELECT 
+    DATE_SUB(first_created_date, INTERVAL 3 DAY) AS created_date,  -- Shift date back
+    MAX(created_at) AS created_at,
+    DATE_SUB(first_created_date, INTERVAL 5 DAY) AS analysed_date,
+    entity_id,
+    MIN(test_id) AS test_id,
+    test_name,
+    MIN(version) AS version,
+    kpi,
+    1.0 / variant_count AS winning_probability,  -- Compute new Bayesian mean
+    variant_name,
+    NULL AS bayesian_mean,
+    NULL AS hdi_lower_bound,
+    NULL AS hdi_upper_bound,
+    NULL AS lower_quartile,
+    NULL AS upper_quartile,
+    ANY_VALUE(target_kpi) AS target_kpi,
+    NULL AS share,
+    --NULL AS uplift_percentage
+
+FROM enriched_data
+GROUP BY entity_id, test_name, kpi, variant_name, first_created_date, variant_count
+)
+
+-- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+, union_tabs AS(
+-- Adding the generated date tables to the base table
+SELECT *
+FROM base2
+
+UNION ALL
+SELECT * FROM processed_data1
+UNION ALL
+SELECT * FROM processed_data2
+UNION ALL
+SELECT * FROM processed_data3
+)
+
+SELECT  created_date
+        , created_at
+        , analysed_date
+        , entity_id
+        , test_id
+        , test_name
+        , version
+        , kpi
+        , winning_probability
+        , variant_name
+        , bayesian_mean
+        , hdi_lower_bound
+        , hdi_upper_bound
+        , lower_quartile
+        , upper_quartile
+        , target_kpi
+        
+        --replace NULL for the first days of share -- still need to automate the diff between MIN(created_date) and first_date of variant record, to automate the interval
+, CASE WHEN created_date << (MIN(created_date) OVER(PARTITION BY entity_id, test_name, kpi ORDER BY created_date) + interval 6 day) THEN COALESCE(100 / COUNT(variant_name) OVER(PARTITION BY entity_id, test_name, kpi, created_date))
+      ELSE share END AS share
+FROM union_tabs 
+
+ORDER BY entity_id, test_name, kpi, created_date, variant_name]]></_.fcp.ObjectModelEncapsulateLegacy.false...relation>
+        <_.fcp.ObjectModelEncapsulateLegacy.true...relation connection='bigquery.08336el06pyp4d14fxi3s1y2ueio' name='Custom SQL Query' type='text'><![CDATA[-- Access data from:
+-- `logistics-data-storage-staging.pricing_multi_armed_bandit.mab_bayesian_updating_results`
+
+-- `logistics-data-storage-staging.pricing_multi_armed_bandit.mab_dps_payload`
+
+-- `logistics-data-storage-staging.pricing_multi_armed_bandit.mab_new_variant`
+
+
+WITH parse AS(
+SELECT 
+         created_at
+       , created_date
+       , analysed_date
+       , entity_id
+       , test_name
+       , test_id
+       , JSON_VALUE(dps_payload, '$.target_kpi') AS target_kpi
+       , JSON_VALUE(kpi, '$.name') AS kpi
+       , JSON_VALUE(variant, '$.variant_name') AS variant_name
+       , JSON_VALUE(variant, '$.winning_probability') AS winning_probability
+
+  FROM `logistics-data-storage-staging.pricing_multi_armed_bandit.mab_dps_payload`, --`log-data-science-production.pricing_multi_armed_bandit.mab_dps_payload`,
+  UNNEST(CAST(JSON_QUERY_ARRAY(dps_payload, '$.kpis') AS ARRAY<<STRING>>)) AS kpi,
+  UNNEST(CAST(JSON_QUERY_ARRAY(kpi, '$.winning_variant_probabilities') AS ARRAY<<STRING>>)) AS variant
+),
+
+dps_exp AS(
+SELECT
+          A.name test_name
+        , A.id
+        , A.country_code
+        , date(max(updated_at)) created_date
+        , JSON_EXTRACT_SCALAR(variant_share, '$.variant') variant
+        , CAST(JSON_EXTRACT_SCALAR(variant_share, '$.share') as numeric) share
+
+FROM `fulfillment-dwh-production.hl.dynamic_pricing_experiment` A, 
+ UNNEST(JSON_EXTRACT_ARRAY(shares, '$.variant_shares')) AS variant_share
+WHERE LOWER(experiment_type)="ab_mab"
+AND created_at>>='2023-01-01'
+AND already_executed = TRUE
+GROUP BY ALL
+),
+
+base AS(
+  SELECT 
+         -- From 'ds_pricing_multi_armed_bandit_mab_bayesian_updating_results'
+          bay.created_date
+        , bay.created_at
+        , MAX(bay.analysed_date) AS analysed_date
+        , bay.entity_id
+        , bay.test_id -- changed to deagregated
+        , bay.test_name
+        , MAX(bay.version) AS version
+        , bay.target_kpi AS kpi
+        , AVG(bay.p_var_greater_all) AS winning_probability
+        , bay.variant AS variant_name
+        , AVG(bayesian_mean) AS bayesian_mean
+        , AVG(lower_quartile) AS lower_quartile
+        , AVG(upper_quartile) AS upper_quartile
+        , AVG(bay.hdi_lower_bound) AS hdi_lower_bound
+        , AVG(bay.hdi_upper_bound) AS hdi_upper_bound
+
+        -- From 'pricing_multi_armed_bandit.mab_dps_payload'
+       , MAX(p.target_kpi) AS target_kpi
+       
+       --From `fulfillment-dwh-production.hl.dynamic_pricing_experiment`
+       , AVG(share) AS share
+
+FROM `fulfillment-dwh-production.dl.ds_pricing_multi_armed_bandit_mab_bayesian_updating_results` bay
+  LEFT JOIN parse p
+  ON   p.entity_id = bay.entity_id
+      AND p.created_date = bay.created_date
+      AND p.test_name = bay.test_name
+      AND p.test_id = bay.test_id
+      AND p.kpi = bay.target_kpi
+      AND p.variant_name = bay.variant
+  
+  LEFT JOIN dps_exp dps
+  ON  dps.country_code = bay.country_code
+      AND dps.test_name = bay.test_name
+      AND dps.id = bay.test_id
+      AND dps.created_date = bay.created_date
+      AND dps.variant = bay.variant
+
+WHERE bay.test_name IN(
+	SELECT test_name
+	FROM dps_exp
+)
+
+
+GROUP BY ALL
+),
+
+base2 AS(
+SELECT 
+  created_date
+, created_at
+, analysed_date
+, entity_id
+, test_id
+, test_name
+, version
+, kpi
+, winning_probability
+, variant_name
+, bayesian_mean
+, hdi_lower_bound
+, hdi_upper_bound
+, lower_quartile
+, upper_quartile
+, target_kpi
+, COALESCE(share, LAST_VALUE(share IGNORE NULLS) OVER(PARTITION BY entity_id, test_name, kpi, variant_name ORDER BY created_date ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)) AS share
+
+FROM base
+)
+
+
+
+
+-- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+-- Generate dates and value for 3 days before each test starts
+, enriched_data AS(
+    SELECT 
+        created_date,
+        created_at,
+        entity_id,
+        test_name,
+        test_id,
+        version,
+        target_kpi,
+        kpi,
+        variant_name,
+        share,
+        hdi_lower_bound,
+        hdi_upper_bound,
+        FIRST_VALUE(created_date) OVER (PARTITION BY entity_id, test_name, kpi ORDER BY created_date ASC) AS first_created_date,
+        COUNT(DISTINCT variant_name) OVER (PARTITION BY entity_id, test_name, kpi, created_date) AS variant_count,
+    FROM base
+),
+
+processed_data1 AS(
+SELECT 
+    DATE_SUB(first_created_date, INTERVAL 1 DAY) AS created_date,  -- Shift date back
+    MAX(created_at) AS created_at,
+    DATE_SUB(first_created_date, INTERVAL 3 DAY) AS analysed_date,
+    entity_id,
+    MIN(test_id) AS test_id,
+    test_name,
+    MIN(version) AS version,
+    kpi,
+    1.0 / variant_count AS winning_probability,  -- Compute new Bayesian mean
+    variant_name,
+    NULL AS bayesian_mean,
+    NULL AS hdi_lower_bound,
+    NULL AS hdi_upper_bound,
+    NULL AS lower_quartile,
+    NULL AS upper_quartile,
+    ANY_VALUE(target_kpi) AS target_kpi,
+    NULL AS share,
+    --NULL AS uplift_percentage
+
+FROM enriched_data
+GROUP BY entity_id, test_name, kpi, variant_name, first_created_date, variant_count
+),
+
+processed_data2 AS(
+SELECT 
+    DATE_SUB(first_created_date, INTERVAL 2 DAY) AS created_date,  -- Shift date back
+    MAX(created_at) AS created_at,
+    DATE_SUB(first_created_date, INTERVAL 4 DAY) AS analysed_date,
+    entity_id,
+    MIN(test_id) AS test_id,
+    test_name,
+    MIN(version) AS version,
+    kpi,
+    1.0 / variant_count AS winning_probability,  -- Compute new Bayesian mean
+    variant_name,
+    NULL AS bayesian_mean,
+    NULL AS hdi_lower_bound,
+    NULL AS hdi_upper_bound,
+    NULL AS lower_quartile,
+    NULL AS upper_quartile,
+    ANY_VALUE(target_kpi) AS target_kpi,
+    NULL AS share,
+    --NULL AS uplift_percentage
+
+FROM enriched_data
+GROUP BY entity_id, test_name, kpi, variant_name, first_created_date, variant_count
+),
+
+processed_data3 AS(
+SELECT 
+    DATE_SUB(first_created_date, INTERVAL 3 DAY) AS created_date,  -- Shift date back
+    MAX(created_at) AS created_at,
+    DATE_SUB(first_created_date, INTERVAL 5 DAY) AS analysed_date,
+    entity_id,
+    MIN(test_id) AS test_id,
+    test_name,
+    MIN(version) AS version,
+    kpi,
+    1.0 / variant_count AS winning_probability,  -- Compute new Bayesian mean
+    variant_name,
+    NULL AS bayesian_mean,
+    NULL AS hdi_lower_bound,
+    NULL AS hdi_upper_bound,
+    NULL AS lower_quartile,
+    NULL AS upper_quartile,
+    ANY_VALUE(target_kpi) AS target_kpi,
+    NULL AS share,
+    --NULL AS uplift_percentage
+
+FROM enriched_data
+GROUP BY entity_id, test_name, kpi, variant_name, first_created_date, variant_count
+)
+
+-- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+, union_tabs AS(
+-- Adding the generated date tables to the base table
+SELECT *
+FROM base2
+
+UNION ALL
+SELECT * FROM processed_data1
+UNION ALL
+SELECT * FROM processed_data2
+UNION ALL
+SELECT * FROM processed_data3
+)
+
+SELECT  created_date
+        , created_at
+        , analysed_date
+        , entity_id
+        , test_id
+        , test_name
+        , version
+        , kpi
+        , winning_probability
+        , variant_name
+        , bayesian_mean
+        , hdi_lower_bound
+        , hdi_upper_bound
+        , lower_quartile
+        , upper_quartile
+        , target_kpi
+        
+        --replace NULL for the first days of share -- still need to automate the diff between MIN(created_date) and first_date of variant record, to automate the interval
+, CASE WHEN created_date << (MIN(created_date) OVER(PARTITION BY entity_id, test_name, kpi ORDER BY created_date) + interval 6 day) THEN COALESCE(100 / COUNT(variant_name) OVER(PARTITION BY entity_id, test_name, kpi, created_date))
+      ELSE share END AS share
+FROM union_tabs 
+
+ORDER BY entity_id, test_name, kpi, created_date, variant_name]]></_.fcp.ObjectModelEncapsulateLegacy.true...relation>
+        <metadata-records>
+          <metadata-record class='column'>
+            <remote-name>created_date</remote-name>
+            <remote-type>7</remote-type>
+            <local-name>[created_date]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>created_date</remote-alias>
+            <local-type>date</local-type>
+            <aggregation>Year</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_0F1CB7F702844619B4B76B78DC7F1ABB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>created_at</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[created_at]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>created_at</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_0F1CB7F702844619B4B76B78DC7F1ABB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>analysed_date</remote-name>
+            <remote-type>7</remote-type>
+            <local-name>[analysed_date]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>analysed_date</remote-alias>
+            <local-type>date</local-type>
+            <aggregation>Year</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_0F1CB7F702844619B4B76B78DC7F1ABB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>entity_id</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[entity_id]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>entity_id</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_0F1CB7F702844619B4B76B78DC7F1ABB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>test_id</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[test_id]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>test_id</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_0F1CB7F702844619B4B76B78DC7F1ABB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>test_name</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[test_name]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>test_name</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_0F1CB7F702844619B4B76B78DC7F1ABB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>version</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[version]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>version</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_0F1CB7F702844619B4B76B78DC7F1ABB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>kpi</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[kpi]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>kpi</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_0F1CB7F702844619B4B76B78DC7F1ABB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>winning_probability</remote-name>
+            <remote-type>5</remote-type>
+            <local-name>[winning_probability]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>winning_probability</remote-alias>
+            <local-type>real</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_0F1CB7F702844619B4B76B78DC7F1ABB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>variant_name</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[variant_name]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>variant_name</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_0F1CB7F702844619B4B76B78DC7F1ABB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>bayesian_mean</remote-name>
+            <remote-type>5</remote-type>
+            <local-name>[bayesian_mean]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>bayesian_mean</remote-alias>
+            <local-type>real</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_0F1CB7F702844619B4B76B78DC7F1ABB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>hdi_lower_bound</remote-name>
+            <remote-type>5</remote-type>
+            <local-name>[hdi_lower_bound]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>hdi_lower_bound</remote-alias>
+            <local-type>real</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_0F1CB7F702844619B4B76B78DC7F1ABB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>hdi_upper_bound</remote-name>
+            <remote-type>5</remote-type>
+            <local-name>[hdi_upper_bound]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>hdi_upper_bound</remote-alias>
+            <local-type>real</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_0F1CB7F702844619B4B76B78DC7F1ABB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>lower_quartile</remote-name>
+            <remote-type>5</remote-type>
+            <local-name>[lower_quartile]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>lower_quartile</remote-alias>
+            <local-type>real</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_0F1CB7F702844619B4B76B78DC7F1ABB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>upper_quartile</remote-name>
+            <remote-type>5</remote-type>
+            <local-name>[upper_quartile]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>upper_quartile</remote-alias>
+            <local-type>real</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_0F1CB7F702844619B4B76B78DC7F1ABB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>target_kpi</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[target_kpi]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>target_kpi</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_0F1CB7F702844619B4B76B78DC7F1ABB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>share</remote-name>
+            <remote-type>5</remote-type>
+            <local-name>[share]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>share</remote-alias>
+            <local-type>real</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_0F1CB7F702844619B4B76B78DC7F1ABB]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+        </metadata-records>
+      </connection>
+      <aliases enabled='yes' />
+      <column caption='Top avg. bayesian_mean (calc. field)' datatype='integer' name='[Calculation_3419358024056328192]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='IF RANK(avg([bayesian_mean])) = 1 THEN 1 ELSE 0 END'>
+          <table-calc ordering-type='Rows' />
+        </calculation>
+      </column>
+      <column caption='Target_KPI_Filter (calc. field)' datatype='string' name='[Calculation_3419358024089301001]' role='dimension' type='nominal'>
+        <calculation class='tableau' formula='IF [kpi] = [target_kpi] THEN [kpi] END' />
+      </column>
+      <column caption='hdi_lower_bound_fixed (calc. field)' datatype='real' name='[Calculation_6366189919514091520]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='{FIXED [entity_id], [test_name], [analysed_date], [kpi]: AVG([hdi_lower_bound])}' />
+      </column>
+      <column caption='hdi_upper_bound_fixed (calc. field)' datatype='real' name='[Calculation_6366189919515492353]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='{FIXED [entity_id], [test_name], [kpi], [analysed_date]: AVG([hdi_upper_bound])}' />
+      </column>
+      <column caption='Band Width' datatype='real' name='[Calculation_6366189919530655746]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='[Calculation_6366189919515492353] - [Calculation_6366189919514091520]' />
+      </column>
+      <column caption='Top avg.share (calc. field) ' datatype='integer' name='[Top avg. bayesian_mean (calc. field) (copy)_3419358024059453441]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='IF RANK(AVG([share])) = 1 THEN 1 ELSE 0 END'>
+          <table-calc ordering-type='Rows' />
+        </calculation>
+      </column>
+      <column caption='Top avg.winning_probability (calc. field)  (copy)' datatype='integer' name='[Top avg.share (calc. field)  (copy)_3419358024064610308]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='IF RANK(AVG([winning_probability])) = 1 THEN 1 ELSE 0 END'>
+          <table-calc ordering-type='Rows' />
+        </calculation>
+      </column>
+      <_.fcp.ObjectModelTableType.true...column caption='Custom SQL Query' datatype='table' name='[__tableau_internal_object_id__].[_0F1CB7F702844619B4B76B78DC7F1ABB]' role='measure' type='quantitative' />
+      <column datatype='real' name='[bayesian_mean]' role='measure' type='quantitative' />
+      <column datatype='real' name='[hdi_lower_bound]' role='measure' type='quantitative' />
+      <column datatype='real' name='[hdi_upper_bound]' role='measure' type='quantitative' />
+      <column datatype='real' name='[lower_quartile]' role='measure' type='quantitative' />
+      <column datatype='real' name='[share]' role='measure' type='quantitative' />
+      <column datatype='integer' name='[test_id]' role='measure' type='quantitative' />
+      <column datatype='real' name='[upper_quartile]' role='measure' type='quantitative' />
+      <column datatype='string' name='[variant_name]' role='dimension' type='nominal' />
+      <column datatype='real' name='[winning_probability]' role='measure' type='quantitative' />
+      <column-instance column='[__tableau_internal_object_id__].[_0F1CB7F702844619B4B76B78DC7F1ABB]' derivation='Count' name='[__tableau_internal_object_id__].[cnt:_0F1CB7F702844619B4B76B78DC7F1ABB:qk]' pivot='key' type='quantitative' />
+      <column-instance column='[bayesian_mean]' derivation='Attribute' name='[attr:bayesian_mean:qk]' pivot='key' type='quantitative' />
+      <column-instance column='[Calculation_6366189919514091520]' derivation='Avg' name='[avg:Calculation_6366189919514091520:qk]' pivot='key' type='quantitative' />
+      <column-instance column='[Calculation_6366189919515492353]' derivation='Avg' name='[avg:Calculation_6366189919515492353:qk]' pivot='key' type='quantitative' />
+      <column-instance column='[bayesian_mean]' derivation='Avg' name='[avg:bayesian_mean:qk]' pivot='key' type='quantitative' />
+      <column-instance column='[hdi_lower_bound]' derivation='Avg' name='[avg:hdi_lower_bound:qk]' pivot='key' type='quantitative' />
+      <column-instance column='[hdi_upper_bound]' derivation='Avg' name='[avg:hdi_upper_bound:qk]' pivot='key' type='quantitative' />
+      <column-instance column='[share]' derivation='Avg' name='[avg:share:qk]' pivot='key' type='quantitative' />
+      <column-instance column='[share]' derivation='Max' name='[max:share:qk]' pivot='key' type='quantitative' />
+      <column-instance column='[share]' derivation='Min' name='[min:share:qk]' pivot='key' type='quantitative' />
+      <column-instance column='[bayesian_mean]' derivation='None' name='[none:bayesian_mean:qk]' pivot='key' type='quantitative' />
+      <column-instance column='[variant_name]' derivation='None' name='[none:variant_name:nk]' pivot='key' type='nominal' />
+      <column-instance column='[Calculation_6366189919514091520]' derivation='Sum' name='[sum:Calculation_6366189919514091520:qk]' pivot='key' type='quantitative' />
+      <column-instance column='[Calculation_6366189919515492353]' derivation='Sum' name='[sum:Calculation_6366189919515492353:qk]' pivot='key' type='quantitative' />
+      <column-instance column='[bayesian_mean]' derivation='Sum' name='[sum:bayesian_mean:qk]' pivot='key' type='quantitative' />
+      <column-instance column='[hdi_lower_bound]' derivation='Sum' name='[sum:hdi_lower_bound:qk]' pivot='key' type='quantitative' />
+      <column-instance column='[hdi_upper_bound]' derivation='Sum' name='[sum:hdi_upper_bound:qk]' pivot='key' type='quantitative' />
+      <column-instance column='[lower_quartile]' derivation='Sum' name='[sum:lower_quartile:qk]' pivot='key' type='quantitative' />
+      <column-instance column='[share]' derivation='Sum' name='[sum:share:qk]' pivot='key' type='quantitative' />
+      <column-instance column='[test_id]' derivation='Sum' name='[sum:test_id:qk]' pivot='key' type='quantitative' />
+      <column-instance column='[upper_quartile]' derivation='Sum' name='[sum:upper_quartile:qk]' pivot='key' type='quantitative' />
+      <column-instance column='[winning_probability]' derivation='Sum' name='[sum:winning_probability:qk]' pivot='key' type='quantitative' />
+      <layout _.fcp.SchemaViewerObjectModel.false...dim-percentage='0.5' _.fcp.SchemaViewerObjectModel.false...measure-percentage='0.4' dim-ordering='alphabetic' measure-ordering='alphabetic' show-aliased-fields='true' show-structure='true' />
+      <style>
+        <style-rule element='mark'>
+          <encoding attr='color' field='[:Measure Names]' type='palette'>
+            <map to='#499894'>
+              <bucket>&quot;[federated.0o0p4c21kx9b7415g30f615h6tmg].[sum:share:qk]&quot;</bucket>
+            </map>
+            <map to='#4e79a7'>
+              <bucket>&quot;[federated.0o0p4c21kx9b7415g30f615h6tmg].[avg:bayesian_mean:qk]&quot;</bucket>
+            </map>
+            <map to='#4e79a7'>
+              <bucket>&quot;[federated.0o0p4c21kx9b7415g30f615h6tmg].[avg:Calculation_3419358024092991498:qk]&quot;</bucket>
+            </map>
+            <map to='#4e79a7'>
+              <bucket>&quot;[federated.0o0p4c21kx9b7415g30f615h6tmg].[avg:Calculation_3419358024093061131:qk]&quot;</bucket>
+            </map>
+            <map to='#4e79a7'>
+              <bucket>&quot;[federated.0o0p4c21kx9b7415g30f615h6tmg].[avg:Calculation_3419358024094949393:qk]&quot;</bucket>
+            </map>
+            <map to='#4e79a7'>
+              <bucket>&quot;[federated.0o0p4c21kx9b7415g30f615h6tmg].[min:Calculation_3419358024093061131:qk]&quot;</bucket>
+            </map>
+            <map to='#59a14f'>
+              <bucket>&quot;[federated.0o0p4c21kx9b7415g30f615h6tmg].[attr:bayesian_mean:qk]&quot;</bucket>
+            </map>
+            <map to='#59a14f'>
+              <bucket>&quot;[federated.0o0p4c21kx9b7415g30f615h6tmg].[none:bayesian_mean:qk]&quot;</bucket>
+            </map>
+            <map to='#59a14f'>
+              <bucket>&quot;[federated.0o0p4c21kx9b7415g30f615h6tmg].[sum:bayesian_mean:qk]&quot;</bucket>
+            </map>
+            <map to='#5c6068'>
+              <bucket>&quot;[federated.0o0p4c21kx9b7415g30f615h6tmg].[avg:Calculation_3419358024093904908:qk]&quot;</bucket>
+            </map>
+            <map to='#5c6068'>
+              <bucket>&quot;[federated.0o0p4c21kx9b7415g30f615h6tmg].[avg:Calculation_3419358024094105613:qk]&quot;</bucket>
+            </map>
+            <map to='#5c6068'>
+              <bucket>&quot;[federated.0o0p4c21kx9b7415g30f615h6tmg].[avg:Calculation_6366189919514091520:qk]&quot;</bucket>
+            </map>
+            <map to='#5c6068'>
+              <bucket>&quot;[federated.0o0p4c21kx9b7415g30f615h6tmg].[avg:Calculation_6366189919515492353:qk]&quot;</bucket>
+            </map>
+            <map to='#5c6068'>
+              <bucket>&quot;[federated.0o0p4c21kx9b7415g30f615h6tmg].[sum:Calculation_3419358024093904908:qk]&quot;</bucket>
+            </map>
+            <map to='#5c6068'>
+              <bucket>&quot;[federated.0o0p4c21kx9b7415g30f615h6tmg].[sum:Calculation_3419358024094105613:qk]&quot;</bucket>
+            </map>
+            <map to='#5c6068'>
+              <bucket>&quot;[federated.0o0p4c21kx9b7415g30f615h6tmg].[sum:Calculation_6366189919514091520:qk]&quot;</bucket>
+            </map>
+            <map to='#5c6068'>
+              <bucket>&quot;[federated.0o0p4c21kx9b7415g30f615h6tmg].[sum:Calculation_6366189919515492353:qk]&quot;</bucket>
+            </map>
+            <map to='#76b7b2'>
+              <bucket>&quot;[federated.0o0p4c21kx9b7415g30f615h6tmg].[avg:hdi_upper_bound:qk]&quot;</bucket>
+            </map>
+            <map to='#79706e'>
+              <bucket>&quot;[federated.0o0p4c21kx9b7415g30f615h6tmg].[sum:winning_probability:qk]&quot;</bucket>
+            </map>
+            <map to='#86bcb6'>
+              <bucket>&quot;[federated.0o0p4c21kx9b7415g30f615h6tmg].[sum:test_id:qk]&quot;</bucket>
+            </map>
+            <map to='#8cd17d'>
+              <bucket>&quot;[federated.0o0p4c21kx9b7415g30f615h6tmg].[sum:hdi_upper_bound:qk]&quot;</bucket>
+            </map>
+            <map to='#a0cbe8'>
+              <bucket>&quot;[federated.0o0p4c21kx9b7415g30f615h6tmg].[__tableau_internal_object_id__].[cnt:_0F1CB7F702844619B4B76B78DC7F1ABB:qk]&quot;</bucket>
+            </map>
+            <map to='#e15759'>
+              <bucket>&quot;[federated.0o0p4c21kx9b7415g30f615h6tmg].[avg:hdi_lower_bound:qk]&quot;</bucket>
+            </map>
+            <map to='#f1ce63'>
+              <bucket>&quot;[federated.0o0p4c21kx9b7415g30f615h6tmg].[sum:lower_quartile:qk]&quot;</bucket>
+            </map>
+            <map to='#f28e2b'>
+              <bucket>&quot;[federated.0o0p4c21kx9b7415g30f615h6tmg].[avg:Calculation_3419358024094543886:qk]&quot;</bucket>
+            </map>
+            <map to='#f28e2b'>
+              <bucket>&quot;[federated.0o0p4c21kx9b7415g30f615h6tmg].[avg:Calculation_3419358024094633999:qk]&quot;</bucket>
+            </map>
+            <map to='#f28e2b'>
+              <bucket>&quot;[federated.0o0p4c21kx9b7415g30f615h6tmg].[avg:Calculation_3419358024095031314:qk]&quot;</bucket>
+            </map>
+            <map to='#f28e2b'>
+              <bucket>&quot;[federated.0o0p4c21kx9b7415g30f615h6tmg].[avg:share:qk]&quot;</bucket>
+            </map>
+            <map to='#f28e2b'>
+              <bucket>&quot;[federated.0o0p4c21kx9b7415g30f615h6tmg].[max:share:qk]&quot;</bucket>
+            </map>
+            <map to='#f28e2b'>
+              <bucket>&quot;[federated.0o0p4c21kx9b7415g30f615h6tmg].[min:share:qk]&quot;</bucket>
+            </map>
+            <map to='#ff9d9a'>
+              <bucket>&quot;[federated.0o0p4c21kx9b7415g30f615h6tmg].[sum:upper_quartile:qk]&quot;</bucket>
+            </map>
+            <map to='#ffbe7d'>
+              <bucket>&quot;[federated.0o0p4c21kx9b7415g30f615h6tmg].[sum:hdi_lower_bound:qk]&quot;</bucket>
+            </map>
+          </encoding>
+          <encoding attr='color' field='[none:variant_name:nk]&#10;[:Measure Names]' type='palette'>
+            <map-pri to='multiordinal_blue_10_0'>
+              <bucket>&quot;Control&quot;</bucket>
+            </map-pri>
+            <map-pri to='multiordinal_gold_10_0'>
+              <bucket>&quot;Variation3&quot;</bucket>
+            </map-pri>
+            <map-pri to='multiordinal_gray_10_0'>
+              <bucket>&quot;Variation6&quot;</bucket>
+            </map-pri>
+            <map-pri to='multiordinal_green_10_0'>
+              <bucket>&quot;Variation2&quot;</bucket>
+            </map-pri>
+            <map-pri to='multiordinal_orange_10_0'>
+              <bucket>&quot;Variation1&quot;</bucket>
+            </map-pri>
+            <map-pri to='multiordinal_pink_10_0'>
+              <bucket>&quot;Variation7&quot;</bucket>
+            </map-pri>
+            <map-pri to='multiordinal_red_10_0'>
+              <bucket>&quot;Variation5&quot;</bucket>
+            </map-pri>
+            <map-pri to='multiordinal_teal_10_0'>
+              <bucket>&quot;Variation4&quot;</bucket>
+            </map-pri>
+          </encoding>
+          <encoding attr='color' field='[none:variant_name:nk]' type='palette'>
+            <map to='#4e79a7'>
+              <bucket>&quot;Control&quot;</bucket>
+            </map>
+            <map to='#59a14f'>
+              <bucket>&quot;Variation4&quot;</bucket>
+            </map>
+            <map to='#76b7b2'>
+              <bucket>&quot;Variation3&quot;</bucket>
+            </map>
+            <map to='#b07aa1'>
+              <bucket>&quot;Variation6&quot;</bucket>
+            </map>
+            <map to='#e15759'>
+              <bucket>&quot;Variation2&quot;</bucket>
+            </map>
+            <map to='#edc948'>
+              <bucket>&quot;Variation5&quot;</bucket>
+            </map>
+            <map to='#f28e2b'>
+              <bucket>&quot;Variation1&quot;</bucket>
+            </map>
+            <map to='#ff9da7'>
+              <bucket>&quot;Variation7&quot;</bucket>
+            </map>
+          </encoding>
+        </style-rule>
+      </style>
+      <semantic-values>
+        <semantic-value key='[Country].[Name]' value='&quot;United States&quot;' />
+      </semantic-values>
+      <date-options start-of-week='monday' />
+      <field-sort-info field-sort-order-type='custom-order'>
+        <field-sort-custom-order field='created_date' />
+        <field-sort-custom-order field='created_at' />
+        <field-sort-custom-order field='analysed_date' />
+        <field-sort-custom-order field='entity_id' />
+        <field-sort-custom-order field='test_id' />
+        <field-sort-custom-order field='test_name' />
+        <field-sort-custom-order field='version' />
+        <field-sort-custom-order field='kpi' />
+        <field-sort-custom-order field='winning_probability' />
+        <field-sort-custom-order field='variant_name' />
+        <field-sort-custom-order field='bayesian_mean' />
+        <field-sort-custom-order field='hdi_lower_bound' />
+        <field-sort-custom-order field='Calculation_6366189919514091520' />
+        <field-sort-custom-order field='hdi_upper_bound' />
+        <field-sort-custom-order field='Calculation_6366189919515492353' />
+        <field-sort-custom-order field='lower_quartile' />
+        <field-sort-custom-order field='upper_quartile' />
+        <field-sort-custom-order field='target_kpi' />
+        <field-sort-custom-order field='share' />
+        <field-sort-custom-order field='Geometry (generated)' />
+        <field-sort-custom-order field='Latitude (generated)' />
+        <field-sort-custom-order field='Longitude (generated)' />
+        <field-sort-custom-order field=':Measure Names' />
+        <field-sort-custom-order field='Multiple Values' />
+      </field-sort-info>
+      <_.fcp.ObjectModelEncapsulateLegacy.true...object-graph>
+        <objects>
+          <object caption='Custom SQL Query' id='_0F1CB7F702844619B4B76B78DC7F1ABB'>
+            <properties context=''>
+              <relation connection='bigquery.08336el06pyp4d14fxi3s1y2ueio' name='Custom SQL Query' type='text'><![CDATA[-- Access data from:
+-- `logistics-data-storage-staging.pricing_multi_armed_bandit.mab_bayesian_updating_results`
+
+-- `logistics-data-storage-staging.pricing_multi_armed_bandit.mab_dps_payload`
+
+-- `logistics-data-storage-staging.pricing_multi_armed_bandit.mab_new_variant`
+
+
+WITH parse AS(
+SELECT 
+         created_at
+       , created_date
+       , analysed_date
+       , entity_id
+       , test_name
+       , test_id
+       , JSON_VALUE(dps_payload, '$.target_kpi') AS target_kpi
+       , JSON_VALUE(kpi, '$.name') AS kpi
+       , JSON_VALUE(variant, '$.variant_name') AS variant_name
+       , JSON_VALUE(variant, '$.winning_probability') AS winning_probability
+
+  FROM `logistics-data-storage-staging.pricing_multi_armed_bandit.mab_dps_payload`, --`log-data-science-production.pricing_multi_armed_bandit.mab_dps_payload`,
+  UNNEST(CAST(JSON_QUERY_ARRAY(dps_payload, '$.kpis') AS ARRAY<<STRING>>)) AS kpi,
+  UNNEST(CAST(JSON_QUERY_ARRAY(kpi, '$.winning_variant_probabilities') AS ARRAY<<STRING>>)) AS variant
+),
+
+dps_exp AS(
+SELECT
+          A.name test_name
+        , A.id
+        , A.country_code
+        , date(max(updated_at)) created_date
+        , JSON_EXTRACT_SCALAR(variant_share, '$.variant') variant
+        , CAST(JSON_EXTRACT_SCALAR(variant_share, '$.share') as numeric) share
+
+FROM `fulfillment-dwh-production.hl.dynamic_pricing_experiment` A, 
+ UNNEST(JSON_EXTRACT_ARRAY(shares, '$.variant_shares')) AS variant_share
+WHERE LOWER(experiment_type)="ab_mab"
+AND created_at>>='2023-01-01'
+AND already_executed = TRUE
+GROUP BY ALL
+),
+
+base AS(
+  SELECT 
+         -- From 'ds_pricing_multi_armed_bandit_mab_bayesian_updating_results'
+          bay.created_date
+        , bay.created_at
+        , MAX(bay.analysed_date) AS analysed_date
+        , bay.entity_id
+        , bay.test_id -- changed to deagregated
+        , bay.test_name
+        , MAX(bay.version) AS version
+        , bay.target_kpi AS kpi
+        , AVG(bay.p_var_greater_all) AS winning_probability
+        , bay.variant AS variant_name
+        , AVG(bayesian_mean) AS bayesian_mean
+        , AVG(lower_quartile) AS lower_quartile
+        , AVG(upper_quartile) AS upper_quartile
+        , AVG(bay.hdi_lower_bound) AS hdi_lower_bound
+        , AVG(bay.hdi_upper_bound) AS hdi_upper_bound
+
+        -- From 'pricing_multi_armed_bandit.mab_dps_payload'
+       , MAX(p.target_kpi) AS target_kpi
+       
+       --From `fulfillment-dwh-production.hl.dynamic_pricing_experiment`
+       , AVG(share) AS share
+
+FROM `fulfillment-dwh-production.dl.ds_pricing_multi_armed_bandit_mab_bayesian_updating_results` bay
+  LEFT JOIN parse p
+  ON   p.entity_id = bay.entity_id
+      AND p.created_date = bay.created_date
+      AND p.test_name = bay.test_name
+      AND p.test_id = bay.test_id
+      AND p.kpi = bay.target_kpi
+      AND p.variant_name = bay.variant
+  
+  LEFT JOIN dps_exp dps
+  ON  dps.country_code = bay.country_code
+      AND dps.test_name = bay.test_name
+      AND dps.id = bay.test_id
+      AND dps.created_date = bay.created_date
+      AND dps.variant = bay.variant
+
+WHERE bay.test_name IN(
+	SELECT test_name
+	FROM dps_exp
+)
+
+
+GROUP BY ALL
+),
+
+base2 AS(
+SELECT 
+  created_date
+, created_at
+, analysed_date
+, entity_id
+, test_id
+, test_name
+, version
+, kpi
+, winning_probability
+, variant_name
+, bayesian_mean
+, hdi_lower_bound
+, hdi_upper_bound
+, lower_quartile
+, upper_quartile
+, target_kpi
+, COALESCE(share, LAST_VALUE(share IGNORE NULLS) OVER(PARTITION BY entity_id, test_name, kpi, variant_name ORDER BY created_date ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)) AS share
+
+FROM base
+)
+
+
+
+
+-- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+-- Generate dates and value for 3 days before each test starts
+, enriched_data AS(
+    SELECT 
+        created_date,
+        created_at,
+        entity_id,
+        test_name,
+        test_id,
+        version,
+        target_kpi,
+        kpi,
+        variant_name,
+        share,
+        hdi_lower_bound,
+        hdi_upper_bound,
+        FIRST_VALUE(created_date) OVER (PARTITION BY entity_id, test_name, kpi ORDER BY created_date ASC) AS first_created_date,
+        COUNT(DISTINCT variant_name) OVER (PARTITION BY entity_id, test_name, kpi, created_date) AS variant_count,
+    FROM base
+),
+
+processed_data1 AS(
+SELECT 
+    DATE_SUB(first_created_date, INTERVAL 1 DAY) AS created_date,  -- Shift date back
+    MAX(created_at) AS created_at,
+    DATE_SUB(first_created_date, INTERVAL 3 DAY) AS analysed_date,
+    entity_id,
+    MIN(test_id) AS test_id,
+    test_name,
+    MIN(version) AS version,
+    kpi,
+    1.0 / variant_count AS winning_probability,  -- Compute new Bayesian mean
+    variant_name,
+    NULL AS bayesian_mean,
+    NULL AS hdi_lower_bound,
+    NULL AS hdi_upper_bound,
+    NULL AS lower_quartile,
+    NULL AS upper_quartile,
+    ANY_VALUE(target_kpi) AS target_kpi,
+    NULL AS share,
+    --NULL AS uplift_percentage
+
+FROM enriched_data
+GROUP BY entity_id, test_name, kpi, variant_name, first_created_date, variant_count
+),
+
+processed_data2 AS(
+SELECT 
+    DATE_SUB(first_created_date, INTERVAL 2 DAY) AS created_date,  -- Shift date back
+    MAX(created_at) AS created_at,
+    DATE_SUB(first_created_date, INTERVAL 4 DAY) AS analysed_date,
+    entity_id,
+    MIN(test_id) AS test_id,
+    test_name,
+    MIN(version) AS version,
+    kpi,
+    1.0 / variant_count AS winning_probability,  -- Compute new Bayesian mean
+    variant_name,
+    NULL AS bayesian_mean,
+    NULL AS hdi_lower_bound,
+    NULL AS hdi_upper_bound,
+    NULL AS lower_quartile,
+    NULL AS upper_quartile,
+    ANY_VALUE(target_kpi) AS target_kpi,
+    NULL AS share,
+    --NULL AS uplift_percentage
+
+FROM enriched_data
+GROUP BY entity_id, test_name, kpi, variant_name, first_created_date, variant_count
+),
+
+processed_data3 AS(
+SELECT 
+    DATE_SUB(first_created_date, INTERVAL 3 DAY) AS created_date,  -- Shift date back
+    MAX(created_at) AS created_at,
+    DATE_SUB(first_created_date, INTERVAL 5 DAY) AS analysed_date,
+    entity_id,
+    MIN(test_id) AS test_id,
+    test_name,
+    MIN(version) AS version,
+    kpi,
+    1.0 / variant_count AS winning_probability,  -- Compute new Bayesian mean
+    variant_name,
+    NULL AS bayesian_mean,
+    NULL AS hdi_lower_bound,
+    NULL AS hdi_upper_bound,
+    NULL AS lower_quartile,
+    NULL AS upper_quartile,
+    ANY_VALUE(target_kpi) AS target_kpi,
+    NULL AS share,
+    --NULL AS uplift_percentage
+
+FROM enriched_data
+GROUP BY entity_id, test_name, kpi, variant_name, first_created_date, variant_count
+)
+
+-- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+, union_tabs AS(
+-- Adding the generated date tables to the base table
+SELECT *
+FROM base2
+
+UNION ALL
+SELECT * FROM processed_data1
+UNION ALL
+SELECT * FROM processed_data2
+UNION ALL
+SELECT * FROM processed_data3
+)
+
+SELECT  created_date
+        , created_at
+        , analysed_date
+        , entity_id
+        , test_id
+        , test_name
+        , version
+        , kpi
+        , winning_probability
+        , variant_name
+        , bayesian_mean
+        , hdi_lower_bound
+        , hdi_upper_bound
+        , lower_quartile
+        , upper_quartile
+        , target_kpi
+        
+        --replace NULL for the first days of share -- still need to automate the diff between MIN(created_date) and first_date of variant record, to automate the interval
+, CASE WHEN created_date << (MIN(created_date) OVER(PARTITION BY entity_id, test_name, kpi ORDER BY created_date) + interval 6 day) THEN COALESCE(100 / COUNT(variant_name) OVER(PARTITION BY entity_id, test_name, kpi, created_date))
+      ELSE share END AS share
+FROM union_tabs 
+
+ORDER BY entity_id, test_name, kpi, created_date, variant_name]]></relation>
+            </properties>
+          </object>
+        </objects>
+      </_.fcp.ObjectModelEncapsulateLegacy.true...object-graph>
+    </datasource>
+    <datasource caption='Prio_test_kpi' inline='true' name='federated.0qy7fuu0mls29015oj85r0csj6tz' version='18.1'>
+      <connection class='federated'>
+        <named-connections>
+          <named-connection caption='BigQuery' name='bigquery.1f0tzdd09k8cbv10q33dw1fziycy'>
+            <connection CATALOG='publicdata' EXECCATALOG='logistics-customer-staging' authentication='oauth' class='bigquery' connection-dialect='google-sql' project='publicdata' schema='samples' server-oauth='server-custom' username='bertrand.flanet@deliveryhero.com' workgroup-auth-mode='prompt' />
+          </named-connection>
+        </named-connections>
+        <_.fcp.ObjectModelEncapsulateLegacy.false...relation connection='bigquery.1f0tzdd09k8cbv10q33dw1fziycy' name='Custom SQL Query' type='text'>WITH prio_orders AS (
+  SELECT 
+  entity_id, 
+  platform_order_code,
+  priority_fee_eur,
+  priority_fee_local,
+  FROM `logistics-data-storage-staging.shared_pricing.prio_orders` 
+  WHERE created_date_local &gt;&gt;= &apos;2024-11-01&apos;
+  AND entity_id IN (&apos;FP_TW&apos;, &apos;PY_DO&apos;, &apos;PY_PE&apos;, &apos;PY_CL&apos;, &apos;PY_AR&apos;)
+  AND has_dps_priority_fee IS TRUE
+)
+
+, base_orders AS (
+  SELECT
+  created_date,
+  region,
+  entity_id,
+  perseus_client_id, 
+  DATE(created_date) order_date,
+  zone_name,
+  test_name,
+  platform_order_code,
+  test_variant,
+  is_in_treatment,
+  ROUND(mean_delay) as mean_delay, 
+  ROUND(actual_delivery_time) as delivery_time,
+  dps_delivery_fee_local,
+  gfv_local,
+  dps_priority_fee_local,
+  dps_priority_fee_eur
+  FROM `fulfillment-dwh-production.cl.dps_test_orders`
+  WHERE created_date &gt;&gt;= &apos;2024-11-01&apos;
+  AND entity_id IN (&apos;FP_TW&apos;, &apos;PY_DO&apos;, &apos;PY_PE&apos;, &apos;PY_CL&apos;, &apos;PY_AR&apos;)
+  AND test_name IN( &apos;CL_20241128_R_K0_R_Prio_Fee_MAB&apos;, 
+                    &apos;DO_20241209_Z_K0_R_Santo_Domingo_MAB&apos;, 
+                    &apos;DO_20250118_Z_K0_R_Santiago_Priority_MAB_Var_Gen_M&apos;, 
+                    &apos;AR_20250314_Z_K0_R_PF_Alta_Cordoba_MAB_Var_Gen&apos;, 
+                    &apos;TW_20250313_Z_K0_O_MAB_Priority&apos;, 
+                    &apos;TW_20250313_Z_K0_O_MAB_Priority_Other_Cities&apos;)
+  AND vendor_vertical_parent NOT IN (&apos;courier&apos;, &apos;courier_business&apos;)
+  AND dps_priority_fee_local is not null
+  AND dps_priority_fee_local IS NOT NULL
+  AND is_sent
+  AND is_own_delivery
+  AND platform_order_code IS NOT NULL
+)
+
+, joined_orders AS (
+  SELECT 
+  dps.*,
+  IFNULL(prio.priority_fee_local,0) priority_fee_local,
+  IFNULL(prio.priority_fee_eur,0) priority_fee_eur
+  FROM base_orders dps
+  LEFT JOIN prio_orders prio 
+  ON dps.entity_id = prio.entity_id
+  AND dps.platform_order_code = prio.platform_order_code
+)
+
+SELECT 
+order_date,
+entity_id,
+test_name,
+test_variant,
+MIN(order_date) as start_date,
+MAX(order_date) as end_date,
+COUNT(platform_order_code) as orders,
+COUNT(CASE WHEN priority_fee_local &gt;&gt; 0 THEN platform_order_code END) as prio_order,
+COUNT(CASE WHEN priority_fee_local &gt;&gt; 0 THEN platform_order_code END)/COUNT(platform_order_code) as adoption,
+SUM(priority_fee_local) AS prio_fee_revenue,
+SUM(priority_fee_eur) AS prio_fee_revenue_eur
+FROM joined_orders
+GROUP BY test_name, test_variant, entity_id, order_date</_.fcp.ObjectModelEncapsulateLegacy.false...relation>
+        <_.fcp.ObjectModelEncapsulateLegacy.true...relation connection='bigquery.1f0tzdd09k8cbv10q33dw1fziycy' name='Custom SQL Query' type='text'>WITH prio_orders AS (
+  SELECT 
+  entity_id, 
+  platform_order_code,
+  priority_fee_eur,
+  priority_fee_local,
+  FROM `logistics-data-storage-staging.shared_pricing.prio_orders` 
+  WHERE created_date_local &gt;&gt;= &apos;2024-11-01&apos;
+  AND entity_id IN (&apos;FP_TW&apos;, &apos;PY_DO&apos;, &apos;PY_PE&apos;, &apos;PY_CL&apos;, &apos;PY_AR&apos;)
+  AND has_dps_priority_fee IS TRUE
+)
+
+, base_orders AS (
+  SELECT
+  created_date,
+  region,
+  entity_id,
+  perseus_client_id, 
+  DATE(created_date) order_date,
+  zone_name,
+  test_name,
+  platform_order_code,
+  test_variant,
+  is_in_treatment,
+  ROUND(mean_delay) as mean_delay, 
+  ROUND(actual_delivery_time) as delivery_time,
+  dps_delivery_fee_local,
+  gfv_local,
+  dps_priority_fee_local,
+  dps_priority_fee_eur
+  FROM `fulfillment-dwh-production.cl.dps_test_orders`
+  WHERE created_date &gt;&gt;= &apos;2024-11-01&apos;
+  AND entity_id IN (&apos;FP_TW&apos;, &apos;PY_DO&apos;, &apos;PY_PE&apos;, &apos;PY_CL&apos;, &apos;PY_AR&apos;)
+  AND test_name IN( &apos;CL_20241128_R_K0_R_Prio_Fee_MAB&apos;, 
+                    &apos;DO_20241209_Z_K0_R_Santo_Domingo_MAB&apos;, 
+                    &apos;DO_20250118_Z_K0_R_Santiago_Priority_MAB_Var_Gen_M&apos;, 
+                    &apos;AR_20250314_Z_K0_R_PF_Alta_Cordoba_MAB_Var_Gen&apos;, 
+                    &apos;TW_20250313_Z_K0_O_MAB_Priority&apos;, 
+                    &apos;TW_20250313_Z_K0_O_MAB_Priority_Other_Cities&apos;)
+  AND vendor_vertical_parent NOT IN (&apos;courier&apos;, &apos;courier_business&apos;)
+  AND dps_priority_fee_local is not null
+  AND dps_priority_fee_local IS NOT NULL
+  AND is_sent
+  AND is_own_delivery
+  AND platform_order_code IS NOT NULL
+)
+
+, joined_orders AS (
+  SELECT 
+  dps.*,
+  IFNULL(prio.priority_fee_local,0) priority_fee_local,
+  IFNULL(prio.priority_fee_eur,0) priority_fee_eur
+  FROM base_orders dps
+  LEFT JOIN prio_orders prio 
+  ON dps.entity_id = prio.entity_id
+  AND dps.platform_order_code = prio.platform_order_code
+)
+
+SELECT 
+order_date,
+entity_id,
+test_name,
+test_variant,
+MIN(order_date) as start_date,
+MAX(order_date) as end_date,
+COUNT(platform_order_code) as orders,
+COUNT(CASE WHEN priority_fee_local &gt;&gt; 0 THEN platform_order_code END) as prio_order,
+COUNT(CASE WHEN priority_fee_local &gt;&gt; 0 THEN platform_order_code END)/COUNT(platform_order_code) as adoption,
+SUM(priority_fee_local) AS prio_fee_revenue,
+SUM(priority_fee_eur) AS prio_fee_revenue_eur
+FROM joined_orders
+GROUP BY test_name, test_variant, entity_id, order_date</_.fcp.ObjectModelEncapsulateLegacy.true...relation>
+        <metadata-records>
+          <metadata-record class='column'>
+            <remote-name>order_date</remote-name>
+            <remote-type>7</remote-type>
+            <local-name>[order_date]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>order_date</remote-alias>
+            <local-type>date</local-type>
+            <aggregation>Year</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_9CDCEFDDE71D43679C40EA332DFE3CCA]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>entity_id</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[entity_id]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>entity_id</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_9CDCEFDDE71D43679C40EA332DFE3CCA]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>test_name</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[test_name]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>test_name</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_9CDCEFDDE71D43679C40EA332DFE3CCA]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>test_variant</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[test_variant]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>test_variant</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_9CDCEFDDE71D43679C40EA332DFE3CCA]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>start_date</remote-name>
+            <remote-type>7</remote-type>
+            <local-name>[start_date]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>start_date</remote-alias>
+            <local-type>date</local-type>
+            <aggregation>Year</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_9CDCEFDDE71D43679C40EA332DFE3CCA]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>end_date</remote-name>
+            <remote-type>7</remote-type>
+            <local-name>[end_date]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>end_date</remote-alias>
+            <local-type>date</local-type>
+            <aggregation>Year</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_9CDCEFDDE71D43679C40EA332DFE3CCA]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>orders</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[orders]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>orders</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_9CDCEFDDE71D43679C40EA332DFE3CCA]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>prio_order</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[prio_order]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>prio_order</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_9CDCEFDDE71D43679C40EA332DFE3CCA]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>adoption</remote-name>
+            <remote-type>5</remote-type>
+            <local-name>[adoption]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>adoption</remote-alias>
+            <local-type>real</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_9CDCEFDDE71D43679C40EA332DFE3CCA]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>prio_fee_revenue</remote-name>
+            <remote-type>5</remote-type>
+            <local-name>[prio_fee_revenue]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>prio_fee_revenue</remote-alias>
+            <local-type>real</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_9CDCEFDDE71D43679C40EA332DFE3CCA]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>prio_fee_revenue_eur</remote-name>
+            <remote-type>5</remote-type>
+            <local-name>[prio_fee_revenue_eur]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>prio_fee_revenue_eur</remote-alias>
+            <local-type>real</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_9CDCEFDDE71D43679C40EA332DFE3CCA]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+        </metadata-records>
+      </connection>
+      <aliases enabled='yes' />
+      <column datatype='string' name='[:Measure Names]' role='dimension' type='nominal'>
+        <aliases>
+          <alias key='&quot;[federated.0qy7fuu0mls29015oj85r0csj6tz].[avg:adoption:qk]&quot;' value='Adoption' />
+          <alias key='&quot;[federated.0qy7fuu0mls29015oj85r0csj6tz].[avg:Calculation_3419358024073752581:qk]&quot;' value='Avg. Priority Fee (local)' />
+          <alias key='&quot;[federated.0qy7fuu0mls29015oj85r0csj6tz].[sum:orders:qk]&quot;' value='Priority Order Volume' />
+        </aliases>
+      </column>
+      <column caption='Avg. Priority Fee (local)' datatype='real' name='[Calculation_3419358024073752581]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='[prio_fee_revenue] / [prio_order]' />
+      </column>
+      <column caption='Top Adoption (calc. field)' datatype='integer' name='[Calculation_3419358024077422598]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='IF RANK(AVG([adoption])) = 1 THEN 1 ELSE 0 END'>
+          <table-calc ordering-type='Rows' />
+        </calculation>
+      </column>
+      <column caption='Top Revenue (local) (calc. field) (copy)' datatype='integer' name='[Top Adoption (calc. field) (copy)_3419358024078135303]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='IF RANK(AVG([prio_fee_revenue])) = 1 THEN 1 ELSE 0 END'>
+          <table-calc ordering-type='Rows' />
+        </calculation>
+      </column>
+      <_.fcp.ObjectModelTableType.true...column caption='Custom SQL Query' datatype='table' name='[__tableau_internal_object_id__].[_9CDCEFDDE71D43679C40EA332DFE3CCA]' role='measure' type='quantitative' />
+      <column datatype='real' name='[adoption]' role='measure' type='quantitative' />
+      <column datatype='integer' name='[orders]' role='measure' type='quantitative' />
+      <column datatype='integer' name='[prio_order]' role='measure' type='quantitative' />
+      <column-instance column='[Calculation_3419358024073752581]' derivation='Avg' name='[avg:Calculation_3419358024073752581:qk]' pivot='key' type='quantitative' />
+      <column-instance column='[adoption]' derivation='Avg' name='[avg:adoption:qk]' pivot='key' type='quantitative' />
+      <column-instance column='[orders]' derivation='Sum' name='[sum:orders:qk]' pivot='key' type='quantitative' />
+      <column-instance column='[prio_order]' derivation='Sum' name='[sum:prio_order:qk]' pivot='key' type='quantitative' />
+      <layout _.fcp.SchemaViewerObjectModel.false...dim-percentage='0.5' _.fcp.SchemaViewerObjectModel.false...measure-percentage='0.4' dim-ordering='alphabetic' measure-ordering='alphabetic' show-structure='true' />
+      <style>
+        <style-rule element='mark'>
+          <encoding attr='color' field='[:Measure Names]' type='palette'>
+            <map to='#4e79a7'>
+              <bucket>&quot;[federated.0qy7fuu0mls29015oj85r0csj6tz].[sum:orders:qk]&quot;</bucket>
+            </map>
+            <map to='#f28e2b'>
+              <bucket>&quot;[federated.0qy7fuu0mls29015oj85r0csj6tz].[sum:prio_order:qk]&quot;</bucket>
+            </map>
+          </encoding>
+        </style-rule>
+      </style>
+      <semantic-values>
+        <semantic-value key='[Country].[Name]' value='&quot;United States&quot;' />
+      </semantic-values>
+      <date-options start-of-week='monday' />
+      <_.fcp.ObjectModelEncapsulateLegacy.true...object-graph>
+        <objects>
+          <object caption='Custom SQL Query' id='_9CDCEFDDE71D43679C40EA332DFE3CCA'>
+            <properties context=''>
+              <relation connection='bigquery.1f0tzdd09k8cbv10q33dw1fziycy' name='Custom SQL Query' type='text'>WITH prio_orders AS (
+  SELECT 
+  entity_id, 
+  platform_order_code,
+  priority_fee_eur,
+  priority_fee_local,
+  FROM `logistics-data-storage-staging.shared_pricing.prio_orders` 
+  WHERE created_date_local &gt;&gt;= &apos;2024-11-01&apos;
+  AND entity_id IN (&apos;FP_TW&apos;, &apos;PY_DO&apos;, &apos;PY_PE&apos;, &apos;PY_CL&apos;, &apos;PY_AR&apos;)
+  AND has_dps_priority_fee IS TRUE
+)
+
+, base_orders AS (
+  SELECT
+  created_date,
+  region,
+  entity_id,
+  perseus_client_id, 
+  DATE(created_date) order_date,
+  zone_name,
+  test_name,
+  platform_order_code,
+  test_variant,
+  is_in_treatment,
+  ROUND(mean_delay) as mean_delay, 
+  ROUND(actual_delivery_time) as delivery_time,
+  dps_delivery_fee_local,
+  gfv_local,
+  dps_priority_fee_local,
+  dps_priority_fee_eur
+  FROM `fulfillment-dwh-production.cl.dps_test_orders`
+  WHERE created_date &gt;&gt;= &apos;2024-11-01&apos;
+  AND entity_id IN (&apos;FP_TW&apos;, &apos;PY_DO&apos;, &apos;PY_PE&apos;, &apos;PY_CL&apos;, &apos;PY_AR&apos;)
+  AND test_name IN( &apos;CL_20241128_R_K0_R_Prio_Fee_MAB&apos;, 
+                    &apos;DO_20241209_Z_K0_R_Santo_Domingo_MAB&apos;, 
+                    &apos;DO_20250118_Z_K0_R_Santiago_Priority_MAB_Var_Gen_M&apos;, 
+                    &apos;AR_20250314_Z_K0_R_PF_Alta_Cordoba_MAB_Var_Gen&apos;, 
+                    &apos;TW_20250313_Z_K0_O_MAB_Priority&apos;, 
+                    &apos;TW_20250313_Z_K0_O_MAB_Priority_Other_Cities&apos;)
+  AND vendor_vertical_parent NOT IN (&apos;courier&apos;, &apos;courier_business&apos;)
+  AND dps_priority_fee_local is not null
+  AND dps_priority_fee_local IS NOT NULL
+  AND is_sent
+  AND is_own_delivery
+  AND platform_order_code IS NOT NULL
+)
+
+, joined_orders AS (
+  SELECT 
+  dps.*,
+  IFNULL(prio.priority_fee_local,0) priority_fee_local,
+  IFNULL(prio.priority_fee_eur,0) priority_fee_eur
+  FROM base_orders dps
+  LEFT JOIN prio_orders prio 
+  ON dps.entity_id = prio.entity_id
+  AND dps.platform_order_code = prio.platform_order_code
+)
+
+SELECT 
+order_date,
+entity_id,
+test_name,
+test_variant,
+MIN(order_date) as start_date,
+MAX(order_date) as end_date,
+COUNT(platform_order_code) as orders,
+COUNT(CASE WHEN priority_fee_local &gt;&gt; 0 THEN platform_order_code END) as prio_order,
+COUNT(CASE WHEN priority_fee_local &gt;&gt; 0 THEN platform_order_code END)/COUNT(platform_order_code) as adoption,
+SUM(priority_fee_local) AS prio_fee_revenue,
+SUM(priority_fee_eur) AS prio_fee_revenue_eur
+FROM joined_orders
+GROUP BY test_name, test_variant, entity_id, order_date</relation>
+            </properties>
+          </object>
+        </objects>
+      </_.fcp.ObjectModelEncapsulateLegacy.true...object-graph>
+    </datasource>
+  </datasources>
+  <worksheets>
+    <worksheet name='Bayesian Mean'>
+      <repository-location id='BayesianMean' path='/t/GlobalStandardReporting/workbooks/MAB_dashboard' revision='' site='GlobalStandardReporting' />
+      <layout-options>
+        <title>
+          <formatted-text>
+            <run bold='true' fontalignment='1' fontcolor='#ffffff' fontsize='12'>Bayesian Mean Over Time</run>
+          </formatted-text>
+        </title>
+      </layout-options>
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='logistics-customer-staging' name='federated.0o0p4c21kx9b7415g30f615h6tmg' />
+          </datasources>
+          <datasource-dependencies datasource='federated.0o0p4c21kx9b7415g30f615h6tmg'>
+            <column caption='if [kpi]=[target_kpi] THEN [bayesian_mean] END' datatype='real' name='[Calculation_3419358024093061131]' role='measure' type='quantitative' user:unnamed='Bayesian Mean'>
+              <calculation class='tableau' formula='if [kpi]=[target_kpi] THEN [bayesian_mean] END' />
+            </column>
+            <column caption='if [kpi]= [target_kpi] THEN ([hdi_upper_bound_fixed (calc. fi...' datatype='real' name='[Calculation_3419358024093904908]' role='measure' type='quantitative' user:unnamed='Bayesian Mean'>
+              <calculation class='tableau' formula='if [kpi]= [target_kpi] THEN ([Calculation_6366189919515492353]) END' />
+            </column>
+            <column caption='if [kpi] = [target_kpi] THEN [hdi_lower_bound_fixed (calc. fi...' datatype='real' name='[Calculation_3419358024094105613]' role='measure' type='quantitative' user:unnamed='Bayesian Mean'>
+              <calculation class='tableau' formula='if [kpi] = [target_kpi] THEN [Calculation_6366189919514091520] END' />
+            </column>
+            <column caption='hdi_lower_bound_fixed (calc. field)' datatype='real' name='[Calculation_6366189919514091520]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='{FIXED [entity_id], [test_name], [analysed_date], [kpi]: AVG([hdi_lower_bound])}' />
+            </column>
+            <column caption='hdi_upper_bound_fixed (calc. field)' datatype='real' name='[Calculation_6366189919515492353]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='{FIXED [entity_id], [test_name], [kpi], [analysed_date]: AVG([hdi_upper_bound])}' />
+            </column>
+            <column datatype='date' name='[analysed_date]' role='dimension' type='ordinal' />
+            <column-instance column='[Calculation_3419358024093904908]' derivation='Avg' name='[avg:Calculation_3419358024093904908:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[Calculation_3419358024094105613]' derivation='Avg' name='[avg:Calculation_3419358024094105613:qk]' pivot='key' type='quantitative' />
+            <column datatype='real' name='[bayesian_mean]' role='measure' type='quantitative' />
+            <column datatype='string' name='[entity_id]' role='dimension' type='nominal' />
+            <column datatype='real' name='[hdi_lower_bound]' role='measure' type='quantitative' />
+            <column datatype='real' name='[hdi_upper_bound]' role='measure' type='quantitative' />
+            <column datatype='string' name='[kpi]' role='dimension' type='nominal' />
+            <column-instance column='[Calculation_3419358024093061131]' derivation='Min' name='[min:Calculation_3419358024093061131:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[test_name]' derivation='None' name='[none:test_name:nk]' pivot='key' type='nominal' />
+            <column-instance column='[variant_name]' derivation='None' name='[none:variant_name:nk]' pivot='key' type='nominal' />
+            <column-instance column='[Calculation_3419358024094105613]' derivation='Sum' name='[sum:Calculation_3419358024094105613:qk]' pivot='key' type='quantitative' />
+            <column datatype='string' name='[target_kpi]' role='dimension' type='nominal' />
+            <column-instance column='[analysed_date]' derivation='Day-Trunc' name='[tdy:analysed_date:qk]' pivot='key' type='quantitative' />
+            <column datatype='string' name='[test_name]' role='dimension' type='nominal' />
+            <column datatype='string' name='[variant_name]' role='dimension' type='nominal' />
+          </datasource-dependencies>
+          <filter class='categorical' column='[federated.0o0p4c21kx9b7415g30f615h6tmg].[:Measure Names]'>
+            <groupfilter function='union' user:op='manual'>
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.0o0p4c21kx9b7415g30f615h6tmg].[avg:Calculation_3419358024093904908:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.0o0p4c21kx9b7415g30f615h6tmg].[avg:Calculation_3419358024094105613:qk]&quot;' />
+            </groupfilter>
+          </filter>
+          <manual-sort column='[federated.0o0p4c21kx9b7415g30f615h6tmg].[:Measure Names]' direction='ASC'>
+            <dictionary>
+              <bucket>&quot;[federated.0o0p4c21kx9b7415g30f615h6tmg].[avg:Calculation_3419358024093904908:qk]&quot;</bucket>
+              <bucket>&quot;[federated.0o0p4c21kx9b7415g30f615h6tmg].[sum:Calculation_3419358024094105613:qk]&quot;</bucket>
+            </dictionary>
+          </manual-sort>
+          <filter class='categorical' column='[federated.0o0p4c21kx9b7415g30f615h6tmg].[none:test_name:nk]'>
+            <groupfilter function='member' level='[none:test_name:nk]' member='&quot;DO_20241209_Z_K0_R_Santo_Domingo_MAB&quot;' user:ui-domain='database' user:ui-enumeration='inclusive' user:ui-marker='enumerate' />
+          </filter>
+          <slices>
+            <column>[federated.0o0p4c21kx9b7415g30f615h6tmg].[none:test_name:nk]</column>
+            <column>[federated.0o0p4c21kx9b7415g30f615h6tmg].[:Measure Names]</column>
+          </slices>
+          <aggregation value='true' />
+        </view>
+        <style>
+          <style-rule element='axis'>
+            <encoding attr='space' class='0' field='[federated.0o0p4c21kx9b7415g30f615h6tmg].[Multiple Values]' field-type='quantitative' fold='true' scope='rows' synchronized='true' type='space' />
+            <format attr='title' class='0' field='[federated.0o0p4c21kx9b7415g30f615h6tmg].[tdy:analysed_date:qk]' scope='cols' value='' />
+            <format attr='title' class='0' field='[federated.0o0p4c21kx9b7415g30f615h6tmg].[min:Calculation_3419358024093061131:qk]' scope='rows' value='' />
+            <format attr='display' class='0' field='[federated.0o0p4c21kx9b7415g30f615h6tmg].[Multiple Values]' scope='rows' value='false' />
+            <format attr='tick-color' value='#898989' />
+          </style-rule>
+          <style-rule element='header'>
+            <format attr='border-width' data-class='total' value='0' />
+            <format attr='border-style' data-class='total' value='none' />
+          </style-rule>
+          <style-rule element='pane'>
+            <format attr='border-width' data-class='total' value='0' />
+            <format attr='border-style' data-class='total' value='none' />
+          </style-rule>
+          <style-rule element='table'>
+            <format attr='background-color' value='#141730' />
+          </style-rule>
+          <style-rule element='worksheet'>
+            <format attr='color' value='#ffffff' />
+          </style-rule>
+          <style-rule element='dropline'>
+            <format attr='stroke-size' value='0' />
+            <format attr='line-visibility' value='off' />
+          </style-rule>
+          <style-rule element='refline'>
+            <format attr='fill-above' id='refline0' value='#00000000' />
+            <format attr='fill-below' id='refline0' value='#00000000' />
+            <format attr='fill-above' id='refline8' value='#00000000' />
+            <format attr='fill-below' id='refline8' value='#00000000' />
+            <format attr='stroke-size' value='0' />
+            <format attr='line-visibility' value='off' />
+          </style-rule>
+          <style-rule element='gridline'>
+            <format attr='line-visibility' scope='rows' value='on' />
+            <format attr='line-pattern-only' scope='rows' value='dashed' />
+            <format attr='stroke-color' scope='rows' value='#333333' />
+          </style-rule>
+          <style-rule element='zeroline'>
+            <format attr='stroke-size' value='0' />
+            <format attr='line-visibility' value='off' />
+          </style-rule>
+          <style-rule element='table-div'>
+            <format attr='stroke-size' scope='rows' value='0' />
+            <format attr='line-visibility' scope='rows' value='off' />
+            <format attr='stroke-size' scope='cols' value='0' />
+            <format attr='line-visibility' scope='cols' value='off' />
+          </style-rule>
+          <style-rule element='legend-title-text'>
+            <format attr='color' field='[federated.0o0p4c21kx9b7415g30f615h6tmg].[none:variant_name:nk]&#10;[federated.0o0p4c21kx9b7415g30f615h6tmg].[:Measure Names]' value='Variant' />
+          </style-rule>
+          <style-rule element='quick-filter'>
+            <format attr='title' field='[federated.0o0p4c21kx9b7415g30f615h6tmg].[none:test_name:nk]' value='test_name' />
+          </style-rule>
+        </style>
+        <panes>
+          <pane id='6' selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Automatic' />
+            <customized-tooltip>
+              <formatted-text>
+                <run fontcolor='#787878'>Variant:&#9;</run>
+                <run bold='true'><![CDATA[<[federated.0o0p4c21kx9b7415g30f615h6tmg].[none:variant_name:nk]>]]></run>
+                <run>Æ&#10;</run>
+                <run fontcolor='#787878'>Bayesian Mean:&#9;</run>
+                <run bold='true' fontcolor='#e15759'><![CDATA[<[federated.0o0p4c21kx9b7415g30f615h6tmg].[min:Calculation_3419358024093061131:qk]>]]></run>
+                <run>Æ&#10;</run>
+                <run fontcolor='#787878'>Date:&#9;</run>
+                <run bold='true'><![CDATA[<[federated.0o0p4c21kx9b7415g30f615h6tmg].[tdy:analysed_date:qk]>]]></run>
+              </formatted-text>
+            </customized-tooltip>
+            <style>
+              <style-rule element='mark'>
+                <format attr='line-interpolation' value='linear' />
+              </style-rule>
+            </style>
+          </pane>
+          <pane id='7' selection-relaxation-option='selection-relaxation-allow' y-axis-name='[federated.0o0p4c21kx9b7415g30f615h6tmg].[min:Calculation_3419358024093061131:qk]'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Automatic' />
+            <encodings>
+              <color column='[federated.0o0p4c21kx9b7415g30f615h6tmg].[none:variant_name:nk]' />
+              <color column='[federated.0o0p4c21kx9b7415g30f615h6tmg].[:Measure Names]' />
+            </encodings>
+            <customized-tooltip>
+              <formatted-text>
+                <run fontcolor='#787878'>Variant:&#9;</run>
+                <run bold='true'><![CDATA[<[federated.0o0p4c21kx9b7415g30f615h6tmg].[none:variant_name:nk]>]]></run>
+                <run>Æ&#10;</run>
+                <run fontcolor='#787878'>Bayesian Mean:&#9;</run>
+                <run bold='true' fontcolor='#e15759'><![CDATA[<[federated.0o0p4c21kx9b7415g30f615h6tmg].[min:Calculation_3419358024093061131:qk]>]]></run>
+                <run>Æ&#10;</run>
+                <run fontcolor='#787878'>Date:&#9;</run>
+                <run bold='true'><![CDATA[<[federated.0o0p4c21kx9b7415g30f615h6tmg].[tdy:analysed_date:qk]>]]></run>
+              </formatted-text>
+            </customized-tooltip>
+            <style>
+              <style-rule element='mark'>
+                <format attr='mark-markers-mode' value='all' />
+                <format attr='line-interpolation' value='linear' />
+              </style-rule>
+              <style-rule element='trendline'>
+                <format attr='stroke-size' value='0' />
+                <format attr='line-visibility' value='off' />
+              </style-rule>
+            </style>
+          </pane>
+          <pane id='8' selection-relaxation-option='selection-relaxation-allow' y-axis-name='[federated.0o0p4c21kx9b7415g30f615h6tmg].[Multiple Values]'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Line' />
+            <mark-sizing mark-sizing-setting='marks-scaling-off' />
+            <encodings>
+              <lod column='[federated.0o0p4c21kx9b7415g30f615h6tmg].[:Measure Names]' />
+            </encodings>
+            <customized-tooltip>
+              <formatted-text />
+            </customized-tooltip>
+            <style>
+              <style-rule element='mark'>
+                <format attr='size' value='0.0099999997764825821' />
+                <format attr='mark-labels-cull' value='true' />
+                <format attr='mark-labels-show' value='false' />
+                <format attr='has-stroke' value='false' />
+                <format attr='mark-markers-mode' value='auto' />
+                <format attr='mark-transparency' value='255' />
+                <format attr='line-interpolation' value='linear' />
+                <format attr='mark-color' value='#898989' />
+                <_.fcp.PatternedLineMarks.true...format attr='mark-line-pattern' value='dotted' />
+              </style-rule>
+            </style>
+          </pane>
+        </panes>
+        <rows>([federated.0o0p4c21kx9b7415g30f615h6tmg].[min:Calculation_3419358024093061131:qk] + [federated.0o0p4c21kx9b7415g30f615h6tmg].[Multiple Values])</rows>
+        <cols>[federated.0o0p4c21kx9b7415g30f615h6tmg].[tdy:analysed_date:qk]</cols>
+      </table>
+      <simple-id uuid='{89DFDABA-8F45-4D4A-931E-136FBED64160}' />
+    </worksheet>
+    <worksheet name='Confidence Interval'>
+      <repository-location id='ConfidenceInterval' path='/t/GlobalStandardReporting/workbooks/MAB_dashboard' revision='' site='GlobalStandardReporting' />
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='logistics-customer-staging' name='federated.0o0p4c21kx9b7415g30f615h6tmg' />
+          </datasources>
+          <datasource-dependencies datasource='federated.0o0p4c21kx9b7415g30f615h6tmg'>
+            <column caption='hdi_lower_bound_fixed (calc. field)' datatype='real' name='[Calculation_6366189919514091520]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='{FIXED [entity_id], [test_name], [analysed_date], [kpi]: AVG([hdi_lower_bound])}' />
+            </column>
+            <column caption='hdi_upper_bound_fixed (calc. field)' datatype='real' name='[Calculation_6366189919515492353]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='{FIXED [entity_id], [test_name], [kpi], [analysed_date]: AVG([hdi_upper_bound])}' />
+            </column>
+            <column datatype='date' name='[analysed_date]' role='dimension' type='ordinal' />
+            <column-instance column='[hdi_lower_bound]' derivation='Avg' name='[avg:hdi_lower_bound:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[hdi_upper_bound]' derivation='Avg' name='[avg:hdi_upper_bound:qk]' pivot='key' type='quantitative' />
+            <column datatype='string' name='[entity_id]' role='dimension' type='nominal' />
+            <column datatype='real' name='[hdi_lower_bound]' role='measure' type='quantitative' />
+            <column datatype='real' name='[hdi_upper_bound]' role='measure' type='quantitative' />
+            <column datatype='string' name='[kpi]' role='dimension' type='nominal' />
+            <column-instance column='[kpi]' derivation='None' name='[none:kpi:nk]' pivot='key' type='nominal' />
+            <column-instance column='[test_name]' derivation='None' name='[none:test_name:nk]' pivot='key' type='nominal' />
+            <column-instance column='[Calculation_6366189919514091520]' derivation='Sum' name='[sum:Calculation_6366189919514091520:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[Calculation_6366189919515492353]' derivation='Sum' name='[sum:Calculation_6366189919515492353:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[analysed_date]' derivation='Day-Trunc' name='[tdy:analysed_date:qk]' pivot='key' type='quantitative' />
+            <column datatype='string' name='[test_name]' role='dimension' type='nominal' />
+          </datasource-dependencies>
+          <filter class='categorical' column='[federated.0o0p4c21kx9b7415g30f615h6tmg].[:Measure Names]'>
+            <groupfilter function='union' user:op='manual'>
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.0o0p4c21kx9b7415g30f615h6tmg].[sum:Calculation_6366189919515492353:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.0o0p4c21kx9b7415g30f615h6tmg].[sum:Calculation_6366189919514091520:qk]&quot;' />
+            </groupfilter>
+          </filter>
+          <manual-sort column='[federated.0o0p4c21kx9b7415g30f615h6tmg].[:Measure Names]' direction='ASC'>
+            <dictionary>
+              <bucket>&quot;[federated.0o0p4c21kx9b7415g30f615h6tmg].[sum:Calculation_6366189919515492353:qk]&quot;</bucket>
+              <bucket>&quot;[federated.0o0p4c21kx9b7415g30f615h6tmg].[sum:Calculation_6366189919514091520:qk]&quot;</bucket>
+            </dictionary>
+          </manual-sort>
+          <filter class='categorical' column='[federated.0o0p4c21kx9b7415g30f615h6tmg].[none:kpi:nk]'>
+            <groupfilter function='member' level='[none:kpi:nk]' member='&quot;pgi_per_order&quot;' user:ui-domain='database' user:ui-enumeration='inclusive' user:ui-marker='enumerate' />
+          </filter>
+          <filter class='categorical' column='[federated.0o0p4c21kx9b7415g30f615h6tmg].[none:test_name:nk]'>
+            <groupfilter function='member' level='[none:test_name:nk]' member='&quot;PE_Piura_20250411_R_A_O_elasticity&quot;' user:ui-domain='database' user:ui-enumeration='inclusive' user:ui-marker='enumerate' />
+          </filter>
+          <slices>
+            <column>[federated.0o0p4c21kx9b7415g30f615h6tmg].[none:test_name:nk]</column>
+            <column>[federated.0o0p4c21kx9b7415g30f615h6tmg].[:Measure Names]</column>
+            <column>[federated.0o0p4c21kx9b7415g30f615h6tmg].[none:kpi:nk]</column>
+          </slices>
+          <aggregation value='true' />
+        </view>
+        <style>
+          <style-rule element='axis'>
+            <encoding attr='space' class='0' field='[federated.0o0p4c21kx9b7415g30f615h6tmg].[avg:hdi_lower_bound:qk]' field-type='quantitative' fold='true' scope='rows' synchronized='true' type='space' />
+          </style-rule>
+        </style>
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Automatic' />
+            <encodings>
+              <color column='[federated.0o0p4c21kx9b7415g30f615h6tmg].[:Measure Names]' />
+            </encodings>
+            <style>
+              <style-rule element='mark'>
+                <format attr='line-interpolation' value='linear' />
+              </style-rule>
+            </style>
+          </pane>
+          <pane id='1' selection-relaxation-option='selection-relaxation-allow' y-axis-name='[federated.0o0p4c21kx9b7415g30f615h6tmg].[avg:hdi_lower_bound:qk]'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Automatic' />
+            <encodings>
+              <color column='[federated.0o0p4c21kx9b7415g30f615h6tmg].[:Measure Names]' />
+            </encodings>
+            <style>
+              <style-rule element='mark'>
+                <format attr='line-interpolation' value='linear' />
+              </style-rule>
+            </style>
+          </pane>
+          <pane id='2' selection-relaxation-option='selection-relaxation-allow' y-axis-name='[federated.0o0p4c21kx9b7415g30f615h6tmg].[avg:hdi_upper_bound:qk]'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Automatic' />
+            <encodings>
+              <color column='[federated.0o0p4c21kx9b7415g30f615h6tmg].[:Measure Names]' />
+            </encodings>
+            <style>
+              <style-rule element='mark'>
+                <format attr='line-interpolation' value='linear' />
+              </style-rule>
+            </style>
+          </pane>
+          <pane id='3' selection-relaxation-option='selection-relaxation-allow' y-axis-name='[federated.0o0p4c21kx9b7415g30f615h6tmg].[Multiple Values]'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Line' />
+            <encodings>
+              <color column='[federated.0o0p4c21kx9b7415g30f615h6tmg].[:Measure Names]' />
+            </encodings>
+            <style>
+              <style-rule element='mark'>
+                <format attr='line-interpolation' value='linear' />
+              </style-rule>
+            </style>
+          </pane>
+        </panes>
+        <rows>([federated.0o0p4c21kx9b7415g30f615h6tmg].[avg:hdi_upper_bound:qk] + ([federated.0o0p4c21kx9b7415g30f615h6tmg].[avg:hdi_lower_bound:qk] + [federated.0o0p4c21kx9b7415g30f615h6tmg].[Multiple Values]))</rows>
+        <cols>[federated.0o0p4c21kx9b7415g30f615h6tmg].[tdy:analysed_date:qk]</cols>
+      </table>
+      <simple-id uuid='{0A0370C7-5DBE-413F-B1BE-4BC98D4E8626}' />
+    </worksheet>
+    <worksheet name='Consolidated Views'>
+      <repository-location id='ConsolidatedViews' path='/t/GlobalStandardReporting/workbooks/MAB_dashboard' revision='' site='GlobalStandardReporting' />
+      <layout-options>
+        <title>
+          <formatted-text>
+            <run bold='true' fontalignment='1' fontcolor='#ffffff' fontsize='12'>&lt;Sheet Name&gt;</run>
+          </formatted-text>
+        </title>
+      </layout-options>
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='logistics-customer-staging' name='federated.0o0p4c21kx9b7415g30f615h6tmg' />
+          </datasources>
+          <datasource-dependencies datasource='federated.0o0p4c21kx9b7415g30f615h6tmg'>
+            <column caption='Top avg. bayesian_mean (calc. field)' datatype='integer' name='[Calculation_3419358024056328192]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='IF RANK(avg([bayesian_mean])) = 1 THEN 1 ELSE 0 END'>
+                <table-calc ordering-type='Rows' />
+              </calculation>
+            </column>
+            <column caption='if [kpi] = [target_kpi] THEN [bayesian_mean] END' datatype='real' name='[Calculation_3419358024094949393]' role='measure' type='quantitative' user:unnamed='Consolidated Views'>
+              <calculation class='tableau' formula='if [kpi] = [target_kpi] THEN [bayesian_mean] END' />
+            </column>
+            <column caption='IF [kpi] = [target_kpi] THEN [share] END' datatype='real' name='[Calculation_3419358024095031314]' role='measure' type='quantitative' user:unnamed='Consolidated Views'>
+              <calculation class='tableau' formula='IF [kpi] = [target_kpi] THEN [share] END' />
+            </column>
+            <column caption='IF [kpi] = [target_kpi] THEN [winning_probability] END' datatype='real' name='[Calculation_3419358024095154195]' role='measure' type='quantitative' user:unnamed='Consolidated Views'>
+              <calculation class='tableau' formula='IF [kpi] = [target_kpi] THEN [winning_probability] END' />
+            </column>
+            <column caption='Top avg.share (calc. field) ' datatype='integer' name='[Top avg. bayesian_mean (calc. field) (copy)_3419358024059453441]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='IF RANK(AVG([share])) = 1 THEN 1 ELSE 0 END'>
+                <table-calc ordering-type='Rows' />
+              </calculation>
+            </column>
+            <column caption='Top avg.winning_probability (calc. field)  (copy)' datatype='integer' name='[Top avg.share (calc. field)  (copy)_3419358024064610308]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='IF RANK(AVG([winning_probability])) = 1 THEN 1 ELSE 0 END'>
+                <table-calc ordering-type='Rows' />
+              </calculation>
+            </column>
+            <column datatype='date' name='[analysed_date]' role='dimension' type='ordinal' />
+            <column-instance column='[Calculation_3419358024094949393]' derivation='Avg' name='[avg:Calculation_3419358024094949393:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[Calculation_3419358024095031314]' derivation='Avg' name='[avg:Calculation_3419358024095031314:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[Calculation_3419358024095154195]' derivation='Avg' name='[avg:Calculation_3419358024095154195:qk]' pivot='key' type='quantitative' />
+            <column datatype='real' name='[bayesian_mean]' role='measure' type='quantitative' />
+            <column datatype='string' name='[kpi]' role='dimension' type='nominal' />
+            <column-instance column='[target_kpi]' derivation='None' name='[none:target_kpi:nk]' pivot='key' type='nominal' />
+            <column-instance column='[test_name]' derivation='None' name='[none:test_name:nk]' pivot='key' type='nominal' />
+            <column-instance column='[variant_name]' derivation='None' name='[none:variant_name:nk]' pivot='key' type='nominal' />
+            <column datatype='real' name='[share]' role='measure' type='quantitative' />
+            <column datatype='string' name='[target_kpi]' role='dimension' type='nominal' />
+            <column-instance column='[analysed_date]' derivation='Day-Trunc' name='[tdy:analysed_date:ok]' pivot='key' type='ordinal' />
+            <column datatype='string' name='[test_name]' role='dimension' type='nominal' />
+            <column-instance column='[Calculation_3419358024056328192]' derivation='User' name='[usr:Calculation_3419358024056328192:qk:5]' pivot='key' type='quantitative'>
+              <table-calc ordering-type='ColumnInPane' />
+            </column-instance>
+            <column-instance column='[Top avg. bayesian_mean (calc. field) (copy)_3419358024059453441]' derivation='User' name='[usr:Top avg. bayesian_mean (calc. field) (copy)_3419358024059453441:qk:3]' pivot='key' type='quantitative'>
+              <table-calc ordering-type='ColumnInPane' />
+            </column-instance>
+            <column-instance column='[Top avg.share (calc. field)  (copy)_3419358024064610308]' derivation='User' name='[usr:Top avg.share (calc. field)  (copy)_3419358024064610308:qk:3]' pivot='key' type='quantitative'>
+              <table-calc ordering-type='ColumnInPane' />
+            </column-instance>
+            <column datatype='string' name='[variant_name]' role='dimension' type='nominal' />
+            <column datatype='real' name='[winning_probability]' role='measure' type='quantitative' />
+          </datasource-dependencies>
+          <filter class='categorical' column='[federated.0o0p4c21kx9b7415g30f615h6tmg].[none:test_name:nk]'>
+            <groupfilter function='member' level='[none:test_name:nk]' member='&quot;DO_20240730_R_B0_O_Elasticity_DMAM_MAB&quot;' user:ui-domain='database' user:ui-enumeration='inclusive' user:ui-marker='enumerate' />
+          </filter>
+          <_.fcp.SingleValuePerNestSorting.true...single-value-per-nest-shelf-sorts>
+            <single-value-per-nest-shelf-sort dimension-to-sort='[federated.0o0p4c21kx9b7415g30f615h6tmg].[tdy:analysed_date:ok]' direction='ASC' measure-to-sort-by='[federated.0o0p4c21kx9b7415g30f615h6tmg].[tdy:analysed_date:ok]' shelf='rows' />
+          </_.fcp.SingleValuePerNestSorting.true...single-value-per-nest-shelf-sorts>
+          <slices>
+            <column>[federated.0o0p4c21kx9b7415g30f615h6tmg].[none:test_name:nk]</column>
+          </slices>
+          <aggregation value='true' />
+        </view>
+        <style>
+          <style-rule element='axis'>
+            <format attr='title' class='0' field='[federated.0o0p4c21kx9b7415g30f615h6tmg].[avg:Calculation_3419358024094949393:qk]' scope='cols' value='' />
+            <format attr='title' class='0' field='[federated.0o0p4c21kx9b7415g30f615h6tmg].[avg:Calculation_3419358024095031314:qk]' scope='cols' value='' />
+            <format attr='title' class='0' field='[federated.0o0p4c21kx9b7415g30f615h6tmg].[avg:Calculation_3419358024095154195:qk]' scope='cols' value='' />
+            <format attr='display' class='0' field='[federated.0o0p4c21kx9b7415g30f615h6tmg].[avg:Calculation_3419358024094949393:qk]' scope='cols' value='false' />
+            <format attr='display' class='0' field='[federated.0o0p4c21kx9b7415g30f615h6tmg].[avg:Calculation_3419358024095031314:qk]' scope='cols' value='false' />
+            <format attr='display' class='0' field='[federated.0o0p4c21kx9b7415g30f615h6tmg].[avg:Calculation_3419358024095154195:qk]' scope='cols' value='false' />
+            <format attr='tick-color' scope='cols' value='#898989' />
+          </style-rule>
+          <style-rule element='cell'>
+            <format attr='width' value='89' />
+          </style-rule>
+          <style-rule element='header'>
+            <format attr='border-width' data-class='total' value='0' />
+            <format attr='border-style' data-class='total' value='none' />
+          </style-rule>
+          <style-rule element='label'>
+            <format attr='text-format' field='[federated.0o0p4c21kx9b7415g30f615h6tmg].[tdy:analysed_date:ok]' value='*m/d/yyyy' />
+          </style-rule>
+          <style-rule element='pane'>
+            <format attr='border-width' data-class='total' value='0' />
+            <format attr='border-style' data-class='total' value='none' />
+          </style-rule>
+          <style-rule element='table'>
+            <format attr='background-color' value='#141730' />
+          </style-rule>
+          <style-rule element='worksheet'>
+            <format attr='color' value='#ffffff' />
+          </style-rule>
+          <style-rule element='dropline'>
+            <format attr='stroke-size' scope='cols' value='0' />
+            <format attr='line-visibility' scope='cols' value='off' />
+          </style-rule>
+          <style-rule element='refline'>
+            <format attr='stroke-size' scope='cols' value='0' />
+            <format attr='line-visibility' scope='cols' value='off' />
+          </style-rule>
+          <style-rule element='gridline'>
+            <format attr='line-pattern-only' scope='cols' value='solid' />
+            <format attr='stroke-color' scope='cols' value='#333333' />
+            <format attr='stroke-size' scope='cols' value='0' />
+            <format attr='line-visibility' scope='cols' value='off' />
+          </style-rule>
+          <style-rule element='table-div'>
+            <format attr='stroke-color' scope='cols' value='#898989' />
+            <format attr='stroke-size' scope='rows' value='1' />
+            <format attr='line-visibility' scope='rows' value='on' />
+            <format attr='line-pattern-only' scope='rows' value='solid' />
+            <format attr='stroke-color' scope='rows' value='#898989' />
+            <format attr='stroke-size' scope='cols' value='1' />
+            <format attr='line-visibility' scope='cols' value='on' />
+            <format attr='line-pattern-only' scope='cols' value='solid' />
+          </style-rule>
+          <style-rule element='header-div'>
+            <format attr='stroke-size' scope='rows' value='1' />
+            <format attr='line-visibility' scope='rows' value='on' />
+            <format attr='line-pattern-only' scope='rows' value='solid' />
+            <format attr='stroke-size' scope='cols' value='0' />
+            <format attr='line-visibility' scope='cols' value='off' />
+          </style-rule>
+        </style>
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Automatic' />
+            <style>
+              <style-rule element='cell'>
+                <format attr='wrap' value='auto' />
+                <format attr='text-align' value='right' />
+              </style-rule>
+              <style-rule element='mark'>
+                <format attr='mark-labels-show' value='true' />
+                <format attr='mark-labels-cull' value='true' />
+              </style-rule>
+              <style-rule element='pane'>
+                <format attr='minwidth' value='-1' />
+                <format attr='maxwidth' value='-1' />
+              </style-rule>
+            </style>
+          </pane>
+          <pane id='1' selection-relaxation-option='selection-relaxation-allow' x-axis-name='[federated.0o0p4c21kx9b7415g30f615h6tmg].[avg:Calculation_3419358024094949393:qk]'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Bar' />
+            <mark-sizing mark-sizing-setting='marks-scaling-off' />
+            <encodings>
+              <color column='[federated.0o0p4c21kx9b7415g30f615h6tmg].[usr:Calculation_3419358024056328192:qk:5]' />
+            </encodings>
+            <style>
+              <style-rule element='cell'>
+                <format attr='wrap' value='auto' />
+                <format attr='text-align' value='right' />
+              </style-rule>
+              <style-rule element='mark'>
+                <format attr='mark-labels-show' value='true' />
+                <format attr='mark-labels-cull' value='true' />
+                <format attr='size' value='1' />
+              </style-rule>
+              <style-rule element='pane'>
+                <format attr='minwidth' value='-1' />
+                <format attr='maxwidth' value='-1' />
+              </style-rule>
+            </style>
+          </pane>
+          <pane id='2' selection-relaxation-option='selection-relaxation-allow' x-axis-name='[federated.0o0p4c21kx9b7415g30f615h6tmg].[avg:Calculation_3419358024095031314:qk]'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Bar' />
+            <mark-sizing mark-sizing-setting='marks-scaling-off' />
+            <encodings>
+              <color column='[federated.0o0p4c21kx9b7415g30f615h6tmg].[usr:Top avg. bayesian_mean (calc. field) (copy)_3419358024059453441:qk:3]' />
+            </encodings>
+            <style>
+              <style-rule element='cell'>
+                <format attr='wrap' value='auto' />
+                <format attr='text-align' value='right' />
+              </style-rule>
+              <style-rule element='mark'>
+                <format attr='mark-labels-show' value='true' />
+                <format attr='mark-labels-cull' value='true' />
+                <format attr='size' value='1' />
+              </style-rule>
+              <style-rule element='pane'>
+                <format attr='minwidth' value='-1' />
+                <format attr='maxwidth' value='-1' />
+              </style-rule>
+            </style>
+          </pane>
+          <pane id='3' selection-relaxation-option='selection-relaxation-allow' x-axis-name='[federated.0o0p4c21kx9b7415g30f615h6tmg].[avg:Calculation_3419358024095154195:qk]'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Automatic' />
+            <mark-sizing mark-sizing-setting='marks-scaling-off' />
+            <encodings>
+              <color column='[federated.0o0p4c21kx9b7415g30f615h6tmg].[usr:Top avg.share (calc. field)  (copy)_3419358024064610308:qk:3]' />
+            </encodings>
+            <style>
+              <style-rule element='cell'>
+                <format attr='wrap' value='auto' />
+                <format attr='text-align' value='right' />
+              </style-rule>
+              <style-rule element='mark'>
+                <format attr='mark-labels-show' value='true' />
+                <format attr='mark-labels-cull' value='true' />
+                <format attr='size' value='1' />
+              </style-rule>
+              <style-rule element='pane'>
+                <format attr='minwidth' value='-1' />
+                <format attr='maxwidth' value='-1' />
+              </style-rule>
+            </style>
+          </pane>
+        </panes>
+        <rows>([federated.0o0p4c21kx9b7415g30f615h6tmg].[tdy:analysed_date:ok] / ([federated.0o0p4c21kx9b7415g30f615h6tmg].[none:target_kpi:nk] / [federated.0o0p4c21kx9b7415g30f615h6tmg].[none:variant_name:nk]))</rows>
+        <cols>([federated.0o0p4c21kx9b7415g30f615h6tmg].[avg:Calculation_3419358024094949393:qk] + ([federated.0o0p4c21kx9b7415g30f615h6tmg].[avg:Calculation_3419358024095031314:qk] + [federated.0o0p4c21kx9b7415g30f615h6tmg].[avg:Calculation_3419358024095154195:qk]))</cols>
+      </table>
+      <simple-id uuid='{3EF0F419-F9DB-48FE-BFC9-EEDC5373A5D7}' />
+    </worksheet>
+    <worksheet name='Prio Test Adoption %'>
+      <repository-location id='PrioTestAdoption' path='/t/GlobalStandardReporting/workbooks/MAB_dashboard' revision='' site='GlobalStandardReporting' />
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='Prio_test_kpi' name='federated.0qy7fuu0mls29015oj85r0csj6tz' />
+          </datasources>
+          <datasource-dependencies datasource='federated.0qy7fuu0mls29015oj85r0csj6tz'>
+            <column caption='Top Adoption (calc. field)' datatype='integer' name='[Calculation_3419358024077422598]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='IF RANK(AVG([adoption])) = 1 THEN 1 ELSE 0 END'>
+                <table-calc ordering-type='Rows' />
+              </calculation>
+            </column>
+            <column datatype='real' name='[adoption]' role='measure' type='quantitative' />
+            <column-instance column='[adoption]' derivation='Avg' name='[avg:adoption:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[test_name]' derivation='None' name='[none:test_name:nk]' pivot='key' type='nominal' />
+            <column-instance column='[test_variant]' derivation='None' name='[none:test_variant:nk]' pivot='key' type='nominal' />
+            <column datatype='string' name='[test_name]' role='dimension' type='nominal' />
+            <column datatype='string' name='[test_variant]' role='dimension' type='nominal' />
+            <column-instance column='[Calculation_3419358024077422598]' derivation='User' name='[usr:Calculation_3419358024077422598:qk:1]' pivot='key' type='quantitative'>
+              <table-calc ordering-type='Columns' />
+            </column-instance>
+          </datasource-dependencies>
+          <filter class='categorical' column='[federated.0qy7fuu0mls29015oj85r0csj6tz].[none:test_name:nk]'>
+            <groupfilter function='member' level='[none:test_name:nk]' member='&quot;DO_20241209_Z_K0_R_Santo_Domingo_MAB&quot;' user:ui-domain='database' user:ui-enumeration='inclusive' user:ui-marker='enumerate' />
+          </filter>
+          <slices>
+            <column>[federated.0qy7fuu0mls29015oj85r0csj6tz].[none:test_name:nk]</column>
+          </slices>
+          <aggregation value='true' />
+        </view>
+        <style />
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Automatic' />
+            <encodings>
+              <color column='[federated.0qy7fuu0mls29015oj85r0csj6tz].[usr:Calculation_3419358024077422598:qk:1]' />
+            </encodings>
+          </pane>
+        </panes>
+        <rows>[federated.0qy7fuu0mls29015oj85r0csj6tz].[none:test_variant:nk]</rows>
+        <cols>[federated.0qy7fuu0mls29015oj85r0csj6tz].[avg:adoption:qk]</cols>
+      </table>
+      <simple-id uuid='{0D905929-B43C-478D-BD5E-79F29F3FD5AB}' />
+    </worksheet>
+    <worksheet name='Prio Test KPI'>
+      <repository-location id='PrioTestKPI' path='/t/GlobalStandardReporting/workbooks/MAB_dashboard' revision='' site='GlobalStandardReporting' />
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='Prio_test_kpi' name='federated.0qy7fuu0mls29015oj85r0csj6tz' />
+          </datasources>
+          <datasource-dependencies datasource='federated.0qy7fuu0mls29015oj85r0csj6tz'>
+            <column caption='Avg. Priority Fee (local)' datatype='real' name='[Calculation_3419358024073752581]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='[prio_fee_revenue] / [prio_order]' />
+            </column>
+            <column datatype='real' name='[adoption]' role='measure' type='quantitative' />
+            <column-instance column='[Calculation_3419358024073752581]' derivation='Avg' name='[avg:Calculation_3419358024073752581:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[adoption]' derivation='Avg' name='[avg:adoption:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[test_name]' derivation='None' name='[none:test_name:nk]' pivot='key' type='nominal' />
+            <column-instance column='[test_variant]' derivation='None' name='[none:test_variant:nk]' pivot='key' type='nominal' />
+            <column datatype='integer' name='[orders]' role='measure' type='quantitative' />
+            <column datatype='real' name='[prio_fee_revenue]' role='measure' type='quantitative' />
+            <column datatype='real' name='[prio_fee_revenue_eur]' role='measure' type='quantitative' />
+            <column datatype='integer' name='[prio_order]' role='measure' type='quantitative' />
+            <column-instance column='[orders]' derivation='Sum' name='[sum:orders:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[prio_fee_revenue]' derivation='Sum' name='[sum:prio_fee_revenue:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[prio_fee_revenue_eur]' derivation='Sum' name='[sum:prio_fee_revenue_eur:qk]' pivot='key' type='quantitative' />
+            <column datatype='string' name='[test_name]' role='dimension' type='nominal' />
+            <column datatype='string' name='[test_variant]' role='dimension' type='nominal' />
+          </datasource-dependencies>
+          <filter class='categorical' column='[federated.0qy7fuu0mls29015oj85r0csj6tz].[:Measure Names]'>
+            <groupfilter function='union' user:op='manual'>
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.0qy7fuu0mls29015oj85r0csj6tz].[avg:Calculation_3419358024073752581:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.0qy7fuu0mls29015oj85r0csj6tz].[avg:adoption:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.0qy7fuu0mls29015oj85r0csj6tz].[sum:orders:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.0qy7fuu0mls29015oj85r0csj6tz].[sum:prio_fee_revenue:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.0qy7fuu0mls29015oj85r0csj6tz].[sum:prio_fee_revenue_eur:qk]&quot;' />
+            </groupfilter>
+          </filter>
+          <filter class='categorical' column='[federated.0qy7fuu0mls29015oj85r0csj6tz].[none:test_name:nk]'>
+            <groupfilter function='member' level='[none:test_name:nk]' member='&quot;DO_20241209_Z_K0_R_Santo_Domingo_MAB&quot;' user:ui-domain='database' user:ui-enumeration='inclusive' user:ui-marker='enumerate' />
+          </filter>
+          <slices>
+            <column>[federated.0qy7fuu0mls29015oj85r0csj6tz].[none:test_name:nk]</column>
+            <column>[federated.0qy7fuu0mls29015oj85r0csj6tz].[:Measure Names]</column>
+          </slices>
+          <aggregation value='true' />
+        </view>
+        <style>
+          <style-rule element='cell'>
+            <format attr='text-format' field='[federated.0qy7fuu0mls29015oj85r0csj6tz].[avg:adoption:qk]' value='p0.00%' />
+          </style-rule>
+        </style>
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Automatic' />
+            <encodings>
+              <text column='[federated.0qy7fuu0mls29015oj85r0csj6tz].[Multiple Values]' />
+            </encodings>
+            <style>
+              <style-rule element='mark'>
+                <format attr='mark-labels-show' value='true' />
+              </style-rule>
+            </style>
+          </pane>
+        </panes>
+        <rows>[federated.0qy7fuu0mls29015oj85r0csj6tz].[:Measure Names]</rows>
+        <cols>[federated.0qy7fuu0mls29015oj85r0csj6tz].[none:test_variant:nk]</cols>
+      </table>
+      <simple-id uuid='{B891E335-4C6F-426A-B6D7-F1C030332901}' />
+    </worksheet>
+    <worksheet name='Prio Test KPI Order Volume'>
+      <repository-location id='PrioTestKPIOrderVolume' path='/t/GlobalStandardReporting/workbooks/MAB_dashboard' revision='' site='GlobalStandardReporting' />
+      <layout-options>
+        <title>
+          <formatted-text>
+            <run>Order Volume</run>
+          </formatted-text>
+        </title>
+      </layout-options>
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='Prio_test_kpi' name='federated.0qy7fuu0mls29015oj85r0csj6tz' />
+          </datasources>
+          <datasource-dependencies datasource='federated.0qy7fuu0mls29015oj85r0csj6tz'>
+            <column-instance column='[test_name]' derivation='None' name='[none:test_name:nk]' pivot='key' type='nominal' />
+            <column-instance column='[test_variant]' derivation='None' name='[none:test_variant:nk]' pivot='key' type='nominal' />
+            <column datatype='integer' name='[orders]' role='measure' type='quantitative' />
+            <column datatype='integer' name='[prio_order]' role='measure' type='quantitative' />
+            <column-instance column='[orders]' derivation='Sum' name='[sum:orders:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[prio_order]' derivation='Sum' name='[sum:prio_order:qk]' pivot='key' type='quantitative' />
+            <column datatype='string' name='[test_name]' role='dimension' type='nominal' />
+            <column datatype='string' name='[test_variant]' role='dimension' type='nominal' />
+          </datasource-dependencies>
+          <filter class='categorical' column='[federated.0qy7fuu0mls29015oj85r0csj6tz].[none:test_name:nk]'>
+            <groupfilter function='member' level='[none:test_name:nk]' member='&quot;DO_20241209_Z_K0_R_Santo_Domingo_MAB&quot;' user:ui-domain='database' user:ui-enumeration='inclusive' user:ui-marker='enumerate' />
+          </filter>
+          <slices>
+            <column>[federated.0qy7fuu0mls29015oj85r0csj6tz].[none:test_name:nk]</column>
+          </slices>
+          <aggregation value='true' />
+        </view>
+        <style>
+          <style-rule element='axis'>
+            <encoding attr='space' class='0' field='[federated.0qy7fuu0mls29015oj85r0csj6tz].[sum:prio_order:qk]' field-type='quantitative' fold='true' scope='cols' synchronized='true' type='space' />
+          </style-rule>
+        </style>
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Bar' />
+            <encodings>
+              <color column='[federated.0qy7fuu0mls29015oj85r0csj6tz].[:Measure Names]' />
+            </encodings>
+          </pane>
+          <pane id='1' selection-relaxation-option='selection-relaxation-allow' x-axis-name='[federated.0qy7fuu0mls29015oj85r0csj6tz].[sum:orders:qk]'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Bar' />
+            <encodings>
+              <color column='[federated.0qy7fuu0mls29015oj85r0csj6tz].[:Measure Names]' />
+            </encodings>
+          </pane>
+          <pane id='2' selection-relaxation-option='selection-relaxation-allow' x-axis-name='[federated.0qy7fuu0mls29015oj85r0csj6tz].[sum:prio_order:qk]'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Bar' />
+            <encodings>
+              <color column='[federated.0qy7fuu0mls29015oj85r0csj6tz].[:Measure Names]' />
+            </encodings>
+          </pane>
+        </panes>
+        <rows>[federated.0qy7fuu0mls29015oj85r0csj6tz].[none:test_variant:nk]</rows>
+        <cols>([federated.0qy7fuu0mls29015oj85r0csj6tz].[sum:orders:qk] + [federated.0qy7fuu0mls29015oj85r0csj6tz].[sum:prio_order:qk])</cols>
+      </table>
+      <simple-id uuid='{CDEE0622-2D3D-42B9-90CF-72CAF72BB36F}' />
+    </worksheet>
+    <worksheet name='Prio Test KPI Prio Fee Revenue(local)'>
+      <repository-location id='PrioTestKPIPrioFeeRevenuelocal' path='/t/GlobalStandardReporting/workbooks/MAB_dashboard' revision='' site='GlobalStandardReporting' />
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='Prio_test_kpi' name='federated.0qy7fuu0mls29015oj85r0csj6tz' />
+          </datasources>
+          <datasource-dependencies datasource='federated.0qy7fuu0mls29015oj85r0csj6tz'>
+            <column caption='Top Revenue (local) (calc. field) (copy)' datatype='integer' name='[Top Adoption (calc. field) (copy)_3419358024078135303]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='IF RANK(AVG([prio_fee_revenue])) = 1 THEN 1 ELSE 0 END'>
+                <table-calc ordering-type='Rows' />
+              </calculation>
+            </column>
+            <column-instance column='[test_name]' derivation='None' name='[none:test_name:nk]' pivot='key' type='nominal' />
+            <column-instance column='[test_variant]' derivation='None' name='[none:test_variant:nk]' pivot='key' type='nominal' />
+            <column datatype='real' name='[prio_fee_revenue]' role='measure' type='quantitative' />
+            <column-instance column='[prio_fee_revenue]' derivation='Sum' name='[sum:prio_fee_revenue:qk]' pivot='key' type='quantitative' />
+            <column datatype='string' name='[test_name]' role='dimension' type='nominal' />
+            <column datatype='string' name='[test_variant]' role='dimension' type='nominal' />
+            <column-instance column='[Top Adoption (calc. field) (copy)_3419358024078135303]' derivation='User' name='[usr:Top Adoption (calc. field) (copy)_3419358024078135303:qk:2]' pivot='key' type='quantitative'>
+              <table-calc ordering-type='Columns' />
+            </column-instance>
+          </datasource-dependencies>
+          <filter class='categorical' column='[federated.0qy7fuu0mls29015oj85r0csj6tz].[none:test_name:nk]'>
+            <groupfilter function='member' level='[none:test_name:nk]' member='&quot;DO_20241209_Z_K0_R_Santo_Domingo_MAB&quot;' user:ui-domain='database' user:ui-enumeration='inclusive' user:ui-marker='enumerate' />
+          </filter>
+          <slices>
+            <column>[federated.0qy7fuu0mls29015oj85r0csj6tz].[none:test_name:nk]</column>
+          </slices>
+          <aggregation value='true' />
+        </view>
+        <style />
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Automatic' />
+            <encodings>
+              <color column='[federated.0qy7fuu0mls29015oj85r0csj6tz].[usr:Top Adoption (calc. field) (copy)_3419358024078135303:qk:2]' />
+            </encodings>
+          </pane>
+        </panes>
+        <rows>[federated.0qy7fuu0mls29015oj85r0csj6tz].[none:test_variant:nk]</rows>
+        <cols>[federated.0qy7fuu0mls29015oj85r0csj6tz].[sum:prio_fee_revenue:qk]</cols>
+      </table>
+      <simple-id uuid='{1756E7A1-6483-4FC9-96E0-42C0BC8D546A}' />
+    </worksheet>
+    <worksheet name='Sheet 10'>
+      <repository-location id='Sheet10' path='/t/GlobalStandardReporting/workbooks/MAB_dashboard' revision='' site='GlobalStandardReporting' />
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='logistics-customer-staging' name='federated.0o0p4c21kx9b7415g30f615h6tmg' />
+          </datasources>
+          <datasource-dependencies datasource='federated.0o0p4c21kx9b7415g30f615h6tmg'>
+            <column datatype='date' name='[analysed_date]' role='dimension' type='ordinal' />
+            <column-instance column='[share]' derivation='Avg' name='[avg:share:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[test_name]' derivation='None' name='[none:test_name:nk]' pivot='key' type='nominal' />
+            <column datatype='real' name='[share]' role='measure' type='quantitative' />
+            <column-instance column='[analysed_date]' derivation='Day-Trunc' name='[tdy:analysed_date:qk]' pivot='key' type='quantitative' />
+            <column datatype='string' name='[test_name]' role='dimension' type='nominal' />
+          </datasource-dependencies>
+          <filter class='categorical' column='[federated.0o0p4c21kx9b7415g30f615h6tmg].[none:test_name:nk]'>
+            <groupfilter function='member' level='[none:test_name:nk]' member='&quot;DO_20241209_Z_K0_R_Santo_Domingo_MAB&quot;' user:ui-domain='database' user:ui-enumeration='inclusive' user:ui-marker='enumerate' />
+          </filter>
+          <slices>
+            <column>[federated.0o0p4c21kx9b7415g30f615h6tmg].[none:test_name:nk]</column>
+          </slices>
+          <aggregation value='true' />
+        </view>
+        <style />
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Automatic' />
+          </pane>
+        </panes>
+        <rows>[federated.0o0p4c21kx9b7415g30f615h6tmg].[avg:share:qk]</rows>
+        <cols>[federated.0o0p4c21kx9b7415g30f615h6tmg].[tdy:analysed_date:qk]</cols>
+      </table>
+      <simple-id uuid='{EE7AAE9E-01F1-4AEA-862B-58D79B584B3C}' />
+    </worksheet>
+    <worksheet name='Traffic Share'>
+      <repository-location id='TrafficShare' path='/t/GlobalStandardReporting/workbooks/MAB_dashboard' revision='' site='GlobalStandardReporting' />
+      <layout-options>
+        <title>
+          <formatted-text>
+            <run bold='true' fontalignment='1' fontcolor='#ffffff' fontsize='12'>Traffic Share Overt Time</run>
+          </formatted-text>
+        </title>
+      </layout-options>
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='logistics-customer-staging' name='federated.0o0p4c21kx9b7415g30f615h6tmg' />
+          </datasources>
+          <datasource-dependencies datasource='federated.0o0p4c21kx9b7415g30f615h6tmg'>
+            <column caption='if [kpi] = [target_kpi] THEN [share] END' datatype='real' name='[Calculation_3419358024094543886]' role='measure' type='quantitative' user:unnamed='Traffic Share'>
+              <calculation class='tableau' formula='if [kpi] = [target_kpi] THEN [share] END' />
+            </column>
+            <column caption='IF [kpi] = [target_kpi] THEN [share] END' datatype='real' name='[Calculation_3419358024094633999]' role='measure' type='quantitative' user:unnamed='Traffic Share'>
+              <calculation class='tableau' formula='IF [kpi] = [target_kpi] THEN [share] END' />
+            </column>
+            <column datatype='date' name='[analysed_date]' role='dimension' type='ordinal' />
+            <column-instance column='[Calculation_3419358024094543886]' derivation='Avg' name='[avg:Calculation_3419358024094543886:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[Calculation_3419358024094633999]' derivation='Avg' name='[avg:Calculation_3419358024094633999:qk]' pivot='key' type='quantitative' />
+            <column datatype='string' name='[kpi]' role='dimension' type='nominal' />
+            <column-instance column='[test_name]' derivation='None' name='[none:test_name:nk]' pivot='key' type='nominal' />
+            <column-instance column='[variant_name]' derivation='None' name='[none:variant_name:nk]' pivot='key' type='nominal' />
+            <column datatype='real' name='[share]' role='measure' type='quantitative' />
+            <column datatype='string' name='[target_kpi]' role='dimension' type='nominal' />
+            <column-instance column='[analysed_date]' derivation='Day-Trunc' name='[tdy:analysed_date:qk]' pivot='key' type='quantitative' />
+            <column datatype='string' name='[test_name]' role='dimension' type='nominal' />
+            <column datatype='string' name='[variant_name]' role='dimension' type='nominal' />
+          </datasource-dependencies>
+          <filter class='categorical' column='[federated.0o0p4c21kx9b7415g30f615h6tmg].[none:test_name:nk]'>
+            <groupfilter function='member' level='[none:test_name:nk]' member='&quot;DO_20241209_Z_K0_R_Santo_Domingo_MAB&quot;' user:ui-domain='database' user:ui-enumeration='inclusive' user:ui-marker='enumerate' />
+          </filter>
+          <slices>
+            <column>[federated.0o0p4c21kx9b7415g30f615h6tmg].[none:test_name:nk]</column>
+          </slices>
+          <aggregation value='true' />
+        </view>
+        <style>
+          <style-rule element='axis'>
+            <format attr='title' class='0' field='[federated.0o0p4c21kx9b7415g30f615h6tmg].[avg:Calculation_3419358024094543886:qk]' scope='rows' value='' />
+            <format attr='title' class='0' field='[federated.0o0p4c21kx9b7415g30f615h6tmg].[tdy:analysed_date:qk]' scope='cols' value='' />
+            <format attr='tick-color' value='#00000000' />
+            <format attr='line-pattern-only' value='solid' />
+            <format attr='stroke-size' value='0' />
+            <format attr='line-visibility' value='off' />
+            <format attr='tick-color' scope='cols' value='#898989' />
+            <format attr='tick-color' scope='rows' value='#898989' />
+          </style-rule>
+          <style-rule element='header'>
+            <format attr='band-color' scope='rows' value='#141730' />
+          </style-rule>
+          <style-rule element='table'>
+            <format attr='band-size' scope='rows' value='1' />
+            <format attr='background-color' value='#141730' />
+          </style-rule>
+          <style-rule element='worksheet'>
+            <format attr='color' value='#ffffff' />
+          </style-rule>
+          <style-rule element='dropline'>
+            <format attr='stroke-size' value='0' />
+            <format attr='line-visibility' value='off' />
+          </style-rule>
+          <style-rule element='refline'>
+            <format attr='line-pattern-only' value='solid' />
+            <format attr='stroke-size' value='0' />
+            <format attr='line-visibility' value='off' />
+          </style-rule>
+          <style-rule element='gridline'>
+            <format attr='stroke-color' scope='rows' value='#333333' />
+            <format attr='line-pattern-only' value='solid' />
+            <format attr='stroke-size' value='0' />
+            <format attr='line-visibility' value='off' />
+            <format attr='stroke-size' scope='rows' value='1' />
+            <format attr='line-visibility' scope='rows' value='on' />
+            <format attr='line-pattern-only' scope='rows' value='dotted' />
+          </style-rule>
+          <style-rule element='zeroline'>
+            <format attr='line-pattern-only' value='solid' />
+            <format attr='stroke-size' value='0' />
+            <format attr='line-visibility' value='off' />
+          </style-rule>
+          <style-rule element='quick-filter'>
+            <format attr='title' field='[federated.0o0p4c21kx9b7415g30f615h6tmg].[none:test_name:nk]' value='Test Name' />
+          </style-rule>
+        </style>
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Area' />
+            <encodings>
+              <color column='[federated.0o0p4c21kx9b7415g30f615h6tmg].[none:variant_name:nk]' />
+              <lod column='[federated.0o0p4c21kx9b7415g30f615h6tmg].[avg:Calculation_3419358024094633999:qk]' />
+            </encodings>
+            <customized-tooltip>
+              <formatted-text>
+                <run fontcolor='#787878'>Variant:&#9;</run>
+                <run bold='true'><![CDATA[<[federated.0o0p4c21kx9b7415g30f615h6tmg].[none:variant_name:nk]>]]></run>
+                <run>Æ&#10;</run>
+                <run fontcolor='#787878'>Share:&#9;</run>
+                <run bold='true' fontcolor='#e15759'><![CDATA[<[federated.0o0p4c21kx9b7415g30f615h6tmg].[avg:Calculation_3419358024094543886:qk]>]]></run>
+                <run>Æ&#10;</run>
+                <run fontcolor='#787878'>Date:&#9;</run>
+                <run bold='true'><![CDATA[<[federated.0o0p4c21kx9b7415g30f615h6tmg].[tdy:analysed_date:qk]>]]></run>
+              </formatted-text>
+            </customized-tooltip>
+            <style>
+              <style-rule element='trendline'>
+                <format attr='stroke-size' value='0' />
+                <format attr='line-visibility' value='off' />
+              </style-rule>
+            </style>
+          </pane>
+        </panes>
+        <rows>[federated.0o0p4c21kx9b7415g30f615h6tmg].[avg:Calculation_3419358024094543886:qk]</rows>
+        <cols>[federated.0o0p4c21kx9b7415g30f615h6tmg].[tdy:analysed_date:qk]</cols>
+      </table>
+      <simple-id uuid='{8EE06C2D-7AE2-43CB-99B6-27B2C0E388E1}' />
+    </worksheet>
+    <worksheet name='Winning Probability'>
+      <repository-location id='WinningProbability' path='/t/GlobalStandardReporting/workbooks/MAB_dashboard' revision='' site='GlobalStandardReporting' />
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='logistics-customer-staging' name='federated.0o0p4c21kx9b7415g30f615h6tmg' />
+          </datasources>
+          <datasource-dependencies datasource='federated.0o0p4c21kx9b7415g30f615h6tmg'>
+            <column caption='if [kpi] = [target_kpi] THEN [winning_probability] END' datatype='real' name='[Calculation_3419358024094773264]' role='measure' type='quantitative' user:unnamed='Winning Probability'>
+              <calculation class='tableau' formula='if [kpi] = [target_kpi] THEN [winning_probability] END' />
+            </column>
+            <column datatype='date' name='[analysed_date]' role='dimension' type='ordinal' />
+            <column-instance column='[Calculation_3419358024094773264]' derivation='Avg' name='[avg:Calculation_3419358024094773264:qk]' pivot='key' type='quantitative' />
+            <column datatype='string' name='[kpi]' role='dimension' type='nominal' />
+            <column-instance column='[test_name]' derivation='None' name='[none:test_name:nk]' pivot='key' type='nominal' />
+            <column-instance column='[variant_name]' derivation='None' name='[none:variant_name:nk]' pivot='key' type='nominal' />
+            <column datatype='string' name='[target_kpi]' role='dimension' type='nominal' />
+            <column-instance column='[analysed_date]' derivation='Day-Trunc' name='[tdy:analysed_date:qk]' pivot='key' type='quantitative' />
+            <column datatype='string' name='[test_name]' role='dimension' type='nominal' />
+            <column datatype='string' name='[variant_name]' role='dimension' type='nominal' />
+            <column datatype='real' name='[winning_probability]' role='measure' type='quantitative' />
+          </datasource-dependencies>
+          <filter class='categorical' column='[federated.0o0p4c21kx9b7415g30f615h6tmg].[none:test_name:nk]'>
+            <groupfilter function='member' level='[none:test_name:nk]' member='&quot;PE_Piura_20250411_R_A_O_elasticity&quot;' user:ui-domain='database' user:ui-enumeration='inclusive' user:ui-marker='enumerate' />
+          </filter>
+          <slices>
+            <column>[federated.0o0p4c21kx9b7415g30f615h6tmg].[none:test_name:nk]</column>
+          </slices>
+          <aggregation value='true' />
+        </view>
+        <style />
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Area' />
+            <encodings>
+              <color column='[federated.0o0p4c21kx9b7415g30f615h6tmg].[none:variant_name:nk]' />
+            </encodings>
+          </pane>
+        </panes>
+        <rows>[federated.0o0p4c21kx9b7415g30f615h6tmg].[avg:Calculation_3419358024094773264:qk]</rows>
+        <cols>[federated.0o0p4c21kx9b7415g30f615h6tmg].[tdy:analysed_date:qk]</cols>
+      </table>
+      <simple-id uuid='{B884D604-FDAC-4F4B-B75D-8CA1FA924C81}' />
+    </worksheet>
+  </worksheets>
+  <dashboards>
+    <dashboard _.fcp.AccessibleZoneTabOrder.true...enable-sort-zone-taborder='true' name='Dash Bayesian Mean'>
+      <repository-location id='DashBayesianMean' path='/t/GlobalStandardReporting/workbooks/MAB_dashboard' revision='' site='GlobalStandardReporting' />
+      <style>
+        <style-rule element='table'>
+          <format attr='background-color' value='#141730' />
+        </style-rule>
+      </style>
+      <size maxheight='900' maxwidth='1200' minheight='900' minwidth='1200' sizing-mode='fixed' />
+      <datasources>
+        <datasource caption='logistics-customer-staging' name='federated.0o0p4c21kx9b7415g30f615h6tmg' />
+      </datasources>
+      <datasource-dependencies datasource='federated.0o0p4c21kx9b7415g30f615h6tmg'>
+        <column-instance column='[test_name]' derivation='None' name='[none:test_name:nk]' pivot='key' type='nominal' />
+        <column datatype='string' name='[test_name]' role='dimension' type='nominal' />
+      </datasource-dependencies>
+      <zones>
+        <zone h='100000' id='4' type-v2='layout-basic' w='100000' x='0' y='0'>
+          <zone h='15158' id='3' param='vert' type-v2='layout-flow' w='98666' x='667' y='889' />
+          <zone h='83064' id='5' param='horz' type-v2='layout-flow' w='98666' x='667' y='16047'>
+            <zone h='83064' id='12' name='Bayesian Mean' w='98666' x='667' y='16047'>
+              <layout-cache minwidth='155' type-h='fixed' type-w='scalable' />
+              <zone-style>
+                <format attr='border-color' value='#000000' />
+                <format attr='border-style' value='none' />
+                <format attr='border-width' value='0' />
+                <format attr='margin' value='4' />
+              </zone-style>
+            </zone>
+          </zone>
+          <zone-style>
+            <format attr='border-color' value='#000000' />
+            <format attr='border-style' value='none' />
+            <format attr='border-width' value='0' />
+            <format attr='margin' value='8' />
+            <format attr='background-color' value='#141730' />
+          </zone-style>
+        </zone>
+        <zone h='556' id='10' type-v2='empty' w='100250' x='-250' y='14556'>
+          <zone-style>
+            <format attr='border-color' value='#000000' />
+            <format attr='border-style' value='none' />
+            <format attr='border-width' value='0' />
+            <format attr='background-color' value='#b8484f' />
+          </zone-style>
+        </zone>
+        <zone forceUpdate='true' h='10556' id='11' type-v2='text' w='23417' x='3000' y='1889'>
+          <formatted-text>
+            <run bold='true' fontcolor='#ffffff' fontsize='26'>MAB Dashboard</run>
+            <run>Æ&#10;</run>
+            <run bold='true' fontcolor='#ffffff' fontsize='16'>                              Traffic Share</run>
+          </formatted-text>
+        </zone>
+        <zone h='6444' id='14' name='Bayesian Mean' pane-specification-id='7' param='[federated.0o0p4c21kx9b7415g30f615h6tmg].[none:variant_name:nk]&#10;[federated.0o0p4c21kx9b7415g30f615h6tmg].[:Measure Names]' type-v2='color' w='32917' x='49167' y='37222' />
+        <zone h='5778' id='13' mode='dropdown' name='Bayesian Mean' param='[federated.0o0p4c21kx9b7415g30f615h6tmg].[none:test_name:nk]' type-v2='filter' w='14000' x='83417' y='4222' />
+      </zones>
+      <devicelayouts>
+        <devicelayout auto-generated='true' name='Phone'>
+          <size maxheight='700' minheight='700' sizing-mode='vscroll' />
+          <zones>
+            <zone h='100000' id='28' type-v2='layout-basic' w='100000' x='0' y='0'>
+              <zone h='84000' id='27' param='vert' type-v2='layout-flow' w='84000' x='8000' y='8000'>
+                <zone forceUpdate='true' h='10556' id='11' type-v2='text' w='23417' x='3000' y='1889'>
+                  <formatted-text>
+                    <run bold='true' fontcolor='#ffffff' fontsize='26'>MAB Dashboard</run>
+                    <run>Æ&#10;</run>
+                    <run bold='true' fontcolor='#ffffff' fontsize='16'>                              Traffic Share</run>
+                  </formatted-text>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone h='5778' id='13' mode='dropdown' name='Bayesian Mean' param='[federated.0o0p4c21kx9b7415g30f615h6tmg].[none:test_name:nk]' type-v2='filter' w='14000' x='83417' y='4222'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone fixed-size='280' h='83064' id='12' is-fixed='true' name='Bayesian Mean' w='98666' x='667' y='16047'>
+                  <layout-cache minwidth='155' type-h='fixed' type-w='scalable' />
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone h='6444' id='14' name='Bayesian Mean' pane-specification-id='7' param='[federated.0o0p4c21kx9b7415g30f615h6tmg].[none:variant_name:nk]&#10;[federated.0o0p4c21kx9b7415g30f615h6tmg].[:Measure Names]' type-v2='color' w='32917' x='49167' y='37222'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+              </zone>
+              <zone-style>
+                <format attr='border-color' value='#000000' />
+                <format attr='border-style' value='none' />
+                <format attr='border-width' value='0' />
+                <format attr='margin' value='8' />
+                <format attr='background-color' value='#141730' />
+              </zone-style>
+            </zone>
+          </zones>
+        </devicelayout>
+      </devicelayouts>
+      <simple-id uuid='{848DC820-66EB-4A19-9242-76B9D1707B47}' />
+    </dashboard>
+    <dashboard _.fcp.AccessibleZoneTabOrder.true...enable-sort-zone-taborder='true' name='Dash Consolidated View'>
+      <repository-location id='DashConsolidatedView' path='/t/GlobalStandardReporting/workbooks/MAB_dashboard' revision='' site='GlobalStandardReporting' />
+      <style>
+        <style-rule element='table'>
+          <format attr='background-color' value='#141730' />
+        </style-rule>
+      </style>
+      <size maxheight='900' maxwidth='1200' minheight='900' minwidth='1200' sizing-mode='fixed' />
+      <datasources>
+        <datasource caption='logistics-customer-staging' name='federated.0o0p4c21kx9b7415g30f615h6tmg' />
+      </datasources>
+      <datasource-dependencies datasource='federated.0o0p4c21kx9b7415g30f615h6tmg'>
+        <column-instance column='[test_name]' derivation='None' name='[none:test_name:nk]' pivot='key' type='nominal' />
+        <column datatype='string' name='[test_name]' role='dimension' type='nominal' />
+      </datasource-dependencies>
+      <zones>
+        <zone h='100000' id='4' type-v2='layout-basic' w='100000' x='0' y='0'>
+          <zone h='15158' id='3' param='vert' type-v2='layout-flow' w='98666' x='667' y='889'>
+            <zone h='3789' id='24' mode='dropdown' name='Consolidated Views' param='[federated.0o0p4c21kx9b7415g30f615h6tmg].[none:test_name:nk]' type-v2='filter' w='98666' x='667' y='889'>
+              <zone-style>
+                <format attr='border-color' value='#000000' />
+                <format attr='border-style' value='none' />
+                <format attr='border-width' value='0' />
+                <format attr='margin' value='4' />
+              </zone-style>
+            </zone>
+            <zone h='3789' id='25' name='Consolidated Views' pane-specification-id='2' param='[federated.0o0p4c21kx9b7415g30f615h6tmg].[usr:Top avg. bayesian_mean (calc. field) (copy)_3419358024059453441:qk:3]' type-v2='color' w='98666' x='667' y='4678'>
+              <zone-style>
+                <format attr='border-color' value='#000000' />
+                <format attr='border-style' value='none' />
+                <format attr='border-width' value='0' />
+                <format attr='margin' value='4' />
+              </zone-style>
+            </zone>
+            <zone h='3789' id='26' name='Consolidated Views' pane-specification-id='1' param='[federated.0o0p4c21kx9b7415g30f615h6tmg].[usr:Calculation_3419358024056328192:qk:5]' type-v2='color' w='98666' x='667' y='8467'>
+              <zone-style>
+                <format attr='border-color' value='#000000' />
+                <format attr='border-style' value='none' />
+                <format attr='border-width' value='0' />
+                <format attr='margin' value='4' />
+              </zone-style>
+            </zone>
+            <zone h='3791' id='27' name='Consolidated Views' pane-specification-id='3' param='[federated.0o0p4c21kx9b7415g30f615h6tmg].[usr:Top avg.share (calc. field)  (copy)_3419358024064610308:qk:3]' type-v2='color' w='98666' x='667' y='12256'>
+              <zone-style>
+                <format attr='border-color' value='#000000' />
+                <format attr='border-style' value='none' />
+                <format attr='border-width' value='0' />
+                <format attr='margin' value='4' />
+              </zone-style>
+            </zone>
+          </zone>
+          <zone h='83064' id='23' name='Consolidated Views' w='98666' x='667' y='16047'>
+            <zone-style>
+              <format attr='border-color' value='#000000' />
+              <format attr='border-style' value='none' />
+              <format attr='border-width' value='0' />
+              <format attr='margin' value='4' />
+            </zone-style>
+          </zone>
+          <zone-style>
+            <format attr='border-color' value='#000000' />
+            <format attr='border-style' value='none' />
+            <format attr='border-width' value='0' />
+            <format attr='margin' value='8' />
+            <format attr='background-color' value='#141730' />
+          </zone-style>
+        </zone>
+        <zone h='556' id='10' type-v2='empty' w='100250' x='-250' y='14556'>
+          <zone-style>
+            <format attr='border-color' value='#000000' />
+            <format attr='border-style' value='none' />
+            <format attr='border-width' value='0' />
+            <format attr='background-color' value='#b8484f' />
+          </zone-style>
+        </zone>
+        <zone forceUpdate='true' h='10556' id='11' type-v2='text' w='23417' x='3000' y='1889'>
+          <formatted-text>
+            <run bold='true' fontcolor='#ffffff' fontsize='26'>MAB Dashboard</run>
+            <run>Æ&#10;</run>
+            <run bold='true' fontcolor='#ffffff' fontsize='16'>                              Traffic Share</run>
+          </formatted-text>
+        </zone>
+      </zones>
+      <devicelayouts>
+        <devicelayout auto-generated='true' name='Phone'>
+          <size maxheight='700' minheight='700' sizing-mode='vscroll' />
+          <zones>
+            <zone h='100000' id='33' type-v2='layout-basic' w='100000' x='0' y='0'>
+              <zone h='84000' id='32' param='vert' type-v2='layout-flow' w='84000' x='8000' y='8000'>
+                <zone forceUpdate='true' h='10556' id='11' type-v2='text' w='23417' x='3000' y='1889'>
+                  <formatted-text>
+                    <run bold='true' fontcolor='#ffffff' fontsize='26'>MAB Dashboard</run>
+                    <run>Æ&#10;</run>
+                    <run bold='true' fontcolor='#ffffff' fontsize='16'>                              Traffic Share</run>
+                  </formatted-text>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone h='3789' id='24' mode='dropdown' name='Consolidated Views' param='[federated.0o0p4c21kx9b7415g30f615h6tmg].[none:test_name:nk]' type-v2='filter' w='98666' x='667' y='889'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone fixed-size='280' h='83064' id='23' is-fixed='true' name='Consolidated Views' w='98666' x='667' y='16047'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone h='3789' id='25' name='Consolidated Views' pane-specification-id='2' param='[federated.0o0p4c21kx9b7415g30f615h6tmg].[usr:Top avg. bayesian_mean (calc. field) (copy)_3419358024059453441:qk:3]' type-v2='color' w='98666' x='667' y='4678'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone h='3789' id='26' name='Consolidated Views' pane-specification-id='1' param='[federated.0o0p4c21kx9b7415g30f615h6tmg].[usr:Calculation_3419358024056328192:qk:5]' type-v2='color' w='98666' x='667' y='8467'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone h='3791' id='27' name='Consolidated Views' pane-specification-id='3' param='[federated.0o0p4c21kx9b7415g30f615h6tmg].[usr:Top avg.share (calc. field)  (copy)_3419358024064610308:qk:3]' type-v2='color' w='98666' x='667' y='12256'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+              </zone>
+              <zone-style>
+                <format attr='border-color' value='#000000' />
+                <format attr='border-style' value='none' />
+                <format attr='border-width' value='0' />
+                <format attr='margin' value='8' />
+                <format attr='background-color' value='#141730' />
+              </zone-style>
+            </zone>
+          </zones>
+        </devicelayout>
+      </devicelayouts>
+      <simple-id uuid='{BA8BDCBE-E210-4ABE-86EC-B7DF1549BA98}' />
+    </dashboard>
+    <dashboard _.fcp.AccessibleZoneTabOrder.true...enable-sort-zone-taborder='true' name='Dash Traffic Share'>
+      <repository-location id='DashTrafficShare' path='/t/GlobalStandardReporting/workbooks/MAB_dashboard' revision='' site='GlobalStandardReporting' />
+      <style>
+        <style-rule element='table'>
+          <format attr='background-color' value='#141730' />
+        </style-rule>
+      </style>
+      <size maxheight='900' maxwidth='1200' minheight='900' minwidth='1200' sizing-mode='fixed' />
+      <datasources>
+        <datasource caption='logistics-customer-staging' name='federated.0o0p4c21kx9b7415g30f615h6tmg' />
+      </datasources>
+      <datasource-dependencies datasource='federated.0o0p4c21kx9b7415g30f615h6tmg'>
+        <column-instance column='[test_name]' derivation='None' name='[none:test_name:nk]' pivot='key' type='nominal' />
+        <column datatype='string' name='[test_name]' role='dimension' type='nominal' />
+      </datasource-dependencies>
+      <zones>
+        <zone h='100000' id='4' type-v2='layout-basic' w='100000' x='0' y='0'>
+          <zone h='15158' id='3' param='vert' type-v2='layout-flow' w='98666' x='667' y='889' />
+          <zone h='83064' id='5' param='vert' type-v2='layout-flow' w='98666' x='667' y='16047'>
+            <zone h='83064' id='6' name='Traffic Share' w='98666' x='667' y='16047'>
+              <layout-cache minheight='167' type-h='scalable' type-w='fixed' />
+              <zone-style>
+                <format attr='border-color' value='#000000' />
+                <format attr='border-style' value='none' />
+                <format attr='border-width' value='0' />
+                <format attr='margin' value='4' />
+              </zone-style>
+            </zone>
+          </zone>
+          <zone-style>
+            <format attr='border-color' value='#000000' />
+            <format attr='border-style' value='none' />
+            <format attr='border-width' value='0' />
+            <format attr='margin' value='8' />
+            <format attr='background-color' value='#141730' />
+          </zone-style>
+        </zone>
+        <zone h='7250' id='8' name='Traffic Share' pane-specification-id='0' param='[federated.0o0p4c21kx9b7415g30f615h6tmg].[none:variant_name:nk]' type-v2='color' w='14000' x='80200' y='17500' />
+        <zone h='6500' id='7' mode='dropdown' name='Traffic Share' param='[federated.0o0p4c21kx9b7415g30f615h6tmg].[none:test_name:nk]' type-v2='filter' w='16800' x='75200' y='6125' />
+        <zone h='556' id='10' type-v2='empty' w='100250' x='-250' y='14556'>
+          <zone-style>
+            <format attr='border-color' value='#000000' />
+            <format attr='border-style' value='none' />
+            <format attr='border-width' value='0' />
+            <format attr='background-color' value='#b8484f' />
+          </zone-style>
+        </zone>
+        <zone forceUpdate='true' h='10556' id='11' type-v2='text' w='23417' x='3000' y='1889'>
+          <formatted-text>
+            <run bold='true' fontcolor='#ffffff' fontsize='26'>MAB Dashboard</run>
+            <run>Æ&#10;</run>
+            <run bold='true' fontcolor='#ffffff' fontsize='16'>                              Traffic Share</run>
+          </formatted-text>
+        </zone>
+      </zones>
+      <devicelayouts>
+        <devicelayout auto-generated='true' name='Phone'>
+          <size maxheight='700' minheight='700' sizing-mode='vscroll' />
+          <zones>
+            <zone h='100000' id='33' type-v2='layout-basic' w='100000' x='0' y='0'>
+              <zone h='98222' id='32' param='vert' type-v2='layout-flow' w='98666' x='667' y='889'>
+                <zone forceUpdate='true' h='10556' id='11' type-v2='text' w='23417' x='3000' y='1889'>
+                  <formatted-text>
+                    <run bold='true' fontcolor='#ffffff' fontsize='26'>MAB Dashboard</run>
+                    <run>Æ&#10;</run>
+                    <run bold='true' fontcolor='#ffffff' fontsize='16'>                              Traffic Share</run>
+                  </formatted-text>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone h='6500' id='7' mode='dropdown' name='Traffic Share' param='[federated.0o0p4c21kx9b7415g30f615h6tmg].[none:test_name:nk]' type-v2='filter' w='16800' x='75200' y='6125'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone fixed-size='280' h='83064' id='6' is-fixed='true' name='Traffic Share' w='98666' x='667' y='16047'>
+                  <layout-cache minheight='167' type-h='scalable' type-w='fixed' />
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone h='7250' id='8' name='Traffic Share' pane-specification-id='0' param='[federated.0o0p4c21kx9b7415g30f615h6tmg].[none:variant_name:nk]' type-v2='color' w='14000' x='80200' y='17500'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+              </zone>
+              <zone-style>
+                <format attr='border-color' value='#000000' />
+                <format attr='border-style' value='none' />
+                <format attr='border-width' value='0' />
+                <format attr='margin' value='8' />
+                <format attr='background-color' value='#141730' />
+              </zone-style>
+            </zone>
+          </zones>
+        </devicelayout>
+      </devicelayouts>
+      <simple-id uuid='{A6ABA95E-EF9D-4A6F-8138-BFB3AF488625}' />
+    </dashboard>
+  </dashboards>
+  <windows source-height='51'>
+    <window class='worksheet' name='Traffic Share'>
+      <cards>
+        <edge name='left'>
+          <strip size='160'>
+            <card type='pages' />
+            <card type='filters' />
+            <card type='marks' />
+          </strip>
+        </edge>
+        <edge name='top'>
+          <strip size='2147483647'>
+            <card type='columns' />
+          </strip>
+          <strip size='2147483647'>
+            <card type='rows' />
+          </strip>
+          <strip size='31'>
+            <card type='title' />
+          </strip>
+        </edge>
+        <edge name='right'>
+          <strip size='160'>
+            <card mode='dropdown' param='[federated.0o0p4c21kx9b7415g30f615h6tmg].[none:test_name:nk]' type='filter' />
+            <card pane-specification-id='0' param='[federated.0o0p4c21kx9b7415g30f615h6tmg].[none:variant_name:nk]' type='color' />
+          </strip>
+        </edge>
+      </cards>
+      <viewpoint>
+        <highlight>
+          <color-one-way>
+            <field>[federated.0o0p4c21kx9b7415g30f615h6tmg].[none:entity_id:nk]</field>
+            <field>[federated.0o0p4c21kx9b7415g30f615h6tmg].[none:kpi:nk]</field>
+            <field>[federated.0o0p4c21kx9b7415g30f615h6tmg].[none:target_kpi:nk]</field>
+            <field>[federated.0o0p4c21kx9b7415g30f615h6tmg].[none:test_name:nk]</field>
+            <field>[federated.0o0p4c21kx9b7415g30f615h6tmg].[none:variant_name:nk]</field>
+            <field>[federated.0o0p4c21kx9b7415g30f615h6tmg].[yr:analysed_date:ok]</field>
+            <field>[federated.0o0p4c21kx9b7415g30f615h6tmg].[yr:created_date:ok]</field>
+          </color-one-way>
+        </highlight>
+      </viewpoint>
+      <simple-id uuid='{668E4176-CBEB-4A6C-82A5-33EC38A6B4CA}' />
+    </window>
+    <window class='worksheet' name='Bayesian Mean'>
+      <cards>
+        <edge name='left'>
+          <strip size='269'>
+            <card type='pages' />
+            <card type='filters' />
+            <card type='marks' />
+            <card type='measures' />
+          </strip>
+        </edge>
+        <edge name='top'>
+          <strip size='2147483647'>
+            <card type='columns' />
+          </strip>
+          <strip size='2147483647'>
+            <card type='rows' />
+          </strip>
+          <strip size='31'>
+            <card type='title' />
+          </strip>
+        </edge>
+        <edge name='right'>
+          <strip size='203'>
+            <card mode='dropdown' param='[federated.0o0p4c21kx9b7415g30f615h6tmg].[none:test_name:nk]' type='filter' />
+            <card pane-specification-id='7' param='[federated.0o0p4c21kx9b7415g30f615h6tmg].[none:variant_name:nk]&#10;[federated.0o0p4c21kx9b7415g30f615h6tmg].[:Measure Names]' type='color' />
+          </strip>
+        </edge>
+      </cards>
+      <viewpoint>
+        <highlight>
+          <color-one-way>
+            <field>[federated.0o0p4c21kx9b7415g30f615h6tmg].[none:kpi:nk]</field>
+            <field>[federated.0o0p4c21kx9b7415g30f615h6tmg].[none:test_name:nk]</field>
+            <field>[federated.0o0p4c21kx9b7415g30f615h6tmg].[yr:analysed_date:ok]</field>
+          </color-one-way>
+        </highlight>
+      </viewpoint>
+      <simple-id uuid='{65E0ED77-C428-42DC-BF6A-7A976AAADFF8}' />
+    </window>
+    <window class='worksheet' name='Confidence Interval'>
+      <cards>
+        <edge name='left'>
+          <strip size='160'>
+            <card type='pages' />
+            <card type='filters' />
+            <card type='marks' />
+            <card type='measures' />
+          </strip>
+        </edge>
+        <edge name='top'>
+          <strip size='2147483647'>
+            <card type='columns' />
+          </strip>
+          <strip size='2147483647'>
+            <card type='rows' />
+          </strip>
+          <strip size='31'>
+            <card type='title' />
+          </strip>
+        </edge>
+        <edge name='right'>
+          <strip size='160'>
+            <card mode='dropdown' param='[federated.0o0p4c21kx9b7415g30f615h6tmg].[none:test_name:nk]' type='filter' />
+            <card mode='dropdown' param='[federated.0o0p4c21kx9b7415g30f615h6tmg].[none:kpi:nk]' type='filter' />
+            <card pane-specification-id='2' param='[federated.0o0p4c21kx9b7415g30f615h6tmg].[:Measure Names]' type='color' />
+          </strip>
+        </edge>
+      </cards>
+      <viewpoint>
+        <highlight>
+          <color-one-way>
+            <field>[federated.0o0p4c21kx9b7415g30f615h6tmg].[none:kpi:nk]</field>
+            <field>[federated.0o0p4c21kx9b7415g30f615h6tmg].[none:test_name:nk]</field>
+            <field>[federated.0o0p4c21kx9b7415g30f615h6tmg].[yr:analysed_date:ok]</field>
+          </color-one-way>
+        </highlight>
+      </viewpoint>
+      <simple-id uuid='{5944FEAC-CFEC-4222-8734-536B72B11F23}' />
+    </window>
+    <window class='worksheet' name='Winning Probability'>
+      <cards>
+        <edge name='left'>
+          <strip size='160'>
+            <card type='pages' />
+            <card type='filters' />
+            <card type='marks' />
+          </strip>
+        </edge>
+        <edge name='top'>
+          <strip size='2147483647'>
+            <card type='columns' />
+          </strip>
+          <strip size='2147483647'>
+            <card type='rows' />
+          </strip>
+          <strip size='31'>
+            <card type='title' />
+          </strip>
+        </edge>
+        <edge name='right'>
+          <strip size='160'>
+            <card mode='dropdown' param='[federated.0o0p4c21kx9b7415g30f615h6tmg].[none:test_name:nk]' type='filter' />
+            <card pane-specification-id='0' param='[federated.0o0p4c21kx9b7415g30f615h6tmg].[none:variant_name:nk]' type='color' />
+          </strip>
+        </edge>
+      </cards>
+      <viewpoint>
+        <highlight>
+          <color-one-way>
+            <field>[federated.0o0p4c21kx9b7415g30f615h6tmg].[none:kpi:nk]</field>
+            <field>[federated.0o0p4c21kx9b7415g30f615h6tmg].[none:test_name:nk]</field>
+            <field>[federated.0o0p4c21kx9b7415g30f615h6tmg].[none:variant_name:nk]</field>
+            <field>[federated.0o0p4c21kx9b7415g30f615h6tmg].[yr:analysed_date:ok]</field>
+          </color-one-way>
+        </highlight>
+      </viewpoint>
+      <simple-id uuid='{00F0D5F8-257D-4C61-851F-565D73B6C802}' />
+    </window>
+    <window class='worksheet' name='Consolidated Views'>
+      <cards>
+        <edge name='left'>
+          <strip size='160'>
+            <card type='pages' />
+            <card type='filters' />
+            <card type='marks' />
+          </strip>
+        </edge>
+        <edge name='top'>
+          <strip size='2147483647'>
+            <card type='columns' />
+          </strip>
+          <strip size='2147483647'>
+            <card type='rows' />
+          </strip>
+          <strip size='31'>
+            <card type='title' />
+          </strip>
+        </edge>
+        <edge name='right'>
+          <strip size='160'>
+            <card mode='dropdown' param='[federated.0o0p4c21kx9b7415g30f615h6tmg].[none:test_name:nk]' type='filter' />
+          </strip>
+        </edge>
+      </cards>
+      <viewpoint>
+        <highlight>
+          <color-one-way>
+            <field>[federated.0o0p4c21kx9b7415g30f615h6tmg].[none:analysed_date:qk]</field>
+            <field>[federated.0o0p4c21kx9b7415g30f615h6tmg].[none:kpi:nk]</field>
+            <field>[federated.0o0p4c21kx9b7415g30f615h6tmg].[none:target_kpi:nk]</field>
+            <field>[federated.0o0p4c21kx9b7415g30f615h6tmg].[none:test_name:nk]</field>
+            <field>[federated.0o0p4c21kx9b7415g30f615h6tmg].[none:variant_name:nk]</field>
+            <field>[federated.0o0p4c21kx9b7415g30f615h6tmg].[usr:Calculation_3419358024056328192:qk:3]</field>
+            <field>[federated.0o0p4c21kx9b7415g30f615h6tmg].[usr:Calculation_3419358024056328192:qk:5]</field>
+            <field>[federated.0o0p4c21kx9b7415g30f615h6tmg].[usr:Top avg. bayesian_mean (calc. field) (copy)_3419358024059453441:qk:3]</field>
+            <field>[federated.0o0p4c21kx9b7415g30f615h6tmg].[usr:Top avg.share (calc. field)  (copy)_3419358024064610308:qk:3]</field>
+            <field>[federated.0o0p4c21kx9b7415g30f615h6tmg].[yr:analysed_date:ok]</field>
+          </color-one-way>
+        </highlight>
+      </viewpoint>
+      <simple-id uuid='{065C0654-0E8E-46C0-982C-DB9C1A32039B}' />
+    </window>
+    <window class='worksheet' name='Prio Test KPI'>
+      <cards>
+        <edge name='left'>
+          <strip size='265'>
+            <card type='pages' />
+            <card type='filters' />
+            <card type='marks' />
+            <card type='measures' />
+          </strip>
+        </edge>
+        <edge name='top'>
+          <strip size='2147483647'>
+            <card type='columns' />
+          </strip>
+          <strip size='2147483647'>
+            <card type='rows' />
+          </strip>
+          <strip size='31'>
+            <card type='title' />
+          </strip>
+        </edge>
+        <edge name='right'>
+          <strip size='160'>
+            <card mode='dropdown' param='[federated.0qy7fuu0mls29015oj85r0csj6tz].[none:test_name:nk]' type='filter' />
+          </strip>
+        </edge>
+      </cards>
+      <viewpoint>
+        <zoom type='fit-width' />
+        <highlight>
+          <color-one-way>
+            <field>[federated.0qy7fuu0mls29015oj85r0csj6tz].[:Measure Names]</field>
+            <field>[federated.0qy7fuu0mls29015oj85r0csj6tz].[none:test_name:nk]</field>
+            <field>[federated.0qy7fuu0mls29015oj85r0csj6tz].[none:test_variant:nk]</field>
+          </color-one-way>
+        </highlight>
+      </viewpoint>
+      <simple-id uuid='{07F0D085-5E00-4976-9976-06FD9E56D2C9}' />
+    </window>
+    <window class='worksheet' name='Prio Test KPI Order Volume'>
+      <cards>
+        <edge name='left'>
+          <strip size='160'>
+            <card type='pages' />
+            <card type='filters' />
+            <card type='marks' />
+          </strip>
+        </edge>
+        <edge name='top'>
+          <strip size='2147483647'>
+            <card type='columns' />
+          </strip>
+          <strip size='2147483647'>
+            <card type='rows' />
+          </strip>
+          <strip size='31'>
+            <card type='title' />
+          </strip>
+        </edge>
+        <edge name='right'>
+          <strip size='160'>
+            <card mode='dropdown' param='[federated.0qy7fuu0mls29015oj85r0csj6tz].[none:test_name:nk]' type='filter' />
+            <card pane-specification-id='1' param='[federated.0qy7fuu0mls29015oj85r0csj6tz].[:Measure Names]' type='color' />
+          </strip>
+        </edge>
+      </cards>
+      <viewpoint>
+        <highlight>
+          <color-one-way>
+            <field>[federated.0qy7fuu0mls29015oj85r0csj6tz].[:Measure Names]</field>
+            <field>[federated.0qy7fuu0mls29015oj85r0csj6tz].[none:test_name:nk]</field>
+            <field>[federated.0qy7fuu0mls29015oj85r0csj6tz].[none:test_variant:nk]</field>
+          </color-one-way>
+        </highlight>
+      </viewpoint>
+      <simple-id uuid='{62ED5D94-196B-40CB-A01B-A07F1B1C8B74}' />
+    </window>
+    <window class='worksheet' name='Prio Test Adoption %'>
+      <cards>
+        <edge name='left'>
+          <strip size='160'>
+            <card type='pages' />
+            <card type='filters' />
+            <card type='marks' />
+          </strip>
+        </edge>
+        <edge name='top'>
+          <strip size='2147483647'>
+            <card type='columns' />
+          </strip>
+          <strip size='2147483647'>
+            <card type='rows' />
+          </strip>
+          <strip size='31'>
+            <card type='title' />
+          </strip>
+        </edge>
+        <edge name='right'>
+          <strip size='160'>
+            <card mode='dropdown' param='[federated.0qy7fuu0mls29015oj85r0csj6tz].[none:test_name:nk]' type='filter' />
+            <card pane-specification-id='0' param='[federated.0qy7fuu0mls29015oj85r0csj6tz].[usr:Calculation_3419358024077422598:qk:1]' type='color' />
+          </strip>
+        </edge>
+      </cards>
+      <viewpoint>
+        <highlight>
+          <color-one-way>
+            <field>[federated.0qy7fuu0mls29015oj85r0csj6tz].[none:test_name:nk]</field>
+            <field>[federated.0qy7fuu0mls29015oj85r0csj6tz].[none:test_variant:nk]</field>
+          </color-one-way>
+        </highlight>
+      </viewpoint>
+      <simple-id uuid='{35AF91F3-CFE7-4FCB-BB5B-1DA6B8851A26}' />
+    </window>
+    <window class='worksheet' name='Prio Test KPI Prio Fee Revenue(local)'>
+      <cards>
+        <edge name='left'>
+          <strip size='160'>
+            <card type='pages' />
+            <card type='filters' />
+            <card type='marks' />
+          </strip>
+        </edge>
+        <edge name='top'>
+          <strip size='2147483647'>
+            <card type='columns' />
+          </strip>
+          <strip size='2147483647'>
+            <card type='rows' />
+          </strip>
+          <strip size='31'>
+            <card type='title' />
+          </strip>
+        </edge>
+        <edge name='right'>
+          <strip size='160'>
+            <card mode='dropdown' param='[federated.0qy7fuu0mls29015oj85r0csj6tz].[none:test_name:nk]' type='filter' />
+          </strip>
+        </edge>
+      </cards>
+      <viewpoint>
+        <highlight>
+          <color-one-way>
+            <field>[federated.0qy7fuu0mls29015oj85r0csj6tz].[none:test_name:nk]</field>
+            <field>[federated.0qy7fuu0mls29015oj85r0csj6tz].[none:test_variant:nk]</field>
+            <field>[federated.0qy7fuu0mls29015oj85r0csj6tz].[usr:Top Adoption (calc. field) (copy)_3419358024078135303:qk:2]</field>
+          </color-one-way>
+        </highlight>
+      </viewpoint>
+      <simple-id uuid='{294488C7-BE13-4FC8-BD43-B0DC93D767A0}' />
+    </window>
+    <window class='worksheet' name='Sheet 10'>
+      <cards>
+        <edge name='left'>
+          <strip size='160'>
+            <card type='pages' />
+            <card type='filters' />
+            <card type='marks' />
+          </strip>
+        </edge>
+        <edge name='top'>
+          <strip size='2147483647'>
+            <card type='columns' />
+          </strip>
+          <strip size='2147483647'>
+            <card type='rows' />
+          </strip>
+          <strip size='31'>
+            <card type='title' />
+          </strip>
+        </edge>
+        <edge name='right'>
+          <strip size='160'>
+            <card mode='dropdown' param='[federated.0o0p4c21kx9b7415g30f615h6tmg].[none:test_name:nk]' type='filter' />
+          </strip>
+        </edge>
+      </cards>
+      <viewpoint>
+        <highlight>
+          <color-one-way>
+            <field>[federated.0o0p4c21kx9b7415g30f615h6tmg].[none:test_name:nk]</field>
+            <field>[federated.0o0p4c21kx9b7415g30f615h6tmg].[yr:analysed_date:ok]</field>
+          </color-one-way>
+        </highlight>
+      </viewpoint>
+      <simple-id uuid='{435B2A18-846F-4EFF-8A72-2791BCBE4D78}' />
+    </window>
+    <window class='dashboard' maximized='true' name='Dash Traffic Share'>
+      <viewpoints>
+        <viewpoint name='Traffic Share'>
+          <zoom type='entire-view' />
+          <highlight>
+            <color-one-way>
+              <field>[federated.0o0p4c21kx9b7415g30f615h6tmg].[none:variant_name:nk]</field>
+            </color-one-way>
+          </highlight>
+        </viewpoint>
+      </viewpoints>
+      <active id='6' />
+      <simple-id uuid='{9B2AF757-8F07-4C26-8C83-D8355DD0F3FC}' />
+    </window>
+    <window class='dashboard' name='Dash Bayesian Mean'>
+      <viewpoints>
+        <viewpoint name='Bayesian Mean'>
+          <zoom type='entire-view' />
+        </viewpoint>
+      </viewpoints>
+      <active id='-1' />
+      <simple-id uuid='{97C6AC4E-E3A7-4345-AACA-FD363AF8EF08}' />
+    </window>
+    <window class='dashboard' name='Dash Consolidated View'>
+      <viewpoints>
+        <viewpoint name='Consolidated Views' />
+      </viewpoints>
+      <active id='-1' />
+      <simple-id uuid='{605EB6E7-12EC-48F7-9547-BFE80616A724}' />
+    </window>
+  </windows>
+</workbook>

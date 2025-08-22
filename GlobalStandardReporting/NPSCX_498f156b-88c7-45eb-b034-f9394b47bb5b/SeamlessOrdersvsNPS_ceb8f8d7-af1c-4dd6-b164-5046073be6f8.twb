@@ -1,0 +1,2043 @@
+<?xml version='1.0' encoding='utf-8' ?>
+
+<!-- build 20221.22.1108.1355                               -->
+<workbook original-version='18.1' source-build='2022.2.6 (20222.23.0112.0412)' source-platform='mac' version='18.1' xml:base='https://tableau.deliveryhero.net' xmlns:user='http://www.tableausoftware.com/xml/user'>
+  <document-format-change-manifest>
+    <_.fcp.AccessibleZoneTabOrder.true...AccessibleZoneTabOrder />
+    <_.fcp.AnimationOnByDefault.true...AnimationOnByDefault />
+    <AutoCreateAndUpdateDSDPhoneLayouts />
+    <_.fcp.MarkAnimation.true...MarkAnimation />
+    <_.fcp.ObjectModelEncapsulateLegacy.true...ObjectModelEncapsulateLegacy />
+    <_.fcp.ObjectModelExtractV2.true...ObjectModelExtractV2 />
+    <_.fcp.ObjectModelTableType.true...ObjectModelTableType />
+    <_.fcp.SchemaViewerObjectModel.true...SchemaViewerObjectModel />
+    <SetMembershipControl />
+    <SheetIdentifierTracking />
+    <WindowsPersistSimpleIdentifiers />
+    <ZoneBackgroundTransparency />
+  </document-format-change-manifest>
+  <repository-location derived-from='https://tableau.deliveryhero.net/t/GlobalStandardReporting/workbooks/SeamlessOrdersvsNPS?rev=1.4' id='SeamlessOrdersvsNPS_17029761755360' path='/t/GlobalStandardReporting/workbooks' revision='1.0' site='GlobalStandardReporting' />
+  <preferences>
+    <preference name='ui.encoding.shelf.height' value='24' />
+    <preference name='ui.shelf.height' value='26' />
+  </preferences>
+  <_.fcp.AnimationOnByDefault.false...style>
+    <_.fcp.AnimationOnByDefault.false..._.fcp.MarkAnimation.true...style-rule element='animation'>
+      <_.fcp.AnimationOnByDefault.false...format attr='animation-on' value='ao-on' />
+    </_.fcp.AnimationOnByDefault.false..._.fcp.MarkAnimation.true...style-rule>
+  </_.fcp.AnimationOnByDefault.false...style>
+  <datasources>
+    <datasource hasconnection='false' inline='true' name='Parameters' version='18.1'>
+      <aliases enabled='yes' />
+      <column caption='Survey or All Population' datatype='string' name='[Parameter 1]' param-domain-type='list' role='measure' type='nominal' value='&quot;All&quot;'>
+        <calculation class='tableau' formula='&quot;All&quot;' />
+        <members>
+          <member value='&quot;All&quot;' />
+          <member value='&quot;Surveyed&quot;' />
+        </members>
+      </column>
+    </datasource>
+    <datasource caption='Old version' inline='true' name='federated.0rp16c703qmgg01h0v1r10nqz02t' version='18.1'>
+      <connection class='federated'>
+        <named-connections>
+          <named-connection caption='BigQuery' name='bigquery.1ktos0g0jezl0513kvaz411pnvyt'>
+            <connection CATALOG='global-cx' EXECCATALOG='global-cx' authentication='oauth' bq-dataset-fetch-rows='' bq-fetch-rows='' bq-fetch-tasks='' bq-large-fetch-rows='' bq-project-fetch-rows='' bq-response-rows='' class='bigquery' connection-dialect='google-sql' project='global-cx' schema='' server-oauth='' username='aakash.jaiswal@deliveryhero.com' workgroup-auth-mode='prompt' />
+          </named-connection>
+        </named-connections>
+        <_.fcp.ObjectModelEncapsulateLegacy.false...relation connection='bigquery.1ktos0g0jezl0513kvaz411pnvyt' name='Custom SQL Query' type='text'><![CDATA[With Combined AS (
+Select 
+  ge.global_entity_id,
+  CASE 
+    WHEN v.vertical_parent = 'Food' THEN 'Restaurants'
+    WHEN v.vertical_parent ='Courier' THEN 'Deliver Anything'
+    WHEN v.vertical_parent IS NULL THEN 'Unknown'
+    ELSE v.vertical_parent
+  END as vertical_type,
+  Date_trunc(s.CREATED_DATE, week) Created_date,
+  IF(s.is_seamless, 'Yes', 'No') is_seamless,
+  If(s.is_cancellation_logistics, 'Yes', 'No') is_cancellation_logistics,
+  If(s.is_order_not_on_time, 'Yes', 'No') is_order_not_on_time,
+  If(s.is_contact,'Yes', 'No') is_contact,
+  If(s.is_hc_session, 'Yes', 'No') is_hc_session,
+  If(s.is_after_order_nps_response, 'Yes', 'No') is_after_order_nps_response,
+  SUM(CASE WHEN CAST(after_order_nps_score AS INT64) >> 8 THEN 1 ELSE 0 END) AS nps_promoters,
+  SUM(CASE WHEN CAST(after_order_nps_score AS INT64) <<= 6 THEN 1 ELSE 0 END) AS nps_detractors,
+  SUM(CASE WHEN CAST(after_order_nps_score AS INT64) IS NOT NULL THEN 1 ELSE 0 END) AS total_nps_responses,
+  Count(created_date) orders,
+From 
+  fulfillment-dwh-production.curated_data_shared.seamless_orders s
+LEFT JOIN fulfillment-dwh-production.curated_data_shared_coredata.global_entities AS ge  
+  ON s.global_entity_id = ge.global_entity_id and ge.is_reporting_enabled
+LEFT JOIN fulfillment-dwh-production.curated_data_shared_coredata_business.vendors v 
+  ON s.global_entity_id = v.global_entity_id and s.vendor_id = v.vendor_id
+where 
+  created_date>>= '2021-01-01' and Date_trunc(s.CREATED_DATE, week) << Date_trunc(current_date, week)
+GROUP BY
+  1,2,3,4,5,6,7,8,9
+),   
+
+--setting up the stage for final table which will pull data from the merged dataset
+verticals AS 
+(
+    SELECT 'Dmarts' as vertical_type
+    UNION ALL SELECT 'Restaurants'
+    UNION ALL SELECT 'Local Shops' 
+    UNION ALL SELECT 'Deliver Anything' 
+    UNION ALL SELECT 'Unknown'
+),
+
+YesNo AS 
+(
+SELECT "Yes" as binary
+UNION ALL SELECT "No"
+),
+
+--creating a placeholder table to have all possible combinations of the columns required especially all dates
+construct AS 
+(
+SELECT distinct
+  g.global_entity_id,
+  g.segment,
+  g.management_entity,
+  g.sub_entity,
+  Date_trunc(d.iso_date, week) iso_date,
+  v.vertical_type,
+  yn1.binary as is_seamless,
+  yn2.binary as is_cancellation_logistics,
+  yn3.binary as is_order_not_on_time,
+  yn4.binary as is_contact,
+  yn5.binary as is_hc_session,
+  yn6.binary as is_after_order_nps_response
+FROM `fulfillment-dwh-production.curated_data_shared_coredata.dates` d 
+CROSS JOIN verticals v 
+CROSS JOIN YesNo yn1
+CROSS JOIN YesNo yn2
+CROSS JOIN YesNo yn3
+CROSS JOIN YesNo yn4
+CROSS JOIN YesNo yn5
+CROSS JOIN YesNo yn6
+CROSS JOIN fulfillment-dwh-production.curated_data_shared_coredata.global_entities  g
+WHERE 
+  d.iso_date between '2021-01-01' and CURRENT_DATE 
+  AND g.is_reporting_enabled IS TRUE
+)
+
+SELECT
+  c.global_entity_id,
+  c.segment,
+  c.management_entity,
+  c.sub_entity,
+  c.vertical_type,
+  c.iso_date CREATED_DATE,
+  c.is_seamless,
+  c.is_cancellation_logistics,
+  c.is_order_not_on_time,
+  c.is_contact,
+  c.is_hc_session,
+  c.is_after_order_nps_response,
+  d.nps_promoters,
+  d.nps_detractors,
+  d.total_nps_responses,
+  d.orders
+FROM Construct c
+LEFT JOIN Combined d on 
+  c.global_entity_id  =d.global_entity_id AND
+  c.vertical_type     =d.vertical_type AND
+  c.iso_date          =d.Created_date AND
+  c.is_seamless       =d.is_seamless AND
+  c.is_cancellation_logistics =d.is_cancellation_logistics AND
+  c.is_order_not_on_time      =d.is_order_not_on_time AND
+  c.is_contact        =d.is_contact  AND
+  c.is_hc_session     =d.is_hc_session AND
+  c.is_after_order_nps_response = d.is_after_order_nps_response
+where 
+  c.global_entity_id in (Select distinct global_entity_id From Combined)
+
+
+/*
+Select distinct is_after_order_nps_response from (
+  Select 
+  ge.global_entity_id,
+  CASE 
+    WHEN v.vertical_type = 'darkstores' THEN 'Dmarts'
+    WHEN v.vertical_type IN ('restaurants', 'coffee') THEN 'Restaurants'
+    WHEN v.vendor_id IS NULL THEN 'Unknown'
+    ELSE 'Local Stores'
+  END as vertical_type,  
+  Date_trunc(s.CREATED_DATE, month) Created_date,
+  IF(s.is_seamless, 'Yes', 'No') is_seamless,
+  If(s.is_cancellation_logistics, 'Yes', 'No') is_cancellation_logistics,
+  If(s.is_order_not_on_time, 'Yes', 'No') is_order_not_on_time,
+  If(s.is_contact,'Yes', 'No') is_contact,
+  If(s.is_hc_session, 'Yes', 'No') is_hc_session,
+  If(s.is_after_order_nps_response, 'Yes', 'No') is_after_order_nps_response,
+  SUM(CASE WHEN CAST(after_order_nps_score AS INT64) >> 8 THEN 1 ELSE 0 END) AS nps_promoters,
+  SUM(CASE WHEN CAST(after_order_nps_score AS INT64) <<= 6 THEN 1 ELSE 0 END) AS nps_detractors,
+  SUM(CASE WHEN CAST(after_order_nps_score AS INT64) IS NOT NULL THEN 1 ELSE 0 END) AS total_nps_responses,
+  Count(created_date) orders,
+From 
+  fulfillment-dwh-production.curated_data_shared_gcc_service.seamless_orders s
+LEFT JOIN `fulfillment-dwh-production.curated_data_shared_central_dwh.global_entities` AS ge  
+  ON s.global_entity_id = ge.global_entity_id and ge.is_reporting_enabled
+LEFT JOIN `fulfillment-dwh-production.curated_data_shared_central_dwh.vendors` v 
+  ON s.global_entity_id = v.global_entity_id and s.vendor_id = v.vendor_id
+where 
+  created_date>>= '2021-01-01'
+GROUP BY
+  1,2,3,4,5,6,7,8,9
+)
+*/]]></_.fcp.ObjectModelEncapsulateLegacy.false...relation>
+        <_.fcp.ObjectModelEncapsulateLegacy.true...relation connection='bigquery.1ktos0g0jezl0513kvaz411pnvyt' name='Custom SQL Query' type='text'><![CDATA[With Combined AS (
+Select 
+  ge.global_entity_id,
+  CASE 
+    WHEN v.vertical_parent = 'Food' THEN 'Restaurants'
+    WHEN v.vertical_parent ='Courier' THEN 'Deliver Anything'
+    WHEN v.vertical_parent IS NULL THEN 'Unknown'
+    ELSE v.vertical_parent
+  END as vertical_type,
+  Date_trunc(s.CREATED_DATE, week) Created_date,
+  IF(s.is_seamless, 'Yes', 'No') is_seamless,
+  If(s.is_cancellation_logistics, 'Yes', 'No') is_cancellation_logistics,
+  If(s.is_order_not_on_time, 'Yes', 'No') is_order_not_on_time,
+  If(s.is_contact,'Yes', 'No') is_contact,
+  If(s.is_hc_session, 'Yes', 'No') is_hc_session,
+  If(s.is_after_order_nps_response, 'Yes', 'No') is_after_order_nps_response,
+  SUM(CASE WHEN CAST(after_order_nps_score AS INT64) >> 8 THEN 1 ELSE 0 END) AS nps_promoters,
+  SUM(CASE WHEN CAST(after_order_nps_score AS INT64) <<= 6 THEN 1 ELSE 0 END) AS nps_detractors,
+  SUM(CASE WHEN CAST(after_order_nps_score AS INT64) IS NOT NULL THEN 1 ELSE 0 END) AS total_nps_responses,
+  Count(created_date) orders,
+From 
+  fulfillment-dwh-production.curated_data_shared.seamless_orders s
+LEFT JOIN fulfillment-dwh-production.curated_data_shared_coredata.global_entities AS ge  
+  ON s.global_entity_id = ge.global_entity_id and ge.is_reporting_enabled
+LEFT JOIN fulfillment-dwh-production.curated_data_shared_coredata_business.vendors v 
+  ON s.global_entity_id = v.global_entity_id and s.vendor_id = v.vendor_id
+where 
+  created_date>>= '2021-01-01' and Date_trunc(s.CREATED_DATE, week) << Date_trunc(current_date, week)
+GROUP BY
+  1,2,3,4,5,6,7,8,9
+),   
+
+--setting up the stage for final table which will pull data from the merged dataset
+verticals AS 
+(
+    SELECT 'Dmarts' as vertical_type
+    UNION ALL SELECT 'Restaurants'
+    UNION ALL SELECT 'Local Shops' 
+    UNION ALL SELECT 'Deliver Anything' 
+    UNION ALL SELECT 'Unknown'
+),
+
+YesNo AS 
+(
+SELECT "Yes" as binary
+UNION ALL SELECT "No"
+),
+
+--creating a placeholder table to have all possible combinations of the columns required especially all dates
+construct AS 
+(
+SELECT distinct
+  g.global_entity_id,
+  g.segment,
+  g.management_entity,
+  g.sub_entity,
+  Date_trunc(d.iso_date, week) iso_date,
+  v.vertical_type,
+  yn1.binary as is_seamless,
+  yn2.binary as is_cancellation_logistics,
+  yn3.binary as is_order_not_on_time,
+  yn4.binary as is_contact,
+  yn5.binary as is_hc_session,
+  yn6.binary as is_after_order_nps_response
+FROM `fulfillment-dwh-production.curated_data_shared_coredata.dates` d 
+CROSS JOIN verticals v 
+CROSS JOIN YesNo yn1
+CROSS JOIN YesNo yn2
+CROSS JOIN YesNo yn3
+CROSS JOIN YesNo yn4
+CROSS JOIN YesNo yn5
+CROSS JOIN YesNo yn6
+CROSS JOIN fulfillment-dwh-production.curated_data_shared_coredata.global_entities  g
+WHERE 
+  d.iso_date between '2021-01-01' and CURRENT_DATE 
+  AND g.is_reporting_enabled IS TRUE
+)
+
+SELECT
+  c.global_entity_id,
+  c.segment,
+  c.management_entity,
+  c.sub_entity,
+  c.vertical_type,
+  c.iso_date CREATED_DATE,
+  c.is_seamless,
+  c.is_cancellation_logistics,
+  c.is_order_not_on_time,
+  c.is_contact,
+  c.is_hc_session,
+  c.is_after_order_nps_response,
+  d.nps_promoters,
+  d.nps_detractors,
+  d.total_nps_responses,
+  d.orders
+FROM Construct c
+LEFT JOIN Combined d on 
+  c.global_entity_id  =d.global_entity_id AND
+  c.vertical_type     =d.vertical_type AND
+  c.iso_date          =d.Created_date AND
+  c.is_seamless       =d.is_seamless AND
+  c.is_cancellation_logistics =d.is_cancellation_logistics AND
+  c.is_order_not_on_time      =d.is_order_not_on_time AND
+  c.is_contact        =d.is_contact  AND
+  c.is_hc_session     =d.is_hc_session AND
+  c.is_after_order_nps_response = d.is_after_order_nps_response
+where 
+  c.global_entity_id in (Select distinct global_entity_id From Combined)
+
+
+/*
+Select distinct is_after_order_nps_response from (
+  Select 
+  ge.global_entity_id,
+  CASE 
+    WHEN v.vertical_type = 'darkstores' THEN 'Dmarts'
+    WHEN v.vertical_type IN ('restaurants', 'coffee') THEN 'Restaurants'
+    WHEN v.vendor_id IS NULL THEN 'Unknown'
+    ELSE 'Local Stores'
+  END as vertical_type,  
+  Date_trunc(s.CREATED_DATE, month) Created_date,
+  IF(s.is_seamless, 'Yes', 'No') is_seamless,
+  If(s.is_cancellation_logistics, 'Yes', 'No') is_cancellation_logistics,
+  If(s.is_order_not_on_time, 'Yes', 'No') is_order_not_on_time,
+  If(s.is_contact,'Yes', 'No') is_contact,
+  If(s.is_hc_session, 'Yes', 'No') is_hc_session,
+  If(s.is_after_order_nps_response, 'Yes', 'No') is_after_order_nps_response,
+  SUM(CASE WHEN CAST(after_order_nps_score AS INT64) >> 8 THEN 1 ELSE 0 END) AS nps_promoters,
+  SUM(CASE WHEN CAST(after_order_nps_score AS INT64) <<= 6 THEN 1 ELSE 0 END) AS nps_detractors,
+  SUM(CASE WHEN CAST(after_order_nps_score AS INT64) IS NOT NULL THEN 1 ELSE 0 END) AS total_nps_responses,
+  Count(created_date) orders,
+From 
+  fulfillment-dwh-production.curated_data_shared_gcc_service.seamless_orders s
+LEFT JOIN `fulfillment-dwh-production.curated_data_shared_central_dwh.global_entities` AS ge  
+  ON s.global_entity_id = ge.global_entity_id and ge.is_reporting_enabled
+LEFT JOIN `fulfillment-dwh-production.curated_data_shared_central_dwh.vendors` v 
+  ON s.global_entity_id = v.global_entity_id and s.vendor_id = v.vendor_id
+where 
+  created_date>>= '2021-01-01'
+GROUP BY
+  1,2,3,4,5,6,7,8,9
+)
+*/]]></_.fcp.ObjectModelEncapsulateLegacy.true...relation>
+        <metadata-records>
+          <metadata-record class='column'>
+            <remote-name>global_entity_id</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[global_entity_id]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>global_entity_id</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_84109CB3A9534E79B718D8DBC7124075]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>segment</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[segment]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>segment</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_84109CB3A9534E79B718D8DBC7124075]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>management_entity</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[management_entity]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>management_entity</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_84109CB3A9534E79B718D8DBC7124075]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>sub_entity</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[sub_entity]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>sub_entity</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_84109CB3A9534E79B718D8DBC7124075]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>vertical_type</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[vertical_type]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>vertical_type</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_84109CB3A9534E79B718D8DBC7124075]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>CREATED_DATE</remote-name>
+            <remote-type>7</remote-type>
+            <local-name>[CREATED_DATE]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>CREATED_DATE</remote-alias>
+            <local-type>date</local-type>
+            <aggregation>Year</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_84109CB3A9534E79B718D8DBC7124075]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>is_seamless</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[is_seamless]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>is_seamless</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_84109CB3A9534E79B718D8DBC7124075]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>is_cancellation_logistics</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[is_cancellation_logistics]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>is_cancellation_logistics</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_84109CB3A9534E79B718D8DBC7124075]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>is_order_not_on_time</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[is_order_not_on_time]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>is_order_not_on_time</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_84109CB3A9534E79B718D8DBC7124075]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>is_contact</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[is_contact]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>is_contact</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_84109CB3A9534E79B718D8DBC7124075]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>is_hc_session</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[is_hc_session]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>is_hc_session</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_84109CB3A9534E79B718D8DBC7124075]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>is_after_order_nps_response</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[is_after_order_nps_response]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>is_after_order_nps_response</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_84109CB3A9534E79B718D8DBC7124075]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>nps_promoters</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[nps_promoters]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>nps_promoters</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_84109CB3A9534E79B718D8DBC7124075]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>nps_detractors</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[nps_detractors]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>nps_detractors</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_84109CB3A9534E79B718D8DBC7124075]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>total_nps_responses</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[total_nps_responses]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>total_nps_responses</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_84109CB3A9534E79B718D8DBC7124075]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>orders</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[orders]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>orders</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_84109CB3A9534E79B718D8DBC7124075]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+        </metadata-records>
+      </connection>
+      <aliases enabled='yes' />
+      <column caption='NPS' datatype='real' default-format='n#,##0;-#,##0' name='[Calculation_4851010131416326144]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='(SUM([nps_promoters])-SUM([nps_detractors]))/SUM([total_nps_responses])*100' />
+      </column>
+      <column caption='Seamless Orders %' datatype='real' default-format='p0%' name='[Calculation_4851010131416801281]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='Sum(&#10;    If [is_seamless]=&apos;Yes&apos; then [orders] End&#10;)/&#10;SUM([orders])' />
+      </column>
+      <column caption='Seamless Orders' datatype='integer' default-format='p0%' name='[Seamless Orders All% (copy)_4851010131430948867]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='If [is_seamless]=&apos;Yes&apos; then [orders] End' />
+      </column>
+      <_.fcp.ObjectModelTableType.true...column caption='Custom SQL Query' datatype='table' name='[__tableau_internal_object_id__].[_84109CB3A9534E79B718D8DBC7124075]' role='measure' type='quantitative' />
+      <column datatype='string' name='[is_after_order_nps_response]' role='dimension' type='nominal'>
+        <aliases>
+          <alias key='&quot;No&quot;' value='Not Surveyed' />
+          <alias key='&quot;Yes&quot;' value='Surveyed' />
+        </aliases>
+      </column>
+      <column-instance column='[is_after_order_nps_response]' derivation='None' name='[none:is_after_order_nps_response:nk]' pivot='key' type='nominal' />
+      <extract _.fcp.ObjectModelExtractV2.true...object-id='' count='-1' enabled='true' units='records'>
+        <connection class='hyper' dbname='extract/47/f5/{1A124AEC-65CC-447C-965C-F937AAC7FD48}/federated_0rp16c703qmgg01h0v1r10.hyper' extract-engine='true' schema='Extract' tablename='Extract' update-time='12/19/2023 08:54:09 AM'>
+          <_.fcp.ObjectModelEncapsulateLegacy.false...relation name='Extract' table='[Extract].[Extract]' type='table' />
+          <_.fcp.ObjectModelEncapsulateLegacy.true...relation name='Extract' table='[Extract].[Extract]' type='table' />
+          <refresh>
+            <refresh-event add-from-file-path='Old version' increment-value='%null%' refresh-type='create' rows-inserted='2745600' timestamp-start='2023-12-19 08:51:31.266' />
+          </refresh>
+          <metadata-records>
+            <metadata-record class='column'>
+              <remote-name>global_entity_id</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[global_entity_id]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>global_entity_id</remote-alias>
+              <ordinal>0</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>55</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>segment</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[segment]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>segment</remote-alias>
+              <ordinal>1</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>4</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>management_entity</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[management_entity]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>management_entity</remote-alias>
+              <ordinal>2</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>10</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>sub_entity</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[sub_entity]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>sub_entity</remote-alias>
+              <ordinal>3</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>55</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>vertical_type</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[vertical_type]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>vertical_type</remote-alias>
+              <ordinal>4</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>5</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>CREATED_DATE</remote-name>
+              <remote-type>133</remote-type>
+              <local-name>[CREATED_DATE]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>CREATED_DATE</remote-alias>
+              <ordinal>5</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>date</local-type>
+              <aggregation>Year</aggregation>
+              <approx-count>156</approx-count>
+              <contains-null>true</contains-null>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>is_seamless</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[is_seamless]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>is_seamless</remote-alias>
+              <ordinal>6</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>2</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>is_cancellation_logistics</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[is_cancellation_logistics]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>is_cancellation_logistics</remote-alias>
+              <ordinal>7</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>2</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>is_order_not_on_time</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[is_order_not_on_time]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>is_order_not_on_time</remote-alias>
+              <ordinal>8</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>2</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>is_contact</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[is_contact]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>is_contact</remote-alias>
+              <ordinal>9</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>2</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>is_hc_session</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[is_hc_session]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>is_hc_session</remote-alias>
+              <ordinal>10</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>2</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>is_after_order_nps_response</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[is_after_order_nps_response]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>is_after_order_nps_response</remote-alias>
+              <ordinal>11</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>2</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>nps_promoters</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[nps_promoters]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>nps_promoters</remote-alias>
+              <ordinal>12</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>1174</approx-count>
+              <contains-null>true</contains-null>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>nps_detractors</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[nps_detractors]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>nps_detractors</remote-alias>
+              <ordinal>13</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>575</approx-count>
+              <contains-null>true</contains-null>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>total_nps_responses</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[total_nps_responses]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>total_nps_responses</remote-alias>
+              <ordinal>14</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>2033</approx-count>
+              <contains-null>true</contains-null>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>orders</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[orders]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>orders</remote-alias>
+              <ordinal>15</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>19766</approx-count>
+              <contains-null>true</contains-null>
+            </metadata-record>
+          </metadata-records>
+        </connection>
+      </extract>
+      <layout _.fcp.SchemaViewerObjectModel.false...dim-percentage='0.5' _.fcp.SchemaViewerObjectModel.false...measure-percentage='0.4' dim-ordering='alphabetic' measure-ordering='alphabetic' show-structure='true' />
+      <style>
+        <style-rule element='mark'>
+          <encoding attr='color' field='[none:is_after_order_nps_response:nk]' type='palette'>
+            <map to='#40b025'>
+              <bucket>&quot;Yes&quot;</bucket>
+            </map>
+            <map to='#4e79a7'>
+              <bucket>&quot;No&quot;</bucket>
+            </map>
+          </encoding>
+        </style-rule>
+      </style>
+      <semantic-values>
+        <semantic-value key='[Country].[Name]' value='&quot;United States&quot;' />
+      </semantic-values>
+      <date-options start-of-week='monday' />
+      <_.fcp.ObjectModelEncapsulateLegacy.true...object-graph>
+        <objects>
+          <object caption='Custom SQL Query' id='_84109CB3A9534E79B718D8DBC7124075'>
+            <properties context=''>
+              <relation connection='bigquery.1ktos0g0jezl0513kvaz411pnvyt' name='Custom SQL Query' type='text'><![CDATA[With Combined AS (
+Select 
+  ge.global_entity_id,
+  CASE 
+    WHEN v.vertical_parent = 'Food' THEN 'Restaurants'
+    WHEN v.vertical_parent ='Courier' THEN 'Deliver Anything'
+    WHEN v.vertical_parent IS NULL THEN 'Unknown'
+    ELSE v.vertical_parent
+  END as vertical_type,
+  Date_trunc(s.CREATED_DATE, week) Created_date,
+  IF(s.is_seamless, 'Yes', 'No') is_seamless,
+  If(s.is_cancellation_logistics, 'Yes', 'No') is_cancellation_logistics,
+  If(s.is_order_not_on_time, 'Yes', 'No') is_order_not_on_time,
+  If(s.is_contact,'Yes', 'No') is_contact,
+  If(s.is_hc_session, 'Yes', 'No') is_hc_session,
+  If(s.is_after_order_nps_response, 'Yes', 'No') is_after_order_nps_response,
+  SUM(CASE WHEN CAST(after_order_nps_score AS INT64) >> 8 THEN 1 ELSE 0 END) AS nps_promoters,
+  SUM(CASE WHEN CAST(after_order_nps_score AS INT64) <<= 6 THEN 1 ELSE 0 END) AS nps_detractors,
+  SUM(CASE WHEN CAST(after_order_nps_score AS INT64) IS NOT NULL THEN 1 ELSE 0 END) AS total_nps_responses,
+  Count(created_date) orders,
+From 
+  fulfillment-dwh-production.curated_data_shared.seamless_orders s
+LEFT JOIN fulfillment-dwh-production.curated_data_shared_coredata.global_entities AS ge  
+  ON s.global_entity_id = ge.global_entity_id and ge.is_reporting_enabled
+LEFT JOIN fulfillment-dwh-production.curated_data_shared_coredata_business.vendors v 
+  ON s.global_entity_id = v.global_entity_id and s.vendor_id = v.vendor_id
+where 
+  created_date>>= '2021-01-01' and Date_trunc(s.CREATED_DATE, week) << Date_trunc(current_date, week)
+GROUP BY
+  1,2,3,4,5,6,7,8,9
+),   
+
+--setting up the stage for final table which will pull data from the merged dataset
+verticals AS 
+(
+    SELECT 'Dmarts' as vertical_type
+    UNION ALL SELECT 'Restaurants'
+    UNION ALL SELECT 'Local Shops' 
+    UNION ALL SELECT 'Deliver Anything' 
+    UNION ALL SELECT 'Unknown'
+),
+
+YesNo AS 
+(
+SELECT "Yes" as binary
+UNION ALL SELECT "No"
+),
+
+--creating a placeholder table to have all possible combinations of the columns required especially all dates
+construct AS 
+(
+SELECT distinct
+  g.global_entity_id,
+  g.segment,
+  g.management_entity,
+  g.sub_entity,
+  Date_trunc(d.iso_date, week) iso_date,
+  v.vertical_type,
+  yn1.binary as is_seamless,
+  yn2.binary as is_cancellation_logistics,
+  yn3.binary as is_order_not_on_time,
+  yn4.binary as is_contact,
+  yn5.binary as is_hc_session,
+  yn6.binary as is_after_order_nps_response
+FROM `fulfillment-dwh-production.curated_data_shared_coredata.dates` d 
+CROSS JOIN verticals v 
+CROSS JOIN YesNo yn1
+CROSS JOIN YesNo yn2
+CROSS JOIN YesNo yn3
+CROSS JOIN YesNo yn4
+CROSS JOIN YesNo yn5
+CROSS JOIN YesNo yn6
+CROSS JOIN fulfillment-dwh-production.curated_data_shared_coredata.global_entities  g
+WHERE 
+  d.iso_date between '2021-01-01' and CURRENT_DATE 
+  AND g.is_reporting_enabled IS TRUE
+)
+
+SELECT
+  c.global_entity_id,
+  c.segment,
+  c.management_entity,
+  c.sub_entity,
+  c.vertical_type,
+  c.iso_date CREATED_DATE,
+  c.is_seamless,
+  c.is_cancellation_logistics,
+  c.is_order_not_on_time,
+  c.is_contact,
+  c.is_hc_session,
+  c.is_after_order_nps_response,
+  d.nps_promoters,
+  d.nps_detractors,
+  d.total_nps_responses,
+  d.orders
+FROM Construct c
+LEFT JOIN Combined d on 
+  c.global_entity_id  =d.global_entity_id AND
+  c.vertical_type     =d.vertical_type AND
+  c.iso_date          =d.Created_date AND
+  c.is_seamless       =d.is_seamless AND
+  c.is_cancellation_logistics =d.is_cancellation_logistics AND
+  c.is_order_not_on_time      =d.is_order_not_on_time AND
+  c.is_contact        =d.is_contact  AND
+  c.is_hc_session     =d.is_hc_session AND
+  c.is_after_order_nps_response = d.is_after_order_nps_response
+where 
+  c.global_entity_id in (Select distinct global_entity_id From Combined)
+
+
+/*
+Select distinct is_after_order_nps_response from (
+  Select 
+  ge.global_entity_id,
+  CASE 
+    WHEN v.vertical_type = 'darkstores' THEN 'Dmarts'
+    WHEN v.vertical_type IN ('restaurants', 'coffee') THEN 'Restaurants'
+    WHEN v.vendor_id IS NULL THEN 'Unknown'
+    ELSE 'Local Stores'
+  END as vertical_type,  
+  Date_trunc(s.CREATED_DATE, month) Created_date,
+  IF(s.is_seamless, 'Yes', 'No') is_seamless,
+  If(s.is_cancellation_logistics, 'Yes', 'No') is_cancellation_logistics,
+  If(s.is_order_not_on_time, 'Yes', 'No') is_order_not_on_time,
+  If(s.is_contact,'Yes', 'No') is_contact,
+  If(s.is_hc_session, 'Yes', 'No') is_hc_session,
+  If(s.is_after_order_nps_response, 'Yes', 'No') is_after_order_nps_response,
+  SUM(CASE WHEN CAST(after_order_nps_score AS INT64) >> 8 THEN 1 ELSE 0 END) AS nps_promoters,
+  SUM(CASE WHEN CAST(after_order_nps_score AS INT64) <<= 6 THEN 1 ELSE 0 END) AS nps_detractors,
+  SUM(CASE WHEN CAST(after_order_nps_score AS INT64) IS NOT NULL THEN 1 ELSE 0 END) AS total_nps_responses,
+  Count(created_date) orders,
+From 
+  fulfillment-dwh-production.curated_data_shared_gcc_service.seamless_orders s
+LEFT JOIN `fulfillment-dwh-production.curated_data_shared_central_dwh.global_entities` AS ge  
+  ON s.global_entity_id = ge.global_entity_id and ge.is_reporting_enabled
+LEFT JOIN `fulfillment-dwh-production.curated_data_shared_central_dwh.vendors` v 
+  ON s.global_entity_id = v.global_entity_id and s.vendor_id = v.vendor_id
+where 
+  created_date>>= '2021-01-01'
+GROUP BY
+  1,2,3,4,5,6,7,8,9
+)
+*/]]></relation>
+            </properties>
+            <properties context='extract'>
+              <relation name='Extract' table='[Extract].[Extract]' type='table' />
+            </properties>
+          </object>
+        </objects>
+      </_.fcp.ObjectModelEncapsulateLegacy.true...object-graph>
+    </datasource>
+    <datasource caption='New version' inline='true' name='federated.1mfod8403krtee1a4cwb406wgypa' version='18.1'>
+      <connection class='federated'>
+        <named-connections>
+          <named-connection caption='BigQuery' name='bigquery.0ncgdbg159ljg01h59oj51jvw24z'>
+            <connection CATALOG='publicdata' EXECCATALOG='global-cx' authentication='oauth' bq-dataset-fetch-rows='' bq-fetch-rows='' bq-fetch-tasks='' bq-large-fetch-rows='' bq-project-fetch-rows='' bq-response-rows='' class='bigquery' connection-dialect='google-sql' project='publicdata' schema='samples' server-oauth='' username='aakash.jaiswal@deliveryhero.com' workgroup-auth-mode='prompt' />
+          </named-connection>
+        </named-connections>
+        <_.fcp.ObjectModelEncapsulateLegacy.false...relation connection='bigquery.0ncgdbg159ljg01h59oj51jvw24z' name='Custom SQL Query' type='text'><![CDATA[With Combined AS (
+Select 
+  ge.global_entity_id, 
+  s.CREATED_DATE,
+  SUM(CASE WHEN CAST(after_order_nps_score AS INT64) >> 8 THEN 1 ELSE 0 END) AS nps_promoters,
+  SUM(CASE WHEN CAST(after_order_nps_score AS INT64) <<= 6 THEN 1 ELSE 0 END) AS nps_detractors,
+  SUM(CASE WHEN CAST(after_order_nps_score AS INT64) IS NOT NULL THEN 1 ELSE 0 END) AS total_nps_responses,
+  Count(Case when is_seamless and is_after_order_nps_response then created_date end) SeamlessOrdersSurvey,
+  Count(Case when is_seamless then created_date end) SeamlessOrdersAll,
+  Count(created_date) ordersAll,
+  Count(Case when is_after_order_nps_response then created_date end) OrdersSurvey
+From 
+  fulfillment-dwh-production.curated_data_shared_gcc_service.seamless_orders s
+LEFT JOIN `fulfillment-dwh-production.curated_data_shared_central_dwh.global_entities` AS ge  
+  ON s.global_entity_id = ge.global_entity_id and ge.is_reporting_enabled
+LEFT JOIN `fulfillment-dwh-production.curated_data_shared_coredata_business.vendors` v 
+  ON s.global_entity_id = v.global_entity_id and s.vendor_id = v.vendor_id
+where 
+  created_date>>= '2022-01-01'
+GROUP BY
+  1,2
+),   
+
+--creating a placeholder table to have all possible combinations of the columns required especially all dates
+construct AS 
+(
+SELECT distinct
+  g.global_entity_id,
+  g.segment,
+  g.management_entity,
+  g.sub_entity,
+  d.iso_date
+FROM `fulfillment-dwh-production.curated_data_shared_coredata.dates` d 
+CROSS JOIN `fulfillment-dwh-production.curated_data_shared_central_dwh.global_entities` g
+WHERE 
+  d.iso_date between '2022-01-01' and CURRENT_DATE 
+  AND g.is_reporting_enabled IS TRUE
+)
+
+SELECT
+  c.global_entity_id,
+  c.segment,
+  c.management_entity,
+  c.sub_entity,
+  c.iso_date CREATED_DATE,
+  d.nps_promoters,
+  d.nps_detractors,
+  d.total_nps_responses,
+  --(d.nps_promoters-d.nps_detractors)/If(d.total_nps_responses=0,Null,total_nps_responses)*100 NPS,
+  d.SeamlessOrdersSurvey,
+  d.OrdersSurvey,
+  d.SeamlessOrdersAll,
+  d.OrdersAll,
+  --d.SeamlessOrdersSurvey/If(d.OrdersSurvey=0,Null,OrdersSurvey) so_percent_survey,
+  --d.SeamlessOrdersAll/If(d.OrdersAll=0,Null,OrdersAll) so_percent_all,
+FROM Construct c
+LEFT JOIN Combined d on 
+  c.global_entity_id  =d.global_entity_id AND
+  c.iso_date          =d.Created_date
+where 
+  c.global_entity_id in (Select distinct global_entity_id From Combined)]]></_.fcp.ObjectModelEncapsulateLegacy.false...relation>
+        <_.fcp.ObjectModelEncapsulateLegacy.true...relation connection='bigquery.0ncgdbg159ljg01h59oj51jvw24z' name='Custom SQL Query' type='text'><![CDATA[With Combined AS (
+Select 
+  ge.global_entity_id, 
+  s.CREATED_DATE,
+  SUM(CASE WHEN CAST(after_order_nps_score AS INT64) >> 8 THEN 1 ELSE 0 END) AS nps_promoters,
+  SUM(CASE WHEN CAST(after_order_nps_score AS INT64) <<= 6 THEN 1 ELSE 0 END) AS nps_detractors,
+  SUM(CASE WHEN CAST(after_order_nps_score AS INT64) IS NOT NULL THEN 1 ELSE 0 END) AS total_nps_responses,
+  Count(Case when is_seamless and is_after_order_nps_response then created_date end) SeamlessOrdersSurvey,
+  Count(Case when is_seamless then created_date end) SeamlessOrdersAll,
+  Count(created_date) ordersAll,
+  Count(Case when is_after_order_nps_response then created_date end) OrdersSurvey
+From 
+  fulfillment-dwh-production.curated_data_shared_gcc_service.seamless_orders s
+LEFT JOIN `fulfillment-dwh-production.curated_data_shared_central_dwh.global_entities` AS ge  
+  ON s.global_entity_id = ge.global_entity_id and ge.is_reporting_enabled
+LEFT JOIN `fulfillment-dwh-production.curated_data_shared_coredata_business.vendors` v 
+  ON s.global_entity_id = v.global_entity_id and s.vendor_id = v.vendor_id
+where 
+  created_date>>= '2022-01-01'
+GROUP BY
+  1,2
+),   
+
+--creating a placeholder table to have all possible combinations of the columns required especially all dates
+construct AS 
+(
+SELECT distinct
+  g.global_entity_id,
+  g.segment,
+  g.management_entity,
+  g.sub_entity,
+  d.iso_date
+FROM `fulfillment-dwh-production.curated_data_shared_coredata.dates` d 
+CROSS JOIN `fulfillment-dwh-production.curated_data_shared_central_dwh.global_entities` g
+WHERE 
+  d.iso_date between '2022-01-01' and CURRENT_DATE 
+  AND g.is_reporting_enabled IS TRUE
+)
+
+SELECT
+  c.global_entity_id,
+  c.segment,
+  c.management_entity,
+  c.sub_entity,
+  c.iso_date CREATED_DATE,
+  d.nps_promoters,
+  d.nps_detractors,
+  d.total_nps_responses,
+  --(d.nps_promoters-d.nps_detractors)/If(d.total_nps_responses=0,Null,total_nps_responses)*100 NPS,
+  d.SeamlessOrdersSurvey,
+  d.OrdersSurvey,
+  d.SeamlessOrdersAll,
+  d.OrdersAll,
+  --d.SeamlessOrdersSurvey/If(d.OrdersSurvey=0,Null,OrdersSurvey) so_percent_survey,
+  --d.SeamlessOrdersAll/If(d.OrdersAll=0,Null,OrdersAll) so_percent_all,
+FROM Construct c
+LEFT JOIN Combined d on 
+  c.global_entity_id  =d.global_entity_id AND
+  c.iso_date          =d.Created_date
+where 
+  c.global_entity_id in (Select distinct global_entity_id From Combined)]]></_.fcp.ObjectModelEncapsulateLegacy.true...relation>
+        <metadata-records>
+          <metadata-record class='column'>
+            <remote-name>global_entity_id</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[global_entity_id]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>global_entity_id</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_222CEAA4459541B588D65C821A5029BF]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>segment</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[segment]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>segment</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_222CEAA4459541B588D65C821A5029BF]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>management_entity</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[management_entity]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>management_entity</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_222CEAA4459541B588D65C821A5029BF]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>sub_entity</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[sub_entity]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>sub_entity</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_222CEAA4459541B588D65C821A5029BF]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>CREATED_DATE</remote-name>
+            <remote-type>7</remote-type>
+            <local-name>[CREATED_DATE]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>CREATED_DATE</remote-alias>
+            <local-type>date</local-type>
+            <aggregation>Year</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_222CEAA4459541B588D65C821A5029BF]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>nps_promoters</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[nps_promoters]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>nps_promoters</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_222CEAA4459541B588D65C821A5029BF]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>nps_detractors</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[nps_detractors]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>nps_detractors</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_222CEAA4459541B588D65C821A5029BF]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>total_nps_responses</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[total_nps_responses]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>total_nps_responses</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_222CEAA4459541B588D65C821A5029BF]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>SeamlessOrdersSurvey</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[SeamlessOrdersSurvey]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>SeamlessOrdersSurvey</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_222CEAA4459541B588D65C821A5029BF]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>OrdersSurvey</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[OrdersSurvey]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>OrdersSurvey</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_222CEAA4459541B588D65C821A5029BF]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>SeamlessOrdersAll</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[SeamlessOrdersAll]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>SeamlessOrdersAll</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_222CEAA4459541B588D65C821A5029BF]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>OrdersAll</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[OrdersAll]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>OrdersAll</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_222CEAA4459541B588D65C821A5029BF]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+        </metadata-records>
+      </connection>
+      <aliases enabled='yes' />
+      <column caption='NPS' datatype='real' default-format='n#,##0;-#,##0' name='[Calculation_4851010131416326144]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='(SUM([nps_promoters])-SUM([nps_detractors]))/SUM([total_nps_responses])*100' />
+      </column>
+      <column caption='Seamless Orders All%' datatype='real' default-format='p0%' name='[Calculation_4851010131416801281]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='Sum([SeamlessOrdersAll])/SUM([OrdersAll])' />
+      </column>
+      <column caption='Population' datatype='real' default-format='p0%' name='[Calculation_4851010131788935182]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='IF [Parameters].[Parameter 1] = &apos;Surveyed&apos; &#10;then [Seamless Orders All% (copy)_4851010131788652557]&#10;ELSE [Calculation_4851010131416801281]&#10;End' />
+      </column>
+      <column caption='Seamless Orders Survey %' datatype='real' default-format='p0%' name='[Seamless Orders All% (copy)_4851010131788652557]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='Sum([SeamlessOrdersSurvey])/SUM([OrdersSurvey])' />
+      </column>
+      <_.fcp.ObjectModelTableType.true...column caption='Custom SQL Query' datatype='table' name='[__tableau_internal_object_id__].[_222CEAA4459541B588D65C821A5029BF]' role='measure' type='quantitative' />
+      <column-instance column='[Calculation_4851010131416326144]' derivation='User' name='[usr:Calculation_4851010131416326144:qk]' pivot='key' type='quantitative' />
+      <column-instance column='[Calculation_4851010131788935182]' derivation='User' name='[usr:Calculation_4851010131788935182:qk]' pivot='key' type='quantitative' />
+      <extract _.fcp.ObjectModelExtractV2.true...object-id='' count='-1' enabled='true' units='records'>
+        <connection class='hyper' dbname='extract/47/f5/{1A124AEC-65CC-447C-965C-F937AAC7FD48}/federated_1mfod8403krtee1a4cwb40.hyper' default-settings='yes' extract-engine='true' schema='Extract' tablename='Extract' update-time='10/24/2023 07:25:03 PM'>
+          <_.fcp.ObjectModelEncapsulateLegacy.false...relation name='Extract' table='[Extract].[Extract]' type='table' />
+          <_.fcp.ObjectModelEncapsulateLegacy.true...relation name='Extract' table='[Extract].[Extract]' type='table' />
+          <refresh>
+            <refresh-event add-from-file-path='New version' increment-value='%null%' refresh-type='create' rows-inserted='38396' timestamp-start='2023-10-24 19:24:50.730' />
+          </refresh>
+          <metadata-records>
+            <metadata-record class='column'>
+              <remote-name>global_entity_id</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[global_entity_id]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>global_entity_id</remote-alias>
+              <ordinal>0</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>58</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>segment</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[segment]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>segment</remote-alias>
+              <ordinal>1</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>4</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>management_entity</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[management_entity]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>management_entity</remote-alias>
+              <ordinal>2</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>10</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>sub_entity</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[sub_entity]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>sub_entity</remote-alias>
+              <ordinal>3</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>58</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>CREATED_DATE</remote-name>
+              <remote-type>133</remote-type>
+              <local-name>[CREATED_DATE]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>CREATED_DATE</remote-alias>
+              <ordinal>4</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>date</local-type>
+              <aggregation>Year</aggregation>
+              <approx-count>1686</approx-count>
+              <contains-null>true</contains-null>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>nps_promoters</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[nps_promoters]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>nps_promoters</remote-alias>
+              <ordinal>5</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>956</approx-count>
+              <contains-null>true</contains-null>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>nps_detractors</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[nps_detractors]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>nps_detractors</remote-alias>
+              <ordinal>6</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>681</approx-count>
+              <contains-null>true</contains-null>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>total_nps_responses</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[total_nps_responses]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>total_nps_responses</remote-alias>
+              <ordinal>7</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>1321</approx-count>
+              <contains-null>true</contains-null>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>SeamlessOrdersSurvey</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[SeamlessOrdersSurvey]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>SeamlessOrdersSurvey</remote-alias>
+              <ordinal>8</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>1021</approx-count>
+              <contains-null>true</contains-null>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>OrdersSurvey</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[OrdersSurvey]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>OrdersSurvey</remote-alias>
+              <ordinal>9</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>1321</approx-count>
+              <contains-null>true</contains-null>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>SeamlessOrdersAll</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[SeamlessOrdersAll]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>SeamlessOrdersAll</remote-alias>
+              <ordinal>10</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>18356</approx-count>
+              <contains-null>true</contains-null>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>OrdersAll</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[OrdersAll]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>OrdersAll</remote-alias>
+              <ordinal>11</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>20712</approx-count>
+              <contains-null>true</contains-null>
+            </metadata-record>
+          </metadata-records>
+        </connection>
+      </extract>
+      <layout _.fcp.SchemaViewerObjectModel.false...dim-percentage='0.5' _.fcp.SchemaViewerObjectModel.false...measure-percentage='0.4' dim-ordering='alphabetic' measure-ordering='alphabetic' show-structure='true' />
+      <style>
+        <style-rule element='mark'>
+          <encoding attr='color' field='[:Measure Names]' type='palette'>
+            <map to='#c9180c'>
+              <bucket>&quot;[federated.1mfod8403krtee1a4cwb406wgypa].[usr:Calculation_4851010131416326144:qk]&quot;</bucket>
+            </map>
+            <map to='#f28e2b'>
+              <bucket>&quot;[federated.1mfod8403krtee1a4cwb406wgypa].[usr:Calculation_4851010131788935182:qk]&quot;</bucket>
+            </map>
+          </encoding>
+        </style-rule>
+      </style>
+      <semantic-values>
+        <semantic-value key='[Country].[Name]' value='&quot;United States&quot;' />
+      </semantic-values>
+      <date-options start-of-week='monday' />
+      <datasource-dependencies datasource='Parameters'>
+        <column caption='Survey or All Population' datatype='string' name='[Parameter 1]' param-domain-type='list' role='measure' type='nominal' value='&quot;All&quot;'>
+          <calculation class='tableau' formula='&quot;All&quot;' />
+        </column>
+      </datasource-dependencies>
+      <_.fcp.ObjectModelEncapsulateLegacy.true...object-graph>
+        <objects>
+          <object caption='Custom SQL Query' id='_222CEAA4459541B588D65C821A5029BF'>
+            <properties context=''>
+              <relation connection='bigquery.0ncgdbg159ljg01h59oj51jvw24z' name='Custom SQL Query' type='text'><![CDATA[With Combined AS (
+Select 
+  ge.global_entity_id, 
+  s.CREATED_DATE,
+  SUM(CASE WHEN CAST(after_order_nps_score AS INT64) >> 8 THEN 1 ELSE 0 END) AS nps_promoters,
+  SUM(CASE WHEN CAST(after_order_nps_score AS INT64) <<= 6 THEN 1 ELSE 0 END) AS nps_detractors,
+  SUM(CASE WHEN CAST(after_order_nps_score AS INT64) IS NOT NULL THEN 1 ELSE 0 END) AS total_nps_responses,
+  Count(Case when is_seamless and is_after_order_nps_response then created_date end) SeamlessOrdersSurvey,
+  Count(Case when is_seamless then created_date end) SeamlessOrdersAll,
+  Count(created_date) ordersAll,
+  Count(Case when is_after_order_nps_response then created_date end) OrdersSurvey
+From 
+  fulfillment-dwh-production.curated_data_shared_gcc_service.seamless_orders s
+LEFT JOIN `fulfillment-dwh-production.curated_data_shared_central_dwh.global_entities` AS ge  
+  ON s.global_entity_id = ge.global_entity_id and ge.is_reporting_enabled
+LEFT JOIN `fulfillment-dwh-production.curated_data_shared_coredata_business.vendors` v 
+  ON s.global_entity_id = v.global_entity_id and s.vendor_id = v.vendor_id
+where 
+  created_date>>= '2022-01-01'
+GROUP BY
+  1,2
+),   
+
+--creating a placeholder table to have all possible combinations of the columns required especially all dates
+construct AS 
+(
+SELECT distinct
+  g.global_entity_id,
+  g.segment,
+  g.management_entity,
+  g.sub_entity,
+  d.iso_date
+FROM `fulfillment-dwh-production.curated_data_shared_coredata.dates` d 
+CROSS JOIN `fulfillment-dwh-production.curated_data_shared_central_dwh.global_entities` g
+WHERE 
+  d.iso_date between '2022-01-01' and CURRENT_DATE 
+  AND g.is_reporting_enabled IS TRUE
+)
+
+SELECT
+  c.global_entity_id,
+  c.segment,
+  c.management_entity,
+  c.sub_entity,
+  c.iso_date CREATED_DATE,
+  d.nps_promoters,
+  d.nps_detractors,
+  d.total_nps_responses,
+  --(d.nps_promoters-d.nps_detractors)/If(d.total_nps_responses=0,Null,total_nps_responses)*100 NPS,
+  d.SeamlessOrdersSurvey,
+  d.OrdersSurvey,
+  d.SeamlessOrdersAll,
+  d.OrdersAll,
+  --d.SeamlessOrdersSurvey/If(d.OrdersSurvey=0,Null,OrdersSurvey) so_percent_survey,
+  --d.SeamlessOrdersAll/If(d.OrdersAll=0,Null,OrdersAll) so_percent_all,
+FROM Construct c
+LEFT JOIN Combined d on 
+  c.global_entity_id  =d.global_entity_id AND
+  c.iso_date          =d.Created_date
+where 
+  c.global_entity_id in (Select distinct global_entity_id From Combined)]]></relation>
+            </properties>
+            <properties context='extract'>
+              <relation name='Extract' table='[Extract].[Extract]' type='table' />
+            </properties>
+          </object>
+        </objects>
+      </_.fcp.ObjectModelEncapsulateLegacy.true...object-graph>
+    </datasource>
+  </datasources>
+  <worksheets>
+    <worksheet name='NPS vs SO_percent'>
+      <repository-location id='NPSvsSO_percent' path='/t/GlobalStandardReporting/workbooks/SeamlessOrdersvsNPS_17029761755360' revision='' site='GlobalStandardReporting' />
+      <layout-options>
+        <title>
+          <formatted-text>
+            <run bold='true' fontcolor='#c9180c'>NPS</run>
+            <run> vs Seamless Orders %</run>
+          </formatted-text>
+        </title>
+      </layout-options>
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='Old version' name='federated.0rp16c703qmgg01h0v1r10nqz02t' />
+          </datasources>
+          <datasource-dependencies datasource='federated.0rp16c703qmgg01h0v1r10nqz02t'>
+            <column datatype='date' name='[CREATED_DATE]' role='dimension' type='ordinal' />
+            <column caption='NPS' datatype='real' default-format='n#,##0;-#,##0' name='[Calculation_4851010131416326144]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='(SUM([nps_promoters])-SUM([nps_detractors]))/SUM([total_nps_responses])*100' />
+            </column>
+            <column caption='Seamless Orders %' datatype='real' default-format='p0%' name='[Calculation_4851010131416801281]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='Sum(&#10;    If [is_seamless]=&apos;Yes&apos; then [orders] End&#10;)/&#10;SUM([orders])' />
+            </column>
+            <column datatype='string' name='[is_after_order_nps_response]' role='dimension' type='nominal'>
+              <aliases>
+                <alias key='&quot;No&quot;' value='Not Surveyed' />
+                <alias key='&quot;Yes&quot;' value='Surveyed' />
+              </aliases>
+            </column>
+            <column datatype='string' name='[is_seamless]' role='dimension' type='nominal' />
+            <column datatype='string' name='[management_entity]' role='dimension' type='nominal' />
+            <column-instance column='[CREATED_DATE]' derivation='None' name='[none:CREATED_DATE:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[is_after_order_nps_response]' derivation='None' name='[none:is_after_order_nps_response:nk]' pivot='key' type='nominal' />
+            <column-instance column='[management_entity]' derivation='None' name='[none:management_entity:nk]' pivot='key' type='nominal' />
+            <column-instance column='[segment]' derivation='None' name='[none:segment:nk]' pivot='key' type='nominal' />
+            <column-instance column='[sub_entity]' derivation='None' name='[none:sub_entity:nk]' pivot='key' type='nominal' />
+            <column-instance column='[vertical_type]' derivation='None' name='[none:vertical_type:nk]' pivot='key' type='nominal' />
+            <column datatype='integer' name='[nps_detractors]' role='measure' type='quantitative' />
+            <column datatype='integer' name='[nps_promoters]' role='measure' type='quantitative' />
+            <column datatype='integer' name='[orders]' role='measure' type='quantitative' />
+            <column datatype='string' name='[segment]' role='dimension' type='nominal' />
+            <column datatype='string' name='[sub_entity]' role='dimension' type='nominal' />
+            <column datatype='integer' name='[total_nps_responses]' role='measure' type='quantitative' />
+            <column-instance column='[CREATED_DATE]' derivation='Week-Trunc' name='[twk:CREATED_DATE:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[Calculation_4851010131416326144]' derivation='User' name='[usr:Calculation_4851010131416326144:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[Calculation_4851010131416801281]' derivation='User' name='[usr:Calculation_4851010131416801281:qk]' pivot='key' type='quantitative' />
+            <column datatype='string' name='[vertical_type]' role='dimension' type='nominal' />
+          </datasource-dependencies>
+          <filter class='quantitative' column='[federated.0rp16c703qmgg01h0v1r10nqz02t].[none:CREATED_DATE:qk]' included-values='in-range'>
+            <min>#2022-07-01#</min>
+            <max>#2023-12-17#</max>
+          </filter>
+          <filter class='categorical' column='[federated.0rp16c703qmgg01h0v1r10nqz02t].[none:management_entity:nk]'>
+            <groupfilter function='level-members' level='[none:management_entity:nk]' user:ui-enumeration='all' user:ui-marker='enumerate' />
+          </filter>
+          <filter class='categorical' column='[federated.0rp16c703qmgg01h0v1r10nqz02t].[none:segment:nk]'>
+            <groupfilter function='level-members' level='[none:segment:nk]' user:ui-enumeration='all' user:ui-marker='enumerate' />
+          </filter>
+          <filter class='categorical' column='[federated.0rp16c703qmgg01h0v1r10nqz02t].[none:sub_entity:nk]'>
+            <groupfilter function='level-members' level='[none:sub_entity:nk]' user:ui-enumeration='all' user:ui-marker='enumerate' />
+          </filter>
+          <filter class='categorical' column='[federated.0rp16c703qmgg01h0v1r10nqz02t].[none:vertical_type:nk]'>
+            <groupfilter function='level-members' level='[none:vertical_type:nk]' />
+          </filter>
+          <slices>
+            <column>[federated.0rp16c703qmgg01h0v1r10nqz02t].[none:segment:nk]</column>
+            <column>[federated.0rp16c703qmgg01h0v1r10nqz02t].[none:sub_entity:nk]</column>
+            <column>[federated.0rp16c703qmgg01h0v1r10nqz02t].[none:management_entity:nk]</column>
+            <column>[federated.0rp16c703qmgg01h0v1r10nqz02t].[none:vertical_type:nk]</column>
+            <column>[federated.0rp16c703qmgg01h0v1r10nqz02t].[none:CREATED_DATE:qk]</column>
+          </slices>
+          <aggregation value='true' />
+        </view>
+        <style>
+          <style-rule element='axis'>
+            <encoding attr='space' class='0' field='[federated.0rp16c703qmgg01h0v1r10nqz02t].[usr:Calculation_4851010131416801281:qk]' field-type='quantitative' fold='true' scope='rows' type='space' />
+          </style-rule>
+          <style-rule element='legend-title-text'>
+            <format attr='color' field='[federated.0rp16c703qmgg01h0v1r10nqz02t].[none:is_after_order_nps_response:nk]' value='Population'>
+              <formatted-text>
+                <run>Population</run>
+              </formatted-text>
+            </format>
+          </style-rule>
+        </style>
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Automatic' />
+            <customized-tooltip>
+              <formatted-text>
+                <run fontcolor='#787878'>Week :&#9;</run>
+                <run bold='true'><![CDATA[<[federated.0rp16c703qmgg01h0v1r10nqz02t].[twk:CREATED_DATE:qk]>]]></run>
+                <run>Æ&#10;</run>
+                <run fontcolor='#787878'>NPS:&#9;</run>
+                <run bold='true'><![CDATA[<[federated.0rp16c703qmgg01h0v1r10nqz02t].[usr:Calculation_4851010131416326144:qk]>]]></run>
+                <run>Æ&#10;</run>
+                <run fontcolor='#787878'>Population:&#9;</run>
+                <run bold='true'><![CDATA[<[federated.0rp16c703qmgg01h0v1r10nqz02t].[none:is_after_order_nps_response:nk]>]]></run>
+                <run>Æ&#10;</run>
+                <run fontcolor='#787878'>Seamless Orders %:&#9;</run>
+                <run bold='true'><![CDATA[<[federated.0rp16c703qmgg01h0v1r10nqz02t].[usr:Calculation_4851010131416801281:qk]>]]></run>
+              </formatted-text>
+            </customized-tooltip>
+            <style>
+              <style-rule element='mark'>
+                <format attr='mark-labels-show' value='true' />
+                <format attr='mark-labels-cull' value='false' />
+                <format attr='mark-labels-mode' value='line-ends' />
+              </style-rule>
+            </style>
+          </pane>
+          <pane id='1' selection-relaxation-option='selection-relaxation-allow' y-axis-name='[federated.0rp16c703qmgg01h0v1r10nqz02t].[usr:Calculation_4851010131416326144:qk]'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Automatic' />
+            <mark-sizing mark-sizing-setting='marks-scaling-off' />
+            <encodings>
+              <text column='[federated.0rp16c703qmgg01h0v1r10nqz02t].[usr:Calculation_4851010131416326144:qk]' />
+            </encodings>
+            <customized-tooltip>
+              <formatted-text>
+                <run fontcolor='#787878'>Week :&#9;</run>
+                <run bold='true'><![CDATA[<[federated.0rp16c703qmgg01h0v1r10nqz02t].[twk:CREATED_DATE:qk]>]]></run>
+                <run>Æ&#10;</run>
+                <run fontcolor='#787878'>NPS:&#9;</run>
+                <run bold='true'><![CDATA[<[federated.0rp16c703qmgg01h0v1r10nqz02t].[usr:Calculation_4851010131416326144:qk]>]]></run>
+                <run>Æ&#10;</run>
+                <run fontcolor='#787878'>Population:&#9;</run>
+                <run bold='true'><![CDATA[<[federated.0rp16c703qmgg01h0v1r10nqz02t].[none:is_after_order_nps_response:nk]>]]></run>
+                <run>Æ&#10;</run>
+                <run fontcolor='#787878'>Seamless Orders %:&#9;</run>
+                <run bold='true'><![CDATA[<[federated.0rp16c703qmgg01h0v1r10nqz02t].[usr:Calculation_4851010131416801281:qk]>]]></run>
+              </formatted-text>
+            </customized-tooltip>
+            <style>
+              <style-rule element='mark'>
+                <format attr='mark-color' value='#c9180c' />
+                <format attr='size' value='2.7734806537628174' />
+                <format attr='mark-labels-show' value='true' />
+                <format attr='mark-labels-cull' value='false' />
+                <format attr='mark-labels-mode' value='line-ends' />
+              </style-rule>
+            </style>
+          </pane>
+          <pane id='2' selection-relaxation-option='selection-relaxation-allow' y-axis-name='[federated.0rp16c703qmgg01h0v1r10nqz02t].[usr:Calculation_4851010131416801281:qk]'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Automatic' />
+            <encodings>
+              <color column='[federated.0rp16c703qmgg01h0v1r10nqz02t].[none:is_after_order_nps_response:nk]' />
+              <text column='[federated.0rp16c703qmgg01h0v1r10nqz02t].[usr:Calculation_4851010131416801281:qk]' />
+            </encodings>
+            <customized-tooltip>
+              <formatted-text>
+                <run fontcolor='#787878'>Week :&#9;</run>
+                <run bold='true'><![CDATA[<[federated.0rp16c703qmgg01h0v1r10nqz02t].[twk:CREATED_DATE:qk]>]]></run>
+                <run>Æ&#10;</run>
+                <run fontcolor='#787878'>NPS:&#9;</run>
+                <run bold='true'><![CDATA[<[federated.0rp16c703qmgg01h0v1r10nqz02t].[usr:Calculation_4851010131416326144:qk]>]]></run>
+                <run>Æ&#10;</run>
+                <run fontcolor='#787878'>Population:&#9;</run>
+                <run bold='true'><![CDATA[<[federated.0rp16c703qmgg01h0v1r10nqz02t].[none:is_after_order_nps_response:nk]>]]></run>
+                <run>Æ&#10;</run>
+                <run fontcolor='#787878'>Seamless Orders %:&#9;</run>
+                <run bold='true'><![CDATA[<[federated.0rp16c703qmgg01h0v1r10nqz02t].[usr:Calculation_4851010131416801281:qk]>]]></run>
+              </formatted-text>
+            </customized-tooltip>
+            <style>
+              <style-rule element='mark'>
+                <format attr='mark-labels-show' value='true' />
+                <format attr='mark-labels-cull' value='false' />
+                <format attr='mark-labels-mode' value='line-ends' />
+              </style-rule>
+            </style>
+          </pane>
+        </panes>
+        <rows>([federated.0rp16c703qmgg01h0v1r10nqz02t].[usr:Calculation_4851010131416326144:qk] + [federated.0rp16c703qmgg01h0v1r10nqz02t].[usr:Calculation_4851010131416801281:qk])</rows>
+        <cols>[federated.0rp16c703qmgg01h0v1r10nqz02t].[twk:CREATED_DATE:qk]</cols>
+      </table>
+      <simple-id uuid='{E8B3DC90-9341-4AD1-B951-653C12E928B5}' />
+    </worksheet>
+    <worksheet name='Sheet 2'>
+      <repository-location id='Sheet2' path='/t/GlobalStandardReporting/workbooks/SeamlessOrdersvsNPS_17029761755360' revision='' site='GlobalStandardReporting' />
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='New version' name='federated.1mfod8403krtee1a4cwb406wgypa' />
+            <datasource name='Parameters' />
+          </datasources>
+          <datasource-dependencies datasource='Parameters'>
+            <column caption='Survey or All Population' datatype='string' name='[Parameter 1]' param-domain-type='list' role='measure' type='nominal' value='&quot;All&quot;'>
+              <calculation class='tableau' formula='&quot;All&quot;' />
+            </column>
+          </datasource-dependencies>
+          <datasource-dependencies datasource='federated.1mfod8403krtee1a4cwb406wgypa'>
+            <column datatype='date' name='[CREATED_DATE]' role='dimension' type='ordinal' />
+            <column caption='NPS' datatype='real' default-format='n#,##0;-#,##0' name='[Calculation_4851010131416326144]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='(SUM([nps_promoters])-SUM([nps_detractors]))/SUM([total_nps_responses])*100' />
+            </column>
+            <column caption='Seamless Orders All%' datatype='real' default-format='p0%' name='[Calculation_4851010131416801281]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='Sum([SeamlessOrdersAll])/SUM([OrdersAll])' />
+            </column>
+            <column caption='Population' datatype='real' default-format='p0%' name='[Calculation_4851010131788935182]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='IF [Parameters].[Parameter 1] = &apos;Surveyed&apos; &#10;then [Seamless Orders All% (copy)_4851010131788652557]&#10;ELSE [Calculation_4851010131416801281]&#10;End' />
+            </column>
+            <column datatype='integer' name='[OrdersAll]' role='measure' type='quantitative' />
+            <column datatype='integer' name='[OrdersSurvey]' role='measure' type='quantitative' />
+            <column caption='Seamless Orders Survey %' datatype='real' default-format='p0%' name='[Seamless Orders All% (copy)_4851010131788652557]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='Sum([SeamlessOrdersSurvey])/SUM([OrdersSurvey])' />
+            </column>
+            <column datatype='integer' name='[SeamlessOrdersAll]' role='measure' type='quantitative' />
+            <column datatype='integer' name='[SeamlessOrdersSurvey]' role='measure' type='quantitative' />
+            <column datatype='integer' name='[nps_detractors]' role='measure' type='quantitative' />
+            <column datatype='integer' name='[nps_promoters]' role='measure' type='quantitative' />
+            <column-instance column='[CREATED_DATE]' derivation='Month-Trunc' name='[tmn:CREATED_DATE:qk]' pivot='key' type='quantitative' />
+            <column datatype='integer' name='[total_nps_responses]' role='measure' type='quantitative' />
+            <column-instance column='[Calculation_4851010131416326144]' derivation='User' name='[usr:Calculation_4851010131416326144:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[Calculation_4851010131788935182]' derivation='User' name='[usr:Calculation_4851010131788935182:qk]' pivot='key' type='quantitative' />
+          </datasource-dependencies>
+          <aggregation value='true' />
+        </view>
+        <style>
+          <style-rule element='axis'>
+            <encoding attr='space' class='0' field='[federated.1mfod8403krtee1a4cwb406wgypa].[usr:Calculation_4851010131416326144:qk]' field-type='quantitative' fold='true' scope='rows' type='space' />
+          </style-rule>
+        </style>
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Automatic' />
+            <encodings>
+              <color column='[federated.1mfod8403krtee1a4cwb406wgypa].[:Measure Names]' />
+            </encodings>
+            <style>
+              <style-rule element='mark'>
+                <format attr='mark-labels-show' value='true' />
+                <format attr='mark-labels-cull' value='true' />
+              </style-rule>
+            </style>
+          </pane>
+          <pane id='1' selection-relaxation-option='selection-relaxation-allow' y-axis-name='[federated.1mfod8403krtee1a4cwb406wgypa].[usr:Calculation_4851010131788935182:qk]'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Automatic' />
+            <encodings>
+              <text column='[federated.1mfod8403krtee1a4cwb406wgypa].[usr:Calculation_4851010131788935182:qk]' />
+              <color column='[federated.1mfod8403krtee1a4cwb406wgypa].[:Measure Names]' />
+            </encodings>
+            <style>
+              <style-rule element='mark'>
+                <format attr='mark-labels-show' value='true' />
+                <format attr='mark-labels-cull' value='true' />
+              </style-rule>
+            </style>
+          </pane>
+          <pane id='2' selection-relaxation-option='selection-relaxation-allow' y-axis-name='[federated.1mfod8403krtee1a4cwb406wgypa].[usr:Calculation_4851010131416326144:qk]'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Automatic' />
+            <mark-sizing mark-sizing-setting='marks-scaling-off' />
+            <encodings>
+              <color column='[federated.1mfod8403krtee1a4cwb406wgypa].[:Measure Names]' />
+              <text column='[federated.1mfod8403krtee1a4cwb406wgypa].[usr:Calculation_4851010131416326144:qk]' />
+            </encodings>
+            <style>
+              <style-rule element='mark'>
+                <format attr='mark-labels-cull' value='true' />
+                <format attr='mark-labels-show' value='true' />
+                <format attr='size' value='2.7292816638946533' />
+              </style-rule>
+            </style>
+          </pane>
+        </panes>
+        <rows>([federated.1mfod8403krtee1a4cwb406wgypa].[usr:Calculation_4851010131788935182:qk] + [federated.1mfod8403krtee1a4cwb406wgypa].[usr:Calculation_4851010131416326144:qk])</rows>
+        <cols>[federated.1mfod8403krtee1a4cwb406wgypa].[tmn:CREATED_DATE:qk]</cols>
+      </table>
+      <simple-id uuid='{AFDE4795-A0AC-459A-BC85-DCE1BC48D678}' />
+    </worksheet>
+  </worksheets>
+  <dashboards>
+    <dashboard _.fcp.AccessibleZoneTabOrder.true...enable-sort-zone-taborder='true' name='Dashboard'>
+      <repository-location derived-from='https://tableau.deliveryhero.net/t/GlobalStandardReporting/workbooks/SeamlessOrdersvsNPS/Dashboard?rev=' id='Dashboard' path='/t/GlobalStandardReporting/workbooks/SeamlessOrdersvsNPS_17029761755360' revision='' site='GlobalStandardReporting' />
+      <style />
+      <size maxheight='800' maxwidth='1000' minheight='800' minwidth='1000' />
+      <datasources>
+        <datasource caption='Old version' name='federated.0rp16c703qmgg01h0v1r10nqz02t' />
+      </datasources>
+      <datasource-dependencies datasource='federated.0rp16c703qmgg01h0v1r10nqz02t'>
+        <column datatype='date' name='[CREATED_DATE]' role='dimension' type='ordinal' />
+        <column datatype='string' name='[management_entity]' role='dimension' type='nominal' />
+        <column-instance column='[CREATED_DATE]' derivation='None' name='[none:CREATED_DATE:qk]' pivot='key' type='quantitative' />
+        <column-instance column='[management_entity]' derivation='None' name='[none:management_entity:nk]' pivot='key' type='nominal' />
+        <column-instance column='[segment]' derivation='None' name='[none:segment:nk]' pivot='key' type='nominal' />
+        <column-instance column='[sub_entity]' derivation='None' name='[none:sub_entity:nk]' pivot='key' type='nominal' />
+        <column-instance column='[vertical_type]' derivation='None' name='[none:vertical_type:nk]' pivot='key' type='nominal' />
+        <column datatype='string' name='[segment]' role='dimension' type='nominal' />
+        <column datatype='string' name='[sub_entity]' role='dimension' type='nominal' />
+        <column datatype='string' name='[vertical_type]' role='dimension' type='nominal' />
+      </datasource-dependencies>
+      <zones>
+        <zone h='100000' id='4' type-v2='layout-basic' w='100000' x='0' y='0'>
+          <zone h='98000' id='7' param='horz' type-v2='layout-flow' w='98400' x='800' y='1000'>
+            <zone h='98000' id='5' type-v2='layout-basic' w='82400' x='800' y='1000'>
+              <zone h='98000' id='3' name='NPS vs SO_percent' w='82400' x='800' y='1000'>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+            </zone>
+            <zone fixed-size='160' h='98000' id='6' is-fixed='true' param='vert' type-v2='layout-flow' w='16000' x='83200' y='1000'>
+              <zone fixed-size='42' h='6250' id='20' is-fixed='true' type-v2='empty' w='16000' x='83200' y='1000'>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+              <zone h='8250' id='12' name='NPS vs SO_percent' pane-specification-id='2' param='[federated.0rp16c703qmgg01h0v1r10nqz02t].[none:is_after_order_nps_response:nk]' type-v2='color' w='16000' x='83200' y='7250'>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+              <zone h='18250' id='8' name='NPS vs SO_percent' param='[federated.0rp16c703qmgg01h0v1r10nqz02t].[none:vertical_type:nk]' type-v2='filter' w='16000' x='83200' y='15500'>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+              <zone h='6500' id='9' mode='checkdropdown' name='NPS vs SO_percent' param='[federated.0rp16c703qmgg01h0v1r10nqz02t].[none:management_entity:nk]' type-v2='filter' w='16000' x='83200' y='33750'>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+              <zone h='6500' id='10' mode='checkdropdown' name='NPS vs SO_percent' param='[federated.0rp16c703qmgg01h0v1r10nqz02t].[none:sub_entity:nk]' type-v2='filter' w='16000' x='83200' y='40250'>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+              <zone h='15875' id='11' name='NPS vs SO_percent' param='[federated.0rp16c703qmgg01h0v1r10nqz02t].[none:segment:nk]' type-v2='filter' w='16000' x='83200' y='46750'>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+              <zone h='8625' id='19' name='NPS vs SO_percent' param='[federated.0rp16c703qmgg01h0v1r10nqz02t].[none:CREATED_DATE:qk]' show-null-ctrls='false' show-reldate-picker='false' type-v2='filter' values='database' w='16000' x='83200' y='62625'>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+            </zone>
+          </zone>
+          <zone-style>
+            <format attr='border-color' value='#000000' />
+            <format attr='border-style' value='none' />
+            <format attr='border-width' value='0' />
+            <format attr='margin' value='8' />
+          </zone-style>
+        </zone>
+      </zones>
+      <devicelayouts>
+        <devicelayout auto-generated='true' name='Phone'>
+          <size maxheight='700' minheight='700' sizing-mode='vscroll' />
+          <zones>
+            <zone h='100000' id='46' type-v2='layout-basic' w='100000' x='0' y='0'>
+              <zone h='84000' id='45' param='vert' type-v2='layout-flow' w='84000' x='8000' y='8000'>
+                <zone h='18250' id='8' mode='checkdropdown' name='NPS vs SO_percent' param='[federated.0rp16c703qmgg01h0v1r10nqz02t].[none:vertical_type:nk]' type-v2='filter' w='16000' x='83200' y='15500'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone h='6500' id='9' mode='checkdropdown' name='NPS vs SO_percent' param='[federated.0rp16c703qmgg01h0v1r10nqz02t].[none:management_entity:nk]' type-v2='filter' w='16000' x='83200' y='33750'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone h='6500' id='10' mode='checkdropdown' name='NPS vs SO_percent' param='[federated.0rp16c703qmgg01h0v1r10nqz02t].[none:sub_entity:nk]' type-v2='filter' w='16000' x='83200' y='40250'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone h='15875' id='11' mode='checkdropdown' name='NPS vs SO_percent' param='[federated.0rp16c703qmgg01h0v1r10nqz02t].[none:segment:nk]' type-v2='filter' w='16000' x='83200' y='46750'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone h='8625' id='19' name='NPS vs SO_percent' param='[federated.0rp16c703qmgg01h0v1r10nqz02t].[none:CREATED_DATE:qk]' show-null-ctrls='false' show-reldate-picker='false' type-v2='filter' values='database' w='16000' x='83200' y='62625'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone fixed-size='280' h='98000' id='3' is-fixed='true' name='NPS vs SO_percent' w='82400' x='800' y='1000'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone h='8250' id='12' name='NPS vs SO_percent' pane-specification-id='2' param='[federated.0rp16c703qmgg01h0v1r10nqz02t].[none:is_after_order_nps_response:nk]' type-v2='color' w='16000' x='83200' y='7250'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+              </zone>
+              <zone-style>
+                <format attr='border-color' value='#000000' />
+                <format attr='border-style' value='none' />
+                <format attr='border-width' value='0' />
+                <format attr='margin' value='8' />
+              </zone-style>
+            </zone>
+          </zones>
+        </devicelayout>
+      </devicelayouts>
+      <simple-id uuid='{B6CE8EC8-608D-4036-ADC1-4537FF5FDF1A}' />
+    </dashboard>
+  </dashboards>
+  <windows source-height='51'>
+    <window class='worksheet' maximized='true' name='NPS vs SO_percent'>
+      <cards>
+        <edge name='left'>
+          <strip size='160'>
+            <card type='pages' />
+            <card type='filters' />
+            <card type='marks' />
+          </strip>
+        </edge>
+        <edge name='top'>
+          <strip size='2147483647'>
+            <card type='columns' />
+          </strip>
+          <strip size='2147483647'>
+            <card type='rows' />
+          </strip>
+          <strip size='31'>
+            <card type='title' />
+          </strip>
+        </edge>
+        <edge name='right'>
+          <strip size='160'>
+            <card param='[federated.0rp16c703qmgg01h0v1r10nqz02t].[none:CREATED_DATE:qk]' show-domain='false' show-null-ctrls='false' type='filter' />
+            <card param='[federated.0rp16c703qmgg01h0v1r10nqz02t].[none:vertical_type:nk]' type='filter' />
+            <card param='[federated.0rp16c703qmgg01h0v1r10nqz02t].[none:management_entity:nk]' type='filter' />
+            <card param='[federated.0rp16c703qmgg01h0v1r10nqz02t].[none:sub_entity:nk]' type='filter' />
+            <card param='[federated.0rp16c703qmgg01h0v1r10nqz02t].[none:segment:nk]' type='filter' />
+            <card pane-specification-id='2' param='[federated.0rp16c703qmgg01h0v1r10nqz02t].[none:is_after_order_nps_response:nk]' type='color' />
+          </strip>
+        </edge>
+      </cards>
+      <viewpoint>
+        <highlight>
+          <color-one-way>
+            <field>[federated.0rp16c703qmgg01h0v1r10nqz02t].[none:CREATED_DATE:qk]</field>
+            <field>[federated.0rp16c703qmgg01h0v1r10nqz02t].[none:is_after_order_nps_response:nk]</field>
+            <field>[federated.0rp16c703qmgg01h0v1r10nqz02t].[yr:CREATED_DATE:ok]</field>
+          </color-one-way>
+        </highlight>
+      </viewpoint>
+      <simple-id uuid='{20FD7B43-D866-46A0-A03E-E413DE5D8F22}' />
+    </window>
+    <window class='dashboard' name='Dashboard'>
+      <viewpoints>
+        <viewpoint name='NPS vs SO_percent'>
+          <zoom type='entire-view' />
+          <highlight field='[federated.0rp16c703qmgg01h0v1r10nqz02t].[none:is_after_order_nps_response:nk]'>
+            <bucket-selection />
+          </highlight>
+        </viewpoint>
+      </viewpoints>
+      <active id='-1' />
+      <simple-id uuid='{C351A842-D3BF-4B07-A2F2-4DFC5400DC52}' />
+    </window>
+    <window class='worksheet' name='Sheet 2'>
+      <cards>
+        <edge name='left'>
+          <strip size='160'>
+            <card type='pages' />
+            <card type='filters' />
+            <card type='marks' />
+          </strip>
+        </edge>
+        <edge name='top'>
+          <strip size='2147483647'>
+            <card type='columns' />
+          </strip>
+          <strip size='2147483647'>
+            <card type='rows' />
+          </strip>
+          <strip size='31'>
+            <card type='title' />
+          </strip>
+        </edge>
+        <edge name='right'>
+          <strip size='160'>
+            <card mode='compact' param='[Parameters].[Parameter 1]' type='parameter' />
+            <card pane-specification-id='1' param='[federated.1mfod8403krtee1a4cwb406wgypa].[:Measure Names]' type='color' />
+          </strip>
+        </edge>
+      </cards>
+      <viewpoint>
+        <highlight>
+          <color-one-way>
+            <field>[federated.1mfod8403krtee1a4cwb406wgypa].[yr:CREATED_DATE:ok]</field>
+          </color-one-way>
+        </highlight>
+      </viewpoint>
+      <simple-id uuid='{5227107E-4C48-47A0-8A88-71031D5C0560}' />
+    </window>
+  </windows>
+</workbook>

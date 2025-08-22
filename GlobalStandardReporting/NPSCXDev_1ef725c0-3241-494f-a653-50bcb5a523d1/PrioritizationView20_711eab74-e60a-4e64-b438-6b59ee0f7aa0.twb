@@ -1,0 +1,2326 @@
+<?xml version='1.0' encoding='utf-8' ?>
+
+<!-- build 20231.24.0118.1101                               -->
+<workbook original-version='18.1' source-build='2024.1.5 (20241.24.0705.0334)' source-platform='mac' version='18.1' xml:base='https://tableau.deliveryhero.net' xmlns:user='http://www.tableausoftware.com/xml/user'>
+  <document-format-change-manifest>
+    <_.fcp.AccessibleZoneTabOrder.true...AccessibleZoneTabOrder />
+    <_.fcp.AnimationOnByDefault.true...AnimationOnByDefault />
+    <AutoCreateAndUpdateDSDPhoneLayouts />
+    <IntuitiveSorting />
+    <IntuitiveSorting_SP2 />
+    <_.fcp.MarkAnimation.true...MarkAnimation />
+    <_.fcp.ObjectModelEncapsulateLegacy.true...ObjectModelEncapsulateLegacy />
+    <_.fcp.ObjectModelExtractV2.true...ObjectModelExtractV2 />
+    <_.fcp.ObjectModelTableType.true...ObjectModelTableType />
+    <_.fcp.SchemaViewerObjectModel.true...SchemaViewerObjectModel />
+    <SetMembershipControl />
+    <SheetIdentifierTracking />
+    <SortTagCleanup />
+    <_.fcp.VConnDownstreamExtractsWithWarnings.true...VConnDownstreamExtractsWithWarnings />
+    <WindowsPersistSimpleIdentifiers />
+    <ZoneBackgroundTransparency />
+  </document-format-change-manifest>
+  <repository-location derived-from='https://tableau.deliveryhero.net/t/GlobalStandardReporting/workbooks/PrioritizationView2_0?rev=1.1' id='PrioritizationView2_0' path='/t/GlobalStandardReporting/workbooks' revision='1.2' site='GlobalStandardReporting' />
+  <preferences>
+    <preference name='ui.encoding.shelf.height' value='24' />
+    <preference name='ui.shelf.height' value='26' />
+  </preferences>
+  <_.fcp.AnimationOnByDefault.false...style>
+    <_.fcp.AnimationOnByDefault.false..._.fcp.MarkAnimation.true...style-rule element='animation'>
+      <_.fcp.AnimationOnByDefault.false...format attr='animation-on' value='ao-on' />
+    </_.fcp.AnimationOnByDefault.false..._.fcp.MarkAnimation.true...style-rule>
+  </_.fcp.AnimationOnByDefault.false...style>
+  <datasources>
+    <datasource hasconnection='false' inline='true' name='Parameters' version='18.1'>
+      <aliases enabled='yes' />
+      <column caption='Validation - Field' datatype='string' name='[Parameter 1]' param-domain-type='list' role='measure' type='nominal' value='&quot;HVC Segment&quot;'>
+        <calculation class='tableau' formula='&quot;HVC Segment&quot;' />
+        <members>
+          <member value='&quot;Lifecycle Segment Old&quot;' />
+          <member value='&quot;Lifecycle Segment New&quot;' />
+          <member value='&quot;HVC Segment&quot;' />
+        </members>
+      </column>
+      <column caption='Sort by - Parameter' datatype='string' name='[Parameter 2]' param-domain-type='list' role='measure' type='nominal' value='&quot;Responses&quot;'>
+        <calculation class='tableau' formula='&quot;Responses&quot;' />
+        <members>
+          <member value='&quot;Responses&quot;' />
+          <member value='&quot;\%Detractors&quot;' />
+        </members>
+      </column>
+      <column caption='Include NAs/Null NPS Reason Parameter' datatype='boolean' name='[Parameter 3]' param-domain-type='list' role='measure' type='nominal' value='true'>
+        <calculation class='tableau' formula='true' />
+        <members>
+          <member value='true' />
+          <member value='false' />
+        </members>
+      </column>
+    </datasource>
+    <datasource caption='prioritization_view (cl_cx)' inline='true' name='federated.0fistks17bt8w11awerwu1cl7dy8' version='18.1'>
+      <connection class='federated'>
+        <named-connections>
+          <named-connection caption='BigQuery' name='bigquery.0yo25hu1axbcj51dzb03w0admoml'>
+            <connection CATALOG='fulfillment-dwh-production' EXECCATALOG='global-cx' authentication='oauth' bq-dataset-fetch-rows='' bq-fetch-rows='' bq-fetch-tasks='' bq-large-fetch-rows='' bq-project-fetch-rows='' bq-response-rows='' class='bigquery' connection-dialect='google-sql' project='fulfillment-dwh-production' schema='cl_cx' server-oauth='' username='aakash.jaiswal@deliveryhero.com' workgroup-auth-mode='prompt' />
+          </named-connection>
+        </named-connections>
+        <_.fcp.ObjectModelEncapsulateLegacy.false...relation connection='bigquery.0yo25hu1axbcj51dzb03w0admoml' name='Custom SQL Query' type='text'><![CDATA[--Run the first 2 commands to delete exiting and create new table from scratch
+--Run the third line for backfilling past data
+
+-- INSERT INTO fulfillment-dwh-production.cl_cx.tactical_view_new_v2
+
+-- DROP TABLE IF EXISTS fulfillment-dwh-production.cl_cx.prioritization_view;
+-- CREATE TABLE fulfillment-dwh-production.cl_cx.prioritization_view AS
+
+With 
+
+--nps responses in the last 6 months (reporting_date is previous)
+--customer_id, external_id are not needed in this script
+--filters to exclude null (junk) entries are no longer needed as data table is excluding junk entries while importing to bigquery
+
+nps_DH as ( 
+SELECT 
+  n.global_entity_id,
+  ge.management_entity,
+  ge.sub_entity,
+  n.response_id,
+  n.created_date,
+  If(n.nps_reason is null or n.nps_reason='N/A', 'No Reason',n.nps_reason) AS nps_reason,
+  coalesce(n.reason_finding_app_choice, n.reason_pricing, n.reason_delivery, n.reason_quality_accuracy, 
+    n.reason_service_support, n.reason_deals_discount, 'No reason') AS nps_sub_reason,
+  n.nps_score,
+  n.analytical_customer_id,
+  --n.customer_id,
+FROM 
+  `fulfillment-dwh-production.curated_data_shared_cx.nps_relational_all_survey_responses_all_markets` AS n
+JOIN fulfillment-dwh-production.curated_data_shared_coredata.global_entities  AS ge
+  ON n.global_entity_id = ge.global_entity_id
+  AND ge.is_reporting_enabled
+WHERE
+  n.created_date Between Date_trunc(current_date-180, month) and Date_trunc(current_date, month)-1
+  -- AND nps_score is not null
+  -- AND nps_reason <<>> 'N/A'
+  -- AND (external_id is not null AND n.global_entity_id is not null)
+  -- AND customer_id is not null
+),
+
+--manually map global entity id for glovo nps data
+glovo_mapping AS (
+  Select 'AM' AS country, 'GV_AM' AS global_entity_id, 'GV - Armenia' AS sub_entity
+  UNION ALL Select 'BA' AS country, 'GV_BA' AS global_entity_id, 'GV - Bosnia and Herzegovina' AS sub_entity
+  UNION ALL Select 'BG' AS country, 'GV_BG' AS global_entity_id, 'GV - Bulgaria' AS sub_entity
+  UNION ALL Select 'CI' AS country, 'GV_CI' AS global_entity_id, 'GV - Ivory Coast' AS sub_entity
+  UNION ALL Select 'ES' AS country, 'GV_ES' AS global_entity_id, 'GV - Spain' AS sub_entity
+  UNION ALL Select 'GE' AS country, 'GV_GE' AS global_entity_id, 'GV - Georgia' AS sub_entity
+  UNION ALL Select 'HR' AS country, 'GV_HR' AS global_entity_id, 'GV - Croatia' AS sub_entity
+  UNION ALL Select 'IT' AS country, 'GV_IT' AS global_entity_id, 'GV - Italy' AS sub_entity
+  UNION ALL Select 'KE' AS country, 'GV_KE' AS global_entity_id, 'GV - Kenya' AS sub_entity
+  UNION ALL Select 'KG' AS country, 'GV_KG' AS global_entity_id, 'GV - Kyrgyzstan' AS sub_entity
+  UNION ALL Select 'KZ' AS country, 'GV_KZ' AS global_entity_id, 'GV - Kazakhstan' AS sub_entity
+  UNION ALL Select 'MA' AS country, 'GV_MA' AS global_entity_id, 'GV - Morocco' AS sub_entity
+  UNION ALL Select 'MD' AS country, 'GV_MD' AS global_entity_id, 'GV - Moldova' AS sub_entity
+  UNION ALL Select 'ME' AS country, 'GV_ME' AS global_entity_id, 'GV - Montenegro' AS sub_entity
+  UNION ALL Select 'NG' AS country, 'GV_NG' AS global_entity_id, 'GV - Nigeria' AS sub_entity
+  UNION ALL Select 'PL' AS country, 'GV_PL' AS global_entity_id, 'GV - Poland' AS sub_entity
+  UNION ALL Select 'PT' AS country, 'GV_PT' AS global_entity_id, 'GV - Portugal' AS sub_entity
+  UNION ALL Select 'RO' AS country, 'GV_RO' AS global_entity_id, 'GV - Romania' AS sub_entity
+  UNION ALL Select 'RS' AS country, 'GV_RS' AS global_entity_id, 'GV - Serbia' AS sub_entity
+  UNION ALL Select 'TN' AS country, 'GV_TN' AS global_entity_id, 'GV - Tunisia' AS sub_entity
+  UNION ALL Select 'UA' AS country, 'GV_UA' AS global_entity_id, 'GV - Ukraine' AS sub_entity
+  UNION ALL Select 'UG' AS country, 'GV_UG' AS global_entity_id, 'GV - Uganda' AS sub_entity
+),
+
+--nps responses in the last 6 months (reporting_date is previous)
+--filters added to exclude any potential junk entry
+nps_glovo AS (
+Select 
+  m.global_entity_id,
+  'Glovo' as management_entity,
+  m.sub_entity,
+  n.RESPONSE_ID,
+  n.created_date,
+  Coalesce(n.q2_area_dissatisfaction, 'No Reason') AS q2_area_dissatisfaction,
+  Coalesce(n.detail_reason, 'No Reason') AS detail_reason,
+  n.q1_nps_score,
+  eam.ANALYTICAL_CUSTOMER_ID,
+  --n.USER_ID,
+from
+  fulfillment-dwh-production.curated_data_shared_glovo.nps_ua_answers n
+Join 
+  glovo_mapping m 
+  on n.country=m.country
+JOIN fulfillment-dwh-production.curated_data_shared_mkt.braze_external_id_map eam
+  ON m.global_entity_id = eam.global_entity_id
+  AND Cast(n.user_id as String) = eam.customer_id
+  AND Date(eam.LAST_ORDER_TIMESTAMP) >>= Date_trunc(current_date-270, month)
+WHERE
+  n.created_date  Between Date_trunc(current_date-180, month) and Date_trunc(current_date, month)-1
+  AND n.q1_nps_score is not null
+  AND (n.country is not null AND n.USER_ID is not null)
+  --AND n.q2_area_dissatisfaction is not null
+),
+
+--combined nps data
+DH_glovo_nps_union as (
+SELECT 
+  global_entity_id,
+  management_entity,
+  sub_entity,
+  response_id,
+  created_date,
+  nps_reason,
+  nps_sub_reason,
+  nps_score,
+  analytical_customer_id
+FROM 
+  nps_DH
+UNION ALL
+Select 
+  global_entity_id,
+  management_entity,
+  sub_entity,
+  RESPONSE_ID,
+  created_date,
+  q2_area_dissatisfaction,
+  detail_reason,
+  q1_nps_score,
+  ANALYTICAL_CUSTOMER_ID,  
+from
+  nps_glovo 
+),
+
+--remove duplicate nps responses
+nps_final as (
+Select 
+  * 
+From (
+  SELECT
+    d.*,
+    Row_number() Over (PARTITION BY d.global_entity_id, d.analytical_customer_id order by d.created_date desc) rnk
+  FROM
+    DH_glovo_nps_union d
+  ) T
+where 
+  rnk=1
+),
+
+-- this one is a heavy join
+-- LC Old segment and LC New Segment is available for daily snapshot. For a given nps response, we pull nps_date + 1 = snapshot_date
+-- HVC Segment is available only for 1 day EOM. For a given nps response, we pull the previous most recent snapshot
+user_profile as(
+  Select
+    n.*,
+    Coalesce(u.segment.lifecycle_segment.all_verts, "Not Available") AS lifecycle_segment,
+    Coalesce(u.segment.customer_segment.all_verts, "Not Available") AS customer_segment,
+    Coalesce(hvc.DS_VALUE_SEGMENT, "Not Available") DS_VALUE_SEGMENT
+  FROM
+    nps_final n
+  LEFT JOIN 
+    `fulfillment-dwh-production.curated_data_shared_coda_datamart.user_feed_non_pii_historization_view` u
+    ON n.global_entity_id = u.global_entity_id
+    AND n.analytical_customer_id =  u.analytical_customer_id
+    AND u.snapshot_date Between Date_trunc(current_date-180, month) and Date_trunc(current_date, month)
+    AND u.snapshot_date = n.created_date + 1 
+    --below filter is mandatory for querying
+    AND u.snapshot_date Between Date_trunc(current_date-180, month) and Date_trunc(current_date, month)
+    
+  LEFT JOIN fulfillment-dwh-production.curated_data_shared_mkt.bima_customer_value_segmentation hvc
+    ON hvc.global_entity_id = n.global_entity_id
+    AND hvc.analytical_customer_id = n.analytical_customer_id 
+    AND Date(hvc.snapshot_date) between Date_trunc(current_date-210, month) and Date_trunc(current_date, month)
+    AND Date(hvc.snapshot_date)= date_trunc(n.created_date,month)-1
+),
+
+-- Select 
+--   Management_entity,
+--   Date_trunc(created_date,month) created_date,
+--   count(*) records, 
+--   count(response_id) responses, 
+--   count(Case when customer_segment <<>> "Not Available" then customer_segment End) customer_segment, 
+--   count(Case when lifecycle_segment <<>> "Not Available" then lifecycle_segment End) lifecycle_segment, 
+--   count(Case when DS_VALUE_SEGMENT <<>> "Not Available" then DS_VALUE_SEGMENT End) DS_VALUE_SEGMENT
+-- from user_profile
+-- Group by 1,2
+-- Order by 1,2
+
+
+--The below block is excluded as retention related metrics and not being looked into currently
+/*
+--pull all the orders for NPS respondents and only those after NPS response date
+--only include successful orders
+--exclude gmv outliers
+orders_nps_combined as (
+Select 
+  d.management_entity,
+  d.sub_entity,
+  d.global_entity_id,
+  --d.customer_id,
+  d.analytical_customer_id, 
+  d.lifecycle_segment,
+  d.customer_segment,
+  d.DS_VALUE_SEGMENT,
+
+  --nps information
+  d.response_id,
+  d.nps_score,
+  d.nps_reason,
+  d.nps_sub_reason,
+  
+  --order information
+  o.order_id,
+  --o.customer_account_id,
+  d.created_date as nps_date,
+  o.partition_date_local AS order_1, --next order date
+  Date(Lead(partition_date_local,1) Over (Partition by o.global_entity_id, o.customer_id Order by o.partition_date_local)) order_2,  -- +2 order date
+  Case
+    When order_id is not null then
+      Row_Number() Over (Partition by o.global_entity_id, o.customer_id Order by o.partition_date_local)
+    Else null
+  End order_no
+  --Count(*) Over (Partition by o.global_entity_id, o.customer_id ) total_orders,
+from
+  user_profile d
+LEFT JOIN
+  `fulfillment-dwh-production.curated_data_shared_coredata_business.orders` AS o
+  ON o.global_entity_id = d.global_entity_id
+  AND o.analytical_customer_id = d.analytical_customer_id
+  AND o.partition_date_local Between Date_trunc(current_date-270, month) and Date_trunc(current_date, month)
+  AND o.partition_date_local >>= d.created_date    
+  AND o.is_successful
+  AND (o.value.order.gmv_eur << 2000 OR o.value.order.gmv_eur IS NULL)
+  and o.customer_id is not null
+),
+
+
+--capture only 1 nps response per customer and compute the order days for the next 2 orders
+--include those customers as well who never really came back after nps response
+temp AS (
+Select 
+  o.* except (order_no),
+  DATE_DIFF(o.order_1, o.nps_date, DAY) Reorder_1_days,
+  DATE_DIFF(o.order_2, o.order_1, DAY) Reorder_2_days, 
+from 
+  orders_nps_combined o
+where
+  order_no = 1 or order_no is null
+Order by 
+  management_entity,
+  sub_entity,
+  global_entity_id,
+  customer_id,
+  order_no
+),
+
+--1000 is just a placeholder to ensure formula runs correctly
+final as (
+SELECT
+  t.*,
+  If(Coalesce(Reorder_1_days,1000)<<=28,1,0) AS first_order_retention,   
+  If(Coalesce(Reorder_1_days,1000)<<=28 and Coalesce(Reorder_2_days,1000)<<=28,1,0) AS second_order_retention,
+  If(nps_score<<=3,1,0) churners_0to3,
+  Case
+    When management_entity='Glovo' and Coalesce(Reorder_1_days,1000)>>69 then 1 
+    When management_entity='Talabat' and Coalesce(Reorder_1_days,1000)>>52 then 1 
+    When management_entity='Pedidosya' and Coalesce(Reorder_1_days,1000)>>68 then 1 
+    When management_entity='DH Greece' and sub_entity in ('eFood','Foody') and Coalesce(Reorder_1_days,1000)>>46 then 1
+    When management_entity='DH Europe' and sub_entity ='Yemeksepeti' and Coalesce(Reorder_1_days,1000)>>70 then 1 
+    When management_entity='DH Europe' and Coalesce(Reorder_1_days,1000)>>75 then 1 
+    When management_entity='Foodpanda APAC' and Coalesce(Reorder_1_days,1000)>>63 then 1 
+    When management_entity='HungerStation' and Coalesce(Reorder_1_days,1000)>>70 then 1 
+    Else 0
+  End As churn_by_retention_team,
+  If(order_1 is null,1,0) churn_permanent
+From
+  temp t
+),
+*/
+
+final_aggregated AS (
+Select  
+  n.management_entity,
+  n.sub_entity,
+  n.global_entity_id,
+  n.lifecycle_segment,
+  n.customer_segment,
+  n.DS_VALUE_SEGMENT,
+  n.nps_reason,
+  n.nps_sub_reason,
+  Date_trunc(n.created_date,month) AS reporting_month,
+  SUM(CASE WHEN n.nps_score >> 8 THEN 1 ELSE 0 END) nps_promoters, 
+  SUM(CASE WHEN n.nps_score <<= 6 THEN 1 ELSE 0 END) nps_detractors,   
+  SUM(CASE WHEN n.nps_score IS NOT NULL THEN 1 ELSE 0 END) nps_responses,
+  SUM(CASE WHEN n.nps_score <<= 3 THEN 1 ELSE 0 END) churners_0to3,
+
+  /*
+  Sum(first_order_retention) first_order_retention,
+  Sum(second_order_retention) second_order_retention,
+  Sum(churners_0to3) churners_0to3,
+  Sum(churn_by_retention_team) churn_by_retention_team,
+  Sum(churn_permanent) churn_permanent,
+  */
+from
+  user_profile n
+Group by 1,2,3,4,5,6,7,8,9
+Order by 1,2,3,4,5,6,7,8,9
+)
+
+Select * from final_aggregated]]></_.fcp.ObjectModelEncapsulateLegacy.false...relation>
+        <_.fcp.ObjectModelEncapsulateLegacy.true...relation connection='bigquery.0yo25hu1axbcj51dzb03w0admoml' name='Custom SQL Query' type='text'><![CDATA[--Run the first 2 commands to delete exiting and create new table from scratch
+--Run the third line for backfilling past data
+
+-- INSERT INTO fulfillment-dwh-production.cl_cx.tactical_view_new_v2
+
+-- DROP TABLE IF EXISTS fulfillment-dwh-production.cl_cx.prioritization_view;
+-- CREATE TABLE fulfillment-dwh-production.cl_cx.prioritization_view AS
+
+With 
+
+--nps responses in the last 6 months (reporting_date is previous)
+--customer_id, external_id are not needed in this script
+--filters to exclude null (junk) entries are no longer needed as data table is excluding junk entries while importing to bigquery
+
+nps_DH as ( 
+SELECT 
+  n.global_entity_id,
+  ge.management_entity,
+  ge.sub_entity,
+  n.response_id,
+  n.created_date,
+  If(n.nps_reason is null or n.nps_reason='N/A', 'No Reason',n.nps_reason) AS nps_reason,
+  coalesce(n.reason_finding_app_choice, n.reason_pricing, n.reason_delivery, n.reason_quality_accuracy, 
+    n.reason_service_support, n.reason_deals_discount, 'No reason') AS nps_sub_reason,
+  n.nps_score,
+  n.analytical_customer_id,
+  --n.customer_id,
+FROM 
+  `fulfillment-dwh-production.curated_data_shared_cx.nps_relational_all_survey_responses_all_markets` AS n
+JOIN fulfillment-dwh-production.curated_data_shared_coredata.global_entities  AS ge
+  ON n.global_entity_id = ge.global_entity_id
+  AND ge.is_reporting_enabled
+WHERE
+  n.created_date Between Date_trunc(current_date-180, month) and Date_trunc(current_date, month)-1
+  -- AND nps_score is not null
+  -- AND nps_reason <<>> 'N/A'
+  -- AND (external_id is not null AND n.global_entity_id is not null)
+  -- AND customer_id is not null
+),
+
+--manually map global entity id for glovo nps data
+glovo_mapping AS (
+  Select 'AM' AS country, 'GV_AM' AS global_entity_id, 'GV - Armenia' AS sub_entity
+  UNION ALL Select 'BA' AS country, 'GV_BA' AS global_entity_id, 'GV - Bosnia and Herzegovina' AS sub_entity
+  UNION ALL Select 'BG' AS country, 'GV_BG' AS global_entity_id, 'GV - Bulgaria' AS sub_entity
+  UNION ALL Select 'CI' AS country, 'GV_CI' AS global_entity_id, 'GV - Ivory Coast' AS sub_entity
+  UNION ALL Select 'ES' AS country, 'GV_ES' AS global_entity_id, 'GV - Spain' AS sub_entity
+  UNION ALL Select 'GE' AS country, 'GV_GE' AS global_entity_id, 'GV - Georgia' AS sub_entity
+  UNION ALL Select 'HR' AS country, 'GV_HR' AS global_entity_id, 'GV - Croatia' AS sub_entity
+  UNION ALL Select 'IT' AS country, 'GV_IT' AS global_entity_id, 'GV - Italy' AS sub_entity
+  UNION ALL Select 'KE' AS country, 'GV_KE' AS global_entity_id, 'GV - Kenya' AS sub_entity
+  UNION ALL Select 'KG' AS country, 'GV_KG' AS global_entity_id, 'GV - Kyrgyzstan' AS sub_entity
+  UNION ALL Select 'KZ' AS country, 'GV_KZ' AS global_entity_id, 'GV - Kazakhstan' AS sub_entity
+  UNION ALL Select 'MA' AS country, 'GV_MA' AS global_entity_id, 'GV - Morocco' AS sub_entity
+  UNION ALL Select 'MD' AS country, 'GV_MD' AS global_entity_id, 'GV - Moldova' AS sub_entity
+  UNION ALL Select 'ME' AS country, 'GV_ME' AS global_entity_id, 'GV - Montenegro' AS sub_entity
+  UNION ALL Select 'NG' AS country, 'GV_NG' AS global_entity_id, 'GV - Nigeria' AS sub_entity
+  UNION ALL Select 'PL' AS country, 'GV_PL' AS global_entity_id, 'GV - Poland' AS sub_entity
+  UNION ALL Select 'PT' AS country, 'GV_PT' AS global_entity_id, 'GV - Portugal' AS sub_entity
+  UNION ALL Select 'RO' AS country, 'GV_RO' AS global_entity_id, 'GV - Romania' AS sub_entity
+  UNION ALL Select 'RS' AS country, 'GV_RS' AS global_entity_id, 'GV - Serbia' AS sub_entity
+  UNION ALL Select 'TN' AS country, 'GV_TN' AS global_entity_id, 'GV - Tunisia' AS sub_entity
+  UNION ALL Select 'UA' AS country, 'GV_UA' AS global_entity_id, 'GV - Ukraine' AS sub_entity
+  UNION ALL Select 'UG' AS country, 'GV_UG' AS global_entity_id, 'GV - Uganda' AS sub_entity
+),
+
+--nps responses in the last 6 months (reporting_date is previous)
+--filters added to exclude any potential junk entry
+nps_glovo AS (
+Select 
+  m.global_entity_id,
+  'Glovo' as management_entity,
+  m.sub_entity,
+  n.RESPONSE_ID,
+  n.created_date,
+  Coalesce(n.q2_area_dissatisfaction, 'No Reason') AS q2_area_dissatisfaction,
+  Coalesce(n.detail_reason, 'No Reason') AS detail_reason,
+  n.q1_nps_score,
+  eam.ANALYTICAL_CUSTOMER_ID,
+  --n.USER_ID,
+from
+  fulfillment-dwh-production.curated_data_shared_glovo.nps_ua_answers n
+Join 
+  glovo_mapping m 
+  on n.country=m.country
+JOIN fulfillment-dwh-production.curated_data_shared_mkt.braze_external_id_map eam
+  ON m.global_entity_id = eam.global_entity_id
+  AND Cast(n.user_id as String) = eam.customer_id
+  AND Date(eam.LAST_ORDER_TIMESTAMP) >>= Date_trunc(current_date-270, month)
+WHERE
+  n.created_date  Between Date_trunc(current_date-180, month) and Date_trunc(current_date, month)-1
+  AND n.q1_nps_score is not null
+  AND (n.country is not null AND n.USER_ID is not null)
+  --AND n.q2_area_dissatisfaction is not null
+),
+
+--combined nps data
+DH_glovo_nps_union as (
+SELECT 
+  global_entity_id,
+  management_entity,
+  sub_entity,
+  response_id,
+  created_date,
+  nps_reason,
+  nps_sub_reason,
+  nps_score,
+  analytical_customer_id
+FROM 
+  nps_DH
+UNION ALL
+Select 
+  global_entity_id,
+  management_entity,
+  sub_entity,
+  RESPONSE_ID,
+  created_date,
+  q2_area_dissatisfaction,
+  detail_reason,
+  q1_nps_score,
+  ANALYTICAL_CUSTOMER_ID,  
+from
+  nps_glovo 
+),
+
+--remove duplicate nps responses
+nps_final as (
+Select 
+  * 
+From (
+  SELECT
+    d.*,
+    Row_number() Over (PARTITION BY d.global_entity_id, d.analytical_customer_id order by d.created_date desc) rnk
+  FROM
+    DH_glovo_nps_union d
+  ) T
+where 
+  rnk=1
+),
+
+-- this one is a heavy join
+-- LC Old segment and LC New Segment is available for daily snapshot. For a given nps response, we pull nps_date + 1 = snapshot_date
+-- HVC Segment is available only for 1 day EOM. For a given nps response, we pull the previous most recent snapshot
+user_profile as(
+  Select
+    n.*,
+    Coalesce(u.segment.lifecycle_segment.all_verts, "Not Available") AS lifecycle_segment,
+    Coalesce(u.segment.customer_segment.all_verts, "Not Available") AS customer_segment,
+    Coalesce(hvc.DS_VALUE_SEGMENT, "Not Available") DS_VALUE_SEGMENT
+  FROM
+    nps_final n
+  LEFT JOIN 
+    `fulfillment-dwh-production.curated_data_shared_coda_datamart.user_feed_non_pii_historization_view` u
+    ON n.global_entity_id = u.global_entity_id
+    AND n.analytical_customer_id =  u.analytical_customer_id
+    AND u.snapshot_date Between Date_trunc(current_date-180, month) and Date_trunc(current_date, month)
+    AND u.snapshot_date = n.created_date + 1 
+    --below filter is mandatory for querying
+    AND u.snapshot_date Between Date_trunc(current_date-180, month) and Date_trunc(current_date, month)
+    
+  LEFT JOIN fulfillment-dwh-production.curated_data_shared_mkt.bima_customer_value_segmentation hvc
+    ON hvc.global_entity_id = n.global_entity_id
+    AND hvc.analytical_customer_id = n.analytical_customer_id 
+    AND Date(hvc.snapshot_date) between Date_trunc(current_date-210, month) and Date_trunc(current_date, month)
+    AND Date(hvc.snapshot_date)= date_trunc(n.created_date,month)-1
+),
+
+-- Select 
+--   Management_entity,
+--   Date_trunc(created_date,month) created_date,
+--   count(*) records, 
+--   count(response_id) responses, 
+--   count(Case when customer_segment <<>> "Not Available" then customer_segment End) customer_segment, 
+--   count(Case when lifecycle_segment <<>> "Not Available" then lifecycle_segment End) lifecycle_segment, 
+--   count(Case when DS_VALUE_SEGMENT <<>> "Not Available" then DS_VALUE_SEGMENT End) DS_VALUE_SEGMENT
+-- from user_profile
+-- Group by 1,2
+-- Order by 1,2
+
+
+--The below block is excluded as retention related metrics and not being looked into currently
+/*
+--pull all the orders for NPS respondents and only those after NPS response date
+--only include successful orders
+--exclude gmv outliers
+orders_nps_combined as (
+Select 
+  d.management_entity,
+  d.sub_entity,
+  d.global_entity_id,
+  --d.customer_id,
+  d.analytical_customer_id, 
+  d.lifecycle_segment,
+  d.customer_segment,
+  d.DS_VALUE_SEGMENT,
+
+  --nps information
+  d.response_id,
+  d.nps_score,
+  d.nps_reason,
+  d.nps_sub_reason,
+  
+  --order information
+  o.order_id,
+  --o.customer_account_id,
+  d.created_date as nps_date,
+  o.partition_date_local AS order_1, --next order date
+  Date(Lead(partition_date_local,1) Over (Partition by o.global_entity_id, o.customer_id Order by o.partition_date_local)) order_2,  -- +2 order date
+  Case
+    When order_id is not null then
+      Row_Number() Over (Partition by o.global_entity_id, o.customer_id Order by o.partition_date_local)
+    Else null
+  End order_no
+  --Count(*) Over (Partition by o.global_entity_id, o.customer_id ) total_orders,
+from
+  user_profile d
+LEFT JOIN
+  `fulfillment-dwh-production.curated_data_shared_coredata_business.orders` AS o
+  ON o.global_entity_id = d.global_entity_id
+  AND o.analytical_customer_id = d.analytical_customer_id
+  AND o.partition_date_local Between Date_trunc(current_date-270, month) and Date_trunc(current_date, month)
+  AND o.partition_date_local >>= d.created_date    
+  AND o.is_successful
+  AND (o.value.order.gmv_eur << 2000 OR o.value.order.gmv_eur IS NULL)
+  and o.customer_id is not null
+),
+
+
+--capture only 1 nps response per customer and compute the order days for the next 2 orders
+--include those customers as well who never really came back after nps response
+temp AS (
+Select 
+  o.* except (order_no),
+  DATE_DIFF(o.order_1, o.nps_date, DAY) Reorder_1_days,
+  DATE_DIFF(o.order_2, o.order_1, DAY) Reorder_2_days, 
+from 
+  orders_nps_combined o
+where
+  order_no = 1 or order_no is null
+Order by 
+  management_entity,
+  sub_entity,
+  global_entity_id,
+  customer_id,
+  order_no
+),
+
+--1000 is just a placeholder to ensure formula runs correctly
+final as (
+SELECT
+  t.*,
+  If(Coalesce(Reorder_1_days,1000)<<=28,1,0) AS first_order_retention,   
+  If(Coalesce(Reorder_1_days,1000)<<=28 and Coalesce(Reorder_2_days,1000)<<=28,1,0) AS second_order_retention,
+  If(nps_score<<=3,1,0) churners_0to3,
+  Case
+    When management_entity='Glovo' and Coalesce(Reorder_1_days,1000)>>69 then 1 
+    When management_entity='Talabat' and Coalesce(Reorder_1_days,1000)>>52 then 1 
+    When management_entity='Pedidosya' and Coalesce(Reorder_1_days,1000)>>68 then 1 
+    When management_entity='DH Greece' and sub_entity in ('eFood','Foody') and Coalesce(Reorder_1_days,1000)>>46 then 1
+    When management_entity='DH Europe' and sub_entity ='Yemeksepeti' and Coalesce(Reorder_1_days,1000)>>70 then 1 
+    When management_entity='DH Europe' and Coalesce(Reorder_1_days,1000)>>75 then 1 
+    When management_entity='Foodpanda APAC' and Coalesce(Reorder_1_days,1000)>>63 then 1 
+    When management_entity='HungerStation' and Coalesce(Reorder_1_days,1000)>>70 then 1 
+    Else 0
+  End As churn_by_retention_team,
+  If(order_1 is null,1,0) churn_permanent
+From
+  temp t
+),
+*/
+
+final_aggregated AS (
+Select  
+  n.management_entity,
+  n.sub_entity,
+  n.global_entity_id,
+  n.lifecycle_segment,
+  n.customer_segment,
+  n.DS_VALUE_SEGMENT,
+  n.nps_reason,
+  n.nps_sub_reason,
+  Date_trunc(n.created_date,month) AS reporting_month,
+  SUM(CASE WHEN n.nps_score >> 8 THEN 1 ELSE 0 END) nps_promoters, 
+  SUM(CASE WHEN n.nps_score <<= 6 THEN 1 ELSE 0 END) nps_detractors,   
+  SUM(CASE WHEN n.nps_score IS NOT NULL THEN 1 ELSE 0 END) nps_responses,
+  SUM(CASE WHEN n.nps_score <<= 3 THEN 1 ELSE 0 END) churners_0to3,
+
+  /*
+  Sum(first_order_retention) first_order_retention,
+  Sum(second_order_retention) second_order_retention,
+  Sum(churners_0to3) churners_0to3,
+  Sum(churn_by_retention_team) churn_by_retention_team,
+  Sum(churn_permanent) churn_permanent,
+  */
+from
+  user_profile n
+Group by 1,2,3,4,5,6,7,8,9
+Order by 1,2,3,4,5,6,7,8,9
+)
+
+Select * from final_aggregated]]></_.fcp.ObjectModelEncapsulateLegacy.true...relation>
+        <metadata-records>
+          <metadata-record class='column'>
+            <remote-name>management_entity</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[management_entity]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>management_entity</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[prioritization_view_03DD4E79EE5A48478151E50EC799CE16]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>sub_entity</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[sub_entity]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>sub_entity</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[prioritization_view_03DD4E79EE5A48478151E50EC799CE16]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>global_entity_id</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[global_entity_id]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>global_entity_id</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[prioritization_view_03DD4E79EE5A48478151E50EC799CE16]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>lifecycle_segment</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[lifecycle_segment]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>lifecycle_segment</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[prioritization_view_03DD4E79EE5A48478151E50EC799CE16]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>customer_segment</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[customer_segment]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>customer_segment</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[prioritization_view_03DD4E79EE5A48478151E50EC799CE16]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>DS_VALUE_SEGMENT</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[DS_VALUE_SEGMENT]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>DS_VALUE_SEGMENT</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[prioritization_view_03DD4E79EE5A48478151E50EC799CE16]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>nps_reason</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[nps_reason]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>nps_reason</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[prioritization_view_03DD4E79EE5A48478151E50EC799CE16]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>nps_sub_reason</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[nps_sub_reason]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>nps_sub_reason</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[prioritization_view_03DD4E79EE5A48478151E50EC799CE16]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>reporting_month</remote-name>
+            <remote-type>7</remote-type>
+            <local-name>[reporting_month]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>reporting_month</remote-alias>
+            <local-type>date</local-type>
+            <aggregation>Year</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[prioritization_view_03DD4E79EE5A48478151E50EC799CE16]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>nps_promoters</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[nps_promoters]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>nps_promoters</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[prioritization_view_03DD4E79EE5A48478151E50EC799CE16]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>nps_detractors</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[nps_detractors]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>nps_detractors</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[prioritization_view_03DD4E79EE5A48478151E50EC799CE16]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>nps_responses</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[nps_responses]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>nps_responses</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[prioritization_view_03DD4E79EE5A48478151E50EC799CE16]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>churners_0to3</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[churners_0to3]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>churners_0to3</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[prioritization_view_03DD4E79EE5A48478151E50EC799CE16]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+        </metadata-records>
+      </connection>
+      <aliases enabled='yes' />
+      <column caption='%Detractors' datatype='real' default-format='p0%' name='[%First Order Retention (copy)_2742058907490713604]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='SUM([nps_detractors])/SUM([nps_responses])' />
+      </column>
+      <column caption='$Validation - Dynamic Field' datatype='string' name='[Calculation_2742058907486814208]' role='dimension' type='nominal'>
+        <calculation class='tableau' formula='CASE [Parameters].[Parameter 1]&#10;WHEN &apos;Lifecycle Segment Old&apos; Then [lifecycle_segment]&#10;WHEN &apos;Lifecycle Segment New&apos; Then [customer_segment]&#10;WHEN &apos;HVC Segment&apos; Then [DS_VALUE_SEGMENT]&#10;End' />
+      </column>
+      <column caption='Sort By - Field' datatype='real' name='[Calculation_4488259296032333824]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='CASE [Parameters].[Parameter 2]&#10;When &apos;Responses&apos; then Sum([nps_responses])&#10;When &apos;%Detractors&apos; Then [%First Order Retention (copy)_2742058907490713604]&#10;End' />
+      </column>
+      <column caption='NPS Subreason Label' datatype='string' name='[Calculation_5031787476393746432]' role='dimension' type='nominal'>
+        <calculation class='tableau' formula='[nps_reason] + &apos; -&gt; &apos; + [nps_sub_reason]' />
+      </column>
+      <column caption='S.No' datatype='integer' name='[Calculation_5031787476395470849]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='INDEX()'>
+          <table-calc ordering-type='Rows' />
+        </calculation>
+      </column>
+      <column caption='NPS Reason without Nulls' datatype='string' name='[Calculation_5883812176645070848]' role='dimension' type='nominal'>
+        <calculation class='tableau' formula='IF [nps_reason] != &quot;No Reason&quot; then [nps_reason] END' />
+      </column>
+      <column caption='NPS Reason Filter' datatype='string' name='[Calculation_5883812176645689346]' role='dimension' type='nominal'>
+        <calculation class='tableau' formula='IF [Parameters].[Parameter 3] = True&#10;THEN [nps_reason]&#10;ELSE [Calculation_5883812176645070848]&#10;End' />
+      </column>
+      <column caption='Ds Value Segment' datatype='string' name='[DS_VALUE_SEGMENT]' role='dimension' type='nominal' />
+      <column caption='NPS Sub Reason Filter' datatype='string' name='[NPS Reason Filter (copy)_5883812176645988355]' role='dimension' type='nominal'>
+        <calculation class='tableau' formula='IF [Parameters].[Parameter 3] = True&#10;THEN [nps_sub_reason]&#10;ELSE [NPS Reason without Nulls (copy)_5883812176645214209]&#10;End' />
+      </column>
+      <column caption='NPS Sub Reason without Nulls' datatype='string' name='[NPS Reason without Nulls (copy)_5883812176645214209]' role='dimension' type='nominal'>
+        <calculation class='tableau' formula='IF [nps_sub_reason] != &quot;No reason&quot; then [nps_sub_reason] END' />
+      </column>
+      <_.fcp.ObjectModelTableType.true...column caption='prioritization_view' datatype='table' name='[__tableau_internal_object_id__].[prioritization_view_03DD4E79EE5A48478151E50EC799CE16]' role='measure' type='quantitative' />
+      <column caption='Churners 0To3' datatype='integer' name='[churners_0to3]' role='measure' type='quantitative' />
+      <column caption='Customer Segment' datatype='string' name='[customer_segment]' role='dimension' type='nominal' />
+      <column caption='Global Entity Id' datatype='string' name='[global_entity_id]' role='dimension' type='nominal' />
+      <column caption='Lifecycle Segment' datatype='string' name='[lifecycle_segment]' role='dimension' type='nominal' />
+      <column caption='Management Entity' datatype='string' name='[management_entity]' role='dimension' type='nominal' />
+      <column caption='Nps Detractors' datatype='integer' name='[nps_detractors]' role='measure' type='quantitative' />
+      <column caption='Nps Promoters' datatype='integer' name='[nps_promoters]' role='measure' type='quantitative' />
+      <column caption='Nps Reason' datatype='string' name='[nps_reason]' role='dimension' type='nominal' />
+      <column caption='Nps Responses' datatype='integer' name='[nps_responses]' role='measure' type='quantitative' />
+      <column caption='Nps Sub Reason' datatype='string' name='[nps_sub_reason]' role='dimension' type='nominal' />
+      <column caption='Reporting Month' datatype='date' name='[reporting_month]' role='dimension' type='ordinal' />
+      <column caption='Sub Entity' datatype='string' name='[sub_entity]' role='dimension' type='nominal' />
+      <extract _.fcp.ObjectModelExtractV2.true...object-id='' _.fcp.VConnDownstreamExtractsWithWarnings.true...user-specific='false' count='-1' enabled='true' units='records'>
+        <connection class='hyper' dbname='extract/6e/19/{69BA542B-DD4D-44B7-A223-E09FDF1197CF}/federated_0fistks17bt8w11awerwu1.hyper' default-settings='yes' extract-engine='true' schema='Extract' tablename='Extract' update-time='10/07/2024 06:45:35 AM'>
+          <_.fcp.ObjectModelEncapsulateLegacy.false...relation name='Extract' table='[Extract].[Extract]' type='table' />
+          <_.fcp.ObjectModelEncapsulateLegacy.true...relation name='Extract' table='[Extract].[Extract]' type='table' />
+          <refresh>
+            <refresh-event add-from-file-path='prioritization_view (cl_cx)' increment-value='%null%' refresh-type='create' rows-inserted='191281' timestamp-start='2024-10-07 06:42:36.355' />
+          </refresh>
+          <metadata-records>
+            <metadata-record class='column'>
+              <remote-name>management_entity</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[management_entity]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>management_entity</remote-alias>
+              <ordinal>0</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>7</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>sub_entity</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[sub_entity]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>sub_entity</remote-alias>
+              <ordinal>1</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>172</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>global_entity_id</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[global_entity_id]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>global_entity_id</remote-alias>
+              <ordinal>2</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>172</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>lifecycle_segment</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[lifecycle_segment]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>lifecycle_segment</remote-alias>
+              <ordinal>3</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>7</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>customer_segment</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[customer_segment]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>customer_segment</remote-alias>
+              <ordinal>4</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>20</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>DS_VALUE_SEGMENT</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[DS_VALUE_SEGMENT]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>DS_VALUE_SEGMENT</remote-alias>
+              <ordinal>5</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>5</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>nps_reason</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[nps_reason]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>nps_reason</remote-alias>
+              <ordinal>6</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>41</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>nps_sub_reason</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[nps_sub_reason]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>nps_sub_reason</remote-alias>
+              <ordinal>7</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>186</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>reporting_month</remote-name>
+              <remote-type>133</remote-type>
+              <local-name>[reporting_month]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>reporting_month</remote-alias>
+              <ordinal>8</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>date</local-type>
+              <aggregation>Year</aggregation>
+              <approx-count>6</approx-count>
+              <contains-null>true</contains-null>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>nps_promoters</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[nps_promoters]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>nps_promoters</remote-alias>
+              <ordinal>9</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>110</approx-count>
+              <contains-null>true</contains-null>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>nps_detractors</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[nps_detractors]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>nps_detractors</remote-alias>
+              <ordinal>10</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>47</approx-count>
+              <contains-null>true</contains-null>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>nps_responses</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[nps_responses]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>nps_responses</remote-alias>
+              <ordinal>11</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>199</approx-count>
+              <contains-null>true</contains-null>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>churners_0to3</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[churners_0to3]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>churners_0to3</remote-alias>
+              <ordinal>12</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>43</approx-count>
+              <contains-null>true</contains-null>
+            </metadata-record>
+          </metadata-records>
+        </connection>
+      </extract>
+      <layout _.fcp.SchemaViewerObjectModel.false...dim-percentage='0.5' _.fcp.SchemaViewerObjectModel.false...measure-percentage='0.4' dim-ordering='alphabetic' measure-ordering='alphabetic' show-structure='true' />
+      <semantic-values>
+        <semantic-value key='[Country].[Name]' value='&quot;United States&quot;' />
+      </semantic-values>
+      <datasource-dependencies datasource='Parameters'>
+        <column caption='Validation - Field' datatype='string' name='[Parameter 1]' param-domain-type='list' role='measure' type='nominal' value='&quot;HVC Segment&quot;'>
+          <calculation class='tableau' formula='&quot;HVC Segment&quot;' />
+        </column>
+        <column caption='Sort by - Parameter' datatype='string' name='[Parameter 2]' param-domain-type='list' role='measure' type='nominal' value='&quot;Responses&quot;'>
+          <calculation class='tableau' formula='&quot;Responses&quot;' />
+        </column>
+        <column caption='Include NAs/Null NPS Reason Parameter' datatype='boolean' name='[Parameter 3]' param-domain-type='list' role='measure' type='nominal' value='true'>
+          <calculation class='tableau' formula='true' />
+        </column>
+      </datasource-dependencies>
+      <_.fcp.ObjectModelEncapsulateLegacy.true...object-graph>
+        <objects>
+          <object caption='prioritization_view' id='prioritization_view_03DD4E79EE5A48478151E50EC799CE16'>
+            <properties context=''>
+              <relation connection='bigquery.0yo25hu1axbcj51dzb03w0admoml' name='Custom SQL Query' type='text'><![CDATA[--Run the first 2 commands to delete exiting and create new table from scratch
+--Run the third line for backfilling past data
+
+-- INSERT INTO fulfillment-dwh-production.cl_cx.tactical_view_new_v2
+
+-- DROP TABLE IF EXISTS fulfillment-dwh-production.cl_cx.prioritization_view;
+-- CREATE TABLE fulfillment-dwh-production.cl_cx.prioritization_view AS
+
+With 
+
+--nps responses in the last 6 months (reporting_date is previous)
+--customer_id, external_id are not needed in this script
+--filters to exclude null (junk) entries are no longer needed as data table is excluding junk entries while importing to bigquery
+
+nps_DH as ( 
+SELECT 
+  n.global_entity_id,
+  ge.management_entity,
+  ge.sub_entity,
+  n.response_id,
+  n.created_date,
+  If(n.nps_reason is null or n.nps_reason='N/A', 'No Reason',n.nps_reason) AS nps_reason,
+  coalesce(n.reason_finding_app_choice, n.reason_pricing, n.reason_delivery, n.reason_quality_accuracy, 
+    n.reason_service_support, n.reason_deals_discount, 'No reason') AS nps_sub_reason,
+  n.nps_score,
+  n.analytical_customer_id,
+  --n.customer_id,
+FROM 
+  `fulfillment-dwh-production.curated_data_shared_cx.nps_relational_all_survey_responses_all_markets` AS n
+JOIN fulfillment-dwh-production.curated_data_shared_coredata.global_entities  AS ge
+  ON n.global_entity_id = ge.global_entity_id
+  AND ge.is_reporting_enabled
+WHERE
+  n.created_date Between Date_trunc(current_date-180, month) and Date_trunc(current_date, month)-1
+  -- AND nps_score is not null
+  -- AND nps_reason <<>> 'N/A'
+  -- AND (external_id is not null AND n.global_entity_id is not null)
+  -- AND customer_id is not null
+),
+
+--manually map global entity id for glovo nps data
+glovo_mapping AS (
+  Select 'AM' AS country, 'GV_AM' AS global_entity_id, 'GV - Armenia' AS sub_entity
+  UNION ALL Select 'BA' AS country, 'GV_BA' AS global_entity_id, 'GV - Bosnia and Herzegovina' AS sub_entity
+  UNION ALL Select 'BG' AS country, 'GV_BG' AS global_entity_id, 'GV - Bulgaria' AS sub_entity
+  UNION ALL Select 'CI' AS country, 'GV_CI' AS global_entity_id, 'GV - Ivory Coast' AS sub_entity
+  UNION ALL Select 'ES' AS country, 'GV_ES' AS global_entity_id, 'GV - Spain' AS sub_entity
+  UNION ALL Select 'GE' AS country, 'GV_GE' AS global_entity_id, 'GV - Georgia' AS sub_entity
+  UNION ALL Select 'HR' AS country, 'GV_HR' AS global_entity_id, 'GV - Croatia' AS sub_entity
+  UNION ALL Select 'IT' AS country, 'GV_IT' AS global_entity_id, 'GV - Italy' AS sub_entity
+  UNION ALL Select 'KE' AS country, 'GV_KE' AS global_entity_id, 'GV - Kenya' AS sub_entity
+  UNION ALL Select 'KG' AS country, 'GV_KG' AS global_entity_id, 'GV - Kyrgyzstan' AS sub_entity
+  UNION ALL Select 'KZ' AS country, 'GV_KZ' AS global_entity_id, 'GV - Kazakhstan' AS sub_entity
+  UNION ALL Select 'MA' AS country, 'GV_MA' AS global_entity_id, 'GV - Morocco' AS sub_entity
+  UNION ALL Select 'MD' AS country, 'GV_MD' AS global_entity_id, 'GV - Moldova' AS sub_entity
+  UNION ALL Select 'ME' AS country, 'GV_ME' AS global_entity_id, 'GV - Montenegro' AS sub_entity
+  UNION ALL Select 'NG' AS country, 'GV_NG' AS global_entity_id, 'GV - Nigeria' AS sub_entity
+  UNION ALL Select 'PL' AS country, 'GV_PL' AS global_entity_id, 'GV - Poland' AS sub_entity
+  UNION ALL Select 'PT' AS country, 'GV_PT' AS global_entity_id, 'GV - Portugal' AS sub_entity
+  UNION ALL Select 'RO' AS country, 'GV_RO' AS global_entity_id, 'GV - Romania' AS sub_entity
+  UNION ALL Select 'RS' AS country, 'GV_RS' AS global_entity_id, 'GV - Serbia' AS sub_entity
+  UNION ALL Select 'TN' AS country, 'GV_TN' AS global_entity_id, 'GV - Tunisia' AS sub_entity
+  UNION ALL Select 'UA' AS country, 'GV_UA' AS global_entity_id, 'GV - Ukraine' AS sub_entity
+  UNION ALL Select 'UG' AS country, 'GV_UG' AS global_entity_id, 'GV - Uganda' AS sub_entity
+),
+
+--nps responses in the last 6 months (reporting_date is previous)
+--filters added to exclude any potential junk entry
+nps_glovo AS (
+Select 
+  m.global_entity_id,
+  'Glovo' as management_entity,
+  m.sub_entity,
+  n.RESPONSE_ID,
+  n.created_date,
+  Coalesce(n.q2_area_dissatisfaction, 'No Reason') AS q2_area_dissatisfaction,
+  Coalesce(n.detail_reason, 'No Reason') AS detail_reason,
+  n.q1_nps_score,
+  eam.ANALYTICAL_CUSTOMER_ID,
+  --n.USER_ID,
+from
+  fulfillment-dwh-production.curated_data_shared_glovo.nps_ua_answers n
+Join 
+  glovo_mapping m 
+  on n.country=m.country
+JOIN fulfillment-dwh-production.curated_data_shared_mkt.braze_external_id_map eam
+  ON m.global_entity_id = eam.global_entity_id
+  AND Cast(n.user_id as String) = eam.customer_id
+  AND Date(eam.LAST_ORDER_TIMESTAMP) >>= Date_trunc(current_date-270, month)
+WHERE
+  n.created_date  Between Date_trunc(current_date-180, month) and Date_trunc(current_date, month)-1
+  AND n.q1_nps_score is not null
+  AND (n.country is not null AND n.USER_ID is not null)
+  --AND n.q2_area_dissatisfaction is not null
+),
+
+--combined nps data
+DH_glovo_nps_union as (
+SELECT 
+  global_entity_id,
+  management_entity,
+  sub_entity,
+  response_id,
+  created_date,
+  nps_reason,
+  nps_sub_reason,
+  nps_score,
+  analytical_customer_id
+FROM 
+  nps_DH
+UNION ALL
+Select 
+  global_entity_id,
+  management_entity,
+  sub_entity,
+  RESPONSE_ID,
+  created_date,
+  q2_area_dissatisfaction,
+  detail_reason,
+  q1_nps_score,
+  ANALYTICAL_CUSTOMER_ID,  
+from
+  nps_glovo 
+),
+
+--remove duplicate nps responses
+nps_final as (
+Select 
+  * 
+From (
+  SELECT
+    d.*,
+    Row_number() Over (PARTITION BY d.global_entity_id, d.analytical_customer_id order by d.created_date desc) rnk
+  FROM
+    DH_glovo_nps_union d
+  ) T
+where 
+  rnk=1
+),
+
+-- this one is a heavy join
+-- LC Old segment and LC New Segment is available for daily snapshot. For a given nps response, we pull nps_date + 1 = snapshot_date
+-- HVC Segment is available only for 1 day EOM. For a given nps response, we pull the previous most recent snapshot
+user_profile as(
+  Select
+    n.*,
+    Coalesce(u.segment.lifecycle_segment.all_verts, "Not Available") AS lifecycle_segment,
+    Coalesce(u.segment.customer_segment.all_verts, "Not Available") AS customer_segment,
+    Coalesce(hvc.DS_VALUE_SEGMENT, "Not Available") DS_VALUE_SEGMENT
+  FROM
+    nps_final n
+  LEFT JOIN 
+    `fulfillment-dwh-production.curated_data_shared_coda_datamart.user_feed_non_pii_historization_view` u
+    ON n.global_entity_id = u.global_entity_id
+    AND n.analytical_customer_id =  u.analytical_customer_id
+    AND u.snapshot_date Between Date_trunc(current_date-180, month) and Date_trunc(current_date, month)
+    AND u.snapshot_date = n.created_date + 1 
+    --below filter is mandatory for querying
+    AND u.snapshot_date Between Date_trunc(current_date-180, month) and Date_trunc(current_date, month)
+    
+  LEFT JOIN fulfillment-dwh-production.curated_data_shared_mkt.bima_customer_value_segmentation hvc
+    ON hvc.global_entity_id = n.global_entity_id
+    AND hvc.analytical_customer_id = n.analytical_customer_id 
+    AND Date(hvc.snapshot_date) between Date_trunc(current_date-210, month) and Date_trunc(current_date, month)
+    AND Date(hvc.snapshot_date)= date_trunc(n.created_date,month)-1
+),
+
+-- Select 
+--   Management_entity,
+--   Date_trunc(created_date,month) created_date,
+--   count(*) records, 
+--   count(response_id) responses, 
+--   count(Case when customer_segment <<>> "Not Available" then customer_segment End) customer_segment, 
+--   count(Case when lifecycle_segment <<>> "Not Available" then lifecycle_segment End) lifecycle_segment, 
+--   count(Case when DS_VALUE_SEGMENT <<>> "Not Available" then DS_VALUE_SEGMENT End) DS_VALUE_SEGMENT
+-- from user_profile
+-- Group by 1,2
+-- Order by 1,2
+
+
+--The below block is excluded as retention related metrics and not being looked into currently
+/*
+--pull all the orders for NPS respondents and only those after NPS response date
+--only include successful orders
+--exclude gmv outliers
+orders_nps_combined as (
+Select 
+  d.management_entity,
+  d.sub_entity,
+  d.global_entity_id,
+  --d.customer_id,
+  d.analytical_customer_id, 
+  d.lifecycle_segment,
+  d.customer_segment,
+  d.DS_VALUE_SEGMENT,
+
+  --nps information
+  d.response_id,
+  d.nps_score,
+  d.nps_reason,
+  d.nps_sub_reason,
+  
+  --order information
+  o.order_id,
+  --o.customer_account_id,
+  d.created_date as nps_date,
+  o.partition_date_local AS order_1, --next order date
+  Date(Lead(partition_date_local,1) Over (Partition by o.global_entity_id, o.customer_id Order by o.partition_date_local)) order_2,  -- +2 order date
+  Case
+    When order_id is not null then
+      Row_Number() Over (Partition by o.global_entity_id, o.customer_id Order by o.partition_date_local)
+    Else null
+  End order_no
+  --Count(*) Over (Partition by o.global_entity_id, o.customer_id ) total_orders,
+from
+  user_profile d
+LEFT JOIN
+  `fulfillment-dwh-production.curated_data_shared_coredata_business.orders` AS o
+  ON o.global_entity_id = d.global_entity_id
+  AND o.analytical_customer_id = d.analytical_customer_id
+  AND o.partition_date_local Between Date_trunc(current_date-270, month) and Date_trunc(current_date, month)
+  AND o.partition_date_local >>= d.created_date    
+  AND o.is_successful
+  AND (o.value.order.gmv_eur << 2000 OR o.value.order.gmv_eur IS NULL)
+  and o.customer_id is not null
+),
+
+
+--capture only 1 nps response per customer and compute the order days for the next 2 orders
+--include those customers as well who never really came back after nps response
+temp AS (
+Select 
+  o.* except (order_no),
+  DATE_DIFF(o.order_1, o.nps_date, DAY) Reorder_1_days,
+  DATE_DIFF(o.order_2, o.order_1, DAY) Reorder_2_days, 
+from 
+  orders_nps_combined o
+where
+  order_no = 1 or order_no is null
+Order by 
+  management_entity,
+  sub_entity,
+  global_entity_id,
+  customer_id,
+  order_no
+),
+
+--1000 is just a placeholder to ensure formula runs correctly
+final as (
+SELECT
+  t.*,
+  If(Coalesce(Reorder_1_days,1000)<<=28,1,0) AS first_order_retention,   
+  If(Coalesce(Reorder_1_days,1000)<<=28 and Coalesce(Reorder_2_days,1000)<<=28,1,0) AS second_order_retention,
+  If(nps_score<<=3,1,0) churners_0to3,
+  Case
+    When management_entity='Glovo' and Coalesce(Reorder_1_days,1000)>>69 then 1 
+    When management_entity='Talabat' and Coalesce(Reorder_1_days,1000)>>52 then 1 
+    When management_entity='Pedidosya' and Coalesce(Reorder_1_days,1000)>>68 then 1 
+    When management_entity='DH Greece' and sub_entity in ('eFood','Foody') and Coalesce(Reorder_1_days,1000)>>46 then 1
+    When management_entity='DH Europe' and sub_entity ='Yemeksepeti' and Coalesce(Reorder_1_days,1000)>>70 then 1 
+    When management_entity='DH Europe' and Coalesce(Reorder_1_days,1000)>>75 then 1 
+    When management_entity='Foodpanda APAC' and Coalesce(Reorder_1_days,1000)>>63 then 1 
+    When management_entity='HungerStation' and Coalesce(Reorder_1_days,1000)>>70 then 1 
+    Else 0
+  End As churn_by_retention_team,
+  If(order_1 is null,1,0) churn_permanent
+From
+  temp t
+),
+*/
+
+final_aggregated AS (
+Select  
+  n.management_entity,
+  n.sub_entity,
+  n.global_entity_id,
+  n.lifecycle_segment,
+  n.customer_segment,
+  n.DS_VALUE_SEGMENT,
+  n.nps_reason,
+  n.nps_sub_reason,
+  Date_trunc(n.created_date,month) AS reporting_month,
+  SUM(CASE WHEN n.nps_score >> 8 THEN 1 ELSE 0 END) nps_promoters, 
+  SUM(CASE WHEN n.nps_score <<= 6 THEN 1 ELSE 0 END) nps_detractors,   
+  SUM(CASE WHEN n.nps_score IS NOT NULL THEN 1 ELSE 0 END) nps_responses,
+  SUM(CASE WHEN n.nps_score <<= 3 THEN 1 ELSE 0 END) churners_0to3,
+
+  /*
+  Sum(first_order_retention) first_order_retention,
+  Sum(second_order_retention) second_order_retention,
+  Sum(churners_0to3) churners_0to3,
+  Sum(churn_by_retention_team) churn_by_retention_team,
+  Sum(churn_permanent) churn_permanent,
+  */
+from
+  user_profile n
+Group by 1,2,3,4,5,6,7,8,9
+Order by 1,2,3,4,5,6,7,8,9
+)
+
+Select * from final_aggregated]]></relation>
+            </properties>
+            <properties context='extract'>
+              <relation name='Extract' table='[Extract].[Extract]' type='table' />
+            </properties>
+          </object>
+        </objects>
+      </_.fcp.ObjectModelEncapsulateLegacy.true...object-graph>
+    </datasource>
+  </datasources>
+  <worksheets>
+    <worksheet name='For Validation purpose'>
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='prioritization_view (cl_cx)' name='federated.0fistks17bt8w11awerwu1cl7dy8' />
+            <datasource name='Parameters' />
+          </datasources>
+          <datasource-dependencies datasource='Parameters'>
+            <column caption='Validation - Field' datatype='string' name='[Parameter 1]' param-domain-type='list' role='measure' type='nominal' value='&quot;HVC Segment&quot;'>
+              <calculation class='tableau' formula='&quot;HVC Segment&quot;' />
+            </column>
+          </datasource-dependencies>
+          <datasource-dependencies datasource='federated.0fistks17bt8w11awerwu1cl7dy8'>
+            <column caption='$Validation - Dynamic Field' datatype='string' name='[Calculation_2742058907486814208]' role='dimension' type='nominal'>
+              <calculation class='tableau' formula='CASE [Parameters].[Parameter 1]&#10;WHEN &apos;Lifecycle Segment Old&apos; Then [lifecycle_segment]&#10;WHEN &apos;Lifecycle Segment New&apos; Then [customer_segment]&#10;WHEN &apos;HVC Segment&apos; Then [DS_VALUE_SEGMENT]&#10;End' />
+            </column>
+            <column caption='Ds Value Segment' datatype='string' name='[DS_VALUE_SEGMENT]' role='dimension' type='nominal' />
+            <column caption='Customer Segment' datatype='string' name='[customer_segment]' role='dimension' type='nominal' />
+            <column caption='Lifecycle Segment' datatype='string' name='[lifecycle_segment]' role='dimension' type='nominal' />
+            <column caption='Management Entity' datatype='string' name='[management_entity]' role='dimension' type='nominal' />
+            <column-instance column='[Calculation_2742058907486814208]' derivation='None' name='[none:Calculation_2742058907486814208:nk]' pivot='key' type='nominal' />
+            <column-instance column='[DS_VALUE_SEGMENT]' derivation='None' name='[none:DS_VALUE_SEGMENT:nk]' pivot='key' type='nominal' />
+            <column-instance column='[customer_segment]' derivation='None' name='[none:customer_segment:nk]' pivot='key' type='nominal' />
+            <column-instance column='[lifecycle_segment]' derivation='None' name='[none:lifecycle_segment:nk]' pivot='key' type='nominal' />
+            <column-instance column='[management_entity]' derivation='None' name='[none:management_entity:nk]' pivot='key' type='nominal' />
+            <column-instance column='[nps_reason]' derivation='None' name='[none:nps_reason:nk]' pivot='key' type='nominal' />
+            <column-instance column='[nps_sub_reason]' derivation='None' name='[none:nps_sub_reason:nk]' pivot='key' type='nominal' />
+            <column-instance column='[reporting_month]' derivation='None' name='[none:reporting_month:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[sub_entity]' derivation='None' name='[none:sub_entity:nk]' pivot='key' type='nominal' />
+            <column caption='Nps Detractors' datatype='integer' name='[nps_detractors]' role='measure' type='quantitative' />
+            <column caption='Nps Reason' datatype='string' name='[nps_reason]' role='dimension' type='nominal' />
+            <column caption='Nps Responses' datatype='integer' name='[nps_responses]' role='measure' type='quantitative' />
+            <column caption='Nps Sub Reason' datatype='string' name='[nps_sub_reason]' role='dimension' type='nominal' />
+            <column caption='Reporting Month' datatype='date' name='[reporting_month]' role='dimension' type='ordinal' />
+            <column caption='Sub Entity' datatype='string' name='[sub_entity]' role='dimension' type='nominal' />
+            <column-instance column='[nps_detractors]' derivation='Sum' name='[sum:nps_detractors:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[nps_responses]' derivation='Sum' name='[sum:nps_responses:qk]' pivot='key' type='quantitative' />
+          </datasource-dependencies>
+          <filter class='categorical' column='[federated.0fistks17bt8w11awerwu1cl7dy8].[:Measure Names]'>
+            <groupfilter function='union' user:op='manual'>
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.0fistks17bt8w11awerwu1cl7dy8].[sum:nps_responses:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.0fistks17bt8w11awerwu1cl7dy8].[sum:nps_detractors:qk]&quot;' />
+            </groupfilter>
+          </filter>
+          <manual-sort column='[federated.0fistks17bt8w11awerwu1cl7dy8].[:Measure Names]' direction='ASC'>
+            <dictionary>
+              <bucket>&quot;[federated.0fistks17bt8w11awerwu1cl7dy8].[sum:nps_responses:qk]&quot;</bucket>
+              <bucket>&quot;[federated.0fistks17bt8w11awerwu1cl7dy8].[sum:first_order_retention:qk]&quot;</bucket>
+              <bucket>&quot;[federated.0fistks17bt8w11awerwu1cl7dy8].[sum:second_order_retention:qk]&quot;</bucket>
+              <bucket>&quot;[federated.0fistks17bt8w11awerwu1cl7dy8].[sum:nps_detractors:qk]&quot;</bucket>
+              <bucket>&quot;[federated.0fistks17bt8w11awerwu1cl7dy8].[sum:churn_by_retention_team:qk]&quot;</bucket>
+              <bucket>&quot;[federated.0fistks17bt8w11awerwu1cl7dy8].[sum:churn_permanent:qk]&quot;</bucket>
+            </dictionary>
+          </manual-sort>
+          <filter class='categorical' column='[federated.0fistks17bt8w11awerwu1cl7dy8].[none:DS_VALUE_SEGMENT:nk]'>
+            <groupfilter function='except' user:ui-domain='database' user:ui-enumeration='inclusive' user:ui-marker='enumerate'>
+              <groupfilter function='level-members' level='[none:DS_VALUE_SEGMENT:nk]' />
+              <groupfilter function='member' level='[none:DS_VALUE_SEGMENT:nk]' member='%null%' />
+            </groupfilter>
+          </filter>
+          <filter class='categorical' column='[federated.0fistks17bt8w11awerwu1cl7dy8].[none:customer_segment:nk]'>
+            <groupfilter function='except' user:ui-domain='database' user:ui-enumeration='inclusive' user:ui-marker='enumerate'>
+              <groupfilter function='level-members' level='[none:customer_segment:nk]' />
+              <groupfilter function='member' level='[none:customer_segment:nk]' member='%null%' />
+            </groupfilter>
+          </filter>
+          <filter class='categorical' column='[federated.0fistks17bt8w11awerwu1cl7dy8].[none:lifecycle_segment:nk]'>
+            <groupfilter function='except' user:ui-domain='database' user:ui-enumeration='inclusive' user:ui-marker='enumerate'>
+              <groupfilter function='level-members' level='[none:lifecycle_segment:nk]' />
+              <groupfilter function='member' level='[none:lifecycle_segment:nk]' member='%null%' />
+            </groupfilter>
+          </filter>
+          <filter class='categorical' column='[federated.0fistks17bt8w11awerwu1cl7dy8].[none:management_entity:nk]'>
+            <groupfilter function='except' user:ui-domain='database' user:ui-enumeration='inclusive' user:ui-marker='enumerate'>
+              <groupfilter function='level-members' level='[none:management_entity:nk]' />
+              <groupfilter function='member' level='[none:management_entity:nk]' member='%null%' />
+            </groupfilter>
+          </filter>
+          <filter class='categorical' column='[federated.0fistks17bt8w11awerwu1cl7dy8].[none:nps_reason:nk]'>
+            <groupfilter function='except' user:ui-domain='database' user:ui-enumeration='inclusive' user:ui-marker='enumerate'>
+              <groupfilter function='level-members' level='[none:nps_reason:nk]' />
+              <groupfilter function='member' level='[none:nps_reason:nk]' member='%null%' />
+            </groupfilter>
+          </filter>
+          <filter class='categorical' column='[federated.0fistks17bt8w11awerwu1cl7dy8].[none:nps_sub_reason:nk]'>
+            <groupfilter function='except' user:ui-domain='database' user:ui-enumeration='inclusive' user:ui-marker='enumerate'>
+              <groupfilter function='level-members' level='[none:nps_sub_reason:nk]' />
+              <groupfilter function='empty-level' member='[none:nps_sub_reason:nk]' />
+            </groupfilter>
+          </filter>
+          <filter class='quantitative' column='[federated.0fistks17bt8w11awerwu1cl7dy8].[none:reporting_month:qk]' included-values='in-range'>
+            <min>#2023-11-01#</min>
+            <max>#2024-05-01#</max>
+          </filter>
+          <filter class='categorical' column='[federated.0fistks17bt8w11awerwu1cl7dy8].[none:sub_entity:nk]'>
+            <groupfilter function='except' user:ui-domain='database' user:ui-enumeration='inclusive' user:ui-marker='enumerate'>
+              <groupfilter function='level-members' level='[none:sub_entity:nk]' />
+              <groupfilter function='member' level='[none:sub_entity:nk]' member='%null%' />
+            </groupfilter>
+          </filter>
+          <shelf-sorts>
+            <shelf-sort-v2 dimension-to-sort='[federated.0fistks17bt8w11awerwu1cl7dy8].[none:Calculation_2742058907486814208:nk]' direction='DESC' is-on-innermost-dimension='true' measure-to-sort-by='[federated.0fistks17bt8w11awerwu1cl7dy8].[sum:nps_responses:qk]' shelf='rows' />
+          </shelf-sorts>
+          <slices>
+            <column>[federated.0fistks17bt8w11awerwu1cl7dy8].[:Measure Names]</column>
+            <column>[federated.0fistks17bt8w11awerwu1cl7dy8].[none:management_entity:nk]</column>
+            <column>[federated.0fistks17bt8w11awerwu1cl7dy8].[none:sub_entity:nk]</column>
+            <column>[federated.0fistks17bt8w11awerwu1cl7dy8].[none:nps_reason:nk]</column>
+            <column>[federated.0fistks17bt8w11awerwu1cl7dy8].[none:nps_sub_reason:nk]</column>
+            <column>[federated.0fistks17bt8w11awerwu1cl7dy8].[none:customer_segment:nk]</column>
+            <column>[federated.0fistks17bt8w11awerwu1cl7dy8].[none:lifecycle_segment:nk]</column>
+            <column>[federated.0fistks17bt8w11awerwu1cl7dy8].[none:DS_VALUE_SEGMENT:nk]</column>
+            <column>[federated.0fistks17bt8w11awerwu1cl7dy8].[none:reporting_month:qk]</column>
+          </slices>
+          <aggregation value='true' />
+        </view>
+        <style>
+          <style-rule element='cell'>
+            <format attr='width' field='[federated.0fistks17bt8w11awerwu1cl7dy8].[:Measure Names]' value='116' />
+          </style-rule>
+          <style-rule element='header'>
+            <format attr='height' field='[federated.0fistks17bt8w11awerwu1cl7dy8].[:Measure Names]' value='64' />
+            <format attr='width' field='[federated.0fistks17bt8w11awerwu1cl7dy8].[none:management_entity:nk]' value='132' />
+            <format attr='width' field='[federated.0fistks17bt8w11awerwu1cl7dy8].[none:nps_sub_reason:nk]' value='312' />
+            <format attr='width' field='[federated.0fistks17bt8w11awerwu1cl7dy8].[none:nps_reason:nk]' value='128' />
+            <format attr='width' field='[federated.0fistks17bt8w11awerwu1cl7dy8].[none:Calculation_2742058907486814208:nk]' value='224' />
+          </style-rule>
+          <style-rule element='quick-filter'>
+            <format attr='title' field='[federated.0fistks17bt8w11awerwu1cl7dy8].[none:DS_VALUE_SEGMENT:nk]' value='HVC Segment'>
+              <formatted-text>
+                <run>HVC Segment</run>
+              </formatted-text>
+            </format>
+            <format attr='title' field='[federated.0fistks17bt8w11awerwu1cl7dy8].[none:lifecycle_segment:nk]' value='Lifecycle Segment Old'>
+              <formatted-text>
+                <run>Lifecycle Segment Old</run>
+              </formatted-text>
+            </format>
+            <format attr='title' field='[federated.0fistks17bt8w11awerwu1cl7dy8].[none:customer_segment:nk]' value='Lifcecyle Segment New'>
+              <formatted-text>
+                <run>Lifcecyle Segment New</run>
+              </formatted-text>
+            </format>
+          </style-rule>
+        </style>
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Automatic' />
+            <encodings>
+              <text column='[federated.0fistks17bt8w11awerwu1cl7dy8].[Multiple Values]' />
+            </encodings>
+            <style>
+              <style-rule element='mark'>
+                <format attr='mark-labels-show' value='true' />
+              </style-rule>
+              <style-rule element='pane'>
+                <format attr='minwidth' value='-1' />
+                <format attr='maxwidth' value='-1' />
+              </style-rule>
+            </style>
+          </pane>
+        </panes>
+        <rows onTop='true' total='true'>([federated.0fistks17bt8w11awerwu1cl7dy8].[none:management_entity:nk] / [federated.0fistks17bt8w11awerwu1cl7dy8].[none:Calculation_2742058907486814208:nk])</rows>
+        <cols>[federated.0fistks17bt8w11awerwu1cl7dy8].[:Measure Names]</cols>
+        <subtotals>
+          <column>[federated.0fistks17bt8w11awerwu1cl7dy8].[none:management_entity:nk]</column>
+        </subtotals>
+      </table>
+      <simple-id uuid='{84FE23FC-39AD-48E3-AECF-96C7394818AE}' />
+    </worksheet>
+    <worksheet name='Table'>
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='prioritization_view (cl_cx)' name='federated.0fistks17bt8w11awerwu1cl7dy8' />
+            <datasource name='Parameters' />
+          </datasources>
+          <datasource-dependencies datasource='Parameters'>
+            <column caption='Sort by - Parameter' datatype='string' name='[Parameter 2]' param-domain-type='list' role='measure' type='nominal' value='&quot;Responses&quot;'>
+              <calculation class='tableau' formula='&quot;Responses&quot;' />
+            </column>
+            <column caption='Include NAs/Null NPS Reason Parameter' datatype='boolean' name='[Parameter 3]' param-domain-type='list' role='measure' type='nominal' value='true'>
+              <calculation class='tableau' formula='true' />
+            </column>
+          </datasource-dependencies>
+          <datasource-dependencies datasource='federated.0fistks17bt8w11awerwu1cl7dy8'>
+            <column caption='%Detractors' datatype='real' default-format='p0%' name='[%First Order Retention (copy)_2742058907490713604]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='SUM([nps_detractors])/SUM([nps_responses])' />
+            </column>
+            <column caption='Sort By - Field' datatype='real' name='[Calculation_4488259296032333824]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='CASE [Parameters].[Parameter 2]&#10;When &apos;Responses&apos; then Sum([nps_responses])&#10;When &apos;%Detractors&apos; Then [%First Order Retention (copy)_2742058907490713604]&#10;End' />
+            </column>
+            <column caption='NPS Subreason Label' datatype='string' name='[Calculation_5031787476393746432]' role='dimension' type='nominal'>
+              <calculation class='tableau' formula='[nps_reason] + &apos; -&gt; &apos; + [nps_sub_reason]' />
+            </column>
+            <column caption='S.No' datatype='integer' name='[Calculation_5031787476395470849]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='INDEX()'>
+                <table-calc ordering-type='Rows' />
+              </calculation>
+            </column>
+            <column caption='NPS Reason without Nulls' datatype='string' name='[Calculation_5883812176645070848]' role='dimension' type='nominal'>
+              <calculation class='tableau' formula='IF [nps_reason] != &quot;No Reason&quot; then [nps_reason] END' />
+            </column>
+            <column caption='NPS Reason Filter' datatype='string' name='[Calculation_5883812176645689346]' role='dimension' type='nominal'>
+              <calculation class='tableau' formula='IF [Parameters].[Parameter 3] = True&#10;THEN [nps_reason]&#10;ELSE [Calculation_5883812176645070848]&#10;End' />
+            </column>
+            <column caption='Ds Value Segment' datatype='string' name='[DS_VALUE_SEGMENT]' role='dimension' type='nominal' />
+            <column caption='NPS Sub Reason Filter' datatype='string' name='[NPS Reason Filter (copy)_5883812176645988355]' role='dimension' type='nominal'>
+              <calculation class='tableau' formula='IF [Parameters].[Parameter 3] = True&#10;THEN [nps_sub_reason]&#10;ELSE [NPS Reason without Nulls (copy)_5883812176645214209]&#10;End' />
+            </column>
+            <column caption='NPS Sub Reason without Nulls' datatype='string' name='[NPS Reason without Nulls (copy)_5883812176645214209]' role='dimension' type='nominal'>
+              <calculation class='tableau' formula='IF [nps_sub_reason] != &quot;No reason&quot; then [nps_sub_reason] END' />
+            </column>
+            <column caption='Customer Segment' datatype='string' name='[customer_segment]' role='dimension' type='nominal' />
+            <column caption='Lifecycle Segment' datatype='string' name='[lifecycle_segment]' role='dimension' type='nominal' />
+            <column caption='Management Entity' datatype='string' name='[management_entity]' role='dimension' type='nominal' />
+            <column-instance column='[reporting_month]' derivation='MY' name='[my:reporting_month:ok]' pivot='key' type='ordinal' />
+            <column-instance column='[Calculation_5031787476393746432]' derivation='None' name='[none:Calculation_5031787476393746432:nk]' pivot='key' type='nominal' />
+            <column-instance column='[Calculation_5883812176645689346]' derivation='None' name='[none:Calculation_5883812176645689346:nk]' pivot='key' type='nominal' />
+            <column-instance column='[DS_VALUE_SEGMENT]' derivation='None' name='[none:DS_VALUE_SEGMENT:nk]' pivot='key' type='nominal' />
+            <column-instance column='[NPS Reason Filter (copy)_5883812176645988355]' derivation='None' name='[none:NPS Reason Filter (copy)_5883812176645988355:nk]' pivot='key' type='nominal' />
+            <column-instance column='[customer_segment]' derivation='None' name='[none:customer_segment:nk]' pivot='key' type='nominal' />
+            <column-instance column='[lifecycle_segment]' derivation='None' name='[none:lifecycle_segment:nk]' pivot='key' type='nominal' />
+            <column-instance column='[management_entity]' derivation='None' name='[none:management_entity:nk]' pivot='key' type='nominal' />
+            <column-instance column='[nps_reason]' derivation='None' name='[none:nps_reason:nk]' pivot='key' type='nominal' />
+            <column-instance column='[nps_sub_reason]' derivation='None' name='[none:nps_sub_reason:nk]' pivot='key' type='nominal' />
+            <column-instance column='[sub_entity]' derivation='None' name='[none:sub_entity:nk]' pivot='key' type='nominal' />
+            <column caption='Nps Detractors' datatype='integer' name='[nps_detractors]' role='measure' type='quantitative' />
+            <column caption='Nps Reason' datatype='string' name='[nps_reason]' role='dimension' type='nominal' />
+            <column caption='Nps Responses' datatype='integer' name='[nps_responses]' role='measure' type='quantitative' />
+            <column caption='Nps Sub Reason' datatype='string' name='[nps_sub_reason]' role='dimension' type='nominal' />
+            <column caption='Reporting Month' datatype='date' name='[reporting_month]' role='dimension' type='ordinal' />
+            <column caption='Sub Entity' datatype='string' name='[sub_entity]' role='dimension' type='nominal' />
+            <column-instance column='[nps_detractors]' derivation='Sum' name='[sum:nps_detractors:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[nps_responses]' derivation='Sum' name='[sum:nps_responses:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[%First Order Retention (copy)_2742058907490713604]' derivation='User' name='[usr:%First Order Retention (copy)_2742058907490713604:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[Calculation_4488259296032333824]' derivation='User' name='[usr:Calculation_4488259296032333824:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[Calculation_5031787476395470849]' derivation='User' name='[usr:Calculation_5031787476395470849:ok]' pivot='key' type='ordinal'>
+              <table-calc ordering-type='Columns' />
+            </column-instance>
+          </datasource-dependencies>
+          <filter class='categorical' column='[federated.0fistks17bt8w11awerwu1cl7dy8].[:Measure Names]'>
+            <groupfilter function='union' user:op='manual'>
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.0fistks17bt8w11awerwu1cl7dy8].[sum:nps_responses:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.0fistks17bt8w11awerwu1cl7dy8].[sum:nps_detractors:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.0fistks17bt8w11awerwu1cl7dy8].[usr:\%First Order Retention (copy)_2742058907490713604:qk]&quot;' />
+            </groupfilter>
+          </filter>
+          <manual-sort column='[federated.0fistks17bt8w11awerwu1cl7dy8].[:Measure Names]' direction='ASC'>
+            <dictionary>
+              <bucket>&quot;[federated.0fistks17bt8w11awerwu1cl7dy8].[sum:nps_responses:qk]&quot;</bucket>
+              <bucket>&quot;[federated.0fistks17bt8w11awerwu1cl7dy8].[sum:nps_detractors:qk]&quot;</bucket>
+              <bucket>&quot;[federated.0fistks17bt8w11awerwu1cl7dy8].[usr:\%First Order Retention (copy)_2742058907490713604:qk]&quot;</bucket>
+            </dictionary>
+          </manual-sort>
+          <filter class='categorical' column='[federated.0fistks17bt8w11awerwu1cl7dy8].[my:reporting_month:ok]'>
+            <groupfilter function='member' level='[my:reporting_month:ok]' member='202409' user:ui-domain='database' user:ui-enumeration='inclusive' user:ui-marker='enumerate' />
+          </filter>
+          <computed-sort column='[federated.0fistks17bt8w11awerwu1cl7dy8].[none:Calculation_5031787476393746432:nk]' direction='DESC' using='[federated.0fistks17bt8w11awerwu1cl7dy8].[usr:Calculation_4488259296032333824:qk]' />
+          <filter class='categorical' column='[federated.0fistks17bt8w11awerwu1cl7dy8].[none:Calculation_5883812176645689346:nk]'>
+            <groupfilter function='except' user:ui-domain='database' user:ui-enumeration='inclusive' user:ui-marker='enumerate'>
+              <groupfilter function='level-members' level='[none:Calculation_5883812176645689346:nk]' />
+              <groupfilter function='member' level='[none:Calculation_5883812176645689346:nk]' member='%null%' />
+            </groupfilter>
+          </filter>
+          <filter class='categorical' column='[federated.0fistks17bt8w11awerwu1cl7dy8].[none:DS_VALUE_SEGMENT:nk]'>
+            <groupfilter function='except' user:ui-domain='database' user:ui-enumeration='inclusive' user:ui-marker='enumerate'>
+              <groupfilter function='level-members' level='[none:DS_VALUE_SEGMENT:nk]' />
+              <groupfilter function='member' level='[none:DS_VALUE_SEGMENT:nk]' member='%null%' />
+            </groupfilter>
+          </filter>
+          <filter class='categorical' column='[federated.0fistks17bt8w11awerwu1cl7dy8].[none:NPS Reason Filter (copy)_5883812176645988355:nk]'>
+            <groupfilter function='except' user:ui-domain='database' user:ui-enumeration='inclusive' user:ui-marker='enumerate'>
+              <groupfilter function='level-members' level='[none:NPS Reason Filter (copy)_5883812176645988355:nk]' />
+              <groupfilter function='member' level='[none:NPS Reason Filter (copy)_5883812176645988355:nk]' member='%null%' />
+            </groupfilter>
+          </filter>
+          <filter class='categorical' column='[federated.0fistks17bt8w11awerwu1cl7dy8].[none:customer_segment:nk]'>
+            <groupfilter function='except' user:ui-domain='database' user:ui-enumeration='inclusive' user:ui-marker='enumerate'>
+              <groupfilter function='level-members' level='[none:customer_segment:nk]' />
+              <groupfilter function='member' level='[none:customer_segment:nk]' member='%null%' />
+            </groupfilter>
+          </filter>
+          <filter class='categorical' column='[federated.0fistks17bt8w11awerwu1cl7dy8].[none:lifecycle_segment:nk]'>
+            <groupfilter function='except' user:ui-domain='database' user:ui-enumeration='inclusive' user:ui-marker='enumerate'>
+              <groupfilter function='level-members' level='[none:lifecycle_segment:nk]' />
+              <groupfilter function='member' level='[none:lifecycle_segment:nk]' member='%null%' />
+            </groupfilter>
+          </filter>
+          <filter class='categorical' column='[federated.0fistks17bt8w11awerwu1cl7dy8].[none:management_entity:nk]'>
+            <groupfilter function='member' level='[none:management_entity:nk]' member='&quot;HungerStation&quot;' user:ui-domain='database' user:ui-enumeration='inclusive' user:ui-marker='enumerate' />
+          </filter>
+          <filter class='categorical' column='[federated.0fistks17bt8w11awerwu1cl7dy8].[none:nps_reason:nk]'>
+            <groupfilter function='level-members' level='[none:nps_reason:nk]' user:ui-enumeration='all' user:ui-marker='enumerate' />
+          </filter>
+          <filter class='categorical' column='[federated.0fistks17bt8w11awerwu1cl7dy8].[none:nps_sub_reason:nk]'>
+            <groupfilter function='level-members' level='[none:nps_sub_reason:nk]' user:ui-enumeration='all' user:ui-marker='enumerate' />
+          </filter>
+          <filter class='categorical' column='[federated.0fistks17bt8w11awerwu1cl7dy8].[none:sub_entity:nk]'>
+            <groupfilter function='except' user:ui-domain='database' user:ui-enumeration='inclusive' user:ui-marker='enumerate'>
+              <groupfilter function='level-members' level='[none:sub_entity:nk]' />
+              <groupfilter function='member' level='[none:sub_entity:nk]' member='%null%' />
+            </groupfilter>
+          </filter>
+          <slices>
+            <column>[federated.0fistks17bt8w11awerwu1cl7dy8].[:Measure Names]</column>
+            <column>[federated.0fistks17bt8w11awerwu1cl7dy8].[none:management_entity:nk]</column>
+            <column>[federated.0fistks17bt8w11awerwu1cl7dy8].[none:sub_entity:nk]</column>
+            <column>[federated.0fistks17bt8w11awerwu1cl7dy8].[none:nps_reason:nk]</column>
+            <column>[federated.0fistks17bt8w11awerwu1cl7dy8].[none:nps_sub_reason:nk]</column>
+            <column>[federated.0fistks17bt8w11awerwu1cl7dy8].[none:customer_segment:nk]</column>
+            <column>[federated.0fistks17bt8w11awerwu1cl7dy8].[none:lifecycle_segment:nk]</column>
+            <column>[federated.0fistks17bt8w11awerwu1cl7dy8].[none:DS_VALUE_SEGMENT:nk]</column>
+            <column>[federated.0fistks17bt8w11awerwu1cl7dy8].[my:reporting_month:ok]</column>
+            <column>[federated.0fistks17bt8w11awerwu1cl7dy8].[none:Calculation_5883812176645689346:nk]</column>
+            <column>[federated.0fistks17bt8w11awerwu1cl7dy8].[none:NPS Reason Filter (copy)_5883812176645988355:nk]</column>
+          </slices>
+          <aggregation value='true' />
+        </view>
+        <style>
+          <style-rule element='cell'>
+            <format attr='width' field='[federated.0fistks17bt8w11awerwu1cl7dy8].[:Measure Names]' value='149' />
+            <format attr='wrap' field='[federated.0fistks17bt8w11awerwu1cl7dy8].[none:nps_sub_reason:nk]' value='on' />
+            <format attr='wrap' value='on' />
+          </style-rule>
+          <style-rule element='header'>
+            <format attr='height' field='[federated.0fistks17bt8w11awerwu1cl7dy8].[:Measure Names]' value='64' />
+            <format attr='width' field='[federated.0fistks17bt8w11awerwu1cl7dy8].[none:management_entity:nk]' value='132' />
+            <format attr='width' field='[federated.0fistks17bt8w11awerwu1cl7dy8].[none:nps_sub_reason:nk]' value='268' />
+            <format attr='width' field='[federated.0fistks17bt8w11awerwu1cl7dy8].[none:nps_reason:nk]' value='184' />
+            <format attr='width' field='[federated.0fistks17bt8w11awerwu1cl7dy8].[none:Calculation_5031787476393746432:nk]' value='424' />
+            <format attr='width' field='[federated.0fistks17bt8w11awerwu1cl7dy8].[usr:Calculation_5031787476395470849:ok]' value='52' />
+            <format attr='band-color' scope='rows' value='#f0eae8' />
+          </style-rule>
+          <style-rule element='field-labels'>
+            <format attr='color' value='#d61f26' />
+          </style-rule>
+          <style-rule element='field-labels-decoration'>
+            <format attr='background-color' value='#00000000' />
+          </style-rule>
+          <style-rule element='field-labels-spanner'>
+            <format attr='background-color' scope='cols' value='#00000000' />
+            <format attr='background-color' scope='rows' value='#00000000' />
+          </style-rule>
+          <style-rule element='label'>
+            <format attr='wrap' field='[federated.0fistks17bt8w11awerwu1cl7dy8].[none:nps_sub_reason:nk]' value='on' />
+            <format attr='wrap' value='on' />
+            <format attr='color' field='[federated.0fistks17bt8w11awerwu1cl7dy8].[:Measure Names]' value='#d61f26' />
+          </style-rule>
+          <style-rule element='pane'>
+            <format attr='band-color' scope='rows' value='#f0eae8' />
+            <format attr='border-width' data-class='subtotal' scope='rows' value='0' />
+            <format attr='border-style' data-class='subtotal' scope='rows' value='none' />
+          </style-rule>
+          <style-rule element='table'>
+            <format attr='band-size' scope='rows' value='1' />
+            <format attr='band-level' scope='rows' value='1' />
+          </style-rule>
+          <style-rule element='gridline'>
+            <format attr='line-visibility' value='on' />
+            <format attr='line-pattern-only' value='solid' />
+          </style-rule>
+          <style-rule element='table-div'>
+            <format attr='stroke-size' scope='rows' value='0' />
+            <format attr='line-visibility' scope='rows' value='off' />
+            <format attr='div-level' scope='rows' value='0' />
+          </style-rule>
+          <style-rule element='header-div'>
+            <format attr='line-pattern-only' scope='rows' value='solid' />
+            <format attr='stroke-size' scope='rows' value='0' />
+            <format attr='line-visibility' scope='rows' value='off' />
+          </style-rule>
+          <style-rule element='quick-filter'>
+            <format attr='title' field='[federated.0fistks17bt8w11awerwu1cl7dy8].[none:DS_VALUE_SEGMENT:nk]' value='HVC Segment'>
+              <formatted-text>
+                <run>HVC Segment</run>
+              </formatted-text>
+            </format>
+            <format attr='title' field='[federated.0fistks17bt8w11awerwu1cl7dy8].[none:lifecycle_segment:nk]' value='Lifecycle Segment Old'>
+              <formatted-text>
+                <run>Lifecycle Segment Old</run>
+              </formatted-text>
+            </format>
+            <format attr='title' field='[federated.0fistks17bt8w11awerwu1cl7dy8].[none:customer_segment:nk]' value='Lifcecyle Segment New'>
+              <formatted-text>
+                <run>Lifcecyle Segment New</run>
+              </formatted-text>
+            </format>
+            <format attr='title' field='[federated.0fistks17bt8w11awerwu1cl7dy8].[my:reporting_month:ok]' value='Reporting Month'>
+              <formatted-text>
+                <run>Reporting Month</run>
+              </formatted-text>
+            </format>
+          </style-rule>
+        </style>
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Automatic' />
+            <encodings>
+              <text column='[federated.0fistks17bt8w11awerwu1cl7dy8].[Multiple Values]' />
+            </encodings>
+            <style>
+              <style-rule element='mark'>
+                <format attr='mark-labels-show' value='true' />
+              </style-rule>
+              <style-rule element='pane'>
+                <format attr='minwidth' value='-1' />
+                <format attr='maxwidth' value='-1' />
+              </style-rule>
+            </style>
+          </pane>
+        </panes>
+        <rows>([federated.0fistks17bt8w11awerwu1cl7dy8].[usr:Calculation_5031787476395470849:ok] / [federated.0fistks17bt8w11awerwu1cl7dy8].[none:Calculation_5031787476393746432:nk])</rows>
+        <cols>[federated.0fistks17bt8w11awerwu1cl7dy8].[:Measure Names]</cols>
+      </table>
+      <simple-id uuid='{42B3E170-43F2-41C2-B09D-DE517C24BC54}' />
+    </worksheet>
+  </worksheets>
+  <dashboards>
+    <dashboard _.fcp.AccessibleZoneTabOrder.true...enable-sort-zone-taborder='true' name='For Validation Purpose'>
+      <repository-location id='ForValidationPurpose' path='/t/GlobalStandardReporting/workbooks/PrioritizationView2_0' revision='' site='GlobalStandardReporting' />
+      <style />
+      <size maxheight='800' maxwidth='1300' minheight='800' minwidth='1300' sizing-mode='fixed' />
+      <datasources>
+        <datasource name='Parameters' />
+      </datasources>
+      <datasource-dependencies datasource='Parameters'>
+        <column caption='Validation - Field' datatype='string' name='[Parameter 1]' param-domain-type='list' role='measure' type='nominal' value='&quot;HVC Segment&quot;'>
+          <calculation class='tableau' formula='&quot;HVC Segment&quot;' />
+          <members>
+            <member value='&quot;Lifecycle Segment Old&quot;' />
+            <member value='&quot;Lifecycle Segment New&quot;' />
+            <member value='&quot;HVC Segment&quot;' />
+          </members>
+        </column>
+      </datasource-dependencies>
+      <zones>
+        <zone h='100000' id='6' type-v2='layout-basic' w='100000' x='0' y='0'>
+          <zone h='100000' id='23' param='horz' type-v2='layout-flow' w='100000' x='0' y='0'>
+            <zone h='100000' id='21' type-v2='layout-basic' w='100000' x='0' y='0'>
+              <zone forceUpdate='true' h='11375' id='3' type-v2='text' w='100000' x='0' y='0'>
+                <formatted-text>
+                  <run bold='true' fontcolor='#c9180c' fontsize='20'>NPS-R</run>
+                  <run>Æ&#10;</run>
+                  <run fontsize='14'>Prioritization View</run>
+                </formatted-text>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+              <zone h='80000' id='20' name='For Validation purpose' w='100000' x='0' y='20000'>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+              <zone h='8625' id='25' param='horz' type-v2='layout-flow' w='84308' x='15692' y='11375'>
+                <zone fixed-size='1004' h='8625' id='26' is-fixed='true' type-v2='empty' w='84308' x='15692' y='11375'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                  </zone-style>
+                </zone>
+              </zone>
+              <zone h='8625' id='24' mode='compact' param='[Parameters].[Parameter 1]' type-v2='paramctrl' w='15692' x='0' y='11375'>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                  <format attr='background-color' value='#f9e9e0' />
+                </zone-style>
+              </zone>
+            </zone>
+          </zone>
+        </zone>
+      </zones>
+      <devicelayouts>
+        <devicelayout auto-generated='true' name='Phone'>
+          <size maxheight='700' minheight='700' sizing-mode='vscroll' />
+          <zones>
+            <zone h='100000' id='116' type-v2='layout-basic' w='100000' x='0' y='0'>
+              <zone h='84000' id='115' param='vert' type-v2='layout-flow' w='84000' x='8000' y='8000'>
+                <zone forceUpdate='true' h='11375' id='3' type-v2='text' w='100000' x='0' y='0'>
+                  <formatted-text>
+                    <run bold='true' fontcolor='#c9180c' fontsize='20'>NPS-R</run>
+                    <run>Æ&#10;</run>
+                    <run fontsize='14'>Prioritization View</run>
+                  </formatted-text>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone h='8625' id='24' mode='compact' param='[Parameters].[Parameter 1]' type-v2='paramctrl' w='15692' x='0' y='11375'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                    <format attr='background-color' value='#f9e9e0' />
+                  </zone-style>
+                </zone>
+                <zone fixed-size='280' h='80000' id='20' is-fixed='true' name='For Validation purpose' w='100000' x='0' y='20000'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+              </zone>
+            </zone>
+          </zones>
+        </devicelayout>
+      </devicelayouts>
+      <simple-id uuid='{0D6EEF37-54C0-48C1-B33D-CBEBBDDDB295}' />
+    </dashboard>
+    <dashboard _.fcp.AccessibleZoneTabOrder.true...enable-sort-zone-taborder='true' name='Prioritization View'>
+      <repository-location id='PrioritizationView' path='/t/GlobalStandardReporting/workbooks/PrioritizationView2_0' revision='' site='GlobalStandardReporting' />
+      <style />
+      <size maxheight='800' maxwidth='1450' minheight='800' minwidth='1450' sizing-mode='fixed' />
+      <datasources>
+        <datasource name='Parameters' />
+        <datasource caption='prioritization_view (cl_cx)' name='federated.0fistks17bt8w11awerwu1cl7dy8' />
+      </datasources>
+      <datasource-dependencies datasource='Parameters'>
+        <column caption='Sort by - Parameter' datatype='string' name='[Parameter 2]' param-domain-type='list' role='measure' type='nominal' value='&quot;Responses&quot;'>
+          <calculation class='tableau' formula='&quot;Responses&quot;' />
+          <members>
+            <member value='&quot;Responses&quot;' />
+            <member value='&quot;\%Detractors&quot;' />
+          </members>
+        </column>
+        <column caption='Include NAs/Null NPS Reason Parameter' datatype='boolean' name='[Parameter 3]' param-domain-type='list' role='measure' type='nominal' value='true'>
+          <calculation class='tableau' formula='true' />
+          <members>
+            <member value='true' />
+            <member value='false' />
+          </members>
+        </column>
+      </datasource-dependencies>
+      <datasource-dependencies datasource='federated.0fistks17bt8w11awerwu1cl7dy8'>
+        <column caption='Ds Value Segment' datatype='string' name='[DS_VALUE_SEGMENT]' role='dimension' type='nominal' />
+        <column caption='Customer Segment' datatype='string' name='[customer_segment]' role='dimension' type='nominal' />
+        <column caption='Lifecycle Segment' datatype='string' name='[lifecycle_segment]' role='dimension' type='nominal' />
+        <column caption='Management Entity' datatype='string' name='[management_entity]' role='dimension' type='nominal' />
+        <column-instance column='[reporting_month]' derivation='MY' name='[my:reporting_month:ok]' pivot='key' type='ordinal' />
+        <column-instance column='[DS_VALUE_SEGMENT]' derivation='None' name='[none:DS_VALUE_SEGMENT:nk]' pivot='key' type='nominal' />
+        <column-instance column='[customer_segment]' derivation='None' name='[none:customer_segment:nk]' pivot='key' type='nominal' />
+        <column-instance column='[lifecycle_segment]' derivation='None' name='[none:lifecycle_segment:nk]' pivot='key' type='nominal' />
+        <column-instance column='[management_entity]' derivation='None' name='[none:management_entity:nk]' pivot='key' type='nominal' />
+        <column-instance column='[nps_reason]' derivation='None' name='[none:nps_reason:nk]' pivot='key' type='nominal' />
+        <column-instance column='[nps_sub_reason]' derivation='None' name='[none:nps_sub_reason:nk]' pivot='key' type='nominal' />
+        <column-instance column='[sub_entity]' derivation='None' name='[none:sub_entity:nk]' pivot='key' type='nominal' />
+        <column caption='Nps Reason' datatype='string' name='[nps_reason]' role='dimension' type='nominal' />
+        <column caption='Nps Sub Reason' datatype='string' name='[nps_sub_reason]' role='dimension' type='nominal' />
+        <column caption='Reporting Month' datatype='date' name='[reporting_month]' role='dimension' type='ordinal' />
+        <column caption='Sub Entity' datatype='string' name='[sub_entity]' role='dimension' type='nominal' />
+      </datasource-dependencies>
+      <zones>
+        <zone h='100000' id='103' type-v2='layout-basic' w='100000' x='0' y='0'>
+          <zone h='78250' id='5' name='Table' show-title='false' w='98896' x='552' y='20750'>
+            <zone-style>
+              <format attr='border-color' value='#000000' />
+              <format attr='border-style' value='none' />
+              <format attr='border-width' value='0' />
+              <format attr='margin' value='4' />
+            </zone-style>
+          </zone>
+          <zone forceUpdate='true' h='10500' id='3' type-v2='text' w='98896' x='552' y='1000'>
+            <formatted-text>
+              <run bold='true' fontcolor='#c9180c' fontsize='20'>NPS-R</run>
+              <run>Æ&#10;</run>
+              <run fontsize='14'>Prioritization View (top pain points from survey)</run>
+            </formatted-text>
+            <zone-style>
+              <format attr='border-color' value='#000000' />
+              <format attr='border-style' value='none' />
+              <format attr='border-width' value='0' />
+              <format attr='margin' value='4' />
+            </zone-style>
+          </zone>
+          <zone h='9250' id='17' layout-strategy-id='distribute-evenly' param='horz' type-v2='layout-flow' w='98896' x='552' y='11500'>
+            <zone fixed-size='132' h='8250' id='16' is-fixed='true' mode='dropdown' name='Table' param='[federated.0fistks17bt8w11awerwu1cl7dy8].[none:management_entity:nk]' show-all='false' type-v2='filter' values='relevant' w='9862' x='828' y='12000'>
+              <zone-style>
+                <format attr='border-color' value='#000000' />
+                <format attr='border-style' value='none' />
+                <format attr='border-width' value='0' />
+                <format attr='margin' value='4' />
+              </zone-style>
+            </zone>
+            <zone fixed-size='138' h='8250' id='15' is-fixed='true' mode='checkdropdown' name='Table' param='[federated.0fistks17bt8w11awerwu1cl7dy8].[none:sub_entity:nk]' type-v2='filter' values='relevant' w='9862' x='10690' y='12000'>
+              <zone-style>
+                <format attr='border-color' value='#000000' />
+                <format attr='border-style' value='none' />
+                <format attr='border-width' value='0' />
+                <format attr='margin' value='4' />
+              </zone-style>
+            </zone>
+            <zone fixed-size='134' h='8250' id='12' is-fixed='true' mode='checkdropdown' name='Table' param='[federated.0fistks17bt8w11awerwu1cl7dy8].[none:customer_segment:nk]' type-v2='filter' values='relevant' w='9862' x='20552' y='12000'>
+              <zone-style>
+                <format attr='border-color' value='#000000' />
+                <format attr='border-style' value='none' />
+                <format attr='border-width' value='0' />
+                <format attr='margin' value='4' />
+              </zone-style>
+            </zone>
+            <zone fixed-size='134' h='8250' id='11' is-fixed='true' mode='checkdropdown' name='Table' param='[federated.0fistks17bt8w11awerwu1cl7dy8].[none:lifecycle_segment:nk]' type-v2='filter' values='relevant' w='9862' x='30414' y='12000'>
+              <zone-style>
+                <format attr='border-color' value='#000000' />
+                <format attr='border-style' value='none' />
+                <format attr='border-width' value='0' />
+                <format attr='margin' value='4' />
+              </zone-style>
+            </zone>
+            <zone fixed-size='137' h='8250' id='10' is-fixed='true' mode='checkdropdown' name='Table' param='[federated.0fistks17bt8w11awerwu1cl7dy8].[none:DS_VALUE_SEGMENT:nk]' type-v2='filter' values='relevant' w='9862' x='40276' y='12000'>
+              <zone-style>
+                <format attr='border-color' value='#000000' />
+                <format attr='border-style' value='none' />
+                <format attr='border-width' value='0' />
+                <format attr='margin' value='4' />
+              </zone-style>
+            </zone>
+            <zone fixed-size='147' h='8250' id='14' is-fixed='true' mode='checkdropdown' name='Table' param='[federated.0fistks17bt8w11awerwu1cl7dy8].[none:nps_reason:nk]' type-v2='filter' values='relevant' w='9862' x='50138' y='12000'>
+              <zone-style>
+                <format attr='border-color' value='#000000' />
+                <format attr='border-style' value='none' />
+                <format attr='border-width' value='0' />
+                <format attr='margin' value='4' />
+              </zone-style>
+            </zone>
+            <zone fixed-size='144' h='8250' id='13' is-fixed='true' mode='checkdropdown' name='Table' param='[federated.0fistks17bt8w11awerwu1cl7dy8].[none:nps_sub_reason:nk]' type-v2='filter' values='relevant' w='9793' x='60000' y='12000'>
+              <zone-style>
+                <format attr='border-color' value='#000000' />
+                <format attr='border-style' value='none' />
+                <format attr='border-width' value='0' />
+                <format attr='margin' value='4' />
+              </zone-style>
+            </zone>
+            <zone h='8250' id='87' mode='dropdown' name='Table' param='[federated.0fistks17bt8w11awerwu1cl7dy8].[my:reporting_month:ok]' type-v2='filter' values='relevant' w='9793' x='69793' y='12000'>
+              <zone-style>
+                <format attr='border-color' value='#000000' />
+                <format attr='border-style' value='none' />
+                <format attr='border-width' value='0' />
+                <format attr='margin' value='4' />
+              </zone-style>
+            </zone>
+            <zone h='8250' id='102' mode='compact' param='[Parameters].[Parameter 3]' type-v2='paramctrl' w='9793' x='79586' y='12000'>
+              <zone-style>
+                <format attr='border-color' value='#000000' />
+                <format attr='border-style' value='none' />
+                <format attr='border-width' value='0' />
+                <format attr='margin' value='4' />
+              </zone-style>
+            </zone>
+            <zone h='8250' id='46' mode='compact' param='[Parameters].[Parameter 2]' type-v2='paramctrl' w='9793' x='89379' y='12000'>
+              <zone-style>
+                <format attr='border-color' value='#000000' />
+                <format attr='border-style' value='none' />
+                <format attr='border-width' value='0' />
+                <format attr='margin' value='4' />
+              </zone-style>
+            </zone>
+            <zone-style>
+              <format attr='border-color' value='#000000' />
+              <format attr='border-style' value='none' />
+              <format attr='border-width' value='0' />
+              <format attr='margin' value='4' />
+              <format attr='background-color' value='#f5f5f5' />
+            </zone-style>
+          </zone>
+          <zone-style>
+            <format attr='border-color' value='#000000' />
+            <format attr='border-style' value='none' />
+            <format attr='border-width' value='0' />
+            <format attr='margin' value='8' />
+          </zone-style>
+        </zone>
+      </zones>
+      <devicelayouts>
+        <devicelayout auto-generated='true' name='Phone'>
+          <size maxheight='1000' minheight='1000' sizing-mode='vscroll' />
+          <zones>
+            <zone h='100000' id='113' type-v2='layout-basic' w='100000' x='0' y='0'>
+              <zone h='98000' id='112' param='vert' type-v2='layout-flow' w='98896' x='552' y='1000'>
+                <zone forceUpdate='true' h='10500' id='3' type-v2='text' w='98896' x='552' y='1000'>
+                  <formatted-text>
+                    <run bold='true' fontcolor='#c9180c' fontsize='20'>NPS-R</run>
+                    <run>Æ&#10;</run>
+                    <run fontsize='14'>Prioritization View (top pain points from survey)</run>
+                  </formatted-text>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone h='8250' id='102' mode='compact' param='[Parameters].[Parameter 3]' type-v2='paramctrl' w='9793' x='79586' y='12000'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone h='8250' id='46' mode='compact' param='[Parameters].[Parameter 2]' type-v2='paramctrl' w='9793' x='89379' y='12000'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone fixed-size='132' h='8250' id='16' mode='dropdown' name='Table' param='[federated.0fistks17bt8w11awerwu1cl7dy8].[none:management_entity:nk]' show-all='false' type-v2='filter' values='relevant' w='9862' x='828' y='12000'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone fixed-size='138' h='8250' id='15' mode='checkdropdown' name='Table' param='[federated.0fistks17bt8w11awerwu1cl7dy8].[none:sub_entity:nk]' type-v2='filter' values='relevant' w='9862' x='10690' y='12000'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone fixed-size='134' h='8250' id='12' mode='checkdropdown' name='Table' param='[federated.0fistks17bt8w11awerwu1cl7dy8].[none:customer_segment:nk]' type-v2='filter' values='relevant' w='9862' x='20552' y='12000'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone fixed-size='134' h='8250' id='11' mode='checkdropdown' name='Table' param='[federated.0fistks17bt8w11awerwu1cl7dy8].[none:lifecycle_segment:nk]' type-v2='filter' values='relevant' w='9862' x='30414' y='12000'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone fixed-size='137' h='8250' id='10' mode='checkdropdown' name='Table' param='[federated.0fistks17bt8w11awerwu1cl7dy8].[none:DS_VALUE_SEGMENT:nk]' type-v2='filter' values='relevant' w='9862' x='40276' y='12000'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone fixed-size='147' h='8250' id='14' mode='checkdropdown' name='Table' param='[federated.0fistks17bt8w11awerwu1cl7dy8].[none:nps_reason:nk]' type-v2='filter' values='relevant' w='9862' x='50138' y='12000'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone fixed-size='144' h='8250' id='13' mode='checkdropdown' name='Table' param='[federated.0fistks17bt8w11awerwu1cl7dy8].[none:nps_sub_reason:nk]' type-v2='filter' values='relevant' w='9793' x='60000' y='12000'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone h='8250' id='87' mode='dropdown' name='Table' param='[federated.0fistks17bt8w11awerwu1cl7dy8].[my:reporting_month:ok]' type-v2='filter' values='relevant' w='9793' x='69793' y='12000'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone fixed-size='280' h='78250' id='5' is-fixed='true' name='Table' show-title='false' w='98896' x='552' y='20750'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+              </zone>
+              <zone-style>
+                <format attr='border-color' value='#000000' />
+                <format attr='border-style' value='none' />
+                <format attr='border-width' value='0' />
+                <format attr='margin' value='8' />
+              </zone-style>
+            </zone>
+          </zones>
+        </devicelayout>
+      </devicelayouts>
+      <simple-id uuid='{65B650DC-3D50-4116-A876-371C886E6765}' />
+    </dashboard>
+  </dashboards>
+  <windows source-height='30'>
+    <window class='dashboard' maximized='true' name='Prioritization View'>
+      <viewpoints>
+        <viewpoint name='Table' />
+      </viewpoints>
+      <active id='102' />
+      <simple-id uuid='{BA9EC246-FA4B-4A9E-843B-D50F91CBD591}' />
+    </window>
+    <window class='dashboard' name='For Validation Purpose'>
+      <viewpoints>
+        <viewpoint name='For Validation purpose' />
+      </viewpoints>
+      <active id='-1' />
+      <simple-id uuid='{5D079017-B3DB-40C4-9CA8-C5AA049F5849}' />
+    </window>
+    <window class='worksheet' hidden='true' name='For Validation purpose'>
+      <cards>
+        <edge name='left'>
+          <strip size='160'>
+            <card type='pages' />
+            <card type='filters' />
+            <card type='marks' />
+            <card type='measures' />
+          </strip>
+        </edge>
+        <edge name='top'>
+          <strip size='2147483647'>
+            <card type='columns' />
+          </strip>
+          <strip size='2147483647'>
+            <card type='rows' />
+          </strip>
+        </edge>
+        <edge name='right'>
+          <strip size='160'>
+            <card param='[federated.0fistks17bt8w11awerwu1cl7dy8].[none:reporting_month:qk]' show-domain='false' show-null-ctrls='false' type='filter' />
+            <card mode='checkdropdown' param='[federated.0fistks17bt8w11awerwu1cl7dy8].[none:DS_VALUE_SEGMENT:nk]' type='filter' />
+            <card mode='checkdropdown' param='[federated.0fistks17bt8w11awerwu1cl7dy8].[none:lifecycle_segment:nk]' type='filter' />
+            <card mode='checkdropdown' param='[federated.0fistks17bt8w11awerwu1cl7dy8].[none:customer_segment:nk]' type='filter' />
+            <card mode='checkdropdown' param='[federated.0fistks17bt8w11awerwu1cl7dy8].[none:nps_sub_reason:nk]' type='filter' />
+            <card mode='checkdropdown' param='[federated.0fistks17bt8w11awerwu1cl7dy8].[none:nps_reason:nk]' type='filter' />
+            <card mode='checkdropdown' param='[federated.0fistks17bt8w11awerwu1cl7dy8].[none:sub_entity:nk]' type='filter' />
+            <card mode='checkdropdown' param='[federated.0fistks17bt8w11awerwu1cl7dy8].[none:management_entity:nk]' type='filter' />
+            <card mode='compact' param='[Parameters].[Parameter 1]' type='parameter' />
+          </strip>
+        </edge>
+      </cards>
+      <viewpoint>
+        <highlight>
+          <color-one-way>
+            <field>[federated.0fistks17bt8w11awerwu1cl7dy8].[none:Calculation_2742058907486814208:nk]</field>
+            <field>[federated.0fistks17bt8w11awerwu1cl7dy8].[none:DS_VALUE_SEGMENT:nk]</field>
+            <field>[federated.0fistks17bt8w11awerwu1cl7dy8].[none:customer_segment:nk]</field>
+            <field>[federated.0fistks17bt8w11awerwu1cl7dy8].[none:lifecycle_segment:nk]</field>
+            <field>[federated.0fistks17bt8w11awerwu1cl7dy8].[none:management_entity:nk]</field>
+            <field>[federated.0fistks17bt8w11awerwu1cl7dy8].[none:nps_reason:nk]</field>
+            <field>[federated.0fistks17bt8w11awerwu1cl7dy8].[none:nps_sub_reason:nk]</field>
+            <field>[federated.0fistks17bt8w11awerwu1cl7dy8].[none:reporting_month:qk]</field>
+            <field>[federated.0fistks17bt8w11awerwu1cl7dy8].[none:sub_entity:nk]</field>
+          </color-one-way>
+        </highlight>
+      </viewpoint>
+      <simple-id uuid='{1E2B377C-E3DD-400D-A79F-5C4812A94225}' />
+    </window>
+    <window class='worksheet' hidden='true' name='Table'>
+      <cards>
+        <edge name='left'>
+          <strip size='160'>
+            <card type='pages' />
+            <card type='filters' />
+            <card type='marks' />
+            <card type='measures' />
+          </strip>
+        </edge>
+        <edge name='top'>
+          <strip size='2147483647'>
+            <card type='columns' />
+          </strip>
+          <strip size='2147483647'>
+            <card type='rows' />
+          </strip>
+        </edge>
+        <edge name='right'>
+          <strip size='160'>
+            <card mode='dropdown' param='[federated.0fistks17bt8w11awerwu1cl7dy8].[my:reporting_month:ok]' size='27' type='filter' />
+            <card mode='checkdropdown' param='[federated.0fistks17bt8w11awerwu1cl7dy8].[none:DS_VALUE_SEGMENT:nk]' size='27' type='filter' />
+            <card mode='checkdropdown' param='[federated.0fistks17bt8w11awerwu1cl7dy8].[none:lifecycle_segment:nk]' size='27' type='filter' />
+            <card mode='checkdropdown' param='[federated.0fistks17bt8w11awerwu1cl7dy8].[none:customer_segment:nk]' size='27' type='filter' />
+            <card mode='checkdropdown' param='[federated.0fistks17bt8w11awerwu1cl7dy8].[none:nps_sub_reason:nk]' size='27' type='filter' />
+            <card mode='checkdropdown' param='[federated.0fistks17bt8w11awerwu1cl7dy8].[none:nps_reason:nk]' size='27' type='filter' />
+            <card mode='checkdropdown' param='[federated.0fistks17bt8w11awerwu1cl7dy8].[none:sub_entity:nk]' size='27' type='filter' />
+            <card mode='dropdown' param='[federated.0fistks17bt8w11awerwu1cl7dy8].[none:management_entity:nk]' size='27' type='filter' />
+            <card mode='compact' param='[Parameters].[Parameter 2]' size='27' type='parameter' />
+            <card mode='compact' param='[Parameters].[Parameter 3]' size='27' type='parameter' />
+          </strip>
+        </edge>
+      </cards>
+      <viewpoint>
+        <highlight>
+          <color-one-way>
+            <field>[federated.0fistks17bt8w11awerwu1cl7dy8].[my:reporting_month:ok]</field>
+            <field>[federated.0fistks17bt8w11awerwu1cl7dy8].[none:Calculation_5031787476393746432:nk]</field>
+            <field>[federated.0fistks17bt8w11awerwu1cl7dy8].[none:Calculation_5883812176645689346:nk]</field>
+            <field>[federated.0fistks17bt8w11awerwu1cl7dy8].[none:DS_VALUE_SEGMENT:nk]</field>
+            <field>[federated.0fistks17bt8w11awerwu1cl7dy8].[none:NPS Reason Filter (copy)_5883812176645988355:nk]</field>
+            <field>[federated.0fistks17bt8w11awerwu1cl7dy8].[none:customer_segment:nk]</field>
+            <field>[federated.0fistks17bt8w11awerwu1cl7dy8].[none:lifecycle_segment:nk]</field>
+            <field>[federated.0fistks17bt8w11awerwu1cl7dy8].[none:management_entity:nk]</field>
+            <field>[federated.0fistks17bt8w11awerwu1cl7dy8].[none:nps_reason:nk]</field>
+            <field>[federated.0fistks17bt8w11awerwu1cl7dy8].[none:nps_sub_reason:nk]</field>
+            <field>[federated.0fistks17bt8w11awerwu1cl7dy8].[none:reporting_month:qk]</field>
+            <field>[federated.0fistks17bt8w11awerwu1cl7dy8].[none:sub_entity:nk]</field>
+            <field>[federated.0fistks17bt8w11awerwu1cl7dy8].[usr:Calculation_5031787476395470849:ok]</field>
+          </color-one-way>
+        </highlight>
+      </viewpoint>
+      <simple-id uuid='{76DF06F9-63F8-4517-A6F8-B34A14A743A3}' />
+    </window>
+  </windows>
+</workbook>

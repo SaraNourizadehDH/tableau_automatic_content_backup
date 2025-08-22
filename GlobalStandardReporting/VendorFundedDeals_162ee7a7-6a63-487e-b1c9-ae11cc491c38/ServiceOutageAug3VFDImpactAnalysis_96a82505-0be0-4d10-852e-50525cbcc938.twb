@@ -1,0 +1,1545 @@
+<?xml version='1.0' encoding='utf-8' ?>
+
+<!-- build 20221.22.1108.1355                               -->
+<workbook original-version='18.1' source-build='2021.4.19 (20214.23.0627.1201)' source-platform='mac' version='18.1' xml:base='https://tableau.deliveryhero.net' xmlns:user='http://www.tableausoftware.com/xml/user'>
+  <document-format-change-manifest>
+    <_.fcp.AccessibleZoneTabOrder.true...AccessibleZoneTabOrder />
+    <_.fcp.AnimationOnByDefault.true...AnimationOnByDefault />
+    <AutoCreateAndUpdateDSDPhoneLayouts />
+    <_.fcp.MarkAnimation.true...MarkAnimation />
+    <_.fcp.ObjectModelEncapsulateLegacy.true...ObjectModelEncapsulateLegacy />
+    <_.fcp.ObjectModelExtractV2.true...ObjectModelExtractV2 />
+    <_.fcp.ObjectModelTableType.true...ObjectModelTableType />
+    <_.fcp.SchemaViewerObjectModel.true...SchemaViewerObjectModel />
+    <SetMembershipControl />
+    <SheetIdentifierTracking />
+    <SortTagCleanup />
+    <WindowsPersistSimpleIdentifiers />
+  </document-format-change-manifest>
+  <repository-location id='ServiceOutageAug3-VFDImpactAnalysis' path='/t/GlobalStandardReporting/workbooks' revision='1.0' site='GlobalStandardReporting' />
+  <preferences>
+    <preference name='ui.encoding.shelf.height' value='24' />
+    <preference name='ui.shelf.height' value='26' />
+  </preferences>
+  <_.fcp.AnimationOnByDefault.false...style>
+    <_.fcp.AnimationOnByDefault.false..._.fcp.MarkAnimation.true...style-rule element='animation'>
+      <_.fcp.AnimationOnByDefault.false...format attr='animation-on' value='ao-on' />
+    </_.fcp.AnimationOnByDefault.false..._.fcp.MarkAnimation.true...style-rule>
+  </_.fcp.AnimationOnByDefault.false...style>
+  <datasources>
+    <datasource caption='vfd_impact_aug_3' inline='true' name='federated.14f1obe1alj56z1bycswr136uzvq' version='18.1'>
+      <connection class='federated'>
+        <named-connections>
+          <named-connection caption='BigQuery' name='bigquery.1ptl62j10m0k6a12wruc110pa3e4'>
+            <connection CATALOG='dhh-ncr-stg' EXECCATALOG='dhh-ncr-stg' authentication='oauth' bq-dataset-fetch-rows='' bq-fetch-rows='' bq-fetch-tasks='' bq-large-fetch-rows='' bq-project-fetch-rows='' bq-response-rows='' class='bigquery' connection-dialect='google-sql' project='dhh-ncr-stg' schema='dev_sales_revenue' server-oauth='' username='yexi.yuan@foodpanda.com' workgroup-auth-mode='prompt' />
+          </named-connection>
+        </named-connections>
+        <_.fcp.ObjectModelEncapsulateLegacy.false...relation connection='bigquery.1ptl62j10m0k6a12wruc110pa3e4' name='Custom SQL Query' type='text'>WITH entity AS (
+  SELECT
+    management_entity
+    ,segment
+    ,country_name
+    ,brand_name
+    ,global_entity_id
+   FROM
+        `fulfillment-dwh-production.curated_data_shared_coredata.global_entities`
+    WHERE is_entity_online = TRUE
+      AND management_entity NOT IN (&apos;Instashop&apos;, &apos;Zomato&apos;, &apos;Woowa&apos;)
+)
+
+,orders AS (
+  SELECT
+    order_id
+    ,vendor_id
+    ,o.global_entity_id
+    ,placed_at
+    ,placed_at_local
+    ,fx_rate_eur fx_rate
+    ,MAX(COALESCE(value.gmv_eur, 0)) gmv_eur
+    ,MAX(COALESCE(value.gbv_eur, 0)) gfv_eur
+    ,MAX(COALESCE(value.gmv_local, 0)) gmv_local
+    ,MAX(COALESCE(value.gbv_local, 0)) gfv_local
+  FROM `fulfillment-dwh-production.curated_data_shared_central_dwh.orders` AS o
+  WHERE is_sent IS TRUE
+    AND DATE(placed_at) &gt;&gt;= &apos;2023-07-03&apos;
+    AND is_net_order IS TRUE
+  GROUP BY 1,2,3,4,5,6
+)
+
+,orders_inct AS (
+  SELECT 
+    TIMESTAMP_TRUNC(transaction_timestamp, HOUR) transaction_timestamp
+    ,EXTRACT(HOUR FROM transaction_timestamp) txn_hour
+    ,transaction_date
+    ,txn.global_entity_id
+    ,management_entity
+    ,country_name
+    ,brand_name
+    ,txn.order_id
+    ,SAFE_DIVIDE(total_incentive_value_local, fx_rate) total_incentives_eur
+    ,SAFE_DIVIDE(sponsor_value_local_vendor, fx_rate) vendor_funded_incentives_eur
+    ,SAFE_DIVIDE(sponsor_value_local_platform, fx_rate) platform_funded_incentives_eur
+    ,SAFE_DIVIDE(sponsor_value_local_third_party, fx_rate) third_party_funded_incentives_eur
+  FROM `dhh-ncr-live.dbt_sales_revenue_curated.customer_incentive_transactions` txn
+    INNER JOIN orders ord
+      ON txn.order_id = ord.order_id
+      AND txn.global_entity_id = ord.global_entity_id
+    LEFT JOIN entity ent
+      ON txn.global_entity_id = ent.global_entity_id
+  WHERE transaction_date &gt;&gt;= &quot;2023-07-03&quot;
+    AND txn.global_entity_id IN (SELECT global_entity_id FROM entity)
+)
+
+SELECT
+  transaction_timestamp
+  ,txn_hour
+  ,transaction_date
+  ,management_entity
+  ,country_name
+  ,brand_name
+  ,COUNT(order_id) num_inct_orders
+  ,COUNT(CASE WHEN vendor_funded_incentives_eur &gt;&gt; 0 THEN order_id END) num_vendor_inct_orders
+  ,COUNT(CASE WHEN platform_funded_incentives_eur &gt;&gt; 0 THEN order_id END) num_platform_inct_orders
+  ,COUNT(CASE WHEN third_party_funded_incentives_eur &gt;&gt; 0 THEN order_id END) num_third_party_inct_orders
+  ,SUM(total_incentives_eur) total_incentives_eur
+  ,SUM(vendor_funded_incentives_eur) vendor_funded_incentives_eur
+  ,SUM(platform_funded_incentives_eur) platform_funded_incentives_eur
+  ,SUM(third_party_funded_incentives_eur) third_party_funded_incentives_eur
+FROM orders_inct
+GROUP BY 1,2,3,4,5,6</_.fcp.ObjectModelEncapsulateLegacy.false...relation>
+        <_.fcp.ObjectModelEncapsulateLegacy.true...relation connection='bigquery.1ptl62j10m0k6a12wruc110pa3e4' name='Custom SQL Query' type='text'>WITH entity AS (
+  SELECT
+    management_entity
+    ,segment
+    ,country_name
+    ,brand_name
+    ,global_entity_id
+   FROM
+        `fulfillment-dwh-production.curated_data_shared_coredata.global_entities`
+    WHERE is_entity_online = TRUE
+      AND management_entity NOT IN (&apos;Instashop&apos;, &apos;Zomato&apos;, &apos;Woowa&apos;)
+)
+
+,orders AS (
+  SELECT
+    order_id
+    ,vendor_id
+    ,o.global_entity_id
+    ,placed_at
+    ,placed_at_local
+    ,fx_rate_eur fx_rate
+    ,MAX(COALESCE(value.gmv_eur, 0)) gmv_eur
+    ,MAX(COALESCE(value.gbv_eur, 0)) gfv_eur
+    ,MAX(COALESCE(value.gmv_local, 0)) gmv_local
+    ,MAX(COALESCE(value.gbv_local, 0)) gfv_local
+  FROM `fulfillment-dwh-production.curated_data_shared_central_dwh.orders` AS o
+  WHERE is_sent IS TRUE
+    AND DATE(placed_at) &gt;&gt;= &apos;2023-07-03&apos;
+    AND is_net_order IS TRUE
+  GROUP BY 1,2,3,4,5,6
+)
+
+,orders_inct AS (
+  SELECT 
+    TIMESTAMP_TRUNC(transaction_timestamp, HOUR) transaction_timestamp
+    ,EXTRACT(HOUR FROM transaction_timestamp) txn_hour
+    ,transaction_date
+    ,txn.global_entity_id
+    ,management_entity
+    ,country_name
+    ,brand_name
+    ,txn.order_id
+    ,SAFE_DIVIDE(total_incentive_value_local, fx_rate) total_incentives_eur
+    ,SAFE_DIVIDE(sponsor_value_local_vendor, fx_rate) vendor_funded_incentives_eur
+    ,SAFE_DIVIDE(sponsor_value_local_platform, fx_rate) platform_funded_incentives_eur
+    ,SAFE_DIVIDE(sponsor_value_local_third_party, fx_rate) third_party_funded_incentives_eur
+  FROM `dhh-ncr-live.dbt_sales_revenue_curated.customer_incentive_transactions` txn
+    INNER JOIN orders ord
+      ON txn.order_id = ord.order_id
+      AND txn.global_entity_id = ord.global_entity_id
+    LEFT JOIN entity ent
+      ON txn.global_entity_id = ent.global_entity_id
+  WHERE transaction_date &gt;&gt;= &quot;2023-07-03&quot;
+    AND txn.global_entity_id IN (SELECT global_entity_id FROM entity)
+)
+
+SELECT
+  transaction_timestamp
+  ,txn_hour
+  ,transaction_date
+  ,management_entity
+  ,country_name
+  ,brand_name
+  ,COUNT(order_id) num_inct_orders
+  ,COUNT(CASE WHEN vendor_funded_incentives_eur &gt;&gt; 0 THEN order_id END) num_vendor_inct_orders
+  ,COUNT(CASE WHEN platform_funded_incentives_eur &gt;&gt; 0 THEN order_id END) num_platform_inct_orders
+  ,COUNT(CASE WHEN third_party_funded_incentives_eur &gt;&gt; 0 THEN order_id END) num_third_party_inct_orders
+  ,SUM(total_incentives_eur) total_incentives_eur
+  ,SUM(vendor_funded_incentives_eur) vendor_funded_incentives_eur
+  ,SUM(platform_funded_incentives_eur) platform_funded_incentives_eur
+  ,SUM(third_party_funded_incentives_eur) third_party_funded_incentives_eur
+FROM orders_inct
+GROUP BY 1,2,3,4,5,6</_.fcp.ObjectModelEncapsulateLegacy.true...relation>
+        <metadata-records>
+          <metadata-record class='column'>
+            <remote-name>transaction_timestamp</remote-name>
+            <remote-type>7</remote-type>
+            <local-name>[transaction_timestamp]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>transaction_timestamp</remote-alias>
+            <local-type>datetime</local-type>
+            <aggregation>Year</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_CDA7C2B66C4C484688A02F316DB25FAD]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>txn_hour</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[txn_hour]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>txn_hour</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_CDA7C2B66C4C484688A02F316DB25FAD]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>transaction_date</remote-name>
+            <remote-type>7</remote-type>
+            <local-name>[transaction_date]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>transaction_date</remote-alias>
+            <local-type>date</local-type>
+            <aggregation>Year</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_CDA7C2B66C4C484688A02F316DB25FAD]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>management_entity</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[management_entity]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>management_entity</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_CDA7C2B66C4C484688A02F316DB25FAD]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>country_name</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[country_name]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>country_name</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_CDA7C2B66C4C484688A02F316DB25FAD]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>brand_name</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[brand_name]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>brand_name</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_CDA7C2B66C4C484688A02F316DB25FAD]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>num_inct_orders</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[num_inct_orders]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>num_inct_orders</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_CDA7C2B66C4C484688A02F316DB25FAD]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>num_vendor_inct_orders</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[num_vendor_inct_orders]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>num_vendor_inct_orders</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_CDA7C2B66C4C484688A02F316DB25FAD]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>num_platform_inct_orders</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[num_platform_inct_orders]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>num_platform_inct_orders</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_CDA7C2B66C4C484688A02F316DB25FAD]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>num_third_party_inct_orders</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[num_third_party_inct_orders]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>num_third_party_inct_orders</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_CDA7C2B66C4C484688A02F316DB25FAD]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>total_incentives_eur</remote-name>
+            <remote-type>5</remote-type>
+            <local-name>[total_incentives_eur]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>total_incentives_eur</remote-alias>
+            <local-type>real</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_CDA7C2B66C4C484688A02F316DB25FAD]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>vendor_funded_incentives_eur</remote-name>
+            <remote-type>5</remote-type>
+            <local-name>[vendor_funded_incentives_eur]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>vendor_funded_incentives_eur</remote-alias>
+            <local-type>real</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_CDA7C2B66C4C484688A02F316DB25FAD]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>platform_funded_incentives_eur</remote-name>
+            <remote-type>5</remote-type>
+            <local-name>[platform_funded_incentives_eur]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>platform_funded_incentives_eur</remote-alias>
+            <local-type>real</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_CDA7C2B66C4C484688A02F316DB25FAD]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>third_party_funded_incentives_eur</remote-name>
+            <remote-type>5</remote-type>
+            <local-name>[third_party_funded_incentives_eur]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>third_party_funded_incentives_eur</remote-alias>
+            <local-type>real</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_CDA7C2B66C4C484688A02F316DB25FAD]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+        </metadata-records>
+      </connection>
+      <aliases enabled='yes' />
+      <column caption='VFD Amount (3Aug)' datatype='real' name='[Calculation_2538482133830316032]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='SUM(IF [transaction_date] = DATE(&apos;2023-08-03&apos;) THEN [vendor_funded_incentives_eur] END)' />
+      </column>
+      <column caption='VFD Amount (-1D)' datatype='real' name='[Calculation_2538482133830725633]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='SUM(IF [transaction_date] = DATE(&apos;2023-08-02&apos;) THEN [vendor_funded_incentives_eur] END)' />
+      </column>
+      <column caption='vs VFD Amount 1 Day Ago' datatype='real' name='[Calculation_2538482133831737348]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='[Calculation_2538482133830316032]/[Calculation_2538482133830725633]-1' />
+      </column>
+      <column caption='Est. VFD Amount Loss (vs 1 Day)' datatype='real' name='[Calculation_2538482133833310215]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='[Calculation_2538482133830316032] - [Calculation_2538482133830725633]' />
+      </column>
+      <column caption='Est. Avg VFD Amount Loss' datatype='real' name='[Calculation_2538482133834264586]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='([Calculation_2538482133833310215]+[Est. VFD Amount Loss (vs 1 Week) (copy)_2538482133834178569]+[Est. VFD Amount Loss (vs 1 Day) (copy)_2538482133834027016])/3' />
+      </column>
+      <column caption='Est. % Avg VFD Amount Loss ' datatype='real' name='[Calculation_2538482133835206668]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='([Calculation_2538482133831737348]+[vs VFD Amount 1 Day Ago (copy)_2538482133832208389]+[vs VFD Amount 1 Day Ago (copy)_2538482133832208389])/3' />
+      </column>
+      <column caption='Est. VFD Amount Loss (vs 1 Week)' datatype='real' name='[Est. VFD Amount Loss (vs 1 Day) (copy)_2538482133834027016]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='[Calculation_2538482133830316032] - [VFD Amount (-1D) (copy)_2538482133831139330]' />
+      </column>
+      <column caption='Est. VFD Amount Loss (vs 1 Month)' datatype='real' name='[Est. VFD Amount Loss (vs 1 Week) (copy)_2538482133834178569]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='[Calculation_2538482133830316032] - [VFD Amount (-1W) (copy)_2538482133831520259]' />
+      </column>
+      <column caption='VFD Amount (-1W)' datatype='real' name='[VFD Amount (-1D) (copy)_2538482133831139330]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='SUM(IF [transaction_date] = DATE(&apos;2023-07-27&apos;) THEN [vendor_funded_incentives_eur] END)' />
+      </column>
+      <column caption='VFD Amount (-1M)' datatype='real' name='[VFD Amount (-1W) (copy)_2538482133831520259]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='SUM(IF [transaction_date] = DATE(&apos;2023-07-06&apos;) THEN [vendor_funded_incentives_eur] END)' />
+      </column>
+      <_.fcp.ObjectModelTableType.true...column caption='Custom SQL Query' datatype='table' name='[__tableau_internal_object_id__].[_CDA7C2B66C4C484688A02F316DB25FAD]' role='measure' type='quantitative' />
+      <column datatype='string' name='[country_name]' role='dimension' semantic-role='[Country].[ISO3166_2]' type='nominal' />
+      <column caption='# VFD Inct Orders' datatype='integer' name='[num_vendor_inct_orders]' role='measure' type='quantitative' />
+      <column datatype='date' name='[transaction_date]' role='dimension' type='ordinal' />
+      <column aggregation='Sum' datatype='integer' name='[txn_hour]' role='dimension' type='ordinal' />
+      <column caption='€ VFD Amount' datatype='real' name='[vendor_funded_incentives_eur]' role='measure' type='quantitative' />
+      <column caption='vs VFD Amount 1 Week Ago' datatype='real' name='[vs VFD Amount 1 Day Ago (copy)_2538482133832208389]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='[Calculation_2538482133830316032]/[VFD Amount (-1D) (copy)_2538482133831139330]-1' />
+      </column>
+      <column caption='vs VFD Amount 1 Month Ago' datatype='real' name='[vs VFD Amount 1 Week Ago (copy)_2538482133832429574]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='[Calculation_2538482133830316032]/[VFD Amount (-1W) (copy)_2538482133831520259]-1' />
+      </column>
+      <column-instance column='[transaction_date]' derivation='None' name='[none:transaction_date:ok]' pivot='key' type='ordinal' />
+      <column-instance column='[Calculation_2538482133830316032]' derivation='User' name='[usr:Calculation_2538482133830316032:qk]' pivot='key' type='quantitative' />
+      <column-instance column='[Calculation_2538482133831737348]' derivation='User' name='[usr:Calculation_2538482133831737348:qk]' pivot='key' type='quantitative' />
+      <column-instance column='[Calculation_2538482133834264586]' derivation='User' name='[usr:Calculation_2538482133834264586:qk]' pivot='key' type='quantitative' />
+      <column-instance column='[Calculation_2538482133835206668]' derivation='User' name='[usr:Calculation_2538482133835206668:qk]' pivot='key' type='quantitative' />
+      <column-instance column='[vs VFD Amount 1 Day Ago (copy)_2538482133832208389]' derivation='User' name='[usr:vs VFD Amount 1 Day Ago (copy)_2538482133832208389:qk]' pivot='key' type='quantitative' />
+      <column-instance column='[vs VFD Amount 1 Week Ago (copy)_2538482133832429574]' derivation='User' name='[usr:vs VFD Amount 1 Week Ago (copy)_2538482133832429574:qk]' pivot='key' type='quantitative' />
+      <extract _.fcp.ObjectModelExtractV2.true...object-id='' count='-1' enabled='true' units='records'>
+        <connection class='hyper' dbname='extract/2a/db/{68416FBF-3CBD-4BE3-8688-53DD782A269B}/federated_14f1obe1alj56z1bycswr1.hyper' default-settings='yes' extract-engine='true' schema='Extract' tablename='Extract' update-time='08/08/2023 07:48:07 AM'>
+          <_.fcp.ObjectModelEncapsulateLegacy.false...relation name='Extract' table='[Extract].[Extract]' type='table' />
+          <_.fcp.ObjectModelEncapsulateLegacy.true...relation name='Extract' table='[Extract].[Extract]' type='table' />
+          <refresh>
+            <refresh-event add-from-file-path='vfd_impact_aug_3' increment-value='%null%' refresh-type='create' rows-inserted='35891' timestamp-start='2023-08-08 07:47:37.039' />
+          </refresh>
+          <metadata-records>
+            <metadata-record class='column'>
+              <remote-name>transaction_timestamp</remote-name>
+              <remote-type>135</remote-type>
+              <local-name>[transaction_timestamp]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>transaction_timestamp</remote-alias>
+              <ordinal>0</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>datetime</local-type>
+              <aggregation>Year</aggregation>
+              <approx-count>2178</approx-count>
+              <contains-null>true</contains-null>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>txn_hour</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[txn_hour]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>txn_hour</remote-alias>
+              <ordinal>1</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>24</approx-count>
+              <contains-null>true</contains-null>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>transaction_date</remote-name>
+              <remote-type>133</remote-type>
+              <local-name>[transaction_date]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>transaction_date</remote-alias>
+              <ordinal>2</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>date</local-type>
+              <aggregation>Year</aggregation>
+              <approx-count>37</approx-count>
+              <contains-null>true</contains-null>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>management_entity</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[management_entity]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>management_entity</remote-alias>
+              <ordinal>3</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>6</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>country_name</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[country_name]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>country_name</remote-alias>
+              <ordinal>4</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>46</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>brand_name</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[brand_name]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>brand_name</remote-alias>
+              <ordinal>5</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>8</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>num_inct_orders</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[num_inct_orders]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>num_inct_orders</remote-alias>
+              <ordinal>6</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>5139</approx-count>
+              <contains-null>true</contains-null>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>num_vendor_inct_orders</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[num_vendor_inct_orders]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>num_vendor_inct_orders</remote-alias>
+              <ordinal>7</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>2857</approx-count>
+              <contains-null>true</contains-null>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>num_platform_inct_orders</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[num_platform_inct_orders]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>num_platform_inct_orders</remote-alias>
+              <ordinal>8</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>2643</approx-count>
+              <contains-null>true</contains-null>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>num_third_party_inct_orders</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[num_third_party_inct_orders]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>num_third_party_inct_orders</remote-alias>
+              <ordinal>9</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>293</approx-count>
+              <contains-null>true</contains-null>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>total_incentives_eur</remote-name>
+              <remote-type>5</remote-type>
+              <local-name>[total_incentives_eur]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>total_incentives_eur</remote-alias>
+              <ordinal>10</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>real</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>32095</approx-count>
+              <contains-null>true</contains-null>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>vendor_funded_incentives_eur</remote-name>
+              <remote-type>5</remote-type>
+              <local-name>[vendor_funded_incentives_eur]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>vendor_funded_incentives_eur</remote-alias>
+              <ordinal>11</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>real</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>29803</approx-count>
+              <contains-null>true</contains-null>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>platform_funded_incentives_eur</remote-name>
+              <remote-type>5</remote-type>
+              <local-name>[platform_funded_incentives_eur]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>platform_funded_incentives_eur</remote-alias>
+              <ordinal>12</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>real</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>24353</approx-count>
+              <contains-null>true</contains-null>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>third_party_funded_incentives_eur</remote-name>
+              <remote-type>5</remote-type>
+              <local-name>[third_party_funded_incentives_eur]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>third_party_funded_incentives_eur</remote-alias>
+              <ordinal>13</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>real</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>4422</approx-count>
+              <contains-null>true</contains-null>
+            </metadata-record>
+          </metadata-records>
+        </connection>
+      </extract>
+      <layout _.fcp.SchemaViewerObjectModel.false...dim-percentage='0.5' _.fcp.SchemaViewerObjectModel.false...measure-percentage='0.4' dim-ordering='alphabetic' measure-ordering='alphabetic' show-structure='true' />
+      <style>
+        <style-rule element='mark'>
+          <encoding attr='color' field='[:Measure Names]' type='palette'>
+            <map to='#4e79a7'>
+              <bucket>&quot;[federated.14f1obe1alj56z1bycswr136uzvq].[usr:Calculation_2538482133830316032:qk]&quot;</bucket>
+            </map>
+            <map to='#59a14f'>
+              <bucket>&quot;[federated.14f1obe1alj56z1bycswr136uzvq].[usr:vs VFD Amount 1 Day Ago (copy)_2538482133832208389:qk]&quot;</bucket>
+            </map>
+            <map to='#76b7b2'>
+              <bucket>&quot;[federated.14f1obe1alj56z1bycswr136uzvq].[usr:Calculation_2538482133831737348:qk]&quot;</bucket>
+            </map>
+            <map to='#e15759'>
+              <bucket>&quot;[federated.14f1obe1alj56z1bycswr136uzvq].[usr:Calculation_2538482133835206668:qk]&quot;</bucket>
+            </map>
+            <map to='#edc948'>
+              <bucket>&quot;[federated.14f1obe1alj56z1bycswr136uzvq].[usr:vs VFD Amount 1 Week Ago (copy)_2538482133832429574:qk]&quot;</bucket>
+            </map>
+            <map to='#f28e2b'>
+              <bucket>&quot;[federated.14f1obe1alj56z1bycswr136uzvq].[usr:Calculation_2538482133834264586:qk]&quot;</bucket>
+            </map>
+          </encoding>
+          <encoding attr='color' field='[none:transaction_date:ok]' palette='color_blind_10_0' type='palette'>
+            <map to='#1170aa'>
+              <bucket>#2023-07-03#</bucket>
+            </map>
+            <map to='#57606c'>
+              <bucket>#2023-08-03#</bucket>
+            </map>
+            <map to='#5fa2ce'>
+              <bucket>#2023-07-06#</bucket>
+            </map>
+            <map to='#a3acb9'>
+              <bucket>#2023-08-02#</bucket>
+            </map>
+            <map to='#fc7d0b'>
+              <bucket>#2023-07-27#</bucket>
+            </map>
+          </encoding>
+        </style-rule>
+      </style>
+      <semantic-values>
+        <semantic-value key='[Country].[Name]' value='&quot;Singapore&quot;' />
+      </semantic-values>
+      <_.fcp.ObjectModelEncapsulateLegacy.true...object-graph>
+        <objects>
+          <object caption='Custom SQL Query' id='_CDA7C2B66C4C484688A02F316DB25FAD'>
+            <properties context=''>
+              <relation connection='bigquery.1ptl62j10m0k6a12wruc110pa3e4' name='Custom SQL Query' type='text'>WITH entity AS (
+  SELECT
+    management_entity
+    ,segment
+    ,country_name
+    ,brand_name
+    ,global_entity_id
+   FROM
+        `fulfillment-dwh-production.curated_data_shared_coredata.global_entities`
+    WHERE is_entity_online = TRUE
+      AND management_entity NOT IN (&apos;Instashop&apos;, &apos;Zomato&apos;, &apos;Woowa&apos;)
+)
+
+,orders AS (
+  SELECT
+    order_id
+    ,vendor_id
+    ,o.global_entity_id
+    ,placed_at
+    ,placed_at_local
+    ,fx_rate_eur fx_rate
+    ,MAX(COALESCE(value.gmv_eur, 0)) gmv_eur
+    ,MAX(COALESCE(value.gbv_eur, 0)) gfv_eur
+    ,MAX(COALESCE(value.gmv_local, 0)) gmv_local
+    ,MAX(COALESCE(value.gbv_local, 0)) gfv_local
+  FROM `fulfillment-dwh-production.curated_data_shared_central_dwh.orders` AS o
+  WHERE is_sent IS TRUE
+    AND DATE(placed_at) &gt;&gt;= &apos;2023-07-03&apos;
+    AND is_net_order IS TRUE
+  GROUP BY 1,2,3,4,5,6
+)
+
+,orders_inct AS (
+  SELECT 
+    TIMESTAMP_TRUNC(transaction_timestamp, HOUR) transaction_timestamp
+    ,EXTRACT(HOUR FROM transaction_timestamp) txn_hour
+    ,transaction_date
+    ,txn.global_entity_id
+    ,management_entity
+    ,country_name
+    ,brand_name
+    ,txn.order_id
+    ,SAFE_DIVIDE(total_incentive_value_local, fx_rate) total_incentives_eur
+    ,SAFE_DIVIDE(sponsor_value_local_vendor, fx_rate) vendor_funded_incentives_eur
+    ,SAFE_DIVIDE(sponsor_value_local_platform, fx_rate) platform_funded_incentives_eur
+    ,SAFE_DIVIDE(sponsor_value_local_third_party, fx_rate) third_party_funded_incentives_eur
+  FROM `dhh-ncr-live.dbt_sales_revenue_curated.customer_incentive_transactions` txn
+    INNER JOIN orders ord
+      ON txn.order_id = ord.order_id
+      AND txn.global_entity_id = ord.global_entity_id
+    LEFT JOIN entity ent
+      ON txn.global_entity_id = ent.global_entity_id
+  WHERE transaction_date &gt;&gt;= &quot;2023-07-03&quot;
+    AND txn.global_entity_id IN (SELECT global_entity_id FROM entity)
+)
+
+SELECT
+  transaction_timestamp
+  ,txn_hour
+  ,transaction_date
+  ,management_entity
+  ,country_name
+  ,brand_name
+  ,COUNT(order_id) num_inct_orders
+  ,COUNT(CASE WHEN vendor_funded_incentives_eur &gt;&gt; 0 THEN order_id END) num_vendor_inct_orders
+  ,COUNT(CASE WHEN platform_funded_incentives_eur &gt;&gt; 0 THEN order_id END) num_platform_inct_orders
+  ,COUNT(CASE WHEN third_party_funded_incentives_eur &gt;&gt; 0 THEN order_id END) num_third_party_inct_orders
+  ,SUM(total_incentives_eur) total_incentives_eur
+  ,SUM(vendor_funded_incentives_eur) vendor_funded_incentives_eur
+  ,SUM(platform_funded_incentives_eur) platform_funded_incentives_eur
+  ,SUM(third_party_funded_incentives_eur) third_party_funded_incentives_eur
+FROM orders_inct
+GROUP BY 1,2,3,4,5,6</relation>
+            </properties>
+            <properties context='extract'>
+              <relation name='Extract' table='[Extract].[Extract]' type='table' />
+            </properties>
+          </object>
+        </objects>
+      </_.fcp.ObjectModelEncapsulateLegacy.true...object-graph>
+    </datasource>
+  </datasources>
+  <worksheets>
+    <worksheet name='Incentivised Amount'>
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='vfd_impact_aug_3' name='federated.14f1obe1alj56z1bycswr136uzvq' />
+          </datasources>
+          <datasource-dependencies datasource='federated.14f1obe1alj56z1bycswr136uzvq'>
+            <column datatype='string' name='[management_entity]' role='dimension' type='nominal' />
+            <column-instance column='[management_entity]' derivation='None' name='[none:management_entity:nk]' pivot='key' type='nominal' />
+            <column-instance column='[transaction_date]' derivation='None' name='[none:transaction_date:ok]' pivot='key' type='ordinal' />
+            <column-instance column='[txn_hour]' derivation='None' name='[none:txn_hour:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[total_incentives_eur]' derivation='Sum' name='[sum:total_incentives_eur:qk]' pivot='key' type='quantitative' />
+            <column datatype='real' name='[total_incentives_eur]' role='measure' type='quantitative' />
+            <column datatype='date' name='[transaction_date]' role='dimension' type='ordinal' />
+            <column aggregation='Sum' datatype='integer' name='[txn_hour]' role='dimension' type='ordinal' />
+          </datasource-dependencies>
+          <filter class='categorical' column='[federated.14f1obe1alj56z1bycswr136uzvq].[none:management_entity:nk]'>
+            <groupfilter function='union' user:ui-domain='relevant' user:ui-enumeration='inclusive' user:ui-marker='enumerate'>
+              <groupfilter function='member' level='[none:management_entity:nk]' member='&quot;DH Europe&quot;' />
+              <groupfilter function='member' level='[none:management_entity:nk]' member='&quot;Foodpanda APAC&quot;' />
+            </groupfilter>
+          </filter>
+          <filter class='categorical' column='[federated.14f1obe1alj56z1bycswr136uzvq].[none:transaction_date:ok]'>
+            <groupfilter function='union' user:ui-domain='relevant' user:ui-enumeration='inclusive' user:ui-marker='enumerate'>
+              <groupfilter function='member' level='[none:transaction_date:ok]' member='#2023-07-06#' />
+              <groupfilter function='member' level='[none:transaction_date:ok]' member='#2023-07-27#' />
+              <groupfilter function='member' level='[none:transaction_date:ok]' member='#2023-08-02#' />
+              <groupfilter function='member' level='[none:transaction_date:ok]' member='#2023-08-03#' />
+            </groupfilter>
+          </filter>
+          <slices>
+            <column>[federated.14f1obe1alj56z1bycswr136uzvq].[none:transaction_date:ok]</column>
+            <column>[federated.14f1obe1alj56z1bycswr136uzvq].[none:management_entity:nk]</column>
+          </slices>
+          <aggregation value='true' />
+        </view>
+        <style>
+          <style-rule element='axis'>
+            <encoding attr='space' class='0' domain-expand='false' field='[federated.14f1obe1alj56z1bycswr136uzvq].[sum:total_incentives_eur:qk]' field-type='quantitative' range-type='independent' scope='rows' type='space' />
+            <format attr='title' class='0' field='[federated.14f1obe1alj56z1bycswr136uzvq].[sum:total_incentives_eur:qk]' scope='rows' value='€ Total Incentives' />
+            <format attr='title' class='0' field='[federated.14f1obe1alj56z1bycswr136uzvq].[none:txn_hour:qk]' scope='cols' value='Hour' />
+            <encoding attr='space' class='0' field='[federated.14f1obe1alj56z1bycswr136uzvq].[none:txn_hour:qk]' field-type='quantitative' max='23' min='0' range-type='fixed' scope='cols' type='space' />
+          </style-rule>
+          <style-rule element='worksheet'>
+            <format attr='display-field-labels' scope='rows' value='false' />
+          </style-rule>
+          <style-rule element='gridline'>
+            <format attr='stroke-size' scope='rows' value='0' />
+            <format attr='line-visibility' scope='rows' value='off' />
+          </style-rule>
+        </style>
+        <panes>
+          <pane id='3' selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Line' />
+            <mark-sizing mark-sizing-setting='marks-scaling-off' />
+            <encodings>
+              <color column='[federated.14f1obe1alj56z1bycswr136uzvq].[none:transaction_date:ok]' />
+            </encodings>
+            <style>
+              <style-rule element='mark'>
+                <format attr='size' value='0.2738673985004425' />
+              </style-rule>
+            </style>
+          </pane>
+        </panes>
+        <rows>([federated.14f1obe1alj56z1bycswr136uzvq].[none:management_entity:nk] * [federated.14f1obe1alj56z1bycswr136uzvq].[sum:total_incentives_eur:qk])</rows>
+        <cols>[federated.14f1obe1alj56z1bycswr136uzvq].[none:txn_hour:qk]</cols>
+      </table>
+      <simple-id uuid='{A8E66F8E-717E-4631-A8DB-6F075F6FB754}' />
+    </worksheet>
+    <worksheet name='Incentivised Orders'>
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='vfd_impact_aug_3' name='federated.14f1obe1alj56z1bycswr136uzvq' />
+          </datasources>
+          <datasource-dependencies datasource='federated.14f1obe1alj56z1bycswr136uzvq'>
+            <column datatype='string' name='[management_entity]' role='dimension' type='nominal' />
+            <column-instance column='[management_entity]' derivation='None' name='[none:management_entity:nk]' pivot='key' type='nominal' />
+            <column-instance column='[transaction_date]' derivation='None' name='[none:transaction_date:ok]' pivot='key' type='ordinal' />
+            <column-instance column='[txn_hour]' derivation='None' name='[none:txn_hour:qk]' pivot='key' type='quantitative' />
+            <column datatype='integer' name='[num_inct_orders]' role='measure' type='quantitative' />
+            <column-instance column='[num_inct_orders]' derivation='Sum' name='[sum:num_inct_orders:qk]' pivot='key' type='quantitative' />
+            <column datatype='date' name='[transaction_date]' role='dimension' type='ordinal' />
+            <column aggregation='Sum' datatype='integer' name='[txn_hour]' role='dimension' type='ordinal' />
+          </datasource-dependencies>
+          <filter class='categorical' column='[federated.14f1obe1alj56z1bycswr136uzvq].[none:management_entity:nk]'>
+            <groupfilter function='union' user:ui-domain='relevant' user:ui-enumeration='inclusive' user:ui-marker='enumerate'>
+              <groupfilter function='member' level='[none:management_entity:nk]' member='&quot;DH Europe&quot;' />
+              <groupfilter function='member' level='[none:management_entity:nk]' member='&quot;Foodpanda APAC&quot;' />
+            </groupfilter>
+          </filter>
+          <filter class='categorical' column='[federated.14f1obe1alj56z1bycswr136uzvq].[none:transaction_date:ok]'>
+            <groupfilter function='union' user:ui-domain='relevant' user:ui-enumeration='inclusive' user:ui-marker='enumerate'>
+              <groupfilter function='member' level='[none:transaction_date:ok]' member='#2023-07-06#' />
+              <groupfilter function='member' level='[none:transaction_date:ok]' member='#2023-07-27#' />
+              <groupfilter function='member' level='[none:transaction_date:ok]' member='#2023-08-02#' />
+              <groupfilter function='member' level='[none:transaction_date:ok]' member='#2023-08-03#' />
+            </groupfilter>
+          </filter>
+          <slices>
+            <column>[federated.14f1obe1alj56z1bycswr136uzvq].[none:transaction_date:ok]</column>
+            <column>[federated.14f1obe1alj56z1bycswr136uzvq].[none:management_entity:nk]</column>
+          </slices>
+          <aggregation value='true' />
+        </view>
+        <style>
+          <style-rule element='axis'>
+            <encoding attr='space' class='0' domain-expand='false' field='[federated.14f1obe1alj56z1bycswr136uzvq].[sum:num_inct_orders:qk]' field-type='quantitative' range-type='independent' scope='rows' type='space' />
+            <format attr='title' class='0' field='[federated.14f1obe1alj56z1bycswr136uzvq].[sum:num_inct_orders:qk]' scope='rows' value='# Incentivised Orders' />
+            <format attr='title' class='0' field='[federated.14f1obe1alj56z1bycswr136uzvq].[none:txn_hour:qk]' scope='cols' value='Hour' />
+            <encoding attr='space' class='0' field='[federated.14f1obe1alj56z1bycswr136uzvq].[none:txn_hour:qk]' field-type='quantitative' max='23' min='0' range-type='fixed' scope='cols' type='space' />
+          </style-rule>
+          <style-rule element='worksheet'>
+            <format attr='display-field-labels' scope='rows' value='false' />
+          </style-rule>
+          <style-rule element='gridline'>
+            <format attr='stroke-size' scope='rows' value='0' />
+            <format attr='line-visibility' scope='rows' value='off' />
+          </style-rule>
+        </style>
+        <panes>
+          <pane id='3' selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Line' />
+            <mark-sizing mark-sizing-setting='marks-scaling-off' />
+            <encodings>
+              <color column='[federated.14f1obe1alj56z1bycswr136uzvq].[none:transaction_date:ok]' />
+            </encodings>
+            <style>
+              <style-rule element='mark'>
+                <format attr='size' value='0.2738673985004425' />
+              </style-rule>
+            </style>
+          </pane>
+        </panes>
+        <rows>([federated.14f1obe1alj56z1bycswr136uzvq].[none:management_entity:nk] * [federated.14f1obe1alj56z1bycswr136uzvq].[sum:num_inct_orders:qk])</rows>
+        <cols>[federated.14f1obe1alj56z1bycswr136uzvq].[none:txn_hour:qk]</cols>
+      </table>
+      <simple-id uuid='{956A8F7C-29FB-4224-BB21-A18966C4214F}' />
+    </worksheet>
+    <worksheet name='VFD Amount'>
+      <layout-options>
+        <title>
+          <formatted-text>
+            <run fontalignment='1' fontname='Tableau Bold' fontsize='12'>Hourly VFD Incentivised Amount</run>
+          </formatted-text>
+        </title>
+      </layout-options>
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='vfd_impact_aug_3' name='federated.14f1obe1alj56z1bycswr136uzvq' />
+          </datasources>
+          <datasource-dependencies datasource='federated.14f1obe1alj56z1bycswr136uzvq'>
+            <column datatype='string' name='[management_entity]' role='dimension' type='nominal' />
+            <column-instance column='[management_entity]' derivation='None' name='[none:management_entity:nk]' pivot='key' type='nominal' />
+            <column-instance column='[transaction_date]' derivation='None' name='[none:transaction_date:ok]' pivot='key' type='ordinal' />
+            <column-instance column='[txn_hour]' derivation='None' name='[none:txn_hour:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[vendor_funded_incentives_eur]' derivation='Sum' name='[sum:vendor_funded_incentives_eur:qk]' pivot='key' type='quantitative' />
+            <column datatype='date' name='[transaction_date]' role='dimension' type='ordinal' />
+            <column aggregation='Sum' datatype='integer' name='[txn_hour]' role='dimension' type='ordinal' />
+            <column caption='€ VFD Amount' datatype='real' name='[vendor_funded_incentives_eur]' role='measure' type='quantitative' />
+          </datasource-dependencies>
+          <filter class='categorical' column='[federated.14f1obe1alj56z1bycswr136uzvq].[none:management_entity:nk]'>
+            <groupfilter function='union' user:ui-domain='relevant' user:ui-enumeration='inclusive' user:ui-marker='enumerate'>
+              <groupfilter function='member' level='[none:management_entity:nk]' member='&quot;DH Europe&quot;' />
+              <groupfilter function='member' level='[none:management_entity:nk]' member='&quot;Foodpanda APAC&quot;' />
+            </groupfilter>
+          </filter>
+          <filter class='categorical' column='[federated.14f1obe1alj56z1bycswr136uzvq].[none:transaction_date:ok]'>
+            <groupfilter function='union' user:ui-domain='relevant' user:ui-enumeration='inclusive' user:ui-marker='enumerate'>
+              <groupfilter function='member' level='[none:transaction_date:ok]' member='#2023-07-06#' />
+              <groupfilter function='member' level='[none:transaction_date:ok]' member='#2023-07-27#' />
+              <groupfilter function='member' level='[none:transaction_date:ok]' member='#2023-08-02#' />
+              <groupfilter function='member' level='[none:transaction_date:ok]' member='#2023-08-03#' />
+            </groupfilter>
+          </filter>
+          <slices>
+            <column>[federated.14f1obe1alj56z1bycswr136uzvq].[none:transaction_date:ok]</column>
+            <column>[federated.14f1obe1alj56z1bycswr136uzvq].[none:management_entity:nk]</column>
+          </slices>
+          <aggregation value='true' />
+        </view>
+        <style>
+          <style-rule element='axis'>
+            <format attr='title' class='0' field='[federated.14f1obe1alj56z1bycswr136uzvq].[sum:vendor_funded_incentives_eur:qk]' scope='rows' value='€ VFD Amount' />
+            <encoding attr='space' class='0' domain-expand='false' field='[federated.14f1obe1alj56z1bycswr136uzvq].[sum:vendor_funded_incentives_eur:qk]' field-type='quantitative' range-type='independent' scope='rows' type='space' />
+            <format attr='title' class='0' field='[federated.14f1obe1alj56z1bycswr136uzvq].[none:txn_hour:qk]' scope='cols' value='Hour' />
+            <encoding attr='space' class='0' field='[federated.14f1obe1alj56z1bycswr136uzvq].[none:txn_hour:qk]' field-type='quantitative' max='23' min='0' range-type='fixed' scope='cols' type='space' />
+          </style-rule>
+          <style-rule element='cell'>
+            <format attr='text-format' field='[federated.14f1obe1alj56z1bycswr136uzvq].[sum:vendor_funded_incentives_eur:qk]' value='c&quot;€&quot;#,##0;(&quot;€&quot;#,##0)' />
+          </style-rule>
+          <style-rule element='worksheet'>
+            <format attr='display-field-labels' scope='rows' value='false' />
+          </style-rule>
+          <style-rule element='gridline'>
+            <format attr='stroke-size' scope='rows' value='0' />
+            <format attr='line-visibility' scope='rows' value='off' />
+          </style-rule>
+        </style>
+        <panes>
+          <pane id='3' selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Line' />
+            <mark-sizing mark-sizing-setting='marks-scaling-off' />
+            <encodings>
+              <color column='[federated.14f1obe1alj56z1bycswr136uzvq].[none:transaction_date:ok]' />
+            </encodings>
+            <style>
+              <style-rule element='mark'>
+                <format attr='size' value='0.2738673985004425' />
+              </style-rule>
+            </style>
+          </pane>
+        </panes>
+        <rows>([federated.14f1obe1alj56z1bycswr136uzvq].[none:management_entity:nk] * [federated.14f1obe1alj56z1bycswr136uzvq].[sum:vendor_funded_incentives_eur:qk])</rows>
+        <cols>[federated.14f1obe1alj56z1bycswr136uzvq].[none:txn_hour:qk]</cols>
+      </table>
+      <simple-id uuid='{45E1877D-8D3E-452C-BB3A-5A0563DBF599}' />
+    </worksheet>
+    <worksheet name='VFD Amount (Table)'>
+      <layout-options>
+        <title>
+          <formatted-text>
+            <run fontalignment='1' fontcolor='#1b1b1b' fontname='Tableau Bold' fontsize='12'>VFD Amount Loss (11-12 Hour) on 3rd Aug</run>
+          </formatted-text>
+        </title>
+      </layout-options>
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='vfd_impact_aug_3' name='federated.14f1obe1alj56z1bycswr136uzvq' />
+          </datasources>
+          <datasource-dependencies datasource='federated.14f1obe1alj56z1bycswr136uzvq'>
+            <column caption='VFD Amount (3Aug)' datatype='real' name='[Calculation_2538482133830316032]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='SUM(IF [transaction_date] = DATE(&apos;2023-08-03&apos;) THEN [vendor_funded_incentives_eur] END)' />
+            </column>
+            <column caption='VFD Amount (-1D)' datatype='real' name='[Calculation_2538482133830725633]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='SUM(IF [transaction_date] = DATE(&apos;2023-08-02&apos;) THEN [vendor_funded_incentives_eur] END)' />
+            </column>
+            <column caption='vs VFD Amount 1 Day Ago' datatype='real' name='[Calculation_2538482133831737348]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='[Calculation_2538482133830316032]/[Calculation_2538482133830725633]-1' />
+            </column>
+            <column caption='Est. VFD Amount Loss (vs 1 Day)' datatype='real' name='[Calculation_2538482133833310215]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='[Calculation_2538482133830316032] - [Calculation_2538482133830725633]' />
+            </column>
+            <column caption='Est. Avg VFD Amount Loss' datatype='real' name='[Calculation_2538482133834264586]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='([Calculation_2538482133833310215]+[Est. VFD Amount Loss (vs 1 Week) (copy)_2538482133834178569]+[Est. VFD Amount Loss (vs 1 Day) (copy)_2538482133834027016])/3' />
+            </column>
+            <column caption='Est. % Avg VFD Amount Loss ' datatype='real' name='[Calculation_2538482133835206668]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='([Calculation_2538482133831737348]+[vs VFD Amount 1 Day Ago (copy)_2538482133832208389]+[vs VFD Amount 1 Day Ago (copy)_2538482133832208389])/3' />
+            </column>
+            <column caption='Est. VFD Amount Loss (vs 1 Week)' datatype='real' name='[Est. VFD Amount Loss (vs 1 Day) (copy)_2538482133834027016]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='[Calculation_2538482133830316032] - [VFD Amount (-1D) (copy)_2538482133831139330]' />
+            </column>
+            <column caption='Est. VFD Amount Loss (vs 1 Month)' datatype='real' name='[Est. VFD Amount Loss (vs 1 Week) (copy)_2538482133834178569]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='[Calculation_2538482133830316032] - [VFD Amount (-1W) (copy)_2538482133831520259]' />
+            </column>
+            <column caption='VFD Amount (-1W)' datatype='real' name='[VFD Amount (-1D) (copy)_2538482133831139330]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='SUM(IF [transaction_date] = DATE(&apos;2023-07-27&apos;) THEN [vendor_funded_incentives_eur] END)' />
+            </column>
+            <column caption='VFD Amount (-1M)' datatype='real' name='[VFD Amount (-1W) (copy)_2538482133831520259]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='SUM(IF [transaction_date] = DATE(&apos;2023-07-06&apos;) THEN [vendor_funded_incentives_eur] END)' />
+            </column>
+            <column datatype='string' name='[country_name]' role='dimension' semantic-role='[Country].[ISO3166_2]' type='nominal' />
+            <column datatype='string' name='[management_entity]' role='dimension' type='nominal' />
+            <column-instance column='[country_name]' derivation='None' name='[none:country_name:nk]' pivot='key' type='nominal' />
+            <column-instance column='[management_entity]' derivation='None' name='[none:management_entity:nk]' pivot='key' type='nominal' />
+            <column-instance column='[transaction_date]' derivation='None' name='[none:transaction_date:ok]' pivot='key' type='ordinal' />
+            <column-instance column='[txn_hour]' derivation='None' name='[none:txn_hour:ok]' pivot='key' type='ordinal' />
+            <column datatype='date' name='[transaction_date]' role='dimension' type='ordinal' />
+            <column aggregation='Sum' datatype='integer' name='[txn_hour]' role='dimension' type='ordinal' />
+            <column-instance column='[Calculation_2538482133830316032]' derivation='User' name='[usr:Calculation_2538482133830316032:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[Calculation_2538482133831737348]' derivation='User' name='[usr:Calculation_2538482133831737348:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[Calculation_2538482133834264586]' derivation='User' name='[usr:Calculation_2538482133834264586:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[Calculation_2538482133835206668]' derivation='User' name='[usr:Calculation_2538482133835206668:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[vs VFD Amount 1 Day Ago (copy)_2538482133832208389]' derivation='User' name='[usr:vs VFD Amount 1 Day Ago (copy)_2538482133832208389:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[vs VFD Amount 1 Week Ago (copy)_2538482133832429574]' derivation='User' name='[usr:vs VFD Amount 1 Week Ago (copy)_2538482133832429574:qk]' pivot='key' type='quantitative' />
+            <column caption='€ VFD Amount' datatype='real' name='[vendor_funded_incentives_eur]' role='measure' type='quantitative' />
+            <column caption='vs VFD Amount 1 Week Ago' datatype='real' name='[vs VFD Amount 1 Day Ago (copy)_2538482133832208389]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='[Calculation_2538482133830316032]/[VFD Amount (-1D) (copy)_2538482133831139330]-1' />
+            </column>
+            <column caption='vs VFD Amount 1 Month Ago' datatype='real' name='[vs VFD Amount 1 Week Ago (copy)_2538482133832429574]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='[Calculation_2538482133830316032]/[VFD Amount (-1W) (copy)_2538482133831520259]-1' />
+            </column>
+          </datasource-dependencies>
+          <filter class='categorical' column='[federated.14f1obe1alj56z1bycswr136uzvq].[:Measure Names]'>
+            <groupfilter function='union' user:op='manual'>
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.14f1obe1alj56z1bycswr136uzvq].[usr:Calculation_2538482133830316032:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.14f1obe1alj56z1bycswr136uzvq].[usr:Calculation_2538482133834264586:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.14f1obe1alj56z1bycswr136uzvq].[usr:Calculation_2538482133835206668:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.14f1obe1alj56z1bycswr136uzvq].[usr:Calculation_2538482133831737348:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.14f1obe1alj56z1bycswr136uzvq].[usr:vs VFD Amount 1 Day Ago (copy)_2538482133832208389:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.14f1obe1alj56z1bycswr136uzvq].[usr:vs VFD Amount 1 Week Ago (copy)_2538482133832429574:qk]&quot;' />
+            </groupfilter>
+          </filter>
+          <manual-sort column='[federated.14f1obe1alj56z1bycswr136uzvq].[:Measure Names]' direction='ASC'>
+            <dictionary>
+              <bucket>&quot;[federated.14f1obe1alj56z1bycswr136uzvq].[usr:Calculation_2538482133830316032:qk]&quot;</bucket>
+              <bucket>&quot;[federated.14f1obe1alj56z1bycswr136uzvq].[usr:Calculation_2538482133834264586:qk]&quot;</bucket>
+              <bucket>&quot;[federated.14f1obe1alj56z1bycswr136uzvq].[usr:Calculation_2538482133835206668:qk]&quot;</bucket>
+              <bucket>&quot;[federated.14f1obe1alj56z1bycswr136uzvq].[usr:Calculation_2538482133831737348:qk]&quot;</bucket>
+              <bucket>&quot;[federated.14f1obe1alj56z1bycswr136uzvq].[usr:vs VFD Amount 1 Day Ago (copy)_2538482133832208389:qk]&quot;</bucket>
+              <bucket>&quot;[federated.14f1obe1alj56z1bycswr136uzvq].[usr:vs VFD Amount 1 Week Ago (copy)_2538482133832429574:qk]&quot;</bucket>
+            </dictionary>
+          </manual-sort>
+          <filter class='categorical' column='[federated.14f1obe1alj56z1bycswr136uzvq].[none:management_entity:nk]'>
+            <groupfilter function='union' user:ui-domain='relevant' user:ui-enumeration='inclusive' user:ui-marker='enumerate'>
+              <groupfilter function='member' level='[none:management_entity:nk]' member='&quot;DH Europe&quot;' />
+              <groupfilter function='member' level='[none:management_entity:nk]' member='&quot;Foodpanda APAC&quot;' />
+            </groupfilter>
+          </filter>
+          <filter class='categorical' column='[federated.14f1obe1alj56z1bycswr136uzvq].[none:transaction_date:ok]'>
+            <groupfilter function='union' user:ui-domain='relevant' user:ui-enumeration='inclusive' user:ui-marker='enumerate'>
+              <groupfilter function='member' level='[none:transaction_date:ok]' member='#2023-07-06#' />
+              <groupfilter function='member' level='[none:transaction_date:ok]' member='#2023-07-27#' />
+              <groupfilter function='member' level='[none:transaction_date:ok]' member='#2023-08-02#' />
+              <groupfilter function='member' level='[none:transaction_date:ok]' member='#2023-08-03#' />
+            </groupfilter>
+          </filter>
+          <filter class='categorical' column='[federated.14f1obe1alj56z1bycswr136uzvq].[none:txn_hour:ok]'>
+            <groupfilter function='union' user:ui-domain='relevant' user:ui-enumeration='inclusive' user:ui-marker='enumerate'>
+              <groupfilter function='member' level='[none:txn_hour:ok]' member='11' />
+              <groupfilter function='member' level='[none:txn_hour:ok]' member='12' />
+            </groupfilter>
+          </filter>
+          <slices>
+            <column>[federated.14f1obe1alj56z1bycswr136uzvq].[none:transaction_date:ok]</column>
+            <column>[federated.14f1obe1alj56z1bycswr136uzvq].[none:management_entity:nk]</column>
+            <column>[federated.14f1obe1alj56z1bycswr136uzvq].[none:txn_hour:ok]</column>
+            <column>[federated.14f1obe1alj56z1bycswr136uzvq].[:Measure Names]</column>
+          </slices>
+          <aggregation value='true' />
+        </view>
+        <style>
+          <style-rule element='cell'>
+            <format attr='width' field='[federated.14f1obe1alj56z1bycswr136uzvq].[none:transaction_date:ok]' value='80' />
+            <format attr='height' field='[federated.14f1obe1alj56z1bycswr136uzvq].[none:txn_hour:ok]' value='49' />
+            <format attr='width' field='[federated.14f1obe1alj56z1bycswr136uzvq].[:Measure Names]' value='107' />
+            <format attr='text-format' field='[federated.14f1obe1alj56z1bycswr136uzvq].[usr:Calculation_2538482133831737348:qk]' value='p0.0%' />
+            <format attr='text-format' field='[federated.14f1obe1alj56z1bycswr136uzvq].[usr:vs VFD Amount 1 Day Ago (copy)_2538482133832208389:qk]' value='p0.0%' />
+            <format attr='text-format' field='[federated.14f1obe1alj56z1bycswr136uzvq].[usr:vs VFD Amount 1 Week Ago (copy)_2538482133832429574:qk]' value='p0.0%' />
+            <format attr='text-format' field='[federated.14f1obe1alj56z1bycswr136uzvq].[usr:Calculation_2538482133830316032:qk]' value='c&quot;€&quot;#,##0;(&quot;€&quot;#,##0)' />
+            <format attr='text-format' field='[federated.14f1obe1alj56z1bycswr136uzvq].[usr:Calculation_2538482133834264586:qk]' value='n&quot;€&quot;#,##0;-&quot;€&quot;#,##0' />
+            <format attr='text-format' field='[federated.14f1obe1alj56z1bycswr136uzvq].[usr:Calculation_2538482133835206668:qk]' value='p0.0%' />
+            <format attr='text-align' value='center' />
+          </style-rule>
+          <style-rule element='header'>
+            <format attr='width' field='[federated.14f1obe1alj56z1bycswr136uzvq].[none:management_entity:nk]' value='140' />
+          </style-rule>
+          <style-rule element='label'>
+            <format attr='text-align' scope='rows' value='center' />
+            <format attr='text-align' scope='cols' value='center' />
+          </style-rule>
+          <style-rule element='mark'>
+            <encoding attr='color' field='[federated.14f1obe1alj56z1bycswr136uzvq].[usr:Calculation_2538482133834264586:qk]' palette='blue_10_0' reverse='true' type='interpolated' />
+          </style-rule>
+          <style-rule element='gridline'>
+            <format attr='stroke-size' scope='rows' value='0' />
+            <format attr='line-visibility' scope='rows' value='off' />
+          </style-rule>
+        </style>
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Square' />
+            <encodings>
+              <color column='[federated.14f1obe1alj56z1bycswr136uzvq].[Multiple Values]' separate-domains='true' />
+              <text column='[federated.14f1obe1alj56z1bycswr136uzvq].[Multiple Values]' separate-domains='true' />
+            </encodings>
+            <style>
+              <style-rule element='mark'>
+                <format attr='mark-labels-show' value='true' />
+              </style-rule>
+              <style-rule element='pane'>
+                <format attr='minwidth' value='-1' />
+                <format attr='maxwidth' value='-1' />
+                <format attr='minheight' value='-1' />
+                <format attr='maxheight' value='-1' />
+              </style-rule>
+            </style>
+          </pane>
+        </panes>
+        <rows total='true'>([federated.14f1obe1alj56z1bycswr136uzvq].[none:management_entity:nk] / [federated.14f1obe1alj56z1bycswr136uzvq].[none:country_name:nk])</rows>
+        <cols>[federated.14f1obe1alj56z1bycswr136uzvq].[:Measure Names]</cols>
+        <subtotals>
+          <column>[federated.14f1obe1alj56z1bycswr136uzvq].[none:management_entity:nk]</column>
+        </subtotals>
+      </table>
+      <simple-id uuid='{5D30D4AD-E349-4441-B763-8F91D3801417}' />
+    </worksheet>
+    <worksheet name='VFD Orders'>
+      <layout-options>
+        <title>
+          <formatted-text>
+            <run fontalignment='1' fontname='Tableau Bold' fontsize='12'>Hourly VFD Incentivised Orders</run>
+          </formatted-text>
+        </title>
+      </layout-options>
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='vfd_impact_aug_3' name='federated.14f1obe1alj56z1bycswr136uzvq' />
+          </datasources>
+          <datasource-dependencies datasource='federated.14f1obe1alj56z1bycswr136uzvq'>
+            <column datatype='string' name='[management_entity]' role='dimension' type='nominal' />
+            <column-instance column='[management_entity]' derivation='None' name='[none:management_entity:nk]' pivot='key' type='nominal' />
+            <column-instance column='[transaction_date]' derivation='None' name='[none:transaction_date:ok]' pivot='key' type='ordinal' />
+            <column-instance column='[txn_hour]' derivation='None' name='[none:txn_hour:qk]' pivot='key' type='quantitative' />
+            <column caption='# VFD Inct Orders' datatype='integer' name='[num_vendor_inct_orders]' role='measure' type='quantitative' />
+            <column-instance column='[num_vendor_inct_orders]' derivation='Sum' name='[sum:num_vendor_inct_orders:qk]' pivot='key' type='quantitative' />
+            <column datatype='date' name='[transaction_date]' role='dimension' type='ordinal' />
+            <column aggregation='Sum' datatype='integer' name='[txn_hour]' role='dimension' type='ordinal' />
+          </datasource-dependencies>
+          <filter class='categorical' column='[federated.14f1obe1alj56z1bycswr136uzvq].[none:management_entity:nk]'>
+            <groupfilter function='union' user:ui-domain='relevant' user:ui-enumeration='inclusive' user:ui-marker='enumerate'>
+              <groupfilter function='member' level='[none:management_entity:nk]' member='&quot;DH Europe&quot;' />
+              <groupfilter function='member' level='[none:management_entity:nk]' member='&quot;Foodpanda APAC&quot;' />
+            </groupfilter>
+          </filter>
+          <filter class='categorical' column='[federated.14f1obe1alj56z1bycswr136uzvq].[none:transaction_date:ok]'>
+            <groupfilter function='union' user:ui-domain='relevant' user:ui-enumeration='inclusive' user:ui-marker='enumerate'>
+              <groupfilter function='member' level='[none:transaction_date:ok]' member='#2023-07-06#' />
+              <groupfilter function='member' level='[none:transaction_date:ok]' member='#2023-07-27#' />
+              <groupfilter function='member' level='[none:transaction_date:ok]' member='#2023-08-02#' />
+              <groupfilter function='member' level='[none:transaction_date:ok]' member='#2023-08-03#' />
+            </groupfilter>
+          </filter>
+          <slices>
+            <column>[federated.14f1obe1alj56z1bycswr136uzvq].[none:transaction_date:ok]</column>
+            <column>[federated.14f1obe1alj56z1bycswr136uzvq].[none:management_entity:nk]</column>
+          </slices>
+          <aggregation value='true' />
+        </view>
+        <style>
+          <style-rule element='axis'>
+            <encoding attr='space' class='0' domain-expand='false' field='[federated.14f1obe1alj56z1bycswr136uzvq].[sum:num_vendor_inct_orders:qk]' field-type='quantitative' range-type='independent' scope='rows' type='space' />
+            <format attr='title' class='0' field='[federated.14f1obe1alj56z1bycswr136uzvq].[none:txn_hour:qk]' scope='cols' value='Hour' />
+            <encoding attr='space' class='0' field='[federated.14f1obe1alj56z1bycswr136uzvq].[none:txn_hour:qk]' field-type='quantitative' max='23' min='0' range-type='fixed' scope='cols' type='space' />
+            <format attr='title' class='0' field='[federated.14f1obe1alj56z1bycswr136uzvq].[sum:num_vendor_inct_orders:qk]' scope='rows' value='# VFD Incentivised Orders' />
+          </style-rule>
+          <style-rule element='worksheet'>
+            <format attr='display-field-labels' scope='rows' value='false' />
+          </style-rule>
+          <style-rule element='gridline'>
+            <format attr='stroke-size' scope='rows' value='0' />
+            <format attr='line-visibility' scope='rows' value='off' />
+          </style-rule>
+          <style-rule element='legend-title-text'>
+            <format attr='color' field='[federated.14f1obe1alj56z1bycswr136uzvq].[none:transaction_date:ok]' value='Transaction Date'>
+              <formatted-text>
+                <run fontsize='10'>Transaction Date</run>
+              </formatted-text>
+            </format>
+          </style-rule>
+        </style>
+        <panes>
+          <pane id='3' selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Line' />
+            <mark-sizing mark-sizing-setting='marks-scaling-off' />
+            <encodings>
+              <color column='[federated.14f1obe1alj56z1bycswr136uzvq].[none:transaction_date:ok]' />
+            </encodings>
+            <style>
+              <style-rule element='mark'>
+                <format attr='size' value='0.2738673985004425' />
+              </style-rule>
+            </style>
+          </pane>
+        </panes>
+        <rows>([federated.14f1obe1alj56z1bycswr136uzvq].[none:management_entity:nk] * [federated.14f1obe1alj56z1bycswr136uzvq].[sum:num_vendor_inct_orders:qk])</rows>
+        <cols>[federated.14f1obe1alj56z1bycswr136uzvq].[none:txn_hour:qk]</cols>
+      </table>
+      <simple-id uuid='{B46B433E-A123-4ECD-8FBC-FA6C84BD6521}' />
+    </worksheet>
+  </worksheets>
+  <dashboards>
+    <dashboard _.fcp.AccessibleZoneTabOrder.true...enable-sort-zone-taborder='true' name='VFD Impact'>
+      <repository-location id='VFDImpact' path='/t/GlobalStandardReporting/workbooks/ServiceOutageAug3-VFDImpactAnalysis' revision='' site='GlobalStandardReporting' />
+      <style />
+      <size maxheight='1200' maxwidth='1000' minheight='1200' minwidth='1000' sizing-mode='fixed' />
+      <zones>
+        <zone h='100000' id='4' type-v2='layout-basic' w='100000' x='0' y='0'>
+          <zone h='47042' id='21' param='horz' type-v2='layout-flow' w='98400' x='800' y='5250'>
+            <zone h='47042' id='7' param='horz' type-v2='layout-flow' w='98400' x='800' y='5250'>
+              <zone h='47042' id='5' type-v2='layout-basic' w='98400' x='800' y='5250'>
+                <zone h='47042' id='10' name='VFD Orders' w='49199' x='800' y='5250'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                  </zone-style>
+                </zone>
+                <zone h='47042' id='11' name='VFD Amount' w='49201' x='49999' y='5250'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                  </zone-style>
+                </zone>
+              </zone>
+            </zone>
+          </zone>
+          <zone fixed-size='160' h='4583' id='20' is-fixed='true' layout-strategy-id='distribute-evenly' param='vert' type-v2='layout-flow' w='98400' x='800' y='667'>
+            <zone h='4583' id='22' leg-item-layout='horz' name='VFD Orders' pane-specification-id='3' param='[federated.14f1obe1alj56z1bycswr136uzvq].[none:transaction_date:ok]' type-v2='color' w='98400' x='800' y='667'>
+              <zone-style>
+                <format attr='border-color' value='#000000' />
+                <format attr='border-style' value='none' />
+                <format attr='border-width' value='0' />
+                <format attr='margin' value='4' />
+              </zone-style>
+            </zone>
+          </zone>
+          <zone h='47041' id='23' name='VFD Amount (Table)' w='98400' x='800' y='52292'>
+            <zone-style>
+              <format attr='border-color' value='#000000' />
+              <format attr='border-style' value='none' />
+              <format attr='border-width' value='0' />
+              <format attr='margin' value='4' />
+            </zone-style>
+          </zone>
+          <zone-style>
+            <format attr='border-color' value='#000000' />
+            <format attr='border-style' value='none' />
+            <format attr='border-width' value='0' />
+            <format attr='margin' value='8' />
+          </zone-style>
+        </zone>
+      </zones>
+      <devicelayouts>
+        <devicelayout auto-generated='true' name='Phone'>
+          <size maxheight='950' minheight='950' sizing-mode='vscroll' />
+          <zones>
+            <zone h='100000' id='29' type-v2='layout-basic' w='100000' x='0' y='0'>
+              <zone h='98666' id='28' param='vert' type-v2='layout-flow' w='98400' x='800' y='667'>
+                <zone fixed-size='280' h='47042' id='10' is-fixed='true' name='VFD Orders' w='49199' x='800' y='5250'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone h='4583' id='22' leg-item-layout='horz' name='VFD Orders' pane-specification-id='3' param='[federated.14f1obe1alj56z1bycswr136uzvq].[none:transaction_date:ok]' type-v2='color' w='98400' x='800' y='667'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone fixed-size='280' h='47042' id='11' is-fixed='true' name='VFD Amount' w='49201' x='49999' y='5250'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone fixed-size='280' h='47041' id='23' is-fixed='true' name='VFD Amount (Table)' w='98400' x='800' y='52292'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+              </zone>
+              <zone-style>
+                <format attr='border-color' value='#000000' />
+                <format attr='border-style' value='none' />
+                <format attr='border-width' value='0' />
+                <format attr='margin' value='8' />
+              </zone-style>
+            </zone>
+          </zones>
+        </devicelayout>
+      </devicelayouts>
+      <simple-id uuid='{665158C8-66E8-4C4A-80F0-42AB046EE070}' />
+    </dashboard>
+  </dashboards>
+  <windows source-height='30'>
+    <window class='worksheet' name='Incentivised Orders'>
+      <cards>
+        <edge name='left'>
+          <strip size='241'>
+            <card type='pages' />
+            <card type='filters' />
+            <card type='marks' />
+          </strip>
+        </edge>
+        <edge name='top'>
+          <strip size='2147483647'>
+            <card type='columns' />
+          </strip>
+          <strip size='2147483647'>
+            <card type='rows' />
+          </strip>
+          <strip size='31'>
+            <card type='title' />
+          </strip>
+        </edge>
+        <edge name='right'>
+          <strip size='160'>
+            <card pane-specification-id='3' param='[federated.14f1obe1alj56z1bycswr136uzvq].[none:transaction_date:ok]' type='color' />
+          </strip>
+        </edge>
+      </cards>
+      <viewpoint>
+        <highlight>
+          <color-one-way>
+            <field>[federated.14f1obe1alj56z1bycswr136uzvq].[none:brand_name:nk]</field>
+            <field>[federated.14f1obe1alj56z1bycswr136uzvq].[none:management_entity:nk]</field>
+            <field>[federated.14f1obe1alj56z1bycswr136uzvq].[none:transaction_date:ok]</field>
+            <field>[federated.14f1obe1alj56z1bycswr136uzvq].[none:txn_hour:ok]</field>
+            <field>[federated.14f1obe1alj56z1bycswr136uzvq].[yr:transaction_timestamp:ok]</field>
+          </color-one-way>
+        </highlight>
+      </viewpoint>
+      <simple-id uuid='{6C8129A0-0A58-44F9-BF0D-CEC975C42390}' />
+    </window>
+    <window class='worksheet' name='Incentivised Amount'>
+      <cards>
+        <edge name='left'>
+          <strip size='241'>
+            <card type='pages' />
+            <card type='filters' />
+            <card type='marks' />
+          </strip>
+        </edge>
+        <edge name='top'>
+          <strip size='2147483647'>
+            <card type='columns' />
+          </strip>
+          <strip size='2147483647'>
+            <card type='rows' />
+          </strip>
+          <strip size='31'>
+            <card type='title' />
+          </strip>
+        </edge>
+        <edge name='right'>
+          <strip size='160'>
+            <card pane-specification-id='3' param='[federated.14f1obe1alj56z1bycswr136uzvq].[none:transaction_date:ok]' type='color' />
+          </strip>
+        </edge>
+      </cards>
+      <viewpoint>
+        <highlight>
+          <color-one-way>
+            <field>[federated.14f1obe1alj56z1bycswr136uzvq].[none:brand_name:nk]</field>
+            <field>[federated.14f1obe1alj56z1bycswr136uzvq].[none:management_entity:nk]</field>
+            <field>[federated.14f1obe1alj56z1bycswr136uzvq].[none:transaction_date:ok]</field>
+            <field>[federated.14f1obe1alj56z1bycswr136uzvq].[none:txn_hour:ok]</field>
+            <field>[federated.14f1obe1alj56z1bycswr136uzvq].[yr:transaction_timestamp:ok]</field>
+          </color-one-way>
+        </highlight>
+      </viewpoint>
+      <simple-id uuid='{25A5F520-ECBB-40A4-895E-2CE7E82E1A63}' />
+    </window>
+    <window class='worksheet' name='VFD Orders'>
+      <cards>
+        <edge name='left'>
+          <strip size='241'>
+            <card type='pages' />
+            <card type='filters' />
+            <card type='marks' />
+          </strip>
+        </edge>
+        <edge name='top'>
+          <strip size='2147483647'>
+            <card type='columns' />
+          </strip>
+          <strip size='2147483647'>
+            <card type='rows' />
+          </strip>
+          <strip size='31'>
+            <card type='title' />
+          </strip>
+        </edge>
+        <edge name='right'>
+          <strip size='160'>
+            <card pane-specification-id='3' param='[federated.14f1obe1alj56z1bycswr136uzvq].[none:transaction_date:ok]' type='color' />
+          </strip>
+        </edge>
+      </cards>
+      <viewpoint>
+        <highlight>
+          <color-one-way>
+            <field>[federated.14f1obe1alj56z1bycswr136uzvq].[none:brand_name:nk]</field>
+            <field>[federated.14f1obe1alj56z1bycswr136uzvq].[none:management_entity:nk]</field>
+            <field>[federated.14f1obe1alj56z1bycswr136uzvq].[none:transaction_date:ok]</field>
+            <field>[federated.14f1obe1alj56z1bycswr136uzvq].[none:txn_hour:ok]</field>
+            <field>[federated.14f1obe1alj56z1bycswr136uzvq].[yr:transaction_timestamp:ok]</field>
+          </color-one-way>
+        </highlight>
+      </viewpoint>
+      <simple-id uuid='{095A0999-C14D-4741-8942-F213734EE060}' />
+    </window>
+    <window class='worksheet' name='VFD Amount'>
+      <cards>
+        <edge name='left'>
+          <strip size='241'>
+            <card type='pages' />
+            <card type='filters' />
+            <card type='marks' />
+          </strip>
+        </edge>
+        <edge name='top'>
+          <strip size='2147483647'>
+            <card type='columns' />
+          </strip>
+          <strip size='2147483647'>
+            <card type='rows' />
+          </strip>
+          <strip size='31'>
+            <card type='title' />
+          </strip>
+        </edge>
+        <edge name='right'>
+          <strip size='160'>
+            <card pane-specification-id='3' param='[federated.14f1obe1alj56z1bycswr136uzvq].[none:transaction_date:ok]' type='color' />
+          </strip>
+        </edge>
+      </cards>
+      <viewpoint>
+        <highlight>
+          <color-one-way>
+            <field>[federated.14f1obe1alj56z1bycswr136uzvq].[none:brand_name:nk]</field>
+            <field>[federated.14f1obe1alj56z1bycswr136uzvq].[none:management_entity:nk]</field>
+            <field>[federated.14f1obe1alj56z1bycswr136uzvq].[none:transaction_date:ok]</field>
+            <field>[federated.14f1obe1alj56z1bycswr136uzvq].[none:txn_hour:ok]</field>
+            <field>[federated.14f1obe1alj56z1bycswr136uzvq].[yr:transaction_timestamp:ok]</field>
+          </color-one-way>
+        </highlight>
+      </viewpoint>
+      <simple-id uuid='{B2F87623-5614-4D65-927D-DAFF1882F378}' />
+    </window>
+    <window class='worksheet' name='VFD Amount (Table)'>
+      <cards>
+        <edge name='left'>
+          <strip size='241'>
+            <card type='pages' />
+            <card type='filters' />
+            <card type='marks' />
+            <card type='measures' />
+          </strip>
+        </edge>
+        <edge name='top'>
+          <strip size='2147483647'>
+            <card type='columns' />
+          </strip>
+          <strip size='2147483647'>
+            <card type='rows' />
+          </strip>
+          <strip size='31'>
+            <card type='title' />
+          </strip>
+        </edge>
+        <edge name='right'>
+          <strip size='300'>
+            <card pane-specification-id='0' param='[federated.14f1obe1alj56z1bycswr136uzvq].[usr:Calculation_2538482133830316032:qk]' type='color' />
+            <card pane-specification-id='0' param='[federated.14f1obe1alj56z1bycswr136uzvq].[usr:Calculation_2538482133834264586:qk]' type='color' />
+            <card pane-specification-id='0' param='[federated.14f1obe1alj56z1bycswr136uzvq].[usr:Calculation_2538482133835206668:qk]' type='color' />
+            <card pane-specification-id='0' param='[federated.14f1obe1alj56z1bycswr136uzvq].[usr:Calculation_2538482133831737348:qk]' type='color' />
+            <card pane-specification-id='0' param='[federated.14f1obe1alj56z1bycswr136uzvq].[usr:vs VFD Amount 1 Day Ago (copy)_2538482133832208389:qk]' type='color' />
+            <card pane-specification-id='0' param='[federated.14f1obe1alj56z1bycswr136uzvq].[usr:vs VFD Amount 1 Week Ago (copy)_2538482133832429574:qk]' type='color' />
+          </strip>
+        </edge>
+      </cards>
+      <viewpoint>
+        <highlight>
+          <color-one-way>
+            <field>[federated.14f1obe1alj56z1bycswr136uzvq].[none:brand_name:nk]</field>
+            <field>[federated.14f1obe1alj56z1bycswr136uzvq].[none:country_name:nk]</field>
+            <field>[federated.14f1obe1alj56z1bycswr136uzvq].[none:management_entity:nk]</field>
+            <field>[federated.14f1obe1alj56z1bycswr136uzvq].[none:transaction_date:ok]</field>
+            <field>[federated.14f1obe1alj56z1bycswr136uzvq].[none:txn_hour:ok]</field>
+            <field>[federated.14f1obe1alj56z1bycswr136uzvq].[yr:transaction_date:ok]</field>
+            <field>[federated.14f1obe1alj56z1bycswr136uzvq].[yr:transaction_timestamp:ok]</field>
+          </color-one-way>
+        </highlight>
+        <default-map-tool-selection tool='4' />
+      </viewpoint>
+      <simple-id uuid='{28752EC7-2E07-41F8-99AA-CD1E159A614C}' />
+    </window>
+    <window class='dashboard' maximized='true' name='VFD Impact'>
+      <viewpoints>
+        <viewpoint name='VFD Amount'>
+          <zoom type='entire-view' />
+        </viewpoint>
+        <viewpoint name='VFD Amount (Table)'>
+          <zoom type='entire-view' />
+        </viewpoint>
+        <viewpoint name='VFD Orders'>
+          <zoom type='entire-view' />
+          <highlight>
+            <color-one-way>
+              <field>[federated.14f1obe1alj56z1bycswr136uzvq].[none:transaction_date:ok]</field>
+            </color-one-way>
+          </highlight>
+        </viewpoint>
+      </viewpoints>
+      <active id='-1' />
+      <simple-id uuid='{C5D2D6D7-9475-439A-B558-42644CC5E707}' />
+    </window>
+  </windows>
+</workbook>

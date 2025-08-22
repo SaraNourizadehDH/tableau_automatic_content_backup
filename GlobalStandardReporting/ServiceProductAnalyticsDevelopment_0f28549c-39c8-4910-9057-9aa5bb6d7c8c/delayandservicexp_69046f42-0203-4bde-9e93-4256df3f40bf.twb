@@ -1,0 +1,531 @@
+<?xml version='1.0' encoding='utf-8' ?>
+
+<!-- build 20233.24.0803.0344                               -->
+<workbook original-version='18.1' source-build='2023.2.8 (20232.24.0424.0800)' source-platform='mac' version='18.1' xml:base='https://tableau.deliveryhero.net' xmlns:user='http://www.tableausoftware.com/xml/user'>
+  <document-format-change-manifest>
+    <_.fcp.AnimationOnByDefault.true...AnimationOnByDefault />
+    <_.fcp.MarkAnimation.true...MarkAnimation />
+    <_.fcp.ObjectModelEncapsulateLegacy.true...ObjectModelEncapsulateLegacy />
+    <_.fcp.ObjectModelTableType.true...ObjectModelTableType />
+    <_.fcp.SchemaViewerObjectModel.true...SchemaViewerObjectModel />
+    <SheetIdentifierTracking />
+    <SortTagCleanup />
+    <WindowsPersistSimpleIdentifiers />
+  </document-format-change-manifest>
+  <repository-location id='delayandservicexp' path='/t/GlobalStandardReporting/workbooks' revision='1.0' site='GlobalStandardReporting' />
+  <preferences>
+    <preference name='ui.encoding.shelf.height' value='24' />
+    <preference name='ui.shelf.height' value='26' />
+  </preferences>
+  <_.fcp.AnimationOnByDefault.false...style>
+    <_.fcp.AnimationOnByDefault.false..._.fcp.MarkAnimation.true...style-rule element='animation'>
+      <_.fcp.AnimationOnByDefault.false...format attr='animation-on' value='ao-on' />
+    </_.fcp.AnimationOnByDefault.false..._.fcp.MarkAnimation.true...style-rule>
+  </_.fcp.AnimationOnByDefault.false...style>
+  <datasources>
+    <datasource caption='Custom SQL Query (sandbox_iqra)' inline='true' name='federated.0jaumh70qc73t8185pemq0rshr26' version='18.1'>
+      <connection class='federated'>
+        <named-connections>
+          <named-connection caption='BigQuery' name='bigquery.18bek0r0rqrk4j169dfty1g5l21m'>
+            <connection CATALOG='logistics-data-storage-staging' EXECCATALOG='logistics-service-staging' authentication='oauth' bq-dataset-fetch-rows='' bq-fetch-rows='' bq-fetch-tasks='' bq-large-fetch-rows='' bq-project-fetch-rows='' bq-response-rows='' class='bigquery' connection-dialect='google-sql' project='logistics-data-storage-staging' schema='sandbox_iqra' server-oauth='' username='iqra.qamar@deliveryhero.com' workgroup-auth-mode='prompt' />
+          </named-connection>
+        </named-connections>
+        <_.fcp.ObjectModelEncapsulateLegacy.false...relation connection='bigquery.18bek0r0rqrk4j169dfty1g5l21m' name='Custom SQL Query' type='text'><![CDATA[select global_entity_id, has_contact, has_no_contact_helpcenter_session, delay_bin, count((order_id || global_entity_id)) as num_orders
+from (
+with delay_info AS (
+SELECT
+   ro.created_date
+   , ro.entity.id AS global_entity_id
+   , ro.global_order_id AS order_id
+   , ro.created_at
+   , ro.timings.order_delay
+   , FLOOR(ro.timings.order_delay / 60) AS delay_mins
+   , CASE
+    WHEN ro.timings.order_delay IS NULL THEN 'Unknown'
+    WHEN FLOOR(ro.timings.order_delay / 60) << -10 THEN 'More than 10 minutes early'
+    WHEN FLOOR(ro.timings.order_delay / 60) BETWEEN -10 AND -1 THEN '1-10 minutes early'
+    WHEN FLOOR(ro.timings.order_delay / 60) = 0 THEN 'On time'
+    WHEN FLOOR(ro.timings.order_delay / 60) BETWEEN 1 AND 10 THEN '1-10 minutes late'
+    WHEN FLOOR(ro.timings.order_delay / 60) BETWEEN 11 AND 20 THEN '11-20 minutes late'
+    WHEN FLOOR(ro.timings.order_delay / 60) BETWEEN 21 AND 30 THEN '21-30 minutes late'
+    WHEN FLOOR(ro.timings.order_delay / 60) >> 30 THEN 'More than 30 minutes late'
+END AS delay_bin
+ FROM `fulfillment-dwh-production.cl.orders` ro
+ WHERE ro.created_date BETWEEN '2024-06-01' AND '2024-08-31'
+ AND ro.entity.id IN ('HS_SA', 'PY_AR')
+)
+, contacts AS (
+ SELECT distinct order_id, global_entity_id
+ FROM `fulfillment-dwh-production.cl.all_contacts`
+  WHERE created_date BETWEEN '2024-06-01' AND '2024-09-30'
+ AND global_entity_id IN ('HS_SA', 'PY_AR')
+ AND stakeholder = 'Customer'
+ AND order_id IS NOT NULL
+ AND global_cr_code IN ('1A.1', '1A.2', '1A.12', '1A.13', '1A.14', '1A.15') -- Only considering delay and check order status related contacts
+)
+, helpcenter_sessions AS (
+ select distinct orders AS order_id
+ , global_entity_id
+ from `fulfillment-dwh-production.cl.helpcenter_sessions` s
+ JOIN UNNEST(order_ids) orders
+  WHERE s.helpcenter = 'Customer'
+   AND s.order_id IS NOT NULL
+   AND s.num_contacts_created = 0
+   AND created_date BETWEEN '2024-06-01' AND '2024-09-30'
+   AND global_entity_id IN ('HS_SA', 'PY_AR')
+   AND (last_ccr IN ('1A.1', '1A.2', '1A.12', '1A.13', '1A.14', '1A.15') -- Only considering delay and check order status related sessions
+   OR first_leaf_ccr IN ('1A.1', '1A.2', '1A.12', '1A.13', '1A.14', '1A.15'))
+)
+
+
+SELECT d.order_id
+, d.global_entity_id
+, d.delay_bin
+, IF(c.order_id IS NOT NULL, TRUE, FALSE) has_contact
+, IF(s.order_id IS NOT NULL, TRUE, FALSE) has_no_contact_helpcenter_session
+FROM delay_info d
+LEFT JOIN contacts c on c.order_id = d.order_id and c.global_entity_id = d.global_entity_id
+LEFT JOIN helpcenter_sessions s on s.order_id = d.order_id and s.global_entity_id = d.global_entity_id
+)
+group by all
+order by 1,2]]></_.fcp.ObjectModelEncapsulateLegacy.false...relation>
+        <_.fcp.ObjectModelEncapsulateLegacy.true...relation connection='bigquery.18bek0r0rqrk4j169dfty1g5l21m' name='Custom SQL Query' type='text'><![CDATA[select global_entity_id, has_contact, has_no_contact_helpcenter_session, delay_bin, count((order_id || global_entity_id)) as num_orders
+from (
+with delay_info AS (
+SELECT
+   ro.created_date
+   , ro.entity.id AS global_entity_id
+   , ro.global_order_id AS order_id
+   , ro.created_at
+   , ro.timings.order_delay
+   , FLOOR(ro.timings.order_delay / 60) AS delay_mins
+   , CASE
+    WHEN ro.timings.order_delay IS NULL THEN 'Unknown'
+    WHEN FLOOR(ro.timings.order_delay / 60) << -10 THEN 'More than 10 minutes early'
+    WHEN FLOOR(ro.timings.order_delay / 60) BETWEEN -10 AND -1 THEN '1-10 minutes early'
+    WHEN FLOOR(ro.timings.order_delay / 60) = 0 THEN 'On time'
+    WHEN FLOOR(ro.timings.order_delay / 60) BETWEEN 1 AND 10 THEN '1-10 minutes late'
+    WHEN FLOOR(ro.timings.order_delay / 60) BETWEEN 11 AND 20 THEN '11-20 minutes late'
+    WHEN FLOOR(ro.timings.order_delay / 60) BETWEEN 21 AND 30 THEN '21-30 minutes late'
+    WHEN FLOOR(ro.timings.order_delay / 60) >> 30 THEN 'More than 30 minutes late'
+END AS delay_bin
+ FROM `fulfillment-dwh-production.cl.orders` ro
+ WHERE ro.created_date BETWEEN '2024-06-01' AND '2024-08-31'
+ AND ro.entity.id IN ('HS_SA', 'PY_AR')
+)
+, contacts AS (
+ SELECT distinct order_id, global_entity_id
+ FROM `fulfillment-dwh-production.cl.all_contacts`
+  WHERE created_date BETWEEN '2024-06-01' AND '2024-09-30'
+ AND global_entity_id IN ('HS_SA', 'PY_AR')
+ AND stakeholder = 'Customer'
+ AND order_id IS NOT NULL
+ AND global_cr_code IN ('1A.1', '1A.2', '1A.12', '1A.13', '1A.14', '1A.15') -- Only considering delay and check order status related contacts
+)
+, helpcenter_sessions AS (
+ select distinct orders AS order_id
+ , global_entity_id
+ from `fulfillment-dwh-production.cl.helpcenter_sessions` s
+ JOIN UNNEST(order_ids) orders
+  WHERE s.helpcenter = 'Customer'
+   AND s.order_id IS NOT NULL
+   AND s.num_contacts_created = 0
+   AND created_date BETWEEN '2024-06-01' AND '2024-09-30'
+   AND global_entity_id IN ('HS_SA', 'PY_AR')
+   AND (last_ccr IN ('1A.1', '1A.2', '1A.12', '1A.13', '1A.14', '1A.15') -- Only considering delay and check order status related sessions
+   OR first_leaf_ccr IN ('1A.1', '1A.2', '1A.12', '1A.13', '1A.14', '1A.15'))
+)
+
+
+SELECT d.order_id
+, d.global_entity_id
+, d.delay_bin
+, IF(c.order_id IS NOT NULL, TRUE, FALSE) has_contact
+, IF(s.order_id IS NOT NULL, TRUE, FALSE) has_no_contact_helpcenter_session
+FROM delay_info d
+LEFT JOIN contacts c on c.order_id = d.order_id and c.global_entity_id = d.global_entity_id
+LEFT JOIN helpcenter_sessions s on s.order_id = d.order_id and s.global_entity_id = d.global_entity_id
+)
+group by all
+order by 1,2]]></_.fcp.ObjectModelEncapsulateLegacy.true...relation>
+        <metadata-records>
+          <metadata-record class='column'>
+            <remote-name>global_entity_id</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[global_entity_id]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>global_entity_id</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_A45766CB59A144E5BEAC7BD9DE7B2E07]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>has_contact</remote-name>
+            <remote-type>11</remote-type>
+            <local-name>[has_contact]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>has_contact</remote-alias>
+            <local-type>boolean</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_A45766CB59A144E5BEAC7BD9DE7B2E07]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>has_no_contact_helpcenter_session</remote-name>
+            <remote-type>11</remote-type>
+            <local-name>[has_no_contact_helpcenter_session]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>has_no_contact_helpcenter_session</remote-alias>
+            <local-type>boolean</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_A45766CB59A144E5BEAC7BD9DE7B2E07]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>delay_bin</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[delay_bin]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>delay_bin</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_A45766CB59A144E5BEAC7BD9DE7B2E07]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>num_orders</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[num_orders]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>num_orders</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_A45766CB59A144E5BEAC7BD9DE7B2E07]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+        </metadata-records>
+      </connection>
+      <aliases enabled='yes' />
+      <column caption='Service experience ' datatype='string' name='[Calculation_388154002413350913]' role='dimension' type='nominal'>
+        <calculation class='tableau' formula='if NOT  [has_contact] and NOT  [has_no_contact_helpcenter_session]&#10;then &apos;No Service XP&apos;&#10;ELSEIF  [has_contact] and [has_no_contact_helpcenter_session]&#10;then &apos;Multiple Service XP&apos;&#10;ELSEIF  [has_contact] &#10;then &apos;Contact&apos;&#10;else &apos;Helpcenter Session&apos;&#10;end' />
+      </column>
+      <_.fcp.ObjectModelTableType.true...column caption='Custom SQL Query' datatype='table' name='[__tableau_internal_object_id__].[_A45766CB59A144E5BEAC7BD9DE7B2E07]' role='measure' type='quantitative' />
+      <column-instance column='[Calculation_388154002413350913]' derivation='None' name='[none:Calculation_388154002413350913:nk]' pivot='key' type='nominal' />
+      <layout _.fcp.SchemaViewerObjectModel.false...dim-percentage='0.5' _.fcp.SchemaViewerObjectModel.false...measure-percentage='0.4' dim-ordering='alphabetic' measure-ordering='alphabetic' show-structure='true' />
+      <style>
+        <style-rule element='mark'>
+          <encoding attr='color' field='[none:Calculation_388154002413350913:nk]' type='palette'>
+            <map to='#4e79a7'>
+              <bucket>&quot;Contact&quot;</bucket>
+            </map>
+            <map to='#76b7b2'>
+              <bucket>&quot;No Service XP&quot;</bucket>
+            </map>
+            <map to='#e15759'>
+              <bucket>&quot;Multiple Service XP&quot;</bucket>
+            </map>
+            <map to='#f28e2b'>
+              <bucket>&quot;Helpcenter Session&quot;</bucket>
+            </map>
+          </encoding>
+        </style-rule>
+      </style>
+      <semantic-values>
+        <semantic-value key='[Country].[Name]' value='&quot;United States&quot;' />
+      </semantic-values>
+      <date-options start-of-week='monday' />
+      <_.fcp.ObjectModelEncapsulateLegacy.true...object-graph>
+        <objects>
+          <object caption='Custom SQL Query' id='_A45766CB59A144E5BEAC7BD9DE7B2E07'>
+            <properties context=''>
+              <relation connection='bigquery.18bek0r0rqrk4j169dfty1g5l21m' name='Custom SQL Query' type='text'><![CDATA[select global_entity_id, has_contact, has_no_contact_helpcenter_session, delay_bin, count((order_id || global_entity_id)) as num_orders
+from (
+with delay_info AS (
+SELECT
+   ro.created_date
+   , ro.entity.id AS global_entity_id
+   , ro.global_order_id AS order_id
+   , ro.created_at
+   , ro.timings.order_delay
+   , FLOOR(ro.timings.order_delay / 60) AS delay_mins
+   , CASE
+    WHEN ro.timings.order_delay IS NULL THEN 'Unknown'
+    WHEN FLOOR(ro.timings.order_delay / 60) << -10 THEN 'More than 10 minutes early'
+    WHEN FLOOR(ro.timings.order_delay / 60) BETWEEN -10 AND -1 THEN '1-10 minutes early'
+    WHEN FLOOR(ro.timings.order_delay / 60) = 0 THEN 'On time'
+    WHEN FLOOR(ro.timings.order_delay / 60) BETWEEN 1 AND 10 THEN '1-10 minutes late'
+    WHEN FLOOR(ro.timings.order_delay / 60) BETWEEN 11 AND 20 THEN '11-20 minutes late'
+    WHEN FLOOR(ro.timings.order_delay / 60) BETWEEN 21 AND 30 THEN '21-30 minutes late'
+    WHEN FLOOR(ro.timings.order_delay / 60) >> 30 THEN 'More than 30 minutes late'
+END AS delay_bin
+ FROM `fulfillment-dwh-production.cl.orders` ro
+ WHERE ro.created_date BETWEEN '2024-06-01' AND '2024-08-31'
+ AND ro.entity.id IN ('HS_SA', 'PY_AR')
+)
+, contacts AS (
+ SELECT distinct order_id, global_entity_id
+ FROM `fulfillment-dwh-production.cl.all_contacts`
+  WHERE created_date BETWEEN '2024-06-01' AND '2024-09-30'
+ AND global_entity_id IN ('HS_SA', 'PY_AR')
+ AND stakeholder = 'Customer'
+ AND order_id IS NOT NULL
+ AND global_cr_code IN ('1A.1', '1A.2', '1A.12', '1A.13', '1A.14', '1A.15') -- Only considering delay and check order status related contacts
+)
+, helpcenter_sessions AS (
+ select distinct orders AS order_id
+ , global_entity_id
+ from `fulfillment-dwh-production.cl.helpcenter_sessions` s
+ JOIN UNNEST(order_ids) orders
+  WHERE s.helpcenter = 'Customer'
+   AND s.order_id IS NOT NULL
+   AND s.num_contacts_created = 0
+   AND created_date BETWEEN '2024-06-01' AND '2024-09-30'
+   AND global_entity_id IN ('HS_SA', 'PY_AR')
+   AND (last_ccr IN ('1A.1', '1A.2', '1A.12', '1A.13', '1A.14', '1A.15') -- Only considering delay and check order status related sessions
+   OR first_leaf_ccr IN ('1A.1', '1A.2', '1A.12', '1A.13', '1A.14', '1A.15'))
+)
+
+
+SELECT d.order_id
+, d.global_entity_id
+, d.delay_bin
+, IF(c.order_id IS NOT NULL, TRUE, FALSE) has_contact
+, IF(s.order_id IS NOT NULL, TRUE, FALSE) has_no_contact_helpcenter_session
+FROM delay_info d
+LEFT JOIN contacts c on c.order_id = d.order_id and c.global_entity_id = d.global_entity_id
+LEFT JOIN helpcenter_sessions s on s.order_id = d.order_id and s.global_entity_id = d.global_entity_id
+)
+group by all
+order by 1,2]]></relation>
+            </properties>
+          </object>
+        </objects>
+      </_.fcp.ObjectModelEncapsulateLegacy.true...object-graph>
+    </datasource>
+  </datasources>
+  <worksheets>
+    <worksheet name='Distribution of orders per bucket'>
+      <repository-location id='Distributionofordersperbucket' path='/t/GlobalStandardReporting/workbooks/delayandservicexp' revision='' site='GlobalStandardReporting' />
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='Custom SQL Query (sandbox_iqra)' name='federated.0jaumh70qc73t8185pemq0rshr26' />
+          </datasources>
+          <datasource-dependencies datasource='federated.0jaumh70qc73t8185pemq0rshr26'>
+            <column datatype='string' name='[delay_bin]' role='dimension' type='nominal' />
+            <column datatype='string' name='[global_entity_id]' role='dimension' type='nominal' />
+            <column-instance column='[delay_bin]' derivation='None' name='[none:delay_bin:nk]' pivot='key' type='nominal' />
+            <column-instance column='[global_entity_id]' derivation='None' name='[none:global_entity_id:nk]' pivot='key' type='nominal' />
+            <column datatype='integer' name='[num_orders]' role='measure' type='quantitative' />
+            <column-instance column='[num_orders]' derivation='Sum' name='[pcto:sum:num_orders:qk:1]' pivot='key' type='quantitative'>
+              <table-calc ordering-field='[federated.0jaumh70qc73t8185pemq0rshr26].[none:delay_bin:nk]' ordering-type='Field' type='PctTotal' />
+            </column-instance>
+            <column-instance column='[num_orders]' derivation='Sum' name='[sum:num_orders:qk]' pivot='key' type='quantitative' />
+          </datasource-dependencies>
+          <manual-sort column='[federated.0jaumh70qc73t8185pemq0rshr26].[none:delay_bin:nk]' direction='ASC'>
+            <dictionary>
+              <bucket>&quot;More than 5 minutes early&quot;</bucket>
+              <bucket>&quot;1-5 minutes early&quot;</bucket>
+              <bucket>&quot;More than 10 minutes early&quot;</bucket>
+              <bucket>&quot;1-10 minutes early&quot;</bucket>
+              <bucket>&quot;On time&quot;</bucket>
+              <bucket>&quot;1-5 minutes late&quot;</bucket>
+              <bucket>&quot;6-10 minutes late&quot;</bucket>
+              <bucket>&quot;11-15 minutes late&quot;</bucket>
+              <bucket>&quot;More than 15 minutes late&quot;</bucket>
+              <bucket>&quot;1-10 minutes late&quot;</bucket>
+              <bucket>&quot;11-20 minutes late&quot;</bucket>
+              <bucket>&quot;21-30 minutes late&quot;</bucket>
+              <bucket>&quot;More than 30 minutes late&quot;</bucket>
+              <bucket>&quot;Unknown&quot;</bucket>
+            </dictionary>
+          </manual-sort>
+          <aggregation value='true' />
+        </view>
+        <style>
+          <style-rule element='axis'>
+            <format attr='height' field='[federated.0jaumh70qc73t8185pemq0rshr26].[none:delay_bin:nk]' value='147' />
+          </style-rule>
+        </style>
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Automatic' />
+            <encodings>
+              <text column='[federated.0jaumh70qc73t8185pemq0rshr26].[pcto:sum:num_orders:qk:1]' />
+            </encodings>
+            <style>
+              <style-rule element='mark'>
+                <format attr='mark-labels-show' value='true' />
+                <format attr='mark-labels-cull' value='true' />
+              </style-rule>
+            </style>
+          </pane>
+        </panes>
+        <rows>[federated.0jaumh70qc73t8185pemq0rshr26].[sum:num_orders:qk]</rows>
+        <cols>([federated.0jaumh70qc73t8185pemq0rshr26].[none:global_entity_id:nk] / [federated.0jaumh70qc73t8185pemq0rshr26].[none:delay_bin:nk])</cols>
+      </table>
+      <simple-id uuid='{7AFE542A-97EA-4EEB-B9A5-1F3BAE0460DE}' />
+    </worksheet>
+    <worksheet name='More than 15 minutes delay - HS_SA'>
+      <repository-location id='Morethan15minutesdelay-HS_SA' path='/t/GlobalStandardReporting/workbooks/delayandservicexp' revision='' site='GlobalStandardReporting' />
+      <layout-options>
+        <title>
+          <formatted-text>
+            <run>&lt;</run>
+            <run>[federated.0jaumh70qc73t8185pemq0rshr26].[none:delay_bin:nk]</run>
+            <run>&gt;- &lt;</run>
+            <run>[federated.0jaumh70qc73t8185pemq0rshr26].[none:global_entity_id:nk]</run>
+            <run>&gt;</run>
+          </formatted-text>
+        </title>
+      </layout-options>
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='Custom SQL Query (sandbox_iqra)' name='federated.0jaumh70qc73t8185pemq0rshr26' />
+          </datasources>
+          <datasource-dependencies datasource='federated.0jaumh70qc73t8185pemq0rshr26'>
+            <column caption='Service experience ' datatype='string' name='[Calculation_388154002413350913]' role='dimension' type='nominal'>
+              <calculation class='tableau' formula='if NOT  [has_contact] and NOT  [has_no_contact_helpcenter_session]&#10;then &apos;No Service XP&apos;&#10;ELSEIF  [has_contact] and [has_no_contact_helpcenter_session]&#10;then &apos;Multiple Service XP&apos;&#10;ELSEIF  [has_contact] &#10;then &apos;Contact&apos;&#10;else &apos;Helpcenter Session&apos;&#10;end' />
+            </column>
+            <column datatype='string' name='[delay_bin]' role='dimension' type='nominal' />
+            <column datatype='string' name='[global_entity_id]' role='dimension' type='nominal' />
+            <column datatype='boolean' name='[has_contact]' role='dimension' type='nominal' />
+            <column datatype='boolean' name='[has_no_contact_helpcenter_session]' role='dimension' type='nominal' />
+            <column-instance column='[Calculation_388154002413350913]' derivation='None' name='[none:Calculation_388154002413350913:nk]' pivot='key' type='nominal' />
+            <column-instance column='[delay_bin]' derivation='None' name='[none:delay_bin:nk]' pivot='key' type='nominal' />
+            <column-instance column='[global_entity_id]' derivation='None' name='[none:global_entity_id:nk]' pivot='key' type='nominal' />
+            <column datatype='integer' name='[num_orders]' role='measure' type='quantitative' />
+            <column-instance column='[num_orders]' derivation='Sum' name='[pcto:sum:num_orders:qk:2]' pivot='key' type='quantitative'>
+              <table-calc ordering-type='Rows' type='PctTotal' />
+            </column-instance>
+            <column-instance column='[num_orders]' derivation='Sum' name='[sum:num_orders:qk]' pivot='key' type='quantitative' />
+          </datasource-dependencies>
+          <filter class='categorical' column='[federated.0jaumh70qc73t8185pemq0rshr26].[none:Calculation_388154002413350913:nk]'>
+            <groupfilter function='except' user:ui-domain='relevant' user:ui-enumeration='exclusive' user:ui-marker='enumerate'>
+              <groupfilter function='level-members' level='[none:Calculation_388154002413350913:nk]' />
+              <groupfilter function='empty-level' member='[none:Calculation_388154002413350913:nk]' />
+            </groupfilter>
+          </filter>
+          <filter class='categorical' column='[federated.0jaumh70qc73t8185pemq0rshr26].[none:delay_bin:nk]'>
+            <groupfilter function='union' user:ui-domain='database' user:ui-enumeration='inclusive' user:ui-marker='enumerate'>
+              <groupfilter function='member' level='[none:delay_bin:nk]' member='&quot;1-10 minutes late&quot;' />
+              <groupfilter function='member' level='[none:delay_bin:nk]' member='&quot;11-20 minutes late&quot;' />
+            </groupfilter>
+          </filter>
+          <filter class='categorical' column='[federated.0jaumh70qc73t8185pemq0rshr26].[none:global_entity_id:nk]'>
+            <groupfilter function='level-members' level='[none:global_entity_id:nk]' user:ui-enumeration='all' user:ui-marker='enumerate' />
+          </filter>
+          <slices>
+            <column>[federated.0jaumh70qc73t8185pemq0rshr26].[none:global_entity_id:nk]</column>
+            <column>[federated.0jaumh70qc73t8185pemq0rshr26].[none:delay_bin:nk]</column>
+            <column>[federated.0jaumh70qc73t8185pemq0rshr26].[none:Calculation_388154002413350913:nk]</column>
+          </slices>
+          <aggregation value='true' />
+        </view>
+        <style>
+          <style-rule element='cell'>
+            <format attr='width' value='402' />
+          </style-rule>
+        </style>
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Pie' />
+            <encodings>
+              <color column='[federated.0jaumh70qc73t8185pemq0rshr26].[none:Calculation_388154002413350913:nk]' />
+              <size column='[federated.0jaumh70qc73t8185pemq0rshr26].[pcto:sum:num_orders:qk:2]' />
+              <text column='[federated.0jaumh70qc73t8185pemq0rshr26].[pcto:sum:num_orders:qk:2]' />
+              <text column='[federated.0jaumh70qc73t8185pemq0rshr26].[sum:num_orders:qk]' />
+            </encodings>
+            <style>
+              <style-rule element='mark'>
+                <format attr='mark-labels-show' value='true' />
+                <format attr='mark-labels-cull' value='true' />
+              </style-rule>
+              <style-rule element='pane'>
+                <format attr='minwidth' value='-1' />
+                <format attr='maxwidth' value='-1' />
+              </style-rule>
+            </style>
+          </pane>
+        </panes>
+        <rows />
+        <cols />
+      </table>
+      <simple-id uuid='{B5DF2231-DAA8-495C-8DBF-DC22D7F87EE8}' />
+    </worksheet>
+  </worksheets>
+  <windows source-height='30'>
+    <window class='worksheet' name='Distribution of orders per bucket'>
+      <cards>
+        <edge name='left'>
+          <strip size='160'>
+            <card type='pages' />
+            <card type='filters' />
+            <card type='marks' />
+          </strip>
+        </edge>
+        <edge name='top'>
+          <strip size='2147483647'>
+            <card type='columns' />
+          </strip>
+          <strip size='2147483647'>
+            <card type='rows' />
+          </strip>
+          <strip size='31'>
+            <card type='title' />
+          </strip>
+        </edge>
+      </cards>
+      <simple-id uuid='{5D9F1C33-7247-4926-BE4B-4D43A409AE84}' />
+    </window>
+    <window class='worksheet' maximized='true' name='More than 15 minutes delay - HS_SA'>
+      <cards>
+        <edge name='left'>
+          <strip size='160'>
+            <card type='pages' />
+            <card type='filters' />
+            <card type='marks' />
+          </strip>
+        </edge>
+        <edge name='top'>
+          <strip size='2147483647'>
+            <card type='columns' />
+          </strip>
+          <strip size='2147483647'>
+            <card type='rows' />
+          </strip>
+          <strip size='31'>
+            <card type='title' />
+          </strip>
+        </edge>
+        <edge name='right'>
+          <strip size='300'>
+            <card param='[federated.0jaumh70qc73t8185pemq0rshr26].[none:Calculation_388154002413350913:nk]' type='filter' />
+            <card param='[federated.0jaumh70qc73t8185pemq0rshr26].[none:delay_bin:nk]' type='filter' />
+            <card param='[federated.0jaumh70qc73t8185pemq0rshr26].[none:global_entity_id:nk]' type='filter' />
+            <card pane-specification-id='0' param='[federated.0jaumh70qc73t8185pemq0rshr26].[none:Calculation_388154002413350913:nk]' type='color' />
+          </strip>
+        </edge>
+      </cards>
+      <viewpoint>
+        <zoom type='entire-view' />
+        <highlight>
+          <color-one-way>
+            <field>[federated.0jaumh70qc73t8185pemq0rshr26].[none:Calculation_388154002413350913:nk]</field>
+            <field>[federated.0jaumh70qc73t8185pemq0rshr26].[none:has_contact:nk]</field>
+            <field>[federated.0jaumh70qc73t8185pemq0rshr26].[none:has_no_contact_helpcenter_session:nk]</field>
+          </color-one-way>
+        </highlight>
+      </viewpoint>
+      <simple-id uuid='{5D44651A-B4A7-4A0B-9832-4E65FA34CB70}' />
+    </window>
+  </windows>
+</workbook>

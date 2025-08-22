@@ -1,0 +1,1718 @@
+<?xml version='1.0' encoding='utf-8' ?>
+
+<!-- build 20231.24.0118.1101                               -->
+<workbook original-version='18.1' source-build='2023.1.9 (20231.24.0118.1101)' version='18.1' xml:base='https://tableau.deliveryhero.net' xmlns:user='http://www.tableausoftware.com/xml/user'>
+  <document-format-change-manifest>
+    <_.fcp.AccessibleZoneTabOrder.true...AccessibleZoneTabOrder />
+    <_.fcp.AnimationOnByDefault.true...AnimationOnByDefault />
+    <AutoCreateAndUpdateDSDPhoneLayouts />
+    <_.fcp.MarkAnimation.true...MarkAnimation />
+    <_.fcp.ObjectModelEncapsulateLegacy.true...ObjectModelEncapsulateLegacy />
+    <_.fcp.ObjectModelExtractV2.true...ObjectModelExtractV2 />
+    <_.fcp.ObjectModelTableType.true...ObjectModelTableType />
+    <_.fcp.SchemaViewerObjectModel.true...SchemaViewerObjectModel />
+    <SetMembershipControl />
+    <SheetIdentifierTracking />
+    <SortTagCleanup />
+    <WindowsPersistSimpleIdentifiers />
+    <ZoneBackgroundTransparency />
+  </document-format-change-manifest>
+  <repository-location derived-from='https://tableau.deliveryhero.net/t/GlobalStandardReporting/workbooks/AGConversionFunnel?rev=1.0' id='AGConversionFunnel' path='/t/GlobalStandardReporting/workbooks' revision='1.1' site='GlobalStandardReporting' />
+  <preferences />
+  <_.fcp.AnimationOnByDefault.false...style>
+    <_.fcp.AnimationOnByDefault.false..._.fcp.MarkAnimation.true...style-rule element='animation'>
+      <_.fcp.AnimationOnByDefault.false...format attr='animation-on' value='ao-on' />
+    </_.fcp.AnimationOnByDefault.false..._.fcp.MarkAnimation.true...style-rule>
+  </_.fcp.AnimationOnByDefault.false...style>
+  <datasources>
+    <datasource hasconnection='false' inline='true' name='Parameters' version='18.1'>
+      <aliases enabled='yes' />
+      <column caption='Account Segment Param' datatype='string' name='[Parameter 1]' param-domain-type='list' role='measure' type='nominal' value='&quot;Aggregate&quot;'>
+        <calculation class='tableau' formula='&quot;Aggregate&quot;' />
+        <members>
+          <member value='&quot;Aggregate&quot;' />
+          <member value='&quot;Account Segments&quot;' />
+        </members>
+      </column>
+      <column caption='Device Category Param' datatype='string' name='[Parameter 2]' param-domain-type='list' role='measure' type='nominal' value='&quot;Aggregate&quot;'>
+        <calculation class='tableau' formula='&quot;Aggregate&quot;' />
+        <members>
+          <member value='&quot;Aggregate&quot;' />
+          <member value='&quot;Device Breakdown&quot;' />
+        </members>
+      </column>
+    </datasource>
+    <datasource caption='AG Funnel Monthly' inline='true' name='federated.0sultqw0n4tl1l1bmdzdr1exzdwn' version='18.1'>
+      <connection class='federated'>
+        <named-connections>
+          <named-connection caption='BigQuery' name='bigquery.16qgmm115j04731d348w21awza6q'>
+            <connection CATALOG='dhh-ncr-stg' EXECCATALOG='dhh-ncr-stg' authentication='oauth' bq-dataset-fetch-rows='' bq-fetch-rows='' bq-fetch-tasks='' bq-large-fetch-rows='' bq-project-fetch-rows='' bq-response-rows='' class='bigquery' connection-dialect='google-sql' project='dhh-ncr-stg' schema='dev_sales_revenue' server-oauth='' username='yexi.yuan@foodpanda.com' workgroup-auth-mode='prompt' />
+          </named-connection>
+        </named-connections>
+        <_.fcp.ObjectModelEncapsulateLegacy.false...relation connection='bigquery.16qgmm115j04731d348w21awza6q' name='Custom SQL Query' type='text'><![CDATA[WITH vendors AS (
+  SELECT
+    global_entity_id
+    ,vendor_id
+    ,chain_id
+    ,vertical_type
+    ,vertical_parent
+    ,salesforce.key_account_category
+    ,salesforce.is_key_account
+    ,activation_date
+    ,is_qcommerce
+    ,is_local_shop
+    ,location.city
+    ,location.city_id
+    ,CONCAT(global_entity_id, ';', vendor_id) AS vendor_code
+    ,DATE_DIFF(CURRENT_DATE, DATE(activation_date), DAY) days_since_activation
+  FROM `fulfillment-dwh-production.curated_data_shared_coredata_business.vendors`
+  WHERE TRUE
+    AND is_qcommerce = FALSE
+    AND is_test_vendor = FALSE
+)
+
+, ga_events AS (
+  SELECT
+    event_timestamp_utc
+    , fielddate event_date
+    , user_id
+    , user_pseudo_id
+    , session_id
+    , global_vendor_count
+    , is_impersonated
+    , event_name
+    , global_entity_id
+    , email_domain
+
+    -- TRAFFIC SOURCE
+    , traffic_source
+    , collected_traffic_source
+
+    -- GEO INFORMATMION
+    , geo_continent
+    , geo_region
+    , geo_country
+    , geo_city
+
+    -- , event_params
+    -- DEVICE INFORMATION
+    -- , vpm_webview_id
+    -- , app_id
+    , device_category
+    -- , device_os
+    -- , device_brand
+    -- , device_model
+
+    , (SELECT params.value.string_value FROM UNNEST(event_params) AS params WHERE params.key = 'tag') AS tag
+    , (SELECT params.value.string_value FROM UNNEST(event_params) AS params WHERE params.key = 'selected_vendor_id') AS selected_vendor_id
+    , (SELECT params.value.string_value FROM UNNEST(event_params) AS params WHERE params.key = 'selected_vendor_count') AS selected_vendor_count
+    
+    -- PLUGIN METADATA
+    , (SELECT params.value.string_value FROM UNNEST(event_params) AS params WHERE params.key = 'plugin_name') AS plugin_name
+    , (SELECT params.value.string_value FROM UNNEST(event_params) AS params WHERE params.key = 'page_name') AS page_name
+    , section
+    , label
+
+    , (SELECT params.value.string_value FROM UNNEST(event_params) AS params WHERE params.key = 'campaign_state') AS campaign_state
+    , (SELECT params.value.int_value FROM UNNEST(event_params) AS params WHERE params.key = 'recommended_tier') AS recommended_tier
+    , (SELECT params.value.double_value FROM UNNEST(event_params) AS params WHERE params.key = 'recommended_budget') AS recommended_budget
+    , (SELECT params.value.double_value FROM UNNEST(event_params) AS params WHERE params.key = 'roi_estimate') AS roi_estimate
+    , (SELECT params.value.int_value FROM UNNEST(event_params) AS params WHERE params.key = 'order_estimate') AS order_estimate
+
+  FROM `fulfillment-dwh-production.cl_vendor.vp_events`
+  WHERE user_id IS NOT NULL
+    AND fielddate >>= '2024-04-25'
+)
+
+, cpc_bookings AS (
+  SELECT
+    date_month
+    ,global_entity_id
+    ,vendor_id
+    ,CONCAT(global_entity_id, ';', vendor_id) AS vendor_code
+    ,MAX(booking_source) AS booking_source
+    ,MIN(created_date) created_date
+    ,MAX(last_run_date) last_run_date
+  FROM `dhh-ncr-live.analytics.ad_tech_il_cpc`
+  WHERE management_entity = 'Talabat'
+    -- AND date_month >>= DATE_TRUNC(CURRENT_DATE, MONTH)
+  GROUP BY 1,2,3,4
+)
+
+, apr_reco AS (
+  SELECT
+    CONCAT(global_entity_id, ';', vendor_id) AS vendor_code
+    ,ag_segment
+    ,recommendation_id
+  FROM `dhh-ncr-live.adtech_vfd.adtech-vfda-ag-budget-allocation-europe_adtech_vfd_ag_budget_allocation_20240419T015222`
+  -- WHERE ag_segment != 'F'
+)
+
+, ag_events AS (
+  SELECT
+    event_date
+    ,device_category
+    ,ga.global_entity_id
+    ,selected_vendor_id
+    ,plugin_name
+    ,CASE WHEN ag_segment IS NULL THEN 'DEFAULT' ELSE ag_segment END AS ag_segment
+    ,CASE 
+      WHEN booking_source IS NOT NULL
+      AND DATE(created_date) << DATE(event_date)
+      THEN TRUE ELSE FALSE END
+    AS is_existing_cpc
+    ,COALESCE(key_account_category, 'Long Tail') account_segment
+    ,MAX(CASE WHEN label = 'page_load' THEN TRUE ELSE FALSE END) plugin_loaded
+    ,MAX(CASE WHEN label IN ('decrease_recommended_tier', 'increase_recommended_tier') THEN TRUE ELSE FALSE END) change_budget
+    ,MAX(CASE WHEN label = 'booking_success' THEN TRUE ELSE FALSE END) booking_success
+  FROM ga_events ga
+    LEFT JOIN vendors v
+      ON ga.selected_vendor_id = v.vendor_code
+    LEFT JOIN cpc_bookings cpc
+      ON ga.selected_vendor_id = cpc.vendor_code
+      AND DATE_TRUNC(ga.event_date, MONTH) = date_month
+    LEFT JOIN apr_reco rec
+      ON ga.selected_vendor_id = rec.vendor_code
+  WHERE TRUE
+    AND ga.global_entity_id = 'TB_OM'
+    GROUP BY 1,2,3,4,5,6,7,8
+)
+  SELECT
+    DATE_TRUNC(event_date, ISOWEEK) AS report_period
+    ,'Weekly' AS period
+    ,device_category
+    ,global_entity_id
+    ,ag_segment
+    ,is_existing_cpc
+    ,account_segment
+
+    ,COUNT(DISTINCT selected_vendor_id) portal_logins
+    ,COUNT(DISTINCT CASE WHEN plugin_name = 'automate_growth' AND plugin_loaded = TRUE THEN selected_vendor_id END) AS plugin_loaded
+    ,COUNT(DISTINCT CASE WHEN plugin_name = 'automate_growth' AND plugin_loaded = TRUE AND is_existing_cpc = FALSE AND ag_segment != 'F' THEN selected_vendor_id END) AS plugin_loaded_no_sl
+    
+    ,COUNT(DISTINCT CASE WHEN plugin_name = 'automate_growth' AND change_budget = TRUE THEN selected_vendor_id END) AS change_budget
+    ,COUNT(DISTINCT CASE WHEN plugin_name = 'automate_growth' AND change_budget = TRUE AND is_existing_cpc = FALSE THEN selected_vendor_id END) AS change_budget_no_sl
+    
+    ,COUNT(DISTINCT CASE WHEN plugin_name = 'automate_growth' AND booking_success = TRUE THEN selected_vendor_id END) AS booking_success
+    ,COUNT(DISTINCT CASE WHEN plugin_name = 'automate_growth' AND booking_success = TRUE AND is_existing_cpc = FALSE THEN selected_vendor_id END) AS booking_success_no_sl
+    
+  FROM ag_events
+  GROUP BY 1,2,3,4,5,6,7
+  UNION ALL
+  SELECT
+    DATE_TRUNC(event_date, MONTH) AS report_period
+    ,'Monthly' AS period
+    ,device_category
+    ,global_entity_id
+    ,ag_segment
+    ,is_existing_cpc
+    ,account_segment
+
+    ,COUNT(DISTINCT selected_vendor_id) portal_logins
+    ,COUNT(DISTINCT CASE WHEN plugin_name = 'automate_growth' AND plugin_loaded = TRUE THEN selected_vendor_id END) AS plugin_loaded
+    ,COUNT(DISTINCT CASE WHEN plugin_name = 'automate_growth' AND plugin_loaded = TRUE AND is_existing_cpc = FALSE AND ag_segment != 'F' THEN selected_vendor_id END) AS plugin_loaded_no_sl
+    
+    ,COUNT(DISTINCT CASE WHEN plugin_name = 'automate_growth' AND change_budget = TRUE THEN selected_vendor_id END) AS change_budget
+    ,COUNT(DISTINCT CASE WHEN plugin_name = 'automate_growth' AND change_budget = TRUE AND is_existing_cpc = FALSE THEN selected_vendor_id END) AS change_budget_no_sl
+    
+    ,COUNT(DISTINCT CASE WHEN plugin_name = 'automate_growth' AND booking_success = TRUE THEN selected_vendor_id END) AS booking_success
+    ,COUNT(DISTINCT CASE WHEN plugin_name = 'automate_growth' AND booking_success = TRUE AND is_existing_cpc = FALSE THEN selected_vendor_id END) AS booking_success_no_sl
+    
+  FROM ag_events
+  GROUP BY 1,2,3,4,5,6,7]]></_.fcp.ObjectModelEncapsulateLegacy.false...relation>
+        <_.fcp.ObjectModelEncapsulateLegacy.true...relation connection='bigquery.16qgmm115j04731d348w21awza6q' name='Custom SQL Query' type='text'><![CDATA[WITH vendors AS (
+  SELECT
+    global_entity_id
+    ,vendor_id
+    ,chain_id
+    ,vertical_type
+    ,vertical_parent
+    ,salesforce.key_account_category
+    ,salesforce.is_key_account
+    ,activation_date
+    ,is_qcommerce
+    ,is_local_shop
+    ,location.city
+    ,location.city_id
+    ,CONCAT(global_entity_id, ';', vendor_id) AS vendor_code
+    ,DATE_DIFF(CURRENT_DATE, DATE(activation_date), DAY) days_since_activation
+  FROM `fulfillment-dwh-production.curated_data_shared_coredata_business.vendors`
+  WHERE TRUE
+    AND is_qcommerce = FALSE
+    AND is_test_vendor = FALSE
+)
+
+, ga_events AS (
+  SELECT
+    event_timestamp_utc
+    , fielddate event_date
+    , user_id
+    , user_pseudo_id
+    , session_id
+    , global_vendor_count
+    , is_impersonated
+    , event_name
+    , global_entity_id
+    , email_domain
+
+    -- TRAFFIC SOURCE
+    , traffic_source
+    , collected_traffic_source
+
+    -- GEO INFORMATMION
+    , geo_continent
+    , geo_region
+    , geo_country
+    , geo_city
+
+    -- , event_params
+    -- DEVICE INFORMATION
+    -- , vpm_webview_id
+    -- , app_id
+    , device_category
+    -- , device_os
+    -- , device_brand
+    -- , device_model
+
+    , (SELECT params.value.string_value FROM UNNEST(event_params) AS params WHERE params.key = 'tag') AS tag
+    , (SELECT params.value.string_value FROM UNNEST(event_params) AS params WHERE params.key = 'selected_vendor_id') AS selected_vendor_id
+    , (SELECT params.value.string_value FROM UNNEST(event_params) AS params WHERE params.key = 'selected_vendor_count') AS selected_vendor_count
+    
+    -- PLUGIN METADATA
+    , (SELECT params.value.string_value FROM UNNEST(event_params) AS params WHERE params.key = 'plugin_name') AS plugin_name
+    , (SELECT params.value.string_value FROM UNNEST(event_params) AS params WHERE params.key = 'page_name') AS page_name
+    , section
+    , label
+
+    , (SELECT params.value.string_value FROM UNNEST(event_params) AS params WHERE params.key = 'campaign_state') AS campaign_state
+    , (SELECT params.value.int_value FROM UNNEST(event_params) AS params WHERE params.key = 'recommended_tier') AS recommended_tier
+    , (SELECT params.value.double_value FROM UNNEST(event_params) AS params WHERE params.key = 'recommended_budget') AS recommended_budget
+    , (SELECT params.value.double_value FROM UNNEST(event_params) AS params WHERE params.key = 'roi_estimate') AS roi_estimate
+    , (SELECT params.value.int_value FROM UNNEST(event_params) AS params WHERE params.key = 'order_estimate') AS order_estimate
+
+  FROM `fulfillment-dwh-production.cl_vendor.vp_events`
+  WHERE user_id IS NOT NULL
+    AND fielddate >>= '2024-04-25'
+)
+
+, cpc_bookings AS (
+  SELECT
+    date_month
+    ,global_entity_id
+    ,vendor_id
+    ,CONCAT(global_entity_id, ';', vendor_id) AS vendor_code
+    ,MAX(booking_source) AS booking_source
+    ,MIN(created_date) created_date
+    ,MAX(last_run_date) last_run_date
+  FROM `dhh-ncr-live.analytics.ad_tech_il_cpc`
+  WHERE management_entity = 'Talabat'
+    -- AND date_month >>= DATE_TRUNC(CURRENT_DATE, MONTH)
+  GROUP BY 1,2,3,4
+)
+
+, apr_reco AS (
+  SELECT
+    CONCAT(global_entity_id, ';', vendor_id) AS vendor_code
+    ,ag_segment
+    ,recommendation_id
+  FROM `dhh-ncr-live.adtech_vfd.adtech-vfda-ag-budget-allocation-europe_adtech_vfd_ag_budget_allocation_20240419T015222`
+  -- WHERE ag_segment != 'F'
+)
+
+, ag_events AS (
+  SELECT
+    event_date
+    ,device_category
+    ,ga.global_entity_id
+    ,selected_vendor_id
+    ,plugin_name
+    ,CASE WHEN ag_segment IS NULL THEN 'DEFAULT' ELSE ag_segment END AS ag_segment
+    ,CASE 
+      WHEN booking_source IS NOT NULL
+      AND DATE(created_date) << DATE(event_date)
+      THEN TRUE ELSE FALSE END
+    AS is_existing_cpc
+    ,COALESCE(key_account_category, 'Long Tail') account_segment
+    ,MAX(CASE WHEN label = 'page_load' THEN TRUE ELSE FALSE END) plugin_loaded
+    ,MAX(CASE WHEN label IN ('decrease_recommended_tier', 'increase_recommended_tier') THEN TRUE ELSE FALSE END) change_budget
+    ,MAX(CASE WHEN label = 'booking_success' THEN TRUE ELSE FALSE END) booking_success
+  FROM ga_events ga
+    LEFT JOIN vendors v
+      ON ga.selected_vendor_id = v.vendor_code
+    LEFT JOIN cpc_bookings cpc
+      ON ga.selected_vendor_id = cpc.vendor_code
+      AND DATE_TRUNC(ga.event_date, MONTH) = date_month
+    LEFT JOIN apr_reco rec
+      ON ga.selected_vendor_id = rec.vendor_code
+  WHERE TRUE
+    AND ga.global_entity_id = 'TB_OM'
+    GROUP BY 1,2,3,4,5,6,7,8
+)
+  SELECT
+    DATE_TRUNC(event_date, ISOWEEK) AS report_period
+    ,'Weekly' AS period
+    ,device_category
+    ,global_entity_id
+    ,ag_segment
+    ,is_existing_cpc
+    ,account_segment
+
+    ,COUNT(DISTINCT selected_vendor_id) portal_logins
+    ,COUNT(DISTINCT CASE WHEN plugin_name = 'automate_growth' AND plugin_loaded = TRUE THEN selected_vendor_id END) AS plugin_loaded
+    ,COUNT(DISTINCT CASE WHEN plugin_name = 'automate_growth' AND plugin_loaded = TRUE AND is_existing_cpc = FALSE AND ag_segment != 'F' THEN selected_vendor_id END) AS plugin_loaded_no_sl
+    
+    ,COUNT(DISTINCT CASE WHEN plugin_name = 'automate_growth' AND change_budget = TRUE THEN selected_vendor_id END) AS change_budget
+    ,COUNT(DISTINCT CASE WHEN plugin_name = 'automate_growth' AND change_budget = TRUE AND is_existing_cpc = FALSE THEN selected_vendor_id END) AS change_budget_no_sl
+    
+    ,COUNT(DISTINCT CASE WHEN plugin_name = 'automate_growth' AND booking_success = TRUE THEN selected_vendor_id END) AS booking_success
+    ,COUNT(DISTINCT CASE WHEN plugin_name = 'automate_growth' AND booking_success = TRUE AND is_existing_cpc = FALSE THEN selected_vendor_id END) AS booking_success_no_sl
+    
+  FROM ag_events
+  GROUP BY 1,2,3,4,5,6,7
+  UNION ALL
+  SELECT
+    DATE_TRUNC(event_date, MONTH) AS report_period
+    ,'Monthly' AS period
+    ,device_category
+    ,global_entity_id
+    ,ag_segment
+    ,is_existing_cpc
+    ,account_segment
+
+    ,COUNT(DISTINCT selected_vendor_id) portal_logins
+    ,COUNT(DISTINCT CASE WHEN plugin_name = 'automate_growth' AND plugin_loaded = TRUE THEN selected_vendor_id END) AS plugin_loaded
+    ,COUNT(DISTINCT CASE WHEN plugin_name = 'automate_growth' AND plugin_loaded = TRUE AND is_existing_cpc = FALSE AND ag_segment != 'F' THEN selected_vendor_id END) AS plugin_loaded_no_sl
+    
+    ,COUNT(DISTINCT CASE WHEN plugin_name = 'automate_growth' AND change_budget = TRUE THEN selected_vendor_id END) AS change_budget
+    ,COUNT(DISTINCT CASE WHEN plugin_name = 'automate_growth' AND change_budget = TRUE AND is_existing_cpc = FALSE THEN selected_vendor_id END) AS change_budget_no_sl
+    
+    ,COUNT(DISTINCT CASE WHEN plugin_name = 'automate_growth' AND booking_success = TRUE THEN selected_vendor_id END) AS booking_success
+    ,COUNT(DISTINCT CASE WHEN plugin_name = 'automate_growth' AND booking_success = TRUE AND is_existing_cpc = FALSE THEN selected_vendor_id END) AS booking_success_no_sl
+    
+  FROM ag_events
+  GROUP BY 1,2,3,4,5,6,7]]></_.fcp.ObjectModelEncapsulateLegacy.true...relation>
+        <metadata-records>
+          <metadata-record class='column'>
+            <remote-name>report_period</remote-name>
+            <remote-type>7</remote-type>
+            <local-name>[report_period]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>report_period</remote-alias>
+            <local-type>date</local-type>
+            <aggregation>Year</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_47A12FB8035B40178415D25D126E4ECC]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>period</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[period]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>period</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_47A12FB8035B40178415D25D126E4ECC]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>device_category</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[device_category]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>device_category</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_47A12FB8035B40178415D25D126E4ECC]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>global_entity_id</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[global_entity_id]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>global_entity_id</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_47A12FB8035B40178415D25D126E4ECC]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>ag_segment</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[ag_segment]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>ag_segment</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_47A12FB8035B40178415D25D126E4ECC]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>is_existing_cpc</remote-name>
+            <remote-type>11</remote-type>
+            <local-name>[is_existing_cpc]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>is_existing_cpc</remote-alias>
+            <local-type>boolean</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_47A12FB8035B40178415D25D126E4ECC]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>account_segment</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[account_segment]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>account_segment</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_47A12FB8035B40178415D25D126E4ECC]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>portal_logins</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[portal_logins]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>portal_logins</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_47A12FB8035B40178415D25D126E4ECC]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>plugin_loaded</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[plugin_loaded]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>plugin_loaded</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_47A12FB8035B40178415D25D126E4ECC]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>plugin_loaded_no_sl</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[plugin_loaded_no_sl]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>plugin_loaded_no_sl</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_47A12FB8035B40178415D25D126E4ECC]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>change_budget</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[change_budget]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>change_budget</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_47A12FB8035B40178415D25D126E4ECC]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>change_budget_no_sl</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[change_budget_no_sl]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>change_budget_no_sl</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_47A12FB8035B40178415D25D126E4ECC]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>booking_success</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[booking_success]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>booking_success</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_47A12FB8035B40178415D25D126E4ECC]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>booking_success_no_sl</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[booking_success_no_sl]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>booking_success_no_sl</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_47A12FB8035B40178415D25D126E4ECC]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+        </metadata-records>
+      </connection>
+      <aliases enabled='yes' />
+      <column datatype='string' name='[:Measure Names]' role='dimension' type='nominal'>
+        <aliases>
+          <alias key='&quot;[federated.0sultqw0n4tl1l1bmdzdr1exzdwn].[sum:booking_success:qk]&quot;' value='Booking Success' />
+          <alias key='&quot;[federated.0sultqw0n4tl1l1bmdzdr1exzdwn].[sum:change_budget:qk]&quot;' value='Select Budget' />
+          <alias key='&quot;[federated.0sultqw0n4tl1l1bmdzdr1exzdwn].[sum:plugin_loaded_no_sl:qk]&quot;' value='Plugin Loaded (with AG Access)' />
+          <alias key='&quot;[federated.0sultqw0n4tl1l1bmdzdr1exzdwn].[sum:plugin_loaded:qk]&quot;' value='Plugin Loaded' />
+        </aliases>
+      </column>
+      <column caption='Account Segment Breakdown' datatype='string' name='[Calculation_1967721214583783425]' role='dimension' type='nominal'>
+        <calculation class='tableau' formula='IF [Parameters].[Parameter 1] = &apos;Aggregate&apos; THEN &apos;Aggregate&apos;&#10;ELSEIF [Parameters].[Parameter 1] = &apos;Account Segment&apos; THEN [account_segment]&#10;END' />
+      </column>
+      <column caption='Device Category Breakdown' datatype='string' name='[Calculation_1967721214595366914]' role='dimension' type='nominal'>
+        <calculation class='tableau' formula='CASE [Parameters].[Parameter 2]&#10;WHEN &apos;Aggregate&apos; THEN &apos;Aggregate&apos;&#10;WHEN &apos;Device Breakdown&apos; THEN [device_category]&#10;ELSE &apos;&apos;&#10;END' />
+      </column>
+      <column caption='% AG Plugin Visits' datatype='real' name='[Calculation_1967721214601342980]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='SUM([plugin_loaded]) / SUM([portal_logins])' />
+      </column>
+      <column caption='% Product Conversion' datatype='real' name='[Calculation_1967721214601560069]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='SUM([booking_success])/SUM([plugin_loaded_no_sl])' />
+      </column>
+      <column caption='% w AG Access' datatype='real' name='[Calculation_1967721214630821895]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='SUM([plugin_loaded_no_sl])/SUM([plugin_loaded])' />
+      </column>
+      <_.fcp.ObjectModelTableType.true...column caption='Custom SQL Query' datatype='table' name='[__tableau_internal_object_id__].[_47A12FB8035B40178415D25D126E4ECC]' role='measure' type='quantitative' />
+      <column caption='Account Segment' datatype='string' name='[account_segment]' role='dimension' type='nominal' />
+      <column datatype='integer' name='[booking_success]' role='measure' type='quantitative' />
+      <column datatype='integer' name='[change_budget]' role='measure' type='quantitative' />
+      <column datatype='string' name='[device_category]' role='dimension' type='nominal' />
+      <column caption='Period' datatype='string' name='[period]' role='dimension' type='nominal' />
+      <column datatype='integer' name='[plugin_loaded]' role='measure' type='quantitative' />
+      <column datatype='integer' name='[plugin_loaded_no_sl]' role='measure' type='quantitative' />
+      <column caption='Report Period' datatype='date' name='[report_period]' role='dimension' type='ordinal' />
+      <column-instance column='[Calculation_1967721214595366914]' derivation='None' name='[none:Calculation_1967721214595366914:nk]' pivot='key' type='nominal' />
+      <column-instance column='[account_segment]' derivation='None' name='[none:account_segment:nk]' pivot='key' type='nominal' />
+      <column-instance column='[device_category]' derivation='None' name='[none:device_category:nk]' pivot='key' type='nominal' />
+      <column-instance column='[booking_success]' derivation='Sum' name='[sum:booking_success:qk]' pivot='key' type='quantitative' />
+      <column-instance column='[change_budget]' derivation='Sum' name='[sum:change_budget:qk]' pivot='key' type='quantitative' />
+      <column-instance column='[plugin_loaded]' derivation='Sum' name='[sum:plugin_loaded:qk]' pivot='key' type='quantitative' />
+      <column-instance column='[plugin_loaded_no_sl]' derivation='Sum' name='[sum:plugin_loaded_no_sl:qk]' pivot='key' type='quantitative' />
+      <extract _.fcp.ObjectModelExtractV2.true...object-id='' count='-1' enabled='true' units='records'>
+        <connection access_mode='readonly' author-locale='en_US' class='hyper' dbname='extract/b6/b0/{9F33D7DA-213B-4BB2-AD2F-DC1BCBBF1ADD}/federated_0sultqw0n4tl1l1bmdzdr1.hyper' extract-engine='true' schema='Extract' sslmode='' tablename='Extract' update-time='07/03/2024 06:24:21 AM'>
+          <_.fcp.ObjectModelEncapsulateLegacy.false...relation name='Extract' table='[Extract].[Extract]' type='table' />
+          <_.fcp.ObjectModelEncapsulateLegacy.true...relation name='Extract' table='[Extract].[Extract]' type='table' />
+          <metadata-records>
+            <metadata-record class='column'>
+              <remote-name>report_period</remote-name>
+              <remote-type>133</remote-type>
+              <local-name>[report_period]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>report_period</remote-alias>
+              <ordinal>0</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>date</local-type>
+              <aggregation>Year</aggregation>
+              <approx-count>14</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_47A12FB8035B40178415D25D126E4ECC]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>period</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[period]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>period</remote-alias>
+              <ordinal>1</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>2</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_47A12FB8035B40178415D25D126E4ECC]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>device_category</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[device_category]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>device_category</remote-alias>
+              <ordinal>2</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>3</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_47A12FB8035B40178415D25D126E4ECC]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>global_entity_id</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[global_entity_id]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>global_entity_id</remote-alias>
+              <ordinal>3</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>1</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_47A12FB8035B40178415D25D126E4ECC]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>ag_segment</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[ag_segment]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>ag_segment</remote-alias>
+              <ordinal>4</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>7</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_47A12FB8035B40178415D25D126E4ECC]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>is_existing_cpc</remote-name>
+              <remote-type>11</remote-type>
+              <local-name>[is_existing_cpc]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>is_existing_cpc</remote-alias>
+              <ordinal>5</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>boolean</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>2</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_47A12FB8035B40178415D25D126E4ECC]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>account_segment</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[account_segment]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>account_segment</remote-alias>
+              <ordinal>6</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>5</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_47A12FB8035B40178415D25D126E4ECC]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>portal_logins</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[portal_logins]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>portal_logins</remote-alias>
+              <ordinal>7</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>178</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_47A12FB8035B40178415D25D126E4ECC]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>plugin_loaded</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[plugin_loaded]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>plugin_loaded</remote-alias>
+              <ordinal>8</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>32</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_47A12FB8035B40178415D25D126E4ECC]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>plugin_loaded_no_sl</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[plugin_loaded_no_sl]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>plugin_loaded_no_sl</remote-alias>
+              <ordinal>9</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>31</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_47A12FB8035B40178415D25D126E4ECC]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>change_budget</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[change_budget]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>change_budget</remote-alias>
+              <ordinal>10</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>9</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_47A12FB8035B40178415D25D126E4ECC]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>change_budget_no_sl</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[change_budget_no_sl]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>change_budget_no_sl</remote-alias>
+              <ordinal>11</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>9</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_47A12FB8035B40178415D25D126E4ECC]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>booking_success</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[booking_success]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>booking_success</remote-alias>
+              <ordinal>12</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>4</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_47A12FB8035B40178415D25D126E4ECC]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>booking_success_no_sl</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[booking_success_no_sl]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>booking_success_no_sl</remote-alias>
+              <ordinal>13</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>4</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_47A12FB8035B40178415D25D126E4ECC]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+          </metadata-records>
+        </connection>
+      </extract>
+      <layout _.fcp.SchemaViewerObjectModel.false...dim-percentage='0.5' _.fcp.SchemaViewerObjectModel.false...measure-percentage='0.4' dim-ordering='alphabetic' measure-ordering='alphabetic' show-structure='true' />
+      <style>
+        <style-rule element='mark'>
+          <encoding attr='color' field='[none:Calculation_1967721214595366914:nk]' palette='color_blind_10_0' type='palette'>
+            <map to='#1170aa'>
+              <bucket>&quot;Aggregate&quot;</bucket>
+            </map>
+            <map to='#1170aa'>
+              <bucket>&quot;desktop&quot;</bucket>
+            </map>
+            <map to='#57606c'>
+              <bucket>%all%</bucket>
+            </map>
+            <map to='#a3acb9'>
+              <bucket>&quot;tablet&quot;</bucket>
+            </map>
+            <map to='#fc7d0b'>
+              <bucket>&quot;mobile&quot;</bucket>
+            </map>
+          </encoding>
+          <encoding attr='color' field='[none:account_segment:nk]' palette='color_blind_10_0' type='palette'>
+            <map to='#1170aa'>
+              <bucket>&quot;Long Tail&quot;</bucket>
+            </map>
+            <map to='#57606c'>
+              <bucket>&quot;National KA&quot;</bucket>
+            </map>
+            <map to='#5fa2ce'>
+              <bucket>&quot;Global KA&quot;</bucket>
+            </map>
+            <map to='#a3acb9'>
+              <bucket>&quot;Large Chain&quot;</bucket>
+            </map>
+            <map to='#c85200'>
+              <bucket>%all%</bucket>
+            </map>
+            <map to='#fc7d0b'>
+              <bucket>&quot;Local Hero&quot;</bucket>
+            </map>
+          </encoding>
+          <encoding attr='color' field='[none:device_category:nk]' type='palette'>
+            <map to='#4e79a7'>
+              <bucket>&quot;desktop&quot;</bucket>
+            </map>
+            <map to='#e15759'>
+              <bucket>&quot;tablet&quot;</bucket>
+            </map>
+            <map to='#f28e2b'>
+              <bucket>&quot;mobile&quot;</bucket>
+            </map>
+          </encoding>
+        </style-rule>
+      </style>
+      <semantic-values>
+        <semantic-value key='[Country].[Name]' value='&quot;Singapore&quot;' />
+      </semantic-values>
+      <datasource-dependencies datasource='Parameters'>
+        <column caption='Account Segment Param' datatype='string' name='[Parameter 1]' param-domain-type='list' role='measure' type='nominal' value='&quot;Aggregate&quot;'>
+          <calculation class='tableau' formula='&quot;Aggregate&quot;' />
+        </column>
+        <column caption='Device Category Param' datatype='string' name='[Parameter 2]' param-domain-type='list' role='measure' type='nominal' value='&quot;Aggregate&quot;'>
+          <calculation class='tableau' formula='&quot;Aggregate&quot;' />
+        </column>
+      </datasource-dependencies>
+      <_.fcp.ObjectModelEncapsulateLegacy.true...object-graph>
+        <objects>
+          <object caption='Custom SQL Query' id='_47A12FB8035B40178415D25D126E4ECC'>
+            <properties context=''>
+              <relation connection='bigquery.16qgmm115j04731d348w21awza6q' name='Custom SQL Query' type='text'><![CDATA[WITH vendors AS (
+  SELECT
+    global_entity_id
+    ,vendor_id
+    ,chain_id
+    ,vertical_type
+    ,vertical_parent
+    ,salesforce.key_account_category
+    ,salesforce.is_key_account
+    ,activation_date
+    ,is_qcommerce
+    ,is_local_shop
+    ,location.city
+    ,location.city_id
+    ,CONCAT(global_entity_id, ';', vendor_id) AS vendor_code
+    ,DATE_DIFF(CURRENT_DATE, DATE(activation_date), DAY) days_since_activation
+  FROM `fulfillment-dwh-production.curated_data_shared_coredata_business.vendors`
+  WHERE TRUE
+    AND is_qcommerce = FALSE
+    AND is_test_vendor = FALSE
+)
+
+, ga_events AS (
+  SELECT
+    event_timestamp_utc
+    , fielddate event_date
+    , user_id
+    , user_pseudo_id
+    , session_id
+    , global_vendor_count
+    , is_impersonated
+    , event_name
+    , global_entity_id
+    , email_domain
+
+    -- TRAFFIC SOURCE
+    , traffic_source
+    , collected_traffic_source
+
+    -- GEO INFORMATMION
+    , geo_continent
+    , geo_region
+    , geo_country
+    , geo_city
+
+    -- , event_params
+    -- DEVICE INFORMATION
+    -- , vpm_webview_id
+    -- , app_id
+    , device_category
+    -- , device_os
+    -- , device_brand
+    -- , device_model
+
+    , (SELECT params.value.string_value FROM UNNEST(event_params) AS params WHERE params.key = 'tag') AS tag
+    , (SELECT params.value.string_value FROM UNNEST(event_params) AS params WHERE params.key = 'selected_vendor_id') AS selected_vendor_id
+    , (SELECT params.value.string_value FROM UNNEST(event_params) AS params WHERE params.key = 'selected_vendor_count') AS selected_vendor_count
+    
+    -- PLUGIN METADATA
+    , (SELECT params.value.string_value FROM UNNEST(event_params) AS params WHERE params.key = 'plugin_name') AS plugin_name
+    , (SELECT params.value.string_value FROM UNNEST(event_params) AS params WHERE params.key = 'page_name') AS page_name
+    , section
+    , label
+
+    , (SELECT params.value.string_value FROM UNNEST(event_params) AS params WHERE params.key = 'campaign_state') AS campaign_state
+    , (SELECT params.value.int_value FROM UNNEST(event_params) AS params WHERE params.key = 'recommended_tier') AS recommended_tier
+    , (SELECT params.value.double_value FROM UNNEST(event_params) AS params WHERE params.key = 'recommended_budget') AS recommended_budget
+    , (SELECT params.value.double_value FROM UNNEST(event_params) AS params WHERE params.key = 'roi_estimate') AS roi_estimate
+    , (SELECT params.value.int_value FROM UNNEST(event_params) AS params WHERE params.key = 'order_estimate') AS order_estimate
+
+  FROM `fulfillment-dwh-production.cl_vendor.vp_events`
+  WHERE user_id IS NOT NULL
+    AND fielddate >>= '2024-04-25'
+)
+
+, cpc_bookings AS (
+  SELECT
+    date_month
+    ,global_entity_id
+    ,vendor_id
+    ,CONCAT(global_entity_id, ';', vendor_id) AS vendor_code
+    ,MAX(booking_source) AS booking_source
+    ,MIN(created_date) created_date
+    ,MAX(last_run_date) last_run_date
+  FROM `dhh-ncr-live.analytics.ad_tech_il_cpc`
+  WHERE management_entity = 'Talabat'
+    -- AND date_month >>= DATE_TRUNC(CURRENT_DATE, MONTH)
+  GROUP BY 1,2,3,4
+)
+
+, apr_reco AS (
+  SELECT
+    CONCAT(global_entity_id, ';', vendor_id) AS vendor_code
+    ,ag_segment
+    ,recommendation_id
+  FROM `dhh-ncr-live.adtech_vfd.adtech-vfda-ag-budget-allocation-europe_adtech_vfd_ag_budget_allocation_20240419T015222`
+  -- WHERE ag_segment != 'F'
+)
+
+, ag_events AS (
+  SELECT
+    event_date
+    ,device_category
+    ,ga.global_entity_id
+    ,selected_vendor_id
+    ,plugin_name
+    ,CASE WHEN ag_segment IS NULL THEN 'DEFAULT' ELSE ag_segment END AS ag_segment
+    ,CASE 
+      WHEN booking_source IS NOT NULL
+      AND DATE(created_date) << DATE(event_date)
+      THEN TRUE ELSE FALSE END
+    AS is_existing_cpc
+    ,COALESCE(key_account_category, 'Long Tail') account_segment
+    ,MAX(CASE WHEN label = 'page_load' THEN TRUE ELSE FALSE END) plugin_loaded
+    ,MAX(CASE WHEN label IN ('decrease_recommended_tier', 'increase_recommended_tier') THEN TRUE ELSE FALSE END) change_budget
+    ,MAX(CASE WHEN label = 'booking_success' THEN TRUE ELSE FALSE END) booking_success
+  FROM ga_events ga
+    LEFT JOIN vendors v
+      ON ga.selected_vendor_id = v.vendor_code
+    LEFT JOIN cpc_bookings cpc
+      ON ga.selected_vendor_id = cpc.vendor_code
+      AND DATE_TRUNC(ga.event_date, MONTH) = date_month
+    LEFT JOIN apr_reco rec
+      ON ga.selected_vendor_id = rec.vendor_code
+  WHERE TRUE
+    AND ga.global_entity_id = 'TB_OM'
+    GROUP BY 1,2,3,4,5,6,7,8
+)
+  SELECT
+    DATE_TRUNC(event_date, ISOWEEK) AS report_period
+    ,'Weekly' AS period
+    ,device_category
+    ,global_entity_id
+    ,ag_segment
+    ,is_existing_cpc
+    ,account_segment
+
+    ,COUNT(DISTINCT selected_vendor_id) portal_logins
+    ,COUNT(DISTINCT CASE WHEN plugin_name = 'automate_growth' AND plugin_loaded = TRUE THEN selected_vendor_id END) AS plugin_loaded
+    ,COUNT(DISTINCT CASE WHEN plugin_name = 'automate_growth' AND plugin_loaded = TRUE AND is_existing_cpc = FALSE AND ag_segment != 'F' THEN selected_vendor_id END) AS plugin_loaded_no_sl
+    
+    ,COUNT(DISTINCT CASE WHEN plugin_name = 'automate_growth' AND change_budget = TRUE THEN selected_vendor_id END) AS change_budget
+    ,COUNT(DISTINCT CASE WHEN plugin_name = 'automate_growth' AND change_budget = TRUE AND is_existing_cpc = FALSE THEN selected_vendor_id END) AS change_budget_no_sl
+    
+    ,COUNT(DISTINCT CASE WHEN plugin_name = 'automate_growth' AND booking_success = TRUE THEN selected_vendor_id END) AS booking_success
+    ,COUNT(DISTINCT CASE WHEN plugin_name = 'automate_growth' AND booking_success = TRUE AND is_existing_cpc = FALSE THEN selected_vendor_id END) AS booking_success_no_sl
+    
+  FROM ag_events
+  GROUP BY 1,2,3,4,5,6,7
+  UNION ALL
+  SELECT
+    DATE_TRUNC(event_date, MONTH) AS report_period
+    ,'Monthly' AS period
+    ,device_category
+    ,global_entity_id
+    ,ag_segment
+    ,is_existing_cpc
+    ,account_segment
+
+    ,COUNT(DISTINCT selected_vendor_id) portal_logins
+    ,COUNT(DISTINCT CASE WHEN plugin_name = 'automate_growth' AND plugin_loaded = TRUE THEN selected_vendor_id END) AS plugin_loaded
+    ,COUNT(DISTINCT CASE WHEN plugin_name = 'automate_growth' AND plugin_loaded = TRUE AND is_existing_cpc = FALSE AND ag_segment != 'F' THEN selected_vendor_id END) AS plugin_loaded_no_sl
+    
+    ,COUNT(DISTINCT CASE WHEN plugin_name = 'automate_growth' AND change_budget = TRUE THEN selected_vendor_id END) AS change_budget
+    ,COUNT(DISTINCT CASE WHEN plugin_name = 'automate_growth' AND change_budget = TRUE AND is_existing_cpc = FALSE THEN selected_vendor_id END) AS change_budget_no_sl
+    
+    ,COUNT(DISTINCT CASE WHEN plugin_name = 'automate_growth' AND booking_success = TRUE THEN selected_vendor_id END) AS booking_success
+    ,COUNT(DISTINCT CASE WHEN plugin_name = 'automate_growth' AND booking_success = TRUE AND is_existing_cpc = FALSE THEN selected_vendor_id END) AS booking_success_no_sl
+    
+  FROM ag_events
+  GROUP BY 1,2,3,4,5,6,7]]></relation>
+            </properties>
+            <properties context='extract'>
+              <relation name='Extract' table='[Extract].[Extract]' type='table' />
+            </properties>
+          </object>
+        </objects>
+      </_.fcp.ObjectModelEncapsulateLegacy.true...object-graph>
+    </datasource>
+  </datasources>
+  <shared-views>
+    <shared-view name='federated.0sultqw0n4tl1l1bmdzdr1exzdwn'>
+      <datasources>
+        <datasource caption='AG Funnel Monthly' name='federated.0sultqw0n4tl1l1bmdzdr1exzdwn' />
+      </datasources>
+      <datasource-dependencies datasource='federated.0sultqw0n4tl1l1bmdzdr1exzdwn'>
+        <column caption='Account Segment' datatype='string' name='[account_segment]' role='dimension' type='nominal' />
+        <column-instance column='[account_segment]' derivation='None' name='[none:account_segment:nk]' pivot='key' type='nominal' />
+        <column-instance column='[period]' derivation='None' name='[none:period:nk]' pivot='key' type='nominal' />
+        <column caption='Period' datatype='string' name='[period]' role='dimension' type='nominal' />
+      </datasource-dependencies>
+      <filter class='categorical' column='[federated.0sultqw0n4tl1l1bmdzdr1exzdwn].[none:account_segment:nk]'>
+        <groupfilter function='level-members' level='[none:account_segment:nk]' user:ui-enumeration='all' user:ui-marker='enumerate' />
+      </filter>
+      <filter class='categorical' column='[federated.0sultqw0n4tl1l1bmdzdr1exzdwn].[none:period:nk]'>
+        <groupfilter function='member' level='[none:period:nk]' member='&quot;Weekly&quot;' user:ui-domain='relevant' user:ui-enumeration='inclusive' user:ui-marker='enumerate' />
+      </filter>
+    </shared-view>
+  </shared-views>
+  <worksheets>
+    <worksheet name='Funnel'>
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='AG Funnel Monthly' name='federated.0sultqw0n4tl1l1bmdzdr1exzdwn' />
+          </datasources>
+          <datasource-dependencies datasource='federated.0sultqw0n4tl1l1bmdzdr1exzdwn'>
+            <column caption='Account Segment' datatype='string' name='[account_segment]' role='dimension' type='nominal' />
+            <column datatype='integer' name='[booking_success]' role='measure' type='quantitative' />
+            <column datatype='integer' name='[change_budget]' role='measure' type='quantitative' />
+            <column datatype='integer' name='[change_budget_no_sl]' role='measure' type='quantitative' />
+            <column-instance column='[account_segment]' derivation='Count' name='[cnt:account_segment:qk]' pivot='key' type='quantitative' />
+            <column datatype='string' name='[device_category]' role='dimension' type='nominal' />
+            <column-instance column='[account_segment]' derivation='None' name='[none:account_segment:nk]' pivot='key' type='nominal' />
+            <column-instance column='[device_category]' derivation='None' name='[none:device_category:nk]' pivot='key' type='nominal' />
+            <column-instance column='[period]' derivation='None' name='[none:period:nk]' pivot='key' type='nominal' />
+            <column-instance column='[report_period]' derivation='None' name='[none:report_period:ok]' pivot='key' type='ordinal' />
+            <column caption='Period' datatype='string' name='[period]' role='dimension' type='nominal' />
+            <column datatype='integer' name='[plugin_loaded]' role='measure' type='quantitative' />
+            <column datatype='integer' name='[plugin_loaded_no_sl]' role='measure' type='quantitative' />
+            <column caption='Report Period' datatype='date' name='[report_period]' role='dimension' type='ordinal' />
+            <column-instance column='[booking_success]' derivation='Sum' name='[sum:booking_success:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[change_budget]' derivation='Sum' name='[sum:change_budget:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[change_budget_no_sl]' derivation='Sum' name='[sum:change_budget_no_sl:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[plugin_loaded]' derivation='Sum' name='[sum:plugin_loaded:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[plugin_loaded_no_sl]' derivation='Sum' name='[sum:plugin_loaded_no_sl:qk]' pivot='key' type='quantitative' />
+          </datasource-dependencies>
+          <filter class='categorical' column='[federated.0sultqw0n4tl1l1bmdzdr1exzdwn].[:Measure Names]'>
+            <groupfilter function='union' user:op='manual'>
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.0sultqw0n4tl1l1bmdzdr1exzdwn].[sum:plugin_loaded:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.0sultqw0n4tl1l1bmdzdr1exzdwn].[sum:plugin_loaded_no_sl:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.0sultqw0n4tl1l1bmdzdr1exzdwn].[sum:change_budget:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.0sultqw0n4tl1l1bmdzdr1exzdwn].[sum:booking_success:qk]&quot;' />
+            </groupfilter>
+          </filter>
+          <manual-sort column='[federated.0sultqw0n4tl1l1bmdzdr1exzdwn].[:Measure Names]' direction='ASC'>
+            <dictionary>
+              <bucket>&quot;[federated.0sultqw0n4tl1l1bmdzdr1exzdwn].[sum:plugin_loaded:qk]&quot;</bucket>
+              <bucket>&quot;[federated.0sultqw0n4tl1l1bmdzdr1exzdwn].[sum:plugin_loaded_no_sl:qk]&quot;</bucket>
+              <bucket>&quot;[federated.0sultqw0n4tl1l1bmdzdr1exzdwn].[sum:change_budget:qk]&quot;</bucket>
+              <bucket>&quot;[federated.0sultqw0n4tl1l1bmdzdr1exzdwn].[sum:change_budget_no_sl:qk]&quot;</bucket>
+              <bucket>&quot;[federated.0sultqw0n4tl1l1bmdzdr1exzdwn].[sum:booking_success:qk]&quot;</bucket>
+            </dictionary>
+          </manual-sort>
+          <computed-sort column='[federated.0sultqw0n4tl1l1bmdzdr1exzdwn].[none:account_segment:nk]' direction='DESC' using='[federated.0sultqw0n4tl1l1bmdzdr1exzdwn].[cnt:account_segment:qk]' />
+          <filter class='categorical' column='[federated.0sultqw0n4tl1l1bmdzdr1exzdwn].[none:device_category:nk]' filter-group='3'>
+            <groupfilter function='level-members' level='[none:device_category:nk]' user:ui-enumeration='all' user:ui-marker='enumerate' />
+          </filter>
+          <slices>
+            <column>[federated.0sultqw0n4tl1l1bmdzdr1exzdwn].[:Measure Names]</column>
+            <column>[federated.0sultqw0n4tl1l1bmdzdr1exzdwn].[none:period:nk]</column>
+            <column>[federated.0sultqw0n4tl1l1bmdzdr1exzdwn].[none:device_category:nk]</column>
+            <column>[federated.0sultqw0n4tl1l1bmdzdr1exzdwn].[none:account_segment:nk]</column>
+          </slices>
+          <aggregation value='true' />
+        </view>
+        <style>
+          <style-rule element='axis'>
+            <format attr='title' class='0' field='[federated.0sultqw0n4tl1l1bmdzdr1exzdwn].[Multiple Values]' scope='cols' value='' />
+            <encoding attr='space' class='0' domain-expand='false' field='[federated.0sultqw0n4tl1l1bmdzdr1exzdwn].[Multiple Values]' field-type='quantitative' major-origin='0.0' major-show='false' major-spacing='100.0' range-type='uniform' scope='cols' type='space' />
+          </style-rule>
+          <style-rule element='cell'>
+            <format attr='text-format' field='[federated.0sultqw0n4tl1l1bmdzdr1exzdwn].[Multiple Values]' value='n#,##0;-#,##0' />
+          </style-rule>
+          <style-rule element='header'>
+            <format attr='width' field='[federated.0sultqw0n4tl1l1bmdzdr1exzdwn].[:Measure Names]' value='204' />
+            <format attr='width' field='[federated.0sultqw0n4tl1l1bmdzdr1exzdwn].[none:account_segment:nk]' value='96' />
+            <format attr='height' field='[federated.0sultqw0n4tl1l1bmdzdr1exzdwn].[none:report_period:ok]' value='36' />
+          </style-rule>
+          <style-rule element='label'>
+            <format attr='text-format' field='[federated.0sultqw0n4tl1l1bmdzdr1exzdwn].[Multiple Values]' value='n#,##0;-#,##0' />
+          </style-rule>
+          <style-rule element='gridline'>
+            <format attr='line-pattern-only' scope='cols' value='solid' />
+            <format attr='stroke-size' scope='cols' value='0' />
+            <format attr='line-visibility' scope='cols' value='off' />
+          </style-rule>
+          <style-rule element='quick-filter'>
+            <format attr='title' field='[federated.0sultqw0n4tl1l1bmdzdr1exzdwn].[none:period:nk]' value='Time Granularity'>
+              <formatted-text>
+                <run>Time Granularity</run>
+              </formatted-text>
+            </format>
+          </style-rule>
+        </style>
+        <panes>
+          <pane id='2' selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Bar' />
+            <encodings>
+              <color column='[federated.0sultqw0n4tl1l1bmdzdr1exzdwn].[none:account_segment:nk]' />
+            </encodings>
+            <style>
+              <style-rule element='mark'>
+                <format attr='mark-labels-show' value='true' />
+                <format attr='mark-labels-cull' value='true' />
+              </style-rule>
+            </style>
+          </pane>
+        </panes>
+        <rows onTop='true' total='true'>([federated.0sultqw0n4tl1l1bmdzdr1exzdwn].[none:account_segment:nk] / [federated.0sultqw0n4tl1l1bmdzdr1exzdwn].[:Measure Names])</rows>
+        <cols onLeft='true' total='true'>(([federated.0sultqw0n4tl1l1bmdzdr1exzdwn].[none:period:nk] / [federated.0sultqw0n4tl1l1bmdzdr1exzdwn].[none:report_period:ok]) * [federated.0sultqw0n4tl1l1bmdzdr1exzdwn].[Multiple Values])</cols>
+      </table>
+      <simple-id uuid='{94A6C816-ADB7-4ECC-8FB3-FF39B5B0DD6F}' />
+    </worksheet>
+    <worksheet name='Funnel (%)'>
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='AG Funnel Monthly' name='federated.0sultqw0n4tl1l1bmdzdr1exzdwn' />
+          </datasources>
+          <datasource-dependencies datasource='federated.0sultqw0n4tl1l1bmdzdr1exzdwn'>
+            <column caption='% AG Plugin Visits' datatype='real' name='[Calculation_1967721214601342980]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='SUM([plugin_loaded]) / SUM([portal_logins])' />
+            </column>
+            <column caption='% Product Conversion' datatype='real' name='[Calculation_1967721214601560069]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='SUM([booking_success])/SUM([plugin_loaded_no_sl])' />
+            </column>
+            <column caption='% w AG Access' datatype='real' name='[Calculation_1967721214630821895]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='SUM([plugin_loaded_no_sl])/SUM([plugin_loaded])' />
+            </column>
+            <column caption='Account Segment' datatype='string' name='[account_segment]' role='dimension' type='nominal' />
+            <column datatype='integer' name='[booking_success]' role='measure' type='quantitative' />
+            <column-instance column='[account_segment]' derivation='Count' name='[cnt:account_segment:qk]' pivot='key' type='quantitative' />
+            <column datatype='string' name='[device_category]' role='dimension' type='nominal' />
+            <column-instance column='[account_segment]' derivation='None' name='[none:account_segment:nk]' pivot='key' type='nominal' />
+            <column-instance column='[device_category]' derivation='None' name='[none:device_category:nk]' pivot='key' type='nominal' />
+            <column-instance column='[period]' derivation='None' name='[none:period:nk]' pivot='key' type='nominal' />
+            <column-instance column='[report_period]' derivation='None' name='[none:report_period:ok]' pivot='key' type='ordinal' />
+            <column caption='Period' datatype='string' name='[period]' role='dimension' type='nominal' />
+            <column datatype='integer' name='[plugin_loaded]' role='measure' type='quantitative' />
+            <column datatype='integer' name='[plugin_loaded_no_sl]' role='measure' type='quantitative' />
+            <column datatype='integer' name='[portal_logins]' role='measure' type='quantitative' />
+            <column caption='Report Period' datatype='date' name='[report_period]' role='dimension' type='ordinal' />
+            <column-instance column='[Calculation_1967721214601342980]' derivation='User' name='[usr:Calculation_1967721214601342980:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[Calculation_1967721214601560069]' derivation='User' name='[usr:Calculation_1967721214601560069:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[Calculation_1967721214630821895]' derivation='User' name='[usr:Calculation_1967721214630821895:qk]' pivot='key' type='quantitative' />
+          </datasource-dependencies>
+          <filter class='categorical' column='[federated.0sultqw0n4tl1l1bmdzdr1exzdwn].[:Measure Names]'>
+            <groupfilter function='union' user:op='manual'>
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.0sultqw0n4tl1l1bmdzdr1exzdwn].[usr:Calculation_1967721214601342980:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.0sultqw0n4tl1l1bmdzdr1exzdwn].[usr:Calculation_1967721214630821895:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.0sultqw0n4tl1l1bmdzdr1exzdwn].[usr:Calculation_1967721214601560069:qk]&quot;' />
+            </groupfilter>
+          </filter>
+          <manual-sort column='[federated.0sultqw0n4tl1l1bmdzdr1exzdwn].[:Measure Names]' direction='ASC'>
+            <dictionary>
+              <bucket>&quot;[federated.0sultqw0n4tl1l1bmdzdr1exzdwn].[usr:Calculation_1967721214601342980:qk]&quot;</bucket>
+              <bucket>&quot;[federated.0sultqw0n4tl1l1bmdzdr1exzdwn].[usr:Calculation_1967721214630821895:qk]&quot;</bucket>
+              <bucket>&quot;[federated.0sultqw0n4tl1l1bmdzdr1exzdwn].[usr:Calculation_1967721214601560069:qk]&quot;</bucket>
+            </dictionary>
+          </manual-sort>
+          <computed-sort column='[federated.0sultqw0n4tl1l1bmdzdr1exzdwn].[none:account_segment:nk]' direction='DESC' using='[federated.0sultqw0n4tl1l1bmdzdr1exzdwn].[cnt:account_segment:qk]' />
+          <filter class='categorical' column='[federated.0sultqw0n4tl1l1bmdzdr1exzdwn].[none:device_category:nk]' filter-group='3'>
+            <groupfilter function='level-members' level='[none:device_category:nk]' user:ui-enumeration='all' user:ui-marker='enumerate' />
+          </filter>
+          <slices>
+            <column>[federated.0sultqw0n4tl1l1bmdzdr1exzdwn].[:Measure Names]</column>
+            <column>[federated.0sultqw0n4tl1l1bmdzdr1exzdwn].[none:period:nk]</column>
+            <column>[federated.0sultqw0n4tl1l1bmdzdr1exzdwn].[none:device_category:nk]</column>
+            <column>[federated.0sultqw0n4tl1l1bmdzdr1exzdwn].[none:account_segment:nk]</column>
+          </slices>
+          <aggregation value='true' />
+        </view>
+        <style>
+          <style-rule element='axis'>
+            <format attr='title' class='0' field='[federated.0sultqw0n4tl1l1bmdzdr1exzdwn].[Multiple Values]' scope='cols' value='' />
+            <encoding attr='space' class='0' domain-expand='false' field='[federated.0sultqw0n4tl1l1bmdzdr1exzdwn].[Multiple Values]' field-type='quantitative' major-origin='0.0' major-show='false' major-spacing='100.0' range-type='uniform' scope='cols' type='space' />
+          </style-rule>
+          <style-rule element='cell'>
+            <format attr='text-format' field='[federated.0sultqw0n4tl1l1bmdzdr1exzdwn].[Multiple Values]' value='p0.00%' />
+          </style-rule>
+          <style-rule element='header'>
+            <format attr='width' field='[federated.0sultqw0n4tl1l1bmdzdr1exzdwn].[:Measure Names]' value='204' />
+            <format attr='width' field='[federated.0sultqw0n4tl1l1bmdzdr1exzdwn].[none:account_segment:nk]' value='96' />
+            <format attr='height' field='[federated.0sultqw0n4tl1l1bmdzdr1exzdwn].[none:report_period:ok]' value='40' />
+          </style-rule>
+          <style-rule element='label'>
+            <format attr='text-format' field='[federated.0sultqw0n4tl1l1bmdzdr1exzdwn].[Multiple Values]' value='n#,##0;-#,##0' />
+          </style-rule>
+          <style-rule element='gridline'>
+            <format attr='line-pattern-only' scope='cols' value='solid' />
+            <format attr='stroke-size' scope='cols' value='0' />
+            <format attr='line-visibility' scope='cols' value='off' />
+          </style-rule>
+        </style>
+        <panes>
+          <pane id='3' selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Bar' />
+            <encodings>
+              <color column='[federated.0sultqw0n4tl1l1bmdzdr1exzdwn].[none:account_segment:nk]' />
+            </encodings>
+            <style>
+              <style-rule element='mark'>
+                <format attr='mark-labels-show' value='true' />
+                <format attr='mark-labels-cull' value='true' />
+              </style-rule>
+            </style>
+          </pane>
+        </panes>
+        <rows onTop='true' total='true'>([federated.0sultqw0n4tl1l1bmdzdr1exzdwn].[none:account_segment:nk] / [federated.0sultqw0n4tl1l1bmdzdr1exzdwn].[:Measure Names])</rows>
+        <cols onLeft='true' total='true'>(([federated.0sultqw0n4tl1l1bmdzdr1exzdwn].[none:period:nk] / [federated.0sultqw0n4tl1l1bmdzdr1exzdwn].[none:report_period:ok]) * [federated.0sultqw0n4tl1l1bmdzdr1exzdwn].[Multiple Values])</cols>
+      </table>
+      <simple-id uuid='{7945B4D6-22C8-4236-8760-D37D4C255B33}' />
+    </worksheet>
+    <worksheet name='Traffic Device (%)'>
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='AG Funnel Monthly' name='federated.0sultqw0n4tl1l1bmdzdr1exzdwn' />
+          </datasources>
+          <datasource-dependencies datasource='federated.0sultqw0n4tl1l1bmdzdr1exzdwn'>
+            <column caption='Account Segment' datatype='string' name='[account_segment]' role='dimension' type='nominal' />
+            <column datatype='string' name='[device_category]' role='dimension' type='nominal' />
+            <column-instance column='[account_segment]' derivation='None' name='[none:account_segment:nk]' pivot='key' type='nominal' />
+            <column-instance column='[device_category]' derivation='None' name='[none:device_category:nk]' pivot='key' type='nominal' />
+            <column-instance column='[period]' derivation='None' name='[none:period:nk]' pivot='key' type='nominal' />
+            <column-instance column='[report_period]' derivation='None' name='[none:report_period:ok]' pivot='key' type='ordinal' />
+            <column-instance column='[plugin_loaded_no_sl]' derivation='Sum' name='[pcto:sum:plugin_loaded_no_sl:qk:2]' pivot='key' type='quantitative'>
+              <table-calc ordering-type='Columns' type='PctTotal' />
+            </column-instance>
+            <column caption='Period' datatype='string' name='[period]' role='dimension' type='nominal' />
+            <column datatype='integer' name='[plugin_loaded_no_sl]' role='measure' type='quantitative' />
+            <column caption='Report Period' datatype='date' name='[report_period]' role='dimension' type='ordinal' />
+          </datasource-dependencies>
+          <filter class='categorical' column='[federated.0sultqw0n4tl1l1bmdzdr1exzdwn].[none:device_category:nk]' filter-group='3'>
+            <groupfilter function='level-members' level='[none:device_category:nk]' user:ui-enumeration='all' user:ui-marker='enumerate' />
+          </filter>
+          <slices>
+            <column>[federated.0sultqw0n4tl1l1bmdzdr1exzdwn].[none:period:nk]</column>
+            <column>[federated.0sultqw0n4tl1l1bmdzdr1exzdwn].[none:device_category:nk]</column>
+            <column>[federated.0sultqw0n4tl1l1bmdzdr1exzdwn].[none:account_segment:nk]</column>
+          </slices>
+          <aggregation value='true' />
+        </view>
+        <style>
+          <style-rule element='axis'>
+            <encoding attr='space' class='0' field='[federated.0sultqw0n4tl1l1bmdzdr1exzdwn].[pcto:sum:plugin_loaded_no_sl:qk:2]' field-type='quantitative' major-origin='0.0' major-show='false' major-spacing='1.0' scope='rows' type='space' />
+            <format attr='title' class='0' field='[federated.0sultqw0n4tl1l1bmdzdr1exzdwn].[pcto:sum:plugin_loaded_no_sl:qk:2]' scope='rows' value='% Plugin Load by Device' />
+          </style-rule>
+          <style-rule element='header'>
+            <format attr='width' field='[federated.0sultqw0n4tl1l1bmdzdr1exzdwn].[none:account_segment:nk]' value='96' />
+            <format attr='height' field='[federated.0sultqw0n4tl1l1bmdzdr1exzdwn].[none:report_period:ok]' value='40' />
+          </style-rule>
+          <style-rule element='gridline'>
+            <format attr='line-pattern-only' scope='cols' value='solid' />
+            <format attr='stroke-size' scope='cols' value='0' />
+            <format attr='line-visibility' scope='cols' value='off' />
+          </style-rule>
+          <style-rule element='quick-filter'>
+            <format attr='title' field='[federated.0sultqw0n4tl1l1bmdzdr1exzdwn].[none:device_category:nk]' value='Device Category'>
+              <formatted-text>
+                <run>Device Category</run>
+              </formatted-text>
+            </format>
+          </style-rule>
+        </style>
+        <panes>
+          <pane id='3' selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Bar' />
+            <encodings>
+              <color column='[federated.0sultqw0n4tl1l1bmdzdr1exzdwn].[none:device_category:nk]' />
+            </encodings>
+            <style>
+              <style-rule element='mark'>
+                <format attr='mark-labels-show' value='true' />
+                <format attr='mark-labels-cull' value='true' />
+              </style-rule>
+            </style>
+          </pane>
+        </panes>
+        <rows onTop='true' total='true'>[federated.0sultqw0n4tl1l1bmdzdr1exzdwn].[pcto:sum:plugin_loaded_no_sl:qk:2]</rows>
+        <cols onLeft='true' total='true'>([federated.0sultqw0n4tl1l1bmdzdr1exzdwn].[none:period:nk] / [federated.0sultqw0n4tl1l1bmdzdr1exzdwn].[none:report_period:ok])</cols>
+      </table>
+      <simple-id uuid='{F5ECF83B-A1B7-486C-994F-535EC22DA4AA}' />
+    </worksheet>
+  </worksheets>
+  <dashboards>
+    <dashboard _.fcp.AccessibleZoneTabOrder.true...enable-sort-zone-taborder='true' name='Product Funnel'>
+      <repository-location id='ProductFunnel' path='/t/GlobalStandardReporting/workbooks/AGConversionFunnel' revision='' site='GlobalStandardReporting' />
+      <style />
+      <size maxheight='1600' maxwidth='1400' minheight='1600' minwidth='1400' sizing-mode='fixed' />
+      <datasources>
+        <datasource caption='AG Funnel Monthly' name='federated.0sultqw0n4tl1l1bmdzdr1exzdwn' />
+      </datasources>
+      <datasource-dependencies datasource='federated.0sultqw0n4tl1l1bmdzdr1exzdwn'>
+        <column caption='Account Segment' datatype='string' name='[account_segment]' role='dimension' type='nominal' />
+        <column datatype='string' name='[device_category]' role='dimension' type='nominal' />
+        <column-instance column='[account_segment]' derivation='None' name='[none:account_segment:nk]' pivot='key' type='nominal' />
+        <column-instance column='[device_category]' derivation='None' name='[none:device_category:nk]' pivot='key' type='nominal' />
+        <column-instance column='[period]' derivation='None' name='[none:period:nk]' pivot='key' type='nominal' />
+        <column caption='Period' datatype='string' name='[period]' role='dimension' type='nominal' />
+      </datasource-dependencies>
+      <zones>
+        <zone h='100000' id='4' type-v2='layout-basic' w='100000' x='0' y='0'>
+          <zone h='99000' id='29' param='horz' type-v2='layout-flow' w='98858' x='571' y='500'>
+            <zone h='99000' id='27' type-v2='layout-basic' w='98858' x='571' y='500'>
+              <zone forceUpdate='true' h='4363' id='25' type-v2='text' w='98858' x='571' y='500'>
+                <formatted-text>
+                  <run fontcolor='#333333' fontname='Tableau Bold' fontsize='22'>Automate Growth Product Funnel</run>
+                </formatted-text>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+              <zone h='87770' id='26' param='vert' type-v2='layout-flow' w='98858' x='571' y='11730'>
+                <zone fixed-size='34' h='2625' id='33' is-fixed='true' name='Traffic Device (%)' pane-specification-id='3' param='[federated.0sultqw0n4tl1l1bmdzdr1exzdwn].[none:device_category:nk]' show-title='false' type-v2='color' w='97288' x='1356' y='12418'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                  </zone-style>
+                </zone>
+                <zone h='15518' id='32' name='Traffic Device (%)' show-title='false' w='97288' x='1356' y='15043'>
+                  <layout-cache minheight='181' type-h='scalable' type-w='fixed' />
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                  </zone-style>
+                </zone>
+                <zone fixed-size='605' h='38313' id='3' is-fixed='true' name='Funnel' show-title='false' w='97288' x='1356' y='30561'>
+                  <layout-cache type-h='fixed' type-w='fixed' />
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                  </zone-style>
+                </zone>
+                <zone h='29938' id='20' name='Funnel (%)' show-title='false' w='97288' x='1356' y='68874'>
+                  <layout-cache fixed-size-h='471' type-h='fixed' type-w='fixed' />
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                  </zone-style>
+                </zone>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='1' />
+                  <format attr='padding' value='10' />
+                </zone-style>
+              </zone>
+              <zone h='4555' id='31' layout-strategy-id='distribute-evenly' param='horz' type-v2='layout-flow' w='98858' x='571' y='7175'>
+                <zone h='4562' id='30' mode='dropdown' name='Funnel' param='[federated.0sultqw0n4tl1l1bmdzdr1exzdwn].[none:period:nk]' show-all='false' type-v2='filter' values='database' w='33000' x='571' y='7188'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                  </zone-style>
+                </zone>
+                <zone h='4562' id='40' mode='checkdropdown' name='Funnel' param='[federated.0sultqw0n4tl1l1bmdzdr1exzdwn].[none:account_segment:nk]' show-apply='true' type-v2='filter' values='database' w='32929' x='33571' y='7188'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                  </zone-style>
+                </zone>
+                <zone h='4562' id='34' mode='checkdropdown' name='Traffic Device (%)' param='[federated.0sultqw0n4tl1l1bmdzdr1exzdwn].[none:device_category:nk]' show-apply='true' type-v2='filter' values='database' w='32929' x='66500' y='7188'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                  </zone-style>
+                </zone>
+              </zone>
+              <zone h='2312' id='35' type-v2='empty' w='98858' x='571' y='4863'>
+                <zone-style>
+                  <format attr='border-color' value='#333333' />
+                  <format attr='border-style' value='solid' />
+                  <format attr='border-width' value='1' />
+                  <format attr='margin' value='10' />
+                  <format attr='margin-right' value='4' />
+                  <format attr='margin-left' value='4' />
+                  <format attr='padding' value='10' />
+                  <format attr='background-color' value='#333333' />
+                </zone-style>
+              </zone>
+            </zone>
+          </zone>
+          <zone-style>
+            <format attr='border-color' value='#000000' />
+            <format attr='border-style' value='none' />
+            <format attr='border-width' value='0' />
+            <format attr='margin' value='8' />
+          </zone-style>
+        </zone>
+      </zones>
+      <devicelayouts>
+        <devicelayout auto-generated='true' name='Phone'>
+          <size maxheight='1150' minheight='1150' sizing-mode='vscroll' />
+          <zones>
+            <zone h='100000' id='52' type-v2='layout-basic' w='100000' x='0' y='0'>
+              <zone h='99000' id='51' param='vert' type-v2='layout-flow' w='98858' x='571' y='500'>
+                <zone forceUpdate='true' h='4363' id='25' type-v2='text' w='98858' x='571' y='500'>
+                  <formatted-text>
+                    <run fontcolor='#333333' fontname='Tableau Bold' fontsize='22'>Automate Growth Product Funnel</run>
+                  </formatted-text>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone h='4562' id='34' mode='checkdropdown' name='Traffic Device (%)' param='[federated.0sultqw0n4tl1l1bmdzdr1exzdwn].[none:device_category:nk]' show-apply='true' type-v2='filter' values='database' w='32929' x='66500' y='7188'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone fixed-size='240' h='15518' id='32' is-fixed='true' name='Traffic Device (%)' show-title='false' w='97288' x='1356' y='15043'>
+                  <layout-cache minheight='181' type-h='scalable' type-w='fixed' />
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone fixed-size='34' h='2625' id='33' name='Traffic Device (%)' pane-specification-id='3' param='[federated.0sultqw0n4tl1l1bmdzdr1exzdwn].[none:device_category:nk]' show-title='false' type-v2='color' w='97288' x='1356' y='12418'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone h='4562' id='30' mode='dropdown' name='Funnel' param='[federated.0sultqw0n4tl1l1bmdzdr1exzdwn].[none:period:nk]' show-all='false' type-v2='filter' values='database' w='33000' x='571' y='7188'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone h='4562' id='40' mode='checkdropdown' name='Funnel' param='[federated.0sultqw0n4tl1l1bmdzdr1exzdwn].[none:account_segment:nk]' show-apply='true' type-v2='filter' values='database' w='32929' x='33571' y='7188'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone fixed-size='280' h='38313' id='3' is-fixed='true' name='Funnel' show-title='false' w='97288' x='1356' y='30561'>
+                  <layout-cache type-h='fixed' type-w='fixed' />
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone fixed-size='280' h='29938' id='20' is-fixed='true' name='Funnel (%)' show-title='false' w='97288' x='1356' y='68874'>
+                  <layout-cache fixed-size-h='471' type-h='fixed' type-w='fixed' />
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+              </zone>
+              <zone-style>
+                <format attr='border-color' value='#000000' />
+                <format attr='border-style' value='none' />
+                <format attr='border-width' value='0' />
+                <format attr='margin' value='8' />
+              </zone-style>
+            </zone>
+          </zones>
+        </devicelayout>
+      </devicelayouts>
+      <simple-id uuid='{F63DF7B4-C3DC-4D91-A8FA-D2DE4F53D424}' />
+    </dashboard>
+  </dashboards>
+  <windows source-height='30'>
+    <window class='dashboard' maximized='true' name='Product Funnel'>
+      <viewpoints>
+        <viewpoint name='Funnel' />
+        <viewpoint name='Funnel (%)' />
+        <viewpoint name='Traffic Device (%)'>
+          <zoom type='entire-view' />
+          <highlight>
+            <color-one-way>
+              <field>[federated.0sultqw0n4tl1l1bmdzdr1exzdwn].[none:device_category:nk]</field>
+            </color-one-way>
+          </highlight>
+        </viewpoint>
+      </viewpoints>
+      <active id='-1' />
+      <simple-id uuid='{AD585036-BEF6-4553-B5C2-0BF295E072DF}' />
+    </window>
+    <window class='worksheet' hidden='true' name='Funnel'>
+      <cards>
+        <edge name='left'>
+          <strip size='267'>
+            <card type='pages' />
+            <card type='filters' />
+            <card type='marks' />
+            <card type='measures' />
+          </strip>
+        </edge>
+        <edge name='top'>
+          <strip size='2147483647'>
+            <card type='columns' />
+          </strip>
+          <strip size='2147483647'>
+            <card type='rows' />
+          </strip>
+          <strip size='31'>
+            <card type='title' />
+          </strip>
+        </edge>
+        <edge name='right'>
+          <strip size='160'>
+            <card mode='compact' param='[Parameters].[Parameter 2]' type='parameter' />
+            <card pane-specification-id='2' param='[federated.0sultqw0n4tl1l1bmdzdr1exzdwn].[none:account_segment:nk]' type='color' />
+          </strip>
+        </edge>
+      </cards>
+      <viewpoint>
+        <highlight>
+          <color-one-way>
+            <field>[federated.0sultqw0n4tl1l1bmdzdr1exzdwn].[:Measure Names]</field>
+            <field>[federated.0sultqw0n4tl1l1bmdzdr1exzdwn].[none:account_segment:nk]</field>
+            <field>[federated.0sultqw0n4tl1l1bmdzdr1exzdwn].[none:device_category:nk]</field>
+            <field>[federated.0sultqw0n4tl1l1bmdzdr1exzdwn].[none:period:nk]</field>
+            <field>[federated.0sultqw0n4tl1l1bmdzdr1exzdwn].[yr:report_month:ok]</field>
+            <field>[federated.0sultqw0n4tl1l1bmdzdr1exzdwn].[yr:report_period:ok]</field>
+          </color-one-way>
+        </highlight>
+      </viewpoint>
+      <simple-id uuid='{FFC32B9C-2E47-4AAF-97B5-FBD31E450F0C}' />
+    </window>
+    <window class='worksheet' hidden='true' name='Funnel (%)'>
+      <cards>
+        <edge name='left'>
+          <strip size='267'>
+            <card type='pages' />
+            <card type='filters' />
+            <card type='marks' />
+            <card type='measures' />
+          </strip>
+        </edge>
+        <edge name='top'>
+          <strip size='2147483647'>
+            <card type='columns' />
+          </strip>
+          <strip size='2147483647'>
+            <card type='rows' />
+          </strip>
+          <strip size='31'>
+            <card type='title' />
+          </strip>
+        </edge>
+        <edge name='right'>
+          <strip size='160'>
+            <card mode='compact' param='[Parameters].[Parameter 2]' type='parameter' />
+            <card pane-specification-id='3' param='[federated.0sultqw0n4tl1l1bmdzdr1exzdwn].[none:account_segment:nk]' type='color' />
+          </strip>
+        </edge>
+      </cards>
+      <viewpoint>
+        <highlight>
+          <color-one-way>
+            <field>[federated.0sultqw0n4tl1l1bmdzdr1exzdwn].[:Measure Names]</field>
+            <field>[federated.0sultqw0n4tl1l1bmdzdr1exzdwn].[none:account_segment:nk]</field>
+            <field>[federated.0sultqw0n4tl1l1bmdzdr1exzdwn].[none:device_category:nk]</field>
+            <field>[federated.0sultqw0n4tl1l1bmdzdr1exzdwn].[none:period:nk]</field>
+            <field>[federated.0sultqw0n4tl1l1bmdzdr1exzdwn].[yr:report_month:ok]</field>
+            <field>[federated.0sultqw0n4tl1l1bmdzdr1exzdwn].[yr:report_period:ok]</field>
+          </color-one-way>
+        </highlight>
+      </viewpoint>
+      <simple-id uuid='{1B710FC0-9815-4231-B00A-236CC29B6317}' />
+    </window>
+    <window class='worksheet' hidden='true' name='Traffic Device (%)'>
+      <cards>
+        <edge name='left'>
+          <strip size='267'>
+            <card type='pages' />
+            <card type='filters' />
+            <card type='marks' />
+          </strip>
+        </edge>
+        <edge name='top'>
+          <strip size='2147483647'>
+            <card type='columns' />
+          </strip>
+          <strip size='2147483647'>
+            <card type='rows' />
+          </strip>
+          <strip size='31'>
+            <card type='title' />
+          </strip>
+        </edge>
+        <edge name='right'>
+          <strip size='160'>
+            <card mode='compact' param='[Parameters].[Parameter 2]' type='parameter' />
+            <card pane-specification-id='3' param='[federated.0sultqw0n4tl1l1bmdzdr1exzdwn].[none:device_category:nk]' type='color' />
+          </strip>
+        </edge>
+      </cards>
+      <viewpoint>
+        <highlight>
+          <color-one-way>
+            <field>[federated.0sultqw0n4tl1l1bmdzdr1exzdwn].[:Measure Names]</field>
+            <field>[federated.0sultqw0n4tl1l1bmdzdr1exzdwn].[none:Calculation_1967721214595366914:nk]</field>
+            <field>[federated.0sultqw0n4tl1l1bmdzdr1exzdwn].[none:account_segment:nk]</field>
+            <field>[federated.0sultqw0n4tl1l1bmdzdr1exzdwn].[none:device_category:nk]</field>
+            <field>[federated.0sultqw0n4tl1l1bmdzdr1exzdwn].[none:period:nk]</field>
+            <field>[federated.0sultqw0n4tl1l1bmdzdr1exzdwn].[yr:report_month:ok]</field>
+            <field>[federated.0sultqw0n4tl1l1bmdzdr1exzdwn].[yr:report_period:ok]</field>
+          </color-one-way>
+        </highlight>
+      </viewpoint>
+      <simple-id uuid='{C0F98F33-49D2-4037-AB01-48BF66588474}' />
+    </window>
+  </windows>
+</workbook>

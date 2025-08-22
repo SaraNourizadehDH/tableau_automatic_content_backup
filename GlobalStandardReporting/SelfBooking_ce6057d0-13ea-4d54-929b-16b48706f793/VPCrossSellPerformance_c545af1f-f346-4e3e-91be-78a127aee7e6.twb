@@ -1,0 +1,2263 @@
+<?xml version='1.0' encoding='utf-8' ?>
+
+<!-- build 20221.22.1108.1355                               -->
+<workbook original-version='18.1' source-build='2021.4.19 (20214.23.0627.1201)' source-platform='mac' version='18.1' xml:base='https://tableau.deliveryhero.net' xmlns:user='http://www.tableausoftware.com/xml/user'>
+  <document-format-change-manifest>
+    <_.fcp.AccessibleZoneTabOrder.true...AccessibleZoneTabOrder />
+    <_.fcp.AnimationOnByDefault.true...AnimationOnByDefault />
+    <AutoCreateAndUpdateDSDPhoneLayouts />
+    <_.fcp.MarkAnimation.true...MarkAnimation />
+    <_.fcp.ObjectModelEncapsulateLegacy.true...ObjectModelEncapsulateLegacy />
+    <_.fcp.ObjectModelExtractV2.true...ObjectModelExtractV2 />
+    <_.fcp.ObjectModelTableType.true...ObjectModelTableType />
+    <_.fcp.SchemaViewerObjectModel.true...SchemaViewerObjectModel />
+    <SetMembershipControl />
+    <SheetIdentifierTracking />
+    <SortTagCleanup />
+    <WindowsPersistSimpleIdentifiers />
+  </document-format-change-manifest>
+  <repository-location derived-from='https://tableau.deliveryhero.net/t/GlobalStandardReporting/workbooks/VendorFundedDeals-CrossSellPerformance?rev=1.1' id='VendorFundedDeals-CrossSellPerformance' path='/t/GlobalStandardReporting/workbooks' revision='1.2' site='GlobalStandardReporting' />
+  <preferences>
+    <preference name='ui.encoding.shelf.height' value='24' />
+    <preference name='ui.shelf.height' value='26' />
+  </preferences>
+  <_.fcp.AnimationOnByDefault.false...style>
+    <_.fcp.AnimationOnByDefault.false..._.fcp.MarkAnimation.true...style-rule element='animation'>
+      <_.fcp.AnimationOnByDefault.false...format attr='animation-on' value='ao-on' />
+    </_.fcp.AnimationOnByDefault.false..._.fcp.MarkAnimation.true...style-rule>
+  </_.fcp.AnimationOnByDefault.false...style>
+  <datasources>
+    <datasource caption='cpc_to_vfd_cross_sell' inline='true' name='federated.1owyjcv1jpws4u16yw4930gyhrju' version='18.1'>
+      <connection class='federated'>
+        <named-connections>
+          <named-connection caption='BigQuery' name='bigquery.1g8qwb11pvq98s1ejo5qw1b1srfh'>
+            <connection CATALOG='dhh-ncr-stg' EXECCATALOG='dhh-ncr-stg' authentication='oauth' bq-dataset-fetch-rows='' bq-fetch-rows='' bq-fetch-tasks='' bq-large-fetch-rows='' bq-project-fetch-rows='' bq-response-rows='' class='bigquery' connection-dialect='google-sql' project='dhh-ncr-stg' schema='dev_sales_revenue' server-oauth='' username='yexi.yuan@foodpanda.com' workgroup-auth-mode='prompt' />
+          </named-connection>
+        </named-connections>
+        <_.fcp.ObjectModelEncapsulateLegacy.false...relation connection='bigquery.1g8qwb11pvq98s1ejo5qw1b1srfh' name='Custom SQL Query' type='text'><![CDATA[WITH entity AS (
+  SELECT
+    management_entity
+    ,segment
+    ,country_name
+    ,brand
+    ,global_entity_id
+    ,is_platform_online
+  FROM `fulfillment-dwh-production.curated_data_shared_central_dwh.global_entities`
+  WHERE is_platform_online = TRUE
+)
+
+, cpc_booking_sessions AS (
+  SELECT
+    session_date
+    ,ga_export_name
+    ,session_id
+    ,user_id
+    ,device.device_category
+    ,MAX(CASE WHEN cust.index=3 THEN SPLIT(cust.value,';')[SAFE_OFFSET(1)] END) vendor_id
+    ,MAX(CASE WHEN cust.index=3 THEN SPLIT(cust.value,';')[SAFE_OFFSET(0)] END) global_entity_id
+    FROM `fulfillment-dwh-production.cl_sales_revenue.vp_ga_sessions`
+      LEFT JOIN UNNEST(hits) AS hits
+      LEFT JOIN UNNEST(hits.custom_dimensions) cust
+  WHERE TRUE
+      AND session_date >>= '2023-01-01'
+      AND hits.event_info.event_action = 'booking_created' 
+      AND hits.event_info.event_category = 'cpc_booking' 
+      AND hits.event_info.event_label <<>> 'featured_products'
+  GROUP BY 1,2,3,4,5
+)
+
+, cpc_clicked_ref AS (
+  SELECT
+    session_date
+    ,ga_export_name
+    ,session_id
+    ,user_id
+    ,device.device_category
+    ,MAX(traffic_source.source) traffic_source
+    ,MAX(CASE WHEN cust.index=3 THEN SPLIT(cust.value,';')[SAFE_OFFSET(1)] END) vendor_id
+    ,MAX(CASE WHEN cust.index=3 THEN SPLIT(cust.value,';')[SAFE_OFFSET(0)] END) global_entity_id
+    FROM `fulfillment-dwh-production.cl_sales_revenue.vp_ga_sessions`
+      LEFT JOIN UNNEST(hits) AS hits
+      LEFT JOIN UNNEST(hits.custom_dimensions) cust
+  WHERE TRUE
+      AND session_date >>= '2023-01-01'
+      AND traffic_source.source = 'cpc_success_page' 
+      AND hits.event_info.event_category = 'current_vfd' 
+      AND hits.event_info.event_action = 'page_loaded'
+  GROUP BY 1,2,3,4,5
+)
+
+, vfd_booking_success AS (
+  SELECT
+    session_date
+    ,ga_export_name
+    ,session_id
+    ,user_id
+    ,device.device_category
+    ,MAX(CASE WHEN cust.index=3 THEN SPLIT(cust.value,';')[SAFE_OFFSET(1)] END) vendor_id
+    ,MAX(CASE WHEN cust.index=3 THEN SPLIT(cust.value,';')[SAFE_OFFSET(0)] END) global_entity_id
+    ,MAX(CASE WHEN cust.index=19 THEN cust.value END) deal_id
+    FROM `fulfillment-dwh-production.cl_sales_revenue.vp_ga_sessions`
+      LEFT JOIN UNNEST(hits) AS hits
+      LEFT JOIN UNNEST(hits.custom_dimensions) cust
+  WHERE TRUE
+      AND session_date >>= '2023-01-01'
+      AND hits.event_info.event_category IN ('create_vfd', 'join_vfd' )
+      AND hits.event_info.event_action = 'succeeded'
+  GROUP BY 1,2,3,4,5
+)
+
+, agg_ga_sessions AS (
+  SELECT
+    cpc_bk.session_date
+    ,cpc_bk.session_id
+    ,cpc_bk.user_id
+    ,cpc_bk.vendor_id
+    ,cpc_bk.global_entity_id
+    ,cpc_bk.device_category
+    ,cpc_ref.traffic_source
+    ,vfd_bk.vendor_id vfd_vendor_id
+    ,vfd_bk.deal_id vfd_deal_id
+  FROM cpc_booking_sessions cpc_bk
+    LEFT JOIN cpc_clicked_ref cpc_ref
+      ON cpc_bk.session_id = cpc_ref.session_id
+    LEFT JOIN vfd_booking_success vfd_bk
+      ON cpc_ref.session_id = vfd_bk.session_id
+)
+
+, incentive AS (
+  SELECT
+    customer_incentive_id
+    ,vendor_id
+    ,global_entity_id
+    ,SUM(all_orders) all_orders
+    ,SUM(inct_amount_total_eur) inct_amount_total_eur
+    ,SUM(all_gfv_eur) all_gfv_eur
+  FROM `dhh-ncr-stg.dev_sales_revenue.stg_daily_incentives_level_performance`
+  GROUP BY 1,2,3
+)
+
+, vfd_utilisation AS (
+  SELECT
+    ses.session_date
+    ,ses.session_id
+    ,ses.user_id
+    ,ses.vendor_id
+    ,ses.global_entity_id
+    ,ses.traffic_source
+    ,ses.vfd_deal_id
+    ,inct.inct_amount_total_eur
+    ,inct.all_orders
+    ,inct.all_gfv_eur
+  FROM agg_ga_sessions ses
+    LEFT JOIN incentive inct
+      ON ses.vfd_deal_id = inct.customer_incentive_id
+      AND ses.global_entity_id = inct.global_entity_id
+)
+
+SELECT
+  DATE_TRUNC(session_date, MONTH) session_month
+  ,global_entity_id
+  ,CASE WHEN entity.global_entity_id = 'YS_TR' THEN 'Yemeksepeti' ELSE management_entity END report_entity
+  ,country_name
+  ,COUNT(DISTINCT user_id) users_w_cpc_booking
+  ,COUNT(DISTINCT CASE WHEN traffic_source IS NOT NULL THEN user_id END) users_w_cpc_ref_link_click
+  ,COUNT(DISTINCT CASE WHEN vfd_deal_id IS NOT NULL THEN user_id END) users_w_vfd_booking
+  ,COALESCE(SUM(inct_amount_total_eur), 0) vfd_eur
+  ,COALESCE(SUM(all_gfv_eur), 0) gfv_eur
+  ,COALESCE(SUM(all_orders), 0) num_orders
+FROM vfd_utilisation
+  LEFT JOIN entity USING (global_entity_id)
+WHERE global_entity_id IN (SELECT global_entity_id FROM entity)
+GROUP BY 1,2,3,4]]></_.fcp.ObjectModelEncapsulateLegacy.false...relation>
+        <_.fcp.ObjectModelEncapsulateLegacy.true...relation connection='bigquery.1g8qwb11pvq98s1ejo5qw1b1srfh' name='Custom SQL Query' type='text'><![CDATA[WITH entity AS (
+  SELECT
+    management_entity
+    ,segment
+    ,country_name
+    ,brand
+    ,global_entity_id
+    ,is_platform_online
+  FROM `fulfillment-dwh-production.curated_data_shared_central_dwh.global_entities`
+  WHERE is_platform_online = TRUE
+)
+
+, cpc_booking_sessions AS (
+  SELECT
+    session_date
+    ,ga_export_name
+    ,session_id
+    ,user_id
+    ,device.device_category
+    ,MAX(CASE WHEN cust.index=3 THEN SPLIT(cust.value,';')[SAFE_OFFSET(1)] END) vendor_id
+    ,MAX(CASE WHEN cust.index=3 THEN SPLIT(cust.value,';')[SAFE_OFFSET(0)] END) global_entity_id
+    FROM `fulfillment-dwh-production.cl_sales_revenue.vp_ga_sessions`
+      LEFT JOIN UNNEST(hits) AS hits
+      LEFT JOIN UNNEST(hits.custom_dimensions) cust
+  WHERE TRUE
+      AND session_date >>= '2023-01-01'
+      AND hits.event_info.event_action = 'booking_created' 
+      AND hits.event_info.event_category = 'cpc_booking' 
+      AND hits.event_info.event_label <<>> 'featured_products'
+  GROUP BY 1,2,3,4,5
+)
+
+, cpc_clicked_ref AS (
+  SELECT
+    session_date
+    ,ga_export_name
+    ,session_id
+    ,user_id
+    ,device.device_category
+    ,MAX(traffic_source.source) traffic_source
+    ,MAX(CASE WHEN cust.index=3 THEN SPLIT(cust.value,';')[SAFE_OFFSET(1)] END) vendor_id
+    ,MAX(CASE WHEN cust.index=3 THEN SPLIT(cust.value,';')[SAFE_OFFSET(0)] END) global_entity_id
+    FROM `fulfillment-dwh-production.cl_sales_revenue.vp_ga_sessions`
+      LEFT JOIN UNNEST(hits) AS hits
+      LEFT JOIN UNNEST(hits.custom_dimensions) cust
+  WHERE TRUE
+      AND session_date >>= '2023-01-01'
+      AND traffic_source.source = 'cpc_success_page' 
+      AND hits.event_info.event_category = 'current_vfd' 
+      AND hits.event_info.event_action = 'page_loaded'
+  GROUP BY 1,2,3,4,5
+)
+
+, vfd_booking_success AS (
+  SELECT
+    session_date
+    ,ga_export_name
+    ,session_id
+    ,user_id
+    ,device.device_category
+    ,MAX(CASE WHEN cust.index=3 THEN SPLIT(cust.value,';')[SAFE_OFFSET(1)] END) vendor_id
+    ,MAX(CASE WHEN cust.index=3 THEN SPLIT(cust.value,';')[SAFE_OFFSET(0)] END) global_entity_id
+    ,MAX(CASE WHEN cust.index=19 THEN cust.value END) deal_id
+    FROM `fulfillment-dwh-production.cl_sales_revenue.vp_ga_sessions`
+      LEFT JOIN UNNEST(hits) AS hits
+      LEFT JOIN UNNEST(hits.custom_dimensions) cust
+  WHERE TRUE
+      AND session_date >>= '2023-01-01'
+      AND hits.event_info.event_category IN ('create_vfd', 'join_vfd' )
+      AND hits.event_info.event_action = 'succeeded'
+  GROUP BY 1,2,3,4,5
+)
+
+, agg_ga_sessions AS (
+  SELECT
+    cpc_bk.session_date
+    ,cpc_bk.session_id
+    ,cpc_bk.user_id
+    ,cpc_bk.vendor_id
+    ,cpc_bk.global_entity_id
+    ,cpc_bk.device_category
+    ,cpc_ref.traffic_source
+    ,vfd_bk.vendor_id vfd_vendor_id
+    ,vfd_bk.deal_id vfd_deal_id
+  FROM cpc_booking_sessions cpc_bk
+    LEFT JOIN cpc_clicked_ref cpc_ref
+      ON cpc_bk.session_id = cpc_ref.session_id
+    LEFT JOIN vfd_booking_success vfd_bk
+      ON cpc_ref.session_id = vfd_bk.session_id
+)
+
+, incentive AS (
+  SELECT
+    customer_incentive_id
+    ,vendor_id
+    ,global_entity_id
+    ,SUM(all_orders) all_orders
+    ,SUM(inct_amount_total_eur) inct_amount_total_eur
+    ,SUM(all_gfv_eur) all_gfv_eur
+  FROM `dhh-ncr-stg.dev_sales_revenue.stg_daily_incentives_level_performance`
+  GROUP BY 1,2,3
+)
+
+, vfd_utilisation AS (
+  SELECT
+    ses.session_date
+    ,ses.session_id
+    ,ses.user_id
+    ,ses.vendor_id
+    ,ses.global_entity_id
+    ,ses.traffic_source
+    ,ses.vfd_deal_id
+    ,inct.inct_amount_total_eur
+    ,inct.all_orders
+    ,inct.all_gfv_eur
+  FROM agg_ga_sessions ses
+    LEFT JOIN incentive inct
+      ON ses.vfd_deal_id = inct.customer_incentive_id
+      AND ses.global_entity_id = inct.global_entity_id
+)
+
+SELECT
+  DATE_TRUNC(session_date, MONTH) session_month
+  ,global_entity_id
+  ,CASE WHEN entity.global_entity_id = 'YS_TR' THEN 'Yemeksepeti' ELSE management_entity END report_entity
+  ,country_name
+  ,COUNT(DISTINCT user_id) users_w_cpc_booking
+  ,COUNT(DISTINCT CASE WHEN traffic_source IS NOT NULL THEN user_id END) users_w_cpc_ref_link_click
+  ,COUNT(DISTINCT CASE WHEN vfd_deal_id IS NOT NULL THEN user_id END) users_w_vfd_booking
+  ,COALESCE(SUM(inct_amount_total_eur), 0) vfd_eur
+  ,COALESCE(SUM(all_gfv_eur), 0) gfv_eur
+  ,COALESCE(SUM(all_orders), 0) num_orders
+FROM vfd_utilisation
+  LEFT JOIN entity USING (global_entity_id)
+WHERE global_entity_id IN (SELECT global_entity_id FROM entity)
+GROUP BY 1,2,3,4]]></_.fcp.ObjectModelEncapsulateLegacy.true...relation>
+        <metadata-records>
+          <metadata-record class='column'>
+            <remote-name>session_month</remote-name>
+            <remote-type>7</remote-type>
+            <local-name>[session_month]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>session_month</remote-alias>
+            <local-type>date</local-type>
+            <aggregation>Year</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_EF4BD4F8F9C542E18C805670D971A940]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>global_entity_id</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[global_entity_id]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>global_entity_id</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_EF4BD4F8F9C542E18C805670D971A940]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>report_entity</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[report_entity]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>report_entity</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_EF4BD4F8F9C542E18C805670D971A940]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>country_name</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[country_name]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>country_name</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_EF4BD4F8F9C542E18C805670D971A940]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>users_w_cpc_booking</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[users_w_cpc_booking]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>users_w_cpc_booking</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_EF4BD4F8F9C542E18C805670D971A940]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>users_w_cpc_ref_link_click</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[users_w_cpc_ref_link_click]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>users_w_cpc_ref_link_click</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_EF4BD4F8F9C542E18C805670D971A940]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>users_w_vfd_booking</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[users_w_vfd_booking]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>users_w_vfd_booking</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_EF4BD4F8F9C542E18C805670D971A940]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>vfd_eur</remote-name>
+            <remote-type>5</remote-type>
+            <local-name>[vfd_eur]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>vfd_eur</remote-alias>
+            <local-type>real</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_EF4BD4F8F9C542E18C805670D971A940]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>gfv_eur</remote-name>
+            <remote-type>5</remote-type>
+            <local-name>[gfv_eur]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>gfv_eur</remote-alias>
+            <local-type>real</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_EF4BD4F8F9C542E18C805670D971A940]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>num_orders</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[num_orders]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>num_orders</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_EF4BD4F8F9C542E18C805670D971A940]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+        </metadata-records>
+      </connection>
+      <aliases enabled='yes' />
+      <column caption='CTR %' datatype='real' name='[Calculation_1840846399847915523]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='SUM([users_w_cpc_ref_link_click])/SUM([users_w_cpc_booking])' />
+      </column>
+      <column caption='CvR %' datatype='real' name='[Calculation_1840846399848493060]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='SUM([users_w_vfd_booking])/SUM([users_w_cpc_ref_link_click])' />
+      </column>
+      <column caption='Discount Depth %' datatype='real' name='[Calculation_1840846399848919045]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='SUM([vfd_eur])/SUM([gfv_eur])' />
+      </column>
+      <_.fcp.ObjectModelTableType.true...column caption='Custom SQL Query' datatype='table' name='[__tableau_internal_object_id__].[_EF4BD4F8F9C542E18C805670D971A940]' role='measure' type='quantitative' />
+      <column datatype='string' name='[country_name]' role='dimension' semantic-role='[Country].[ISO3166_2]' type='nominal' />
+      <column caption='€ GFV' datatype='real' name='[gfv_eur]' role='measure' type='quantitative' />
+      <column caption='# Orders' datatype='integer' name='[num_orders]' role='measure' type='quantitative' />
+      <column caption='Entity' datatype='string' name='[report_entity]' role='dimension' type='nominal' />
+      <column caption='# Users w CPC Booking' datatype='integer' name='[users_w_cpc_booking]' role='measure' type='quantitative' />
+      <column caption='# Users w CPC Ref Link' datatype='integer' name='[users_w_cpc_ref_link_click]' role='measure' type='quantitative' />
+      <column caption='# Users w VFD Booking' datatype='integer' name='[users_w_vfd_booking]' role='measure' type='quantitative' />
+      <column caption='€ VFD' datatype='real' name='[vfd_eur]' role='measure' type='quantitative' />
+      <extract _.fcp.ObjectModelExtractV2.true...object-id='' count='-1' enabled='true' units='records'>
+        <connection class='hyper' dbname='extract/b1/20/{A82CD86C-EAC3-4DF8-BDEF-5A1F9F2588FE}/federated_1owyjcv1jpws4u16yw4930.hyper' default-settings='yes' extract-engine='true' schema='Extract' tablename='Extract' update-time='07/27/2023 11:03:26 AM'>
+          <_.fcp.ObjectModelEncapsulateLegacy.false...relation name='Extract' table='[Extract].[Extract]' type='table' />
+          <_.fcp.ObjectModelEncapsulateLegacy.true...relation name='Extract' table='[Extract].[Extract]' type='table' />
+          <refresh>
+            <refresh-event add-from-file-path='cpc_to_vfd_cross_sell' increment-value='%null%' refresh-type='create' rows-inserted='275' timestamp-start='2023-07-27 11:02:13.286' />
+          </refresh>
+          <metadata-records>
+            <metadata-record class='column'>
+              <remote-name>session_month</remote-name>
+              <remote-type>133</remote-type>
+              <local-name>[session_month]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>session_month</remote-alias>
+              <ordinal>0</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>date</local-type>
+              <aggregation>Year</aggregation>
+              <approx-count>7</approx-count>
+              <contains-null>true</contains-null>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>global_entity_id</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[global_entity_id]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>global_entity_id</remote-alias>
+              <ordinal>1</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>42</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>report_entity</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[report_entity]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>report_entity</remote-alias>
+              <ordinal>2</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>6</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>country_name</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[country_name]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>country_name</remote-alias>
+              <ordinal>3</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>42</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>users_w_cpc_booking</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[users_w_cpc_booking]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>users_w_cpc_booking</remote-alias>
+              <ordinal>4</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>137</approx-count>
+              <contains-null>true</contains-null>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>users_w_cpc_ref_link_click</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[users_w_cpc_ref_link_click]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>users_w_cpc_ref_link_click</remote-alias>
+              <ordinal>5</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>9</approx-count>
+              <contains-null>true</contains-null>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>users_w_vfd_booking</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[users_w_vfd_booking]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>users_w_vfd_booking</remote-alias>
+              <ordinal>6</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>6</approx-count>
+              <contains-null>true</contains-null>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>vfd_eur</remote-name>
+              <remote-type>5</remote-type>
+              <local-name>[vfd_eur]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>vfd_eur</remote-alias>
+              <ordinal>7</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>real</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>13</approx-count>
+              <contains-null>true</contains-null>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>gfv_eur</remote-name>
+              <remote-type>5</remote-type>
+              <local-name>[gfv_eur]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>gfv_eur</remote-alias>
+              <ordinal>8</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>real</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>13</approx-count>
+              <contains-null>true</contains-null>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>num_orders</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[num_orders]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>num_orders</remote-alias>
+              <ordinal>9</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>13</approx-count>
+              <contains-null>true</contains-null>
+            </metadata-record>
+          </metadata-records>
+        </connection>
+      </extract>
+      <layout _.fcp.SchemaViewerObjectModel.false...dim-percentage='0.5' _.fcp.SchemaViewerObjectModel.false...measure-percentage='0.4' dim-ordering='alphabetic' measure-ordering='alphabetic' show-structure='true' />
+      <semantic-values>
+        <semantic-value key='[Country].[Name]' value='&quot;Singapore&quot;' />
+      </semantic-values>
+      <_.fcp.ObjectModelEncapsulateLegacy.true...object-graph>
+        <objects>
+          <object caption='Custom SQL Query' id='_EF4BD4F8F9C542E18C805670D971A940'>
+            <properties context=''>
+              <relation connection='bigquery.1g8qwb11pvq98s1ejo5qw1b1srfh' name='Custom SQL Query' type='text'><![CDATA[WITH entity AS (
+  SELECT
+    management_entity
+    ,segment
+    ,country_name
+    ,brand
+    ,global_entity_id
+    ,is_platform_online
+  FROM `fulfillment-dwh-production.curated_data_shared_central_dwh.global_entities`
+  WHERE is_platform_online = TRUE
+)
+
+, cpc_booking_sessions AS (
+  SELECT
+    session_date
+    ,ga_export_name
+    ,session_id
+    ,user_id
+    ,device.device_category
+    ,MAX(CASE WHEN cust.index=3 THEN SPLIT(cust.value,';')[SAFE_OFFSET(1)] END) vendor_id
+    ,MAX(CASE WHEN cust.index=3 THEN SPLIT(cust.value,';')[SAFE_OFFSET(0)] END) global_entity_id
+    FROM `fulfillment-dwh-production.cl_sales_revenue.vp_ga_sessions`
+      LEFT JOIN UNNEST(hits) AS hits
+      LEFT JOIN UNNEST(hits.custom_dimensions) cust
+  WHERE TRUE
+      AND session_date >>= '2023-01-01'
+      AND hits.event_info.event_action = 'booking_created' 
+      AND hits.event_info.event_category = 'cpc_booking' 
+      AND hits.event_info.event_label <<>> 'featured_products'
+  GROUP BY 1,2,3,4,5
+)
+
+, cpc_clicked_ref AS (
+  SELECT
+    session_date
+    ,ga_export_name
+    ,session_id
+    ,user_id
+    ,device.device_category
+    ,MAX(traffic_source.source) traffic_source
+    ,MAX(CASE WHEN cust.index=3 THEN SPLIT(cust.value,';')[SAFE_OFFSET(1)] END) vendor_id
+    ,MAX(CASE WHEN cust.index=3 THEN SPLIT(cust.value,';')[SAFE_OFFSET(0)] END) global_entity_id
+    FROM `fulfillment-dwh-production.cl_sales_revenue.vp_ga_sessions`
+      LEFT JOIN UNNEST(hits) AS hits
+      LEFT JOIN UNNEST(hits.custom_dimensions) cust
+  WHERE TRUE
+      AND session_date >>= '2023-01-01'
+      AND traffic_source.source = 'cpc_success_page' 
+      AND hits.event_info.event_category = 'current_vfd' 
+      AND hits.event_info.event_action = 'page_loaded'
+  GROUP BY 1,2,3,4,5
+)
+
+, vfd_booking_success AS (
+  SELECT
+    session_date
+    ,ga_export_name
+    ,session_id
+    ,user_id
+    ,device.device_category
+    ,MAX(CASE WHEN cust.index=3 THEN SPLIT(cust.value,';')[SAFE_OFFSET(1)] END) vendor_id
+    ,MAX(CASE WHEN cust.index=3 THEN SPLIT(cust.value,';')[SAFE_OFFSET(0)] END) global_entity_id
+    ,MAX(CASE WHEN cust.index=19 THEN cust.value END) deal_id
+    FROM `fulfillment-dwh-production.cl_sales_revenue.vp_ga_sessions`
+      LEFT JOIN UNNEST(hits) AS hits
+      LEFT JOIN UNNEST(hits.custom_dimensions) cust
+  WHERE TRUE
+      AND session_date >>= '2023-01-01'
+      AND hits.event_info.event_category IN ('create_vfd', 'join_vfd' )
+      AND hits.event_info.event_action = 'succeeded'
+  GROUP BY 1,2,3,4,5
+)
+
+, agg_ga_sessions AS (
+  SELECT
+    cpc_bk.session_date
+    ,cpc_bk.session_id
+    ,cpc_bk.user_id
+    ,cpc_bk.vendor_id
+    ,cpc_bk.global_entity_id
+    ,cpc_bk.device_category
+    ,cpc_ref.traffic_source
+    ,vfd_bk.vendor_id vfd_vendor_id
+    ,vfd_bk.deal_id vfd_deal_id
+  FROM cpc_booking_sessions cpc_bk
+    LEFT JOIN cpc_clicked_ref cpc_ref
+      ON cpc_bk.session_id = cpc_ref.session_id
+    LEFT JOIN vfd_booking_success vfd_bk
+      ON cpc_ref.session_id = vfd_bk.session_id
+)
+
+, incentive AS (
+  SELECT
+    customer_incentive_id
+    ,vendor_id
+    ,global_entity_id
+    ,SUM(all_orders) all_orders
+    ,SUM(inct_amount_total_eur) inct_amount_total_eur
+    ,SUM(all_gfv_eur) all_gfv_eur
+  FROM `dhh-ncr-stg.dev_sales_revenue.stg_daily_incentives_level_performance`
+  GROUP BY 1,2,3
+)
+
+, vfd_utilisation AS (
+  SELECT
+    ses.session_date
+    ,ses.session_id
+    ,ses.user_id
+    ,ses.vendor_id
+    ,ses.global_entity_id
+    ,ses.traffic_source
+    ,ses.vfd_deal_id
+    ,inct.inct_amount_total_eur
+    ,inct.all_orders
+    ,inct.all_gfv_eur
+  FROM agg_ga_sessions ses
+    LEFT JOIN incentive inct
+      ON ses.vfd_deal_id = inct.customer_incentive_id
+      AND ses.global_entity_id = inct.global_entity_id
+)
+
+SELECT
+  DATE_TRUNC(session_date, MONTH) session_month
+  ,global_entity_id
+  ,CASE WHEN entity.global_entity_id = 'YS_TR' THEN 'Yemeksepeti' ELSE management_entity END report_entity
+  ,country_name
+  ,COUNT(DISTINCT user_id) users_w_cpc_booking
+  ,COUNT(DISTINCT CASE WHEN traffic_source IS NOT NULL THEN user_id END) users_w_cpc_ref_link_click
+  ,COUNT(DISTINCT CASE WHEN vfd_deal_id IS NOT NULL THEN user_id END) users_w_vfd_booking
+  ,COALESCE(SUM(inct_amount_total_eur), 0) vfd_eur
+  ,COALESCE(SUM(all_gfv_eur), 0) gfv_eur
+  ,COALESCE(SUM(all_orders), 0) num_orders
+FROM vfd_utilisation
+  LEFT JOIN entity USING (global_entity_id)
+WHERE global_entity_id IN (SELECT global_entity_id FROM entity)
+GROUP BY 1,2,3,4]]></relation>
+            </properties>
+            <properties context='extract'>
+              <relation name='Extract' table='[Extract].[Extract]' type='table' />
+            </properties>
+          </object>
+        </objects>
+      </_.fcp.ObjectModelEncapsulateLegacy.true...object-graph>
+    </datasource>
+    <datasource caption='vfd_to_cpc_cross_sell' inline='true' name='federated.17lx3cg19ifm821cficin1krap56' version='18.1'>
+      <connection class='federated'>
+        <named-connections>
+          <named-connection caption='BigQuery' name='bigquery.1ivtlo20j14xb211ub5m70ft37xl'>
+            <connection CATALOG='dhh-ncr-stg' EXECCATALOG='dhh-ncr-stg' authentication='oauth' bq-dataset-fetch-rows='' bq-fetch-rows='' bq-fetch-tasks='' bq-large-fetch-rows='' bq-project-fetch-rows='' bq-response-rows='' class='bigquery' connection-dialect='google-sql' project='dhh-ncr-stg' schema='dev_sales_revenue' server-oauth='' username='yexi.yuan@foodpanda.com' workgroup-auth-mode='prompt' />
+          </named-connection>
+        </named-connections>
+        <_.fcp.ObjectModelEncapsulateLegacy.false...relation connection='bigquery.1ivtlo20j14xb211ub5m70ft37xl' name='Custom SQL Query' type='text'><![CDATA[WITH entity AS (
+  SELECT
+    management_entity
+    ,segment
+    ,country_name
+    ,brand
+    ,global_entity_id
+    ,is_platform_online
+  FROM `fulfillment-dwh-production.curated_data_shared_central_dwh.global_entities`
+    WHERE is_platform_online = TRUE
+)
+
+, vfd_ref_link AS (
+  SELECT 
+    session_id
+    ,session_date
+    ,user_id
+    ,visit_start_time
+    ,device.device_category
+    ,MAX(CASE WHEN cust.index = 3 THEN cust.value END) AS vendor_id
+    ,MAX(CASE WHEN cust.index = 3 THEN SPLIT(cust.value, ';')[OFFSET(0)] END) AS global_entity_id
+    ,MAX(CASE WHEN hits.event_info.event_category = 'create_vfd' AND hits.event_info.event_label = 'create_vfd' AND hits.event_info.event_action = 'succeeded' THEN 1 ELSE 0 END) is_vfd_form_success
+    ,MAX(CASE WHEN hits.event_info.event_category = 'join_vfd' AND hits.event_info.event_label = 'join_campaign' AND hits.event_info.event_action = 'succeeded' THEN 1 ELSE 0 END) is_vfd_campaign_success
+    ,MAX(CASE WHEN (hits.event_info.event_category = 'create_vfd' OR hits.event_info.event_category = 'join_vfd') AND hits.event_info.event_action = 'clicked_xsell_button' THEN 1 ELSE 0 END) is_clicked_xsell_button
+  FROM `fulfillment-dwh-production.cl_sales_revenue.vp_ga_sessions`
+    LEFT JOIN UNNEST(hits) as hits
+    LEFT JOIN UNNEST(hits.custom_dimensions) AS cust
+  WHERE session_date >>= '2023-01-01'
+    AND ga_export_name = 'Web'
+  GROUP BY 1,2,3,4,5
+)
+
+, vfd_ctr_link AS (
+  SELECT
+    DATE_TRUNC(session_date, MONTH) session_month
+    , CASE WHEN global_entity_id = 'YS_TR' THEN 'Yemeksepeti' ELSE management_entity END report_entity
+    , country_name
+    , global_entity_id
+    , COUNT(DISTINCT CASE WHEN is_vfd_form_success = 1 OR is_vfd_campaign_success = 1 THEN user_id END) vfd_booking_success
+    , COUNT(DISTINCT CASE WHEN is_clicked_xsell_button = 1 THEN user_id END) vfd_clicked_cpc_ref_link
+  FROM vfd_ref_link
+    LEFT JOIN entity USING (global_entity_id)
+  WHERE global_entity_id IN (SELECT global_entity_id FROM entity)
+  GROUP BY 1,2,3,4
+)
+
+, cross_link_sessions AS (
+  SELECT 
+    session_id
+    ,session_date
+    ,user_id
+    ,visit_start_time
+    ,device.device_category
+    ,SPLIT((SELECT value FROM UNNEST(hits.custom_dimensions) WHERE index = 3 LIMIT 1), ';')[safe_offset(1)] as vendor_id
+    ,SPLIT((SELECT value FROM UNNEST(hits.custom_dimensions) WHERE index = 3 LIMIT 1), ';')[offset(0)] as global_entity_id
+    ,MAX(DATE_ADD(visit_start_time, interval hits.time millisecond)) as booking_created_dttm
+    ,MAX(CASE WHEN hits.event_info.event_category = 'create_vfd' AND hits.event_info.event_label = 'create_vfd' AND hits.event_info.event_action = 'succeeded' THEN 1 ELSE 0 END) is_vfd_form_success
+    ,MAX(CASE WHEN hits.event_info.event_category = 'join_vfd' AND hits.event_info.event_label = 'join_campaign' AND hits.event_info.event_action = 'succeeded' THEN 1 ELSE 0 END) is_vfd_campaign_success
+    ,MAX(CASE WHEN (hits.event_info.event_category = 'create_vfd' OR hits.event_info.event_category = 'join_vfd') AND hits.event_info.event_action = 'clicked_xsell_button' THEN 1 ELSE 0 END) is_clicked_xsell_button
+  FROM `fulfillment-dwh-production.cl_sales_revenue.vp_ga_sessions`
+    LEFT JOIN UNNEST(hits) as hits
+  WHERE session_date >>= '2023-01-01'
+    AND ga_export_name = 'Web'
+    AND ((hits.event_info.event_category = 'create_vfd' AND hits.event_info.event_label = 'create_vfd' AND hits.event_info.event_action = 'succeeded')
+    OR (hits.event_info.event_category = 'join_vfd' AND hits.event_info.event_label = 'join_campaign' AND hits.event_info.event_action = 'succeeded')
+    OR ((hits.event_info.event_category = 'create_vfd' OR hits.event_info.event_category = 'join_vfd') AND hits.event_info.event_action = 'clicked_xsell_button'))
+  GROUP BY 1,2,3,4,5,6,7
+  HAVING is_clicked_xsell_button >> 0 and (is_vfd_campaign_success + is_vfd_form_success) >> 0
+)
+
+-- getting vendor first booking info
+, cpc_campaigns AS (
+  SELECT 
+    vendor_id
+    ,MIN(created_date) first_created_date
+    ,MAX(date_month) last_active_campaign_date
+  FROM `dhh-ncr-live.analytics.ad_tech_il_cpc` 
+  GROUP BY 1
+)
+
+-- getting cpc bookings
+, cpc_bookings as (
+  SELECT 
+    DISTINCT session_date, user_id, session_id
+    ,SPLIT((SELECT value FROM UNNEST(hits.custom_dimensions) WHERE index = 3 LIMIT 1), ';')[offset(0)] global_entity_id
+    ,SPLIT((SELECT value FROM UNNEST(hits.custom_dimensions) WHERE index = 3 LIMIT 1), ';')[safe_offset(1)] vendor_id
+    ,DATE_ADD(visit_start_time, interval hits.time millisecond) booking_created_dttm
+    ,REPLACE(
+        JSON_EXTRACT(
+          (SELECT cust.value FROM UNNEST(hits.custom_dimensions) cust WHERE cust.index = 198), '$.campaignId'), '"', ''
+    ) campaign_id
+  FROM `fulfillment-dwh-production.cl_sales_revenue.vp_ga_sessions` ga
+  LEFT JOIN unnest(ga.hits) as hits
+    WHERE session_date >>= '2023-01-01'
+      AND hits.event_info.event_action ='booking_created' 
+      AND hits.event_info.event_category = 'cpc_booking'
+      AND hits.event_info.event_label <<>> 'featured_products'
+)
+
+, cpc_performance AS (
+  SELECT 
+    booking_id
+    ,SUM(cpc_revenue) cpc_revenue_eur
+    ,SUM(budget_excl_canceled) budget_eur
+    ,SUM(budget_local_currency_excl_canceled) budget_local
+  FROM `dhh-ncr-live.analytics.ad_tech_il_cpc` 
+    WHERE date_month >>= '2023-01-01'
+      AND booking_source = 'self_booking'
+  GROUP BY 1
+)
+
+, bookings AS (
+  SELECT
+    DISTINCT booking.id booking_id
+    ,vendor.vendor_code
+    ,booking.campaign_service_id campaign_id
+    ,vendor.entity_id global_entity_id
+    ,booking.created_at booking_created_dttm
+  FROM `fulfillment-dwh-production.dl_sales_revenue.hannibal_app_data_bookings` booking
+    JOIN `fulfillment-dwh-production.dl_sales_revenue.hannibal_app_data_vendors` vendor 
+      ON vendor.id = booking.vendor_id
+  WHERE booking.billing_type = 'CPC'
+    AND date(booking.created_at) >>= '2023-01-01'
+)
+
+, campaign_to_booking_link AS (
+  SELECT
+    DISTINCT cpc.campaign_id
+    ,COALESCE(FIRST_VALUE(book_time.booking_id) OVER (PARTITION BY cpc.vendor_id ORDER BY book_time.booking_created_dttm) ,book_camp.booking_id) booking_id
+  FROM cpc_bookings cpc
+    LEFT JOIN bookings book_camp
+      ON book_camp.campaign_id = cpc.campaign_id
+    LEFT JOIN bookings book_time
+      ON book_time.vendor_code = cpc.vendor_id and date_add(book_time.booking_created_dttm, interval 1 minute) >>= cpc.booking_created_dttm
+)
+
+, cpc_revenue_metrics as (
+  SELECT 
+    events.session_date
+    ,events.session_id
+    ,events.vendor_id
+    ,events.user_id
+    ,perf.*
+  FROM cpc_bookings events 
+    LEFT JOIN campaign_to_booking_link link 
+      ON link.campaign_id = events.campaign_id 
+    LEFT JOIN cpc_performance perf 
+      ON perf.booking_id = link.booking_id
+)
+
+-- finding closest session to cpc booking session 
+-- first_value needed to deduplicate vfd sessions, for example when vfd session was 2023-08-01 and 2023-08-02 and cpc booking was 2023-03-03 - otherwise we would receive two rows
+, cpc_booking_to_vfd_session AS (
+  SELECT 
+    DISTINCT cpc.*
+    ,FIRST_VALUE(xsell.session_id) OVER (PARTITION BY cpc.user_id, cpc.session_id ORDER BY xsell.booking_created_dttm) vfd_session_id
+    ,FIRST_VALUE(xsell.booking_created_dttm) OVER (PARTITION BY cpc.user_id, cpc.session_id order by xsell.booking_created_dttm) vfd_booking_created_dttm
+    --  any other values about the vfd session
+  FROM cpc_bookings cpc 
+    JOIN cross_link_sessions xsell
+      ON xsell.user_id = cpc.user_id 
+      AND date_diff(cpc.booking_created_dttm, xsell.booking_created_dttm, day) <<= 3
+      AND cpc.booking_created_dttm >> xsell.booking_created_dttm -- to exclude sessions where cpc booking happend earlier than vfd
+)
+
+, referral_revenue_metrics AS (
+  -- final agg with revenue metrics
+  SELECT 
+    management_entity
+    ,brand
+    ,CASE WHEN global_entity_id = 'YS_TR' THEN 'Yemeksepeti' ELSE management_entity END report_entity
+    ,country_name
+    ,cpc.session_date
+    ,cpc.user_id
+    ,cpc.session_id
+    ,cpc.global_entity_id
+    ,cpc.vendor_id
+    ,DATE(cpc.booking_created_dttm) cpc_booking_date
+    ,cpc.campaign_id
+    ,cpc.vfd_session_id
+    ,cpc.vfd_booking_created_dttm
+    ,DATE(cpc.vfd_booking_created_dttm) vfd_booking_date
+    ,DATE_DIFF(booking_created_dttm, cpc.vfd_booking_created_dttm, DAY) days_to_booking
+    ,CASE WHEN camp.first_created_date << date(booking_created_dttm) THEN 'oldie' ELSE 'newbie' END user_type
+    ,CASE WHEN camp.last_active_campaign_date = date_trunc(date(booking_created_dttm), month) THEN 'active campaign' else 'no active campaign' END is_active_campaign
+    ,revenue.cpc_revenue_eur
+    ,revenue.budget_eur
+    ,revenue.booking_id
+    ,CASE WHEN cpc.session_id = cpc.vfd_session_id THEN TRUE ELSE FALSE END is_same_sessions
+  FROM cpc_booking_to_vfd_session cpc 
+    LEFT JOIN cpc_campaigns camp 
+      ON camp.vendor_id = cpc.vendor_id
+    LEFT JOIN cpc_revenue_metrics revenue
+      ON revenue.session_date = cpc.session_date 
+      AND revenue.user_id = cpc.user_id
+      AND revenue.session_id = cpc.session_id
+      AND revenue.vendor_id = cpc.vendor_id
+    LEFT JOIN entity USING(global_entity_id)
+)
+
+, dedup_cpc_bookings AS (
+  SELECT
+    session_date
+    , global_entity_id
+    , report_entity
+    , country_name
+    , vendor_id
+    , booking_id
+    -- , campaign_id
+    , MAX(cpc_booking_date) cpc_booking_date
+    , MAX(cpc_revenue_eur) cpc_revenue_eur
+    , MAX(budget_eur) budget_eur
+  FROM referral_revenue_metrics
+  WHERE is_same_sessions = TRUE
+  GROUP BY 1,2,3,4,5,6
+)
+
+, agg_cpc_revenue AS (
+  SELECT
+    DATE_TRUNC(session_date, MONTH) session_month
+    , global_entity_id
+    , report_entity
+    , country_name
+    , COUNT(DISTINCT vendor_id) num_vendors
+    , COUNT(DISTINCT CASE WHEN booking_id IS NOT NULL THEN vendor_id END) num_vendors_w_bookings
+    , COUNT(DISTINCT booking_id) num_bookings
+    , SUM(budget_eur) budget_eur
+    , SUM(cpc_revenue_eur) cpc_revenue_eur
+  FROM dedup_cpc_bookings
+  GROUP BY 1,2,3,4
+)
+
+SELECT
+  ref.*
+  ,rev.num_bookings
+  ,rev.num_vendors
+  ,rev.num_vendors_w_bookings
+  ,rev.budget_eur
+  ,rev.cpc_revenue_eur
+FROM vfd_ctr_link ref
+  LEFT JOIN agg_cpc_revenue rev
+    ON ref.session_month = rev.session_month
+    AND ref.global_entity_id = rev.global_entity_id]]></_.fcp.ObjectModelEncapsulateLegacy.false...relation>
+        <_.fcp.ObjectModelEncapsulateLegacy.true...relation connection='bigquery.1ivtlo20j14xb211ub5m70ft37xl' name='Custom SQL Query' type='text'><![CDATA[WITH entity AS (
+  SELECT
+    management_entity
+    ,segment
+    ,country_name
+    ,brand
+    ,global_entity_id
+    ,is_platform_online
+  FROM `fulfillment-dwh-production.curated_data_shared_central_dwh.global_entities`
+    WHERE is_platform_online = TRUE
+)
+
+, vfd_ref_link AS (
+  SELECT 
+    session_id
+    ,session_date
+    ,user_id
+    ,visit_start_time
+    ,device.device_category
+    ,MAX(CASE WHEN cust.index = 3 THEN cust.value END) AS vendor_id
+    ,MAX(CASE WHEN cust.index = 3 THEN SPLIT(cust.value, ';')[OFFSET(0)] END) AS global_entity_id
+    ,MAX(CASE WHEN hits.event_info.event_category = 'create_vfd' AND hits.event_info.event_label = 'create_vfd' AND hits.event_info.event_action = 'succeeded' THEN 1 ELSE 0 END) is_vfd_form_success
+    ,MAX(CASE WHEN hits.event_info.event_category = 'join_vfd' AND hits.event_info.event_label = 'join_campaign' AND hits.event_info.event_action = 'succeeded' THEN 1 ELSE 0 END) is_vfd_campaign_success
+    ,MAX(CASE WHEN (hits.event_info.event_category = 'create_vfd' OR hits.event_info.event_category = 'join_vfd') AND hits.event_info.event_action = 'clicked_xsell_button' THEN 1 ELSE 0 END) is_clicked_xsell_button
+  FROM `fulfillment-dwh-production.cl_sales_revenue.vp_ga_sessions`
+    LEFT JOIN UNNEST(hits) as hits
+    LEFT JOIN UNNEST(hits.custom_dimensions) AS cust
+  WHERE session_date >>= '2023-01-01'
+    AND ga_export_name = 'Web'
+  GROUP BY 1,2,3,4,5
+)
+
+, vfd_ctr_link AS (
+  SELECT
+    DATE_TRUNC(session_date, MONTH) session_month
+    , CASE WHEN global_entity_id = 'YS_TR' THEN 'Yemeksepeti' ELSE management_entity END report_entity
+    , country_name
+    , global_entity_id
+    , COUNT(DISTINCT CASE WHEN is_vfd_form_success = 1 OR is_vfd_campaign_success = 1 THEN user_id END) vfd_booking_success
+    , COUNT(DISTINCT CASE WHEN is_clicked_xsell_button = 1 THEN user_id END) vfd_clicked_cpc_ref_link
+  FROM vfd_ref_link
+    LEFT JOIN entity USING (global_entity_id)
+  WHERE global_entity_id IN (SELECT global_entity_id FROM entity)
+  GROUP BY 1,2,3,4
+)
+
+, cross_link_sessions AS (
+  SELECT 
+    session_id
+    ,session_date
+    ,user_id
+    ,visit_start_time
+    ,device.device_category
+    ,SPLIT((SELECT value FROM UNNEST(hits.custom_dimensions) WHERE index = 3 LIMIT 1), ';')[safe_offset(1)] as vendor_id
+    ,SPLIT((SELECT value FROM UNNEST(hits.custom_dimensions) WHERE index = 3 LIMIT 1), ';')[offset(0)] as global_entity_id
+    ,MAX(DATE_ADD(visit_start_time, interval hits.time millisecond)) as booking_created_dttm
+    ,MAX(CASE WHEN hits.event_info.event_category = 'create_vfd' AND hits.event_info.event_label = 'create_vfd' AND hits.event_info.event_action = 'succeeded' THEN 1 ELSE 0 END) is_vfd_form_success
+    ,MAX(CASE WHEN hits.event_info.event_category = 'join_vfd' AND hits.event_info.event_label = 'join_campaign' AND hits.event_info.event_action = 'succeeded' THEN 1 ELSE 0 END) is_vfd_campaign_success
+    ,MAX(CASE WHEN (hits.event_info.event_category = 'create_vfd' OR hits.event_info.event_category = 'join_vfd') AND hits.event_info.event_action = 'clicked_xsell_button' THEN 1 ELSE 0 END) is_clicked_xsell_button
+  FROM `fulfillment-dwh-production.cl_sales_revenue.vp_ga_sessions`
+    LEFT JOIN UNNEST(hits) as hits
+  WHERE session_date >>= '2023-01-01'
+    AND ga_export_name = 'Web'
+    AND ((hits.event_info.event_category = 'create_vfd' AND hits.event_info.event_label = 'create_vfd' AND hits.event_info.event_action = 'succeeded')
+    OR (hits.event_info.event_category = 'join_vfd' AND hits.event_info.event_label = 'join_campaign' AND hits.event_info.event_action = 'succeeded')
+    OR ((hits.event_info.event_category = 'create_vfd' OR hits.event_info.event_category = 'join_vfd') AND hits.event_info.event_action = 'clicked_xsell_button'))
+  GROUP BY 1,2,3,4,5,6,7
+  HAVING is_clicked_xsell_button >> 0 and (is_vfd_campaign_success + is_vfd_form_success) >> 0
+)
+
+-- getting vendor first booking info
+, cpc_campaigns AS (
+  SELECT 
+    vendor_id
+    ,MIN(created_date) first_created_date
+    ,MAX(date_month) last_active_campaign_date
+  FROM `dhh-ncr-live.analytics.ad_tech_il_cpc` 
+  GROUP BY 1
+)
+
+-- getting cpc bookings
+, cpc_bookings as (
+  SELECT 
+    DISTINCT session_date, user_id, session_id
+    ,SPLIT((SELECT value FROM UNNEST(hits.custom_dimensions) WHERE index = 3 LIMIT 1), ';')[offset(0)] global_entity_id
+    ,SPLIT((SELECT value FROM UNNEST(hits.custom_dimensions) WHERE index = 3 LIMIT 1), ';')[safe_offset(1)] vendor_id
+    ,DATE_ADD(visit_start_time, interval hits.time millisecond) booking_created_dttm
+    ,REPLACE(
+        JSON_EXTRACT(
+          (SELECT cust.value FROM UNNEST(hits.custom_dimensions) cust WHERE cust.index = 198), '$.campaignId'), '"', ''
+    ) campaign_id
+  FROM `fulfillment-dwh-production.cl_sales_revenue.vp_ga_sessions` ga
+  LEFT JOIN unnest(ga.hits) as hits
+    WHERE session_date >>= '2023-01-01'
+      AND hits.event_info.event_action ='booking_created' 
+      AND hits.event_info.event_category = 'cpc_booking'
+      AND hits.event_info.event_label <<>> 'featured_products'
+)
+
+, cpc_performance AS (
+  SELECT 
+    booking_id
+    ,SUM(cpc_revenue) cpc_revenue_eur
+    ,SUM(budget_excl_canceled) budget_eur
+    ,SUM(budget_local_currency_excl_canceled) budget_local
+  FROM `dhh-ncr-live.analytics.ad_tech_il_cpc` 
+    WHERE date_month >>= '2023-01-01'
+      AND booking_source = 'self_booking'
+  GROUP BY 1
+)
+
+, bookings AS (
+  SELECT
+    DISTINCT booking.id booking_id
+    ,vendor.vendor_code
+    ,booking.campaign_service_id campaign_id
+    ,vendor.entity_id global_entity_id
+    ,booking.created_at booking_created_dttm
+  FROM `fulfillment-dwh-production.dl_sales_revenue.hannibal_app_data_bookings` booking
+    JOIN `fulfillment-dwh-production.dl_sales_revenue.hannibal_app_data_vendors` vendor 
+      ON vendor.id = booking.vendor_id
+  WHERE booking.billing_type = 'CPC'
+    AND date(booking.created_at) >>= '2023-01-01'
+)
+
+, campaign_to_booking_link AS (
+  SELECT
+    DISTINCT cpc.campaign_id
+    ,COALESCE(FIRST_VALUE(book_time.booking_id) OVER (PARTITION BY cpc.vendor_id ORDER BY book_time.booking_created_dttm) ,book_camp.booking_id) booking_id
+  FROM cpc_bookings cpc
+    LEFT JOIN bookings book_camp
+      ON book_camp.campaign_id = cpc.campaign_id
+    LEFT JOIN bookings book_time
+      ON book_time.vendor_code = cpc.vendor_id and date_add(book_time.booking_created_dttm, interval 1 minute) >>= cpc.booking_created_dttm
+)
+
+, cpc_revenue_metrics as (
+  SELECT 
+    events.session_date
+    ,events.session_id
+    ,events.vendor_id
+    ,events.user_id
+    ,perf.*
+  FROM cpc_bookings events 
+    LEFT JOIN campaign_to_booking_link link 
+      ON link.campaign_id = events.campaign_id 
+    LEFT JOIN cpc_performance perf 
+      ON perf.booking_id = link.booking_id
+)
+
+-- finding closest session to cpc booking session 
+-- first_value needed to deduplicate vfd sessions, for example when vfd session was 2023-08-01 and 2023-08-02 and cpc booking was 2023-03-03 - otherwise we would receive two rows
+, cpc_booking_to_vfd_session AS (
+  SELECT 
+    DISTINCT cpc.*
+    ,FIRST_VALUE(xsell.session_id) OVER (PARTITION BY cpc.user_id, cpc.session_id ORDER BY xsell.booking_created_dttm) vfd_session_id
+    ,FIRST_VALUE(xsell.booking_created_dttm) OVER (PARTITION BY cpc.user_id, cpc.session_id order by xsell.booking_created_dttm) vfd_booking_created_dttm
+    --  any other values about the vfd session
+  FROM cpc_bookings cpc 
+    JOIN cross_link_sessions xsell
+      ON xsell.user_id = cpc.user_id 
+      AND date_diff(cpc.booking_created_dttm, xsell.booking_created_dttm, day) <<= 3
+      AND cpc.booking_created_dttm >> xsell.booking_created_dttm -- to exclude sessions where cpc booking happend earlier than vfd
+)
+
+, referral_revenue_metrics AS (
+  -- final agg with revenue metrics
+  SELECT 
+    management_entity
+    ,brand
+    ,CASE WHEN global_entity_id = 'YS_TR' THEN 'Yemeksepeti' ELSE management_entity END report_entity
+    ,country_name
+    ,cpc.session_date
+    ,cpc.user_id
+    ,cpc.session_id
+    ,cpc.global_entity_id
+    ,cpc.vendor_id
+    ,DATE(cpc.booking_created_dttm) cpc_booking_date
+    ,cpc.campaign_id
+    ,cpc.vfd_session_id
+    ,cpc.vfd_booking_created_dttm
+    ,DATE(cpc.vfd_booking_created_dttm) vfd_booking_date
+    ,DATE_DIFF(booking_created_dttm, cpc.vfd_booking_created_dttm, DAY) days_to_booking
+    ,CASE WHEN camp.first_created_date << date(booking_created_dttm) THEN 'oldie' ELSE 'newbie' END user_type
+    ,CASE WHEN camp.last_active_campaign_date = date_trunc(date(booking_created_dttm), month) THEN 'active campaign' else 'no active campaign' END is_active_campaign
+    ,revenue.cpc_revenue_eur
+    ,revenue.budget_eur
+    ,revenue.booking_id
+    ,CASE WHEN cpc.session_id = cpc.vfd_session_id THEN TRUE ELSE FALSE END is_same_sessions
+  FROM cpc_booking_to_vfd_session cpc 
+    LEFT JOIN cpc_campaigns camp 
+      ON camp.vendor_id = cpc.vendor_id
+    LEFT JOIN cpc_revenue_metrics revenue
+      ON revenue.session_date = cpc.session_date 
+      AND revenue.user_id = cpc.user_id
+      AND revenue.session_id = cpc.session_id
+      AND revenue.vendor_id = cpc.vendor_id
+    LEFT JOIN entity USING(global_entity_id)
+)
+
+, dedup_cpc_bookings AS (
+  SELECT
+    session_date
+    , global_entity_id
+    , report_entity
+    , country_name
+    , vendor_id
+    , booking_id
+    -- , campaign_id
+    , MAX(cpc_booking_date) cpc_booking_date
+    , MAX(cpc_revenue_eur) cpc_revenue_eur
+    , MAX(budget_eur) budget_eur
+  FROM referral_revenue_metrics
+  WHERE is_same_sessions = TRUE
+  GROUP BY 1,2,3,4,5,6
+)
+
+, agg_cpc_revenue AS (
+  SELECT
+    DATE_TRUNC(session_date, MONTH) session_month
+    , global_entity_id
+    , report_entity
+    , country_name
+    , COUNT(DISTINCT vendor_id) num_vendors
+    , COUNT(DISTINCT CASE WHEN booking_id IS NOT NULL THEN vendor_id END) num_vendors_w_bookings
+    , COUNT(DISTINCT booking_id) num_bookings
+    , SUM(budget_eur) budget_eur
+    , SUM(cpc_revenue_eur) cpc_revenue_eur
+  FROM dedup_cpc_bookings
+  GROUP BY 1,2,3,4
+)
+
+SELECT
+  ref.*
+  ,rev.num_bookings
+  ,rev.num_vendors
+  ,rev.num_vendors_w_bookings
+  ,rev.budget_eur
+  ,rev.cpc_revenue_eur
+FROM vfd_ctr_link ref
+  LEFT JOIN agg_cpc_revenue rev
+    ON ref.session_month = rev.session_month
+    AND ref.global_entity_id = rev.global_entity_id]]></_.fcp.ObjectModelEncapsulateLegacy.true...relation>
+        <metadata-records>
+          <metadata-record class='column'>
+            <remote-name>session_month</remote-name>
+            <remote-type>7</remote-type>
+            <local-name>[session_month]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>session_month</remote-alias>
+            <local-type>date</local-type>
+            <aggregation>Year</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_2D98136ECA874E1C9C884539F581F653]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>report_entity</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[report_entity]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>report_entity</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_2D98136ECA874E1C9C884539F581F653]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>country_name</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[country_name]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>country_name</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_2D98136ECA874E1C9C884539F581F653]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>global_entity_id</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[global_entity_id]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>global_entity_id</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_2D98136ECA874E1C9C884539F581F653]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>vfd_booking_success</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[vfd_booking_success]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>vfd_booking_success</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_2D98136ECA874E1C9C884539F581F653]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>vfd_clicked_cpc_ref_link</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[vfd_clicked_cpc_ref_link]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>vfd_clicked_cpc_ref_link</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_2D98136ECA874E1C9C884539F581F653]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>num_bookings</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[num_bookings]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>num_bookings</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_2D98136ECA874E1C9C884539F581F653]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>num_vendors</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[num_vendors]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>num_vendors</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_2D98136ECA874E1C9C884539F581F653]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>num_vendors_w_bookings</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[num_vendors_w_bookings]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>num_vendors_w_bookings</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_2D98136ECA874E1C9C884539F581F653]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>budget_eur</remote-name>
+            <remote-type>5</remote-type>
+            <local-name>[budget_eur]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>budget_eur</remote-alias>
+            <local-type>real</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_2D98136ECA874E1C9C884539F581F653]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>cpc_revenue_eur</remote-name>
+            <remote-type>5</remote-type>
+            <local-name>[cpc_revenue_eur]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>cpc_revenue_eur</remote-alias>
+            <local-type>real</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_2D98136ECA874E1C9C884539F581F653]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+        </metadata-records>
+      </connection>
+      <aliases enabled='yes' />
+      <column caption='% CTR' datatype='real' name='[Calculation_1840846399583444992]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='SUM([vfd_clicked_cpc_ref_link]) / SUM([vfd_booking_success])' />
+      </column>
+      <column caption='% CvR' datatype='real' name='[Calculation_1840846399583752193]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='SUM([num_vendors_w_bookings]) / SUM([vfd_clicked_cpc_ref_link])' />
+      </column>
+      <column caption='% Budget Utilised' datatype='real' name='[Calculation_1840846399584112642]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='SUM([cpc_revenue_eur])/SUM([budget_eur])' />
+      </column>
+      <_.fcp.ObjectModelTableType.true...column caption='Custom SQL Query' datatype='table' name='[__tableau_internal_object_id__].[_2D98136ECA874E1C9C884539F581F653]' role='measure' type='quantitative' />
+      <column caption='€ CPC Budget' datatype='real' name='[budget_eur]' role='measure' type='quantitative' />
+      <column datatype='string' name='[country_name]' role='dimension' semantic-role='[Country].[ISO3166_2]' type='nominal' />
+      <column caption='€ CPC Revenue' datatype='real' name='[cpc_revenue_eur]' role='measure' type='quantitative' />
+      <column caption='# CPC Bookings' datatype='integer' name='[num_bookings]' role='measure' type='quantitative' />
+      <column caption='Vendors w CPC Booking' datatype='integer' name='[num_vendors_w_bookings]' role='measure' type='quantitative' />
+      <column caption='Entity' datatype='string' name='[report_entity]' role='dimension' type='nominal' />
+      <column caption='Users w VFD Booking' datatype='integer' name='[vfd_booking_success]' role='measure' type='quantitative' />
+      <column caption='Users w CPC Referral Link Click' datatype='integer' name='[vfd_clicked_cpc_ref_link]' role='measure' type='quantitative' />
+      <extract _.fcp.ObjectModelExtractV2.true...object-id='' count='-1' enabled='true' units='records'>
+        <connection class='hyper' dbname='extract/b1/20/{A82CD86C-EAC3-4DF8-BDEF-5A1F9F2588FE}/federated_17lx3cg19ifm821cficin1.hyper' default-settings='yes' extract-engine='true' schema='Extract' tablename='Extract' update-time='07/26/2023 05:20:11 PM'>
+          <_.fcp.ObjectModelEncapsulateLegacy.false...relation name='Extract' table='[Extract].[Extract]' type='table' />
+          <_.fcp.ObjectModelEncapsulateLegacy.true...relation name='Extract' table='[Extract].[Extract]' type='table' />
+          <refresh>
+            <refresh-event add-from-file-path='vfd_to_cpc_cross_sell' increment-value='%null%' refresh-type='create' rows-inserted='311' timestamp-start='2023-07-26 17:19:34.675' />
+          </refresh>
+          <metadata-records>
+            <metadata-record class='column'>
+              <remote-name>session_month</remote-name>
+              <remote-type>133</remote-type>
+              <local-name>[session_month]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>session_month</remote-alias>
+              <ordinal>0</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>date</local-type>
+              <aggregation>Year</aggregation>
+              <approx-count>7</approx-count>
+              <contains-null>true</contains-null>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>report_entity</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[report_entity]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>report_entity</remote-alias>
+              <ordinal>1</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>7</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>country_name</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[country_name]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>country_name</remote-alias>
+              <ordinal>2</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>45</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>global_entity_id</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[global_entity_id]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>global_entity_id</remote-alias>
+              <ordinal>3</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>45</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>vfd_booking_success</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[vfd_booking_success]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>vfd_booking_success</remote-alias>
+              <ordinal>4</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>191</approx-count>
+              <contains-null>true</contains-null>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>vfd_clicked_cpc_ref_link</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[vfd_clicked_cpc_ref_link]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>vfd_clicked_cpc_ref_link</remote-alias>
+              <ordinal>5</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>125</approx-count>
+              <contains-null>true</contains-null>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>num_bookings</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[num_bookings]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>num_bookings</remote-alias>
+              <ordinal>6</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>41</approx-count>
+              <contains-null>true</contains-null>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>num_vendors</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[num_vendors]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>num_vendors</remote-alias>
+              <ordinal>7</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>41</approx-count>
+              <contains-null>true</contains-null>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>num_vendors_w_bookings</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[num_vendors_w_bookings]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>num_vendors_w_bookings</remote-alias>
+              <ordinal>8</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>43</approx-count>
+              <contains-null>true</contains-null>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>budget_eur</remote-name>
+              <remote-type>5</remote-type>
+              <local-name>[budget_eur]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>budget_eur</remote-alias>
+              <ordinal>9</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>real</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>165</approx-count>
+              <contains-null>true</contains-null>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>cpc_revenue_eur</remote-name>
+              <remote-type>5</remote-type>
+              <local-name>[cpc_revenue_eur]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>cpc_revenue_eur</remote-alias>
+              <ordinal>10</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>real</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>163</approx-count>
+              <contains-null>true</contains-null>
+            </metadata-record>
+          </metadata-records>
+        </connection>
+      </extract>
+      <layout _.fcp.SchemaViewerObjectModel.false...dim-percentage='0.5' _.fcp.SchemaViewerObjectModel.false...measure-percentage='0.4' _.fcp.SchemaViewerObjectModel.true...common-percentage='1' _.fcp.SchemaViewerObjectModel.true...user-set-layout-v2='true' dim-ordering='alphabetic' measure-ordering='alphabetic' show-structure='true' />
+      <semantic-values>
+        <semantic-value key='[Country].[Name]' value='&quot;Singapore&quot;' />
+      </semantic-values>
+      <_.fcp.ObjectModelEncapsulateLegacy.true...object-graph>
+        <objects>
+          <object caption='Custom SQL Query' id='_2D98136ECA874E1C9C884539F581F653'>
+            <properties context=''>
+              <relation connection='bigquery.1ivtlo20j14xb211ub5m70ft37xl' name='Custom SQL Query' type='text'><![CDATA[WITH entity AS (
+  SELECT
+    management_entity
+    ,segment
+    ,country_name
+    ,brand
+    ,global_entity_id
+    ,is_platform_online
+  FROM `fulfillment-dwh-production.curated_data_shared_central_dwh.global_entities`
+    WHERE is_platform_online = TRUE
+)
+
+, vfd_ref_link AS (
+  SELECT 
+    session_id
+    ,session_date
+    ,user_id
+    ,visit_start_time
+    ,device.device_category
+    ,MAX(CASE WHEN cust.index = 3 THEN cust.value END) AS vendor_id
+    ,MAX(CASE WHEN cust.index = 3 THEN SPLIT(cust.value, ';')[OFFSET(0)] END) AS global_entity_id
+    ,MAX(CASE WHEN hits.event_info.event_category = 'create_vfd' AND hits.event_info.event_label = 'create_vfd' AND hits.event_info.event_action = 'succeeded' THEN 1 ELSE 0 END) is_vfd_form_success
+    ,MAX(CASE WHEN hits.event_info.event_category = 'join_vfd' AND hits.event_info.event_label = 'join_campaign' AND hits.event_info.event_action = 'succeeded' THEN 1 ELSE 0 END) is_vfd_campaign_success
+    ,MAX(CASE WHEN (hits.event_info.event_category = 'create_vfd' OR hits.event_info.event_category = 'join_vfd') AND hits.event_info.event_action = 'clicked_xsell_button' THEN 1 ELSE 0 END) is_clicked_xsell_button
+  FROM `fulfillment-dwh-production.cl_sales_revenue.vp_ga_sessions`
+    LEFT JOIN UNNEST(hits) as hits
+    LEFT JOIN UNNEST(hits.custom_dimensions) AS cust
+  WHERE session_date >>= '2023-01-01'
+    AND ga_export_name = 'Web'
+  GROUP BY 1,2,3,4,5
+)
+
+, vfd_ctr_link AS (
+  SELECT
+    DATE_TRUNC(session_date, MONTH) session_month
+    , CASE WHEN global_entity_id = 'YS_TR' THEN 'Yemeksepeti' ELSE management_entity END report_entity
+    , country_name
+    , global_entity_id
+    , COUNT(DISTINCT CASE WHEN is_vfd_form_success = 1 OR is_vfd_campaign_success = 1 THEN user_id END) vfd_booking_success
+    , COUNT(DISTINCT CASE WHEN is_clicked_xsell_button = 1 THEN user_id END) vfd_clicked_cpc_ref_link
+  FROM vfd_ref_link
+    LEFT JOIN entity USING (global_entity_id)
+  WHERE global_entity_id IN (SELECT global_entity_id FROM entity)
+  GROUP BY 1,2,3,4
+)
+
+, cross_link_sessions AS (
+  SELECT 
+    session_id
+    ,session_date
+    ,user_id
+    ,visit_start_time
+    ,device.device_category
+    ,SPLIT((SELECT value FROM UNNEST(hits.custom_dimensions) WHERE index = 3 LIMIT 1), ';')[safe_offset(1)] as vendor_id
+    ,SPLIT((SELECT value FROM UNNEST(hits.custom_dimensions) WHERE index = 3 LIMIT 1), ';')[offset(0)] as global_entity_id
+    ,MAX(DATE_ADD(visit_start_time, interval hits.time millisecond)) as booking_created_dttm
+    ,MAX(CASE WHEN hits.event_info.event_category = 'create_vfd' AND hits.event_info.event_label = 'create_vfd' AND hits.event_info.event_action = 'succeeded' THEN 1 ELSE 0 END) is_vfd_form_success
+    ,MAX(CASE WHEN hits.event_info.event_category = 'join_vfd' AND hits.event_info.event_label = 'join_campaign' AND hits.event_info.event_action = 'succeeded' THEN 1 ELSE 0 END) is_vfd_campaign_success
+    ,MAX(CASE WHEN (hits.event_info.event_category = 'create_vfd' OR hits.event_info.event_category = 'join_vfd') AND hits.event_info.event_action = 'clicked_xsell_button' THEN 1 ELSE 0 END) is_clicked_xsell_button
+  FROM `fulfillment-dwh-production.cl_sales_revenue.vp_ga_sessions`
+    LEFT JOIN UNNEST(hits) as hits
+  WHERE session_date >>= '2023-01-01'
+    AND ga_export_name = 'Web'
+    AND ((hits.event_info.event_category = 'create_vfd' AND hits.event_info.event_label = 'create_vfd' AND hits.event_info.event_action = 'succeeded')
+    OR (hits.event_info.event_category = 'join_vfd' AND hits.event_info.event_label = 'join_campaign' AND hits.event_info.event_action = 'succeeded')
+    OR ((hits.event_info.event_category = 'create_vfd' OR hits.event_info.event_category = 'join_vfd') AND hits.event_info.event_action = 'clicked_xsell_button'))
+  GROUP BY 1,2,3,4,5,6,7
+  HAVING is_clicked_xsell_button >> 0 and (is_vfd_campaign_success + is_vfd_form_success) >> 0
+)
+
+-- getting vendor first booking info
+, cpc_campaigns AS (
+  SELECT 
+    vendor_id
+    ,MIN(created_date) first_created_date
+    ,MAX(date_month) last_active_campaign_date
+  FROM `dhh-ncr-live.analytics.ad_tech_il_cpc` 
+  GROUP BY 1
+)
+
+-- getting cpc bookings
+, cpc_bookings as (
+  SELECT 
+    DISTINCT session_date, user_id, session_id
+    ,SPLIT((SELECT value FROM UNNEST(hits.custom_dimensions) WHERE index = 3 LIMIT 1), ';')[offset(0)] global_entity_id
+    ,SPLIT((SELECT value FROM UNNEST(hits.custom_dimensions) WHERE index = 3 LIMIT 1), ';')[safe_offset(1)] vendor_id
+    ,DATE_ADD(visit_start_time, interval hits.time millisecond) booking_created_dttm
+    ,REPLACE(
+        JSON_EXTRACT(
+          (SELECT cust.value FROM UNNEST(hits.custom_dimensions) cust WHERE cust.index = 198), '$.campaignId'), '"', ''
+    ) campaign_id
+  FROM `fulfillment-dwh-production.cl_sales_revenue.vp_ga_sessions` ga
+  LEFT JOIN unnest(ga.hits) as hits
+    WHERE session_date >>= '2023-01-01'
+      AND hits.event_info.event_action ='booking_created' 
+      AND hits.event_info.event_category = 'cpc_booking'
+      AND hits.event_info.event_label <<>> 'featured_products'
+)
+
+, cpc_performance AS (
+  SELECT 
+    booking_id
+    ,SUM(cpc_revenue) cpc_revenue_eur
+    ,SUM(budget_excl_canceled) budget_eur
+    ,SUM(budget_local_currency_excl_canceled) budget_local
+  FROM `dhh-ncr-live.analytics.ad_tech_il_cpc` 
+    WHERE date_month >>= '2023-01-01'
+      AND booking_source = 'self_booking'
+  GROUP BY 1
+)
+
+, bookings AS (
+  SELECT
+    DISTINCT booking.id booking_id
+    ,vendor.vendor_code
+    ,booking.campaign_service_id campaign_id
+    ,vendor.entity_id global_entity_id
+    ,booking.created_at booking_created_dttm
+  FROM `fulfillment-dwh-production.dl_sales_revenue.hannibal_app_data_bookings` booking
+    JOIN `fulfillment-dwh-production.dl_sales_revenue.hannibal_app_data_vendors` vendor 
+      ON vendor.id = booking.vendor_id
+  WHERE booking.billing_type = 'CPC'
+    AND date(booking.created_at) >>= '2023-01-01'
+)
+
+, campaign_to_booking_link AS (
+  SELECT
+    DISTINCT cpc.campaign_id
+    ,COALESCE(FIRST_VALUE(book_time.booking_id) OVER (PARTITION BY cpc.vendor_id ORDER BY book_time.booking_created_dttm) ,book_camp.booking_id) booking_id
+  FROM cpc_bookings cpc
+    LEFT JOIN bookings book_camp
+      ON book_camp.campaign_id = cpc.campaign_id
+    LEFT JOIN bookings book_time
+      ON book_time.vendor_code = cpc.vendor_id and date_add(book_time.booking_created_dttm, interval 1 minute) >>= cpc.booking_created_dttm
+)
+
+, cpc_revenue_metrics as (
+  SELECT 
+    events.session_date
+    ,events.session_id
+    ,events.vendor_id
+    ,events.user_id
+    ,perf.*
+  FROM cpc_bookings events 
+    LEFT JOIN campaign_to_booking_link link 
+      ON link.campaign_id = events.campaign_id 
+    LEFT JOIN cpc_performance perf 
+      ON perf.booking_id = link.booking_id
+)
+
+-- finding closest session to cpc booking session 
+-- first_value needed to deduplicate vfd sessions, for example when vfd session was 2023-08-01 and 2023-08-02 and cpc booking was 2023-03-03 - otherwise we would receive two rows
+, cpc_booking_to_vfd_session AS (
+  SELECT 
+    DISTINCT cpc.*
+    ,FIRST_VALUE(xsell.session_id) OVER (PARTITION BY cpc.user_id, cpc.session_id ORDER BY xsell.booking_created_dttm) vfd_session_id
+    ,FIRST_VALUE(xsell.booking_created_dttm) OVER (PARTITION BY cpc.user_id, cpc.session_id order by xsell.booking_created_dttm) vfd_booking_created_dttm
+    --  any other values about the vfd session
+  FROM cpc_bookings cpc 
+    JOIN cross_link_sessions xsell
+      ON xsell.user_id = cpc.user_id 
+      AND date_diff(cpc.booking_created_dttm, xsell.booking_created_dttm, day) <<= 3
+      AND cpc.booking_created_dttm >> xsell.booking_created_dttm -- to exclude sessions where cpc booking happend earlier than vfd
+)
+
+, referral_revenue_metrics AS (
+  -- final agg with revenue metrics
+  SELECT 
+    management_entity
+    ,brand
+    ,CASE WHEN global_entity_id = 'YS_TR' THEN 'Yemeksepeti' ELSE management_entity END report_entity
+    ,country_name
+    ,cpc.session_date
+    ,cpc.user_id
+    ,cpc.session_id
+    ,cpc.global_entity_id
+    ,cpc.vendor_id
+    ,DATE(cpc.booking_created_dttm) cpc_booking_date
+    ,cpc.campaign_id
+    ,cpc.vfd_session_id
+    ,cpc.vfd_booking_created_dttm
+    ,DATE(cpc.vfd_booking_created_dttm) vfd_booking_date
+    ,DATE_DIFF(booking_created_dttm, cpc.vfd_booking_created_dttm, DAY) days_to_booking
+    ,CASE WHEN camp.first_created_date << date(booking_created_dttm) THEN 'oldie' ELSE 'newbie' END user_type
+    ,CASE WHEN camp.last_active_campaign_date = date_trunc(date(booking_created_dttm), month) THEN 'active campaign' else 'no active campaign' END is_active_campaign
+    ,revenue.cpc_revenue_eur
+    ,revenue.budget_eur
+    ,revenue.booking_id
+    ,CASE WHEN cpc.session_id = cpc.vfd_session_id THEN TRUE ELSE FALSE END is_same_sessions
+  FROM cpc_booking_to_vfd_session cpc 
+    LEFT JOIN cpc_campaigns camp 
+      ON camp.vendor_id = cpc.vendor_id
+    LEFT JOIN cpc_revenue_metrics revenue
+      ON revenue.session_date = cpc.session_date 
+      AND revenue.user_id = cpc.user_id
+      AND revenue.session_id = cpc.session_id
+      AND revenue.vendor_id = cpc.vendor_id
+    LEFT JOIN entity USING(global_entity_id)
+)
+
+, dedup_cpc_bookings AS (
+  SELECT
+    session_date
+    , global_entity_id
+    , report_entity
+    , country_name
+    , vendor_id
+    , booking_id
+    -- , campaign_id
+    , MAX(cpc_booking_date) cpc_booking_date
+    , MAX(cpc_revenue_eur) cpc_revenue_eur
+    , MAX(budget_eur) budget_eur
+  FROM referral_revenue_metrics
+  WHERE is_same_sessions = TRUE
+  GROUP BY 1,2,3,4,5,6
+)
+
+, agg_cpc_revenue AS (
+  SELECT
+    DATE_TRUNC(session_date, MONTH) session_month
+    , global_entity_id
+    , report_entity
+    , country_name
+    , COUNT(DISTINCT vendor_id) num_vendors
+    , COUNT(DISTINCT CASE WHEN booking_id IS NOT NULL THEN vendor_id END) num_vendors_w_bookings
+    , COUNT(DISTINCT booking_id) num_bookings
+    , SUM(budget_eur) budget_eur
+    , SUM(cpc_revenue_eur) cpc_revenue_eur
+  FROM dedup_cpc_bookings
+  GROUP BY 1,2,3,4
+)
+
+SELECT
+  ref.*
+  ,rev.num_bookings
+  ,rev.num_vendors
+  ,rev.num_vendors_w_bookings
+  ,rev.budget_eur
+  ,rev.cpc_revenue_eur
+FROM vfd_ctr_link ref
+  LEFT JOIN agg_cpc_revenue rev
+    ON ref.session_month = rev.session_month
+    AND ref.global_entity_id = rev.global_entity_id]]></relation>
+            </properties>
+            <properties context='extract'>
+              <relation name='Extract' table='[Extract].[Extract]' type='table' />
+            </properties>
+          </object>
+        </objects>
+      </_.fcp.ObjectModelEncapsulateLegacy.true...object-graph>
+    </datasource>
+  </datasources>
+  <worksheets>
+    <worksheet name='CPC Referrals to VFD'>
+      <layout-options>
+        <title>
+          <formatted-text>
+            <run fontalignment='1' fontcolor='#1b1b1b' fontname='Tableau Bold'>&lt;Sheet Name&gt;</run>
+          </formatted-text>
+        </title>
+      </layout-options>
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='cpc_to_vfd_cross_sell' name='federated.1owyjcv1jpws4u16yw4930gyhrju' />
+          </datasources>
+          <datasource-dependencies datasource='federated.1owyjcv1jpws4u16yw4930gyhrju'>
+            <column caption='CTR %' datatype='real' name='[Calculation_1840846399847915523]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='SUM([users_w_cpc_ref_link_click])/SUM([users_w_cpc_booking])' />
+            </column>
+            <column caption='CvR %' datatype='real' name='[Calculation_1840846399848493060]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='SUM([users_w_vfd_booking])/SUM([users_w_cpc_ref_link_click])' />
+            </column>
+            <column caption='Discount Depth %' datatype='real' name='[Calculation_1840846399848919045]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='SUM([vfd_eur])/SUM([gfv_eur])' />
+            </column>
+            <column caption='€ GFV' datatype='real' name='[gfv_eur]' role='measure' type='quantitative' />
+            <column-instance column='[report_entity]' derivation='None' name='[none:report_entity:nk]' pivot='key' type='nominal' />
+            <column caption='# Orders' datatype='integer' name='[num_orders]' role='measure' type='quantitative' />
+            <column caption='Entity' datatype='string' name='[report_entity]' role='dimension' type='nominal' />
+            <column datatype='date' name='[session_month]' role='dimension' type='ordinal' />
+            <column-instance column='[gfv_eur]' derivation='Sum' name='[sum:gfv_eur:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[num_orders]' derivation='Sum' name='[sum:num_orders:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[users_w_cpc_booking]' derivation='Sum' name='[sum:users_w_cpc_booking:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[users_w_cpc_ref_link_click]' derivation='Sum' name='[sum:users_w_cpc_ref_link_click:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[users_w_vfd_booking]' derivation='Sum' name='[sum:users_w_vfd_booking:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[vfd_eur]' derivation='Sum' name='[sum:vfd_eur:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[session_month]' derivation='Month-Trunc' name='[tmn:session_month:ok]' pivot='key' type='ordinal' />
+            <column caption='# Users w CPC Booking' datatype='integer' name='[users_w_cpc_booking]' role='measure' type='quantitative' />
+            <column caption='# Users w CPC Ref Link' datatype='integer' name='[users_w_cpc_ref_link_click]' role='measure' type='quantitative' />
+            <column caption='# Users w VFD Booking' datatype='integer' name='[users_w_vfd_booking]' role='measure' type='quantitative' />
+            <column-instance column='[Calculation_1840846399847915523]' derivation='User' name='[usr:Calculation_1840846399847915523:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[Calculation_1840846399848493060]' derivation='User' name='[usr:Calculation_1840846399848493060:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[Calculation_1840846399848919045]' derivation='User' name='[usr:Calculation_1840846399848919045:qk]' pivot='key' type='quantitative' />
+            <column caption='€ VFD' datatype='real' name='[vfd_eur]' role='measure' type='quantitative' />
+          </datasource-dependencies>
+          <filter class='categorical' column='[federated.1owyjcv1jpws4u16yw4930gyhrju].[:Measure Names]'>
+            <groupfilter function='union' user:op='manual'>
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.1owyjcv1jpws4u16yw4930gyhrju].[sum:users_w_cpc_booking:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.1owyjcv1jpws4u16yw4930gyhrju].[sum:users_w_cpc_ref_link_click:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.1owyjcv1jpws4u16yw4930gyhrju].[sum:users_w_vfd_booking:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.1owyjcv1jpws4u16yw4930gyhrju].[usr:Calculation_1840846399847915523:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.1owyjcv1jpws4u16yw4930gyhrju].[usr:Calculation_1840846399848493060:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.1owyjcv1jpws4u16yw4930gyhrju].[sum:num_orders:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.1owyjcv1jpws4u16yw4930gyhrju].[sum:vfd_eur:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.1owyjcv1jpws4u16yw4930gyhrju].[sum:gfv_eur:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.1owyjcv1jpws4u16yw4930gyhrju].[usr:Calculation_1840846399848919045:qk]&quot;' />
+            </groupfilter>
+          </filter>
+          <manual-sort column='[federated.1owyjcv1jpws4u16yw4930gyhrju].[:Measure Names]' direction='ASC'>
+            <dictionary>
+              <bucket>&quot;[federated.1owyjcv1jpws4u16yw4930gyhrju].[sum:users_w_cpc_booking:qk]&quot;</bucket>
+              <bucket>&quot;[federated.1owyjcv1jpws4u16yw4930gyhrju].[sum:users_w_cpc_ref_link_click:qk]&quot;</bucket>
+              <bucket>&quot;[federated.1owyjcv1jpws4u16yw4930gyhrju].[sum:users_w_vfd_booking:qk]&quot;</bucket>
+              <bucket>&quot;[federated.1owyjcv1jpws4u16yw4930gyhrju].[usr:Calculation_1840846399847915523:qk]&quot;</bucket>
+              <bucket>&quot;[federated.1owyjcv1jpws4u16yw4930gyhrju].[usr:Calculation_1840846399848493060:qk]&quot;</bucket>
+              <bucket>&quot;[federated.1owyjcv1jpws4u16yw4930gyhrju].[sum:num_orders:qk]&quot;</bucket>
+              <bucket>&quot;[federated.1owyjcv1jpws4u16yw4930gyhrju].[sum:vfd_eur:qk]&quot;</bucket>
+              <bucket>&quot;[federated.1owyjcv1jpws4u16yw4930gyhrju].[sum:gfv_eur:qk]&quot;</bucket>
+              <bucket>&quot;[federated.1owyjcv1jpws4u16yw4930gyhrju].[usr:Calculation_1840846399848919045:qk]&quot;</bucket>
+            </dictionary>
+          </manual-sort>
+          <filter class='categorical' column='[federated.1owyjcv1jpws4u16yw4930gyhrju].[none:report_entity:nk]'>
+            <groupfilter function='union' user:ui-domain='relevant' user:ui-enumeration='inclusive' user:ui-marker='enumerate'>
+              <groupfilter function='member' level='[none:report_entity:nk]' member='&quot;DH Europe&quot;' />
+              <groupfilter function='member' level='[none:report_entity:nk]' member='&quot;Foodpanda APAC&quot;' />
+              <groupfilter from='&quot;Pedidosya&quot;' function='range' level='[none:report_entity:nk]' to='&quot;Yemeksepeti&quot;' />
+            </groupfilter>
+          </filter>
+          <slices>
+            <column>[federated.1owyjcv1jpws4u16yw4930gyhrju].[:Measure Names]</column>
+            <column>[federated.1owyjcv1jpws4u16yw4930gyhrju].[none:report_entity:nk]</column>
+          </slices>
+          <aggregation value='true' />
+        </view>
+        <style>
+          <style-rule element='cell'>
+            <format attr='width' field='[federated.1owyjcv1jpws4u16yw4930gyhrju].[tmn:session_month:ok]' value='66' />
+            <format attr='text-format' field='[federated.1owyjcv1jpws4u16yw4930gyhrju].[usr:Calculation_1840846399847915523:qk]' value='p0.00%' />
+            <format attr='text-format' field='[federated.1owyjcv1jpws4u16yw4930gyhrju].[usr:Calculation_1840846399848493060:qk]' value='p0.0%' />
+            <format attr='text-format' field='[federated.1owyjcv1jpws4u16yw4930gyhrju].[usr:Calculation_1840846399848919045:qk]' value='p0.0%' />
+            <format attr='text-format' field='[federated.1owyjcv1jpws4u16yw4930gyhrju].[sum:vfd_eur:qk]' value='c&quot;€&quot;#,##0;(&quot;€&quot;#,##0)' />
+            <format attr='text-format' field='[federated.1owyjcv1jpws4u16yw4930gyhrju].[sum:gfv_eur:qk]' value='c&quot;€&quot;#,##0;(&quot;€&quot;#,##0)' />
+          </style-rule>
+          <style-rule element='header'>
+            <format attr='width' field='[federated.1owyjcv1jpws4u16yw4930gyhrju].[:Measure Names]' value='188' />
+            <format attr='width' field='[federated.1owyjcv1jpws4u16yw4930gyhrju].[none:report_entity:nk]' value='140' />
+          </style-rule>
+          <style-rule element='label'>
+            <format attr='text-format' field='[federated.1owyjcv1jpws4u16yw4930gyhrju].[tmn:session_month:ok]' value='*MMM YYYY' />
+          </style-rule>
+          <style-rule element='worksheet'>
+            <format attr='display-field-labels' scope='cols' value='false' />
+          </style-rule>
+        </style>
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Square' />
+            <encodings>
+              <color column='[federated.1owyjcv1jpws4u16yw4930gyhrju].[Multiple Values]' separate-domains='true' />
+              <text column='[federated.1owyjcv1jpws4u16yw4930gyhrju].[Multiple Values]' separate-domains='true' />
+            </encodings>
+            <style>
+              <style-rule element='mark'>
+                <format attr='mark-labels-show' value='true' />
+              </style-rule>
+              <style-rule element='pane'>
+                <format attr='minwidth' value='-1' />
+                <format attr='maxwidth' value='-1' />
+              </style-rule>
+            </style>
+          </pane>
+        </panes>
+        <rows onTop='true' total='true'>([federated.1owyjcv1jpws4u16yw4930gyhrju].[none:report_entity:nk] / [federated.1owyjcv1jpws4u16yw4930gyhrju].[:Measure Names])</rows>
+        <cols>[federated.1owyjcv1jpws4u16yw4930gyhrju].[tmn:session_month:ok]</cols>
+      </table>
+      <simple-id uuid='{E99A13B9-10B5-443D-9913-29666E1D77AF}' />
+    </worksheet>
+    <worksheet name='VFD Referrals to CPC'>
+      <layout-options>
+        <title>
+          <formatted-text>
+            <run fontalignment='1' fontcolor='#1b1b1b' fontname='Tableau Bold'>&lt;Sheet Name&gt;</run>
+          </formatted-text>
+        </title>
+      </layout-options>
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='vfd_to_cpc_cross_sell' name='federated.17lx3cg19ifm821cficin1krap56' />
+          </datasources>
+          <datasource-dependencies datasource='federated.17lx3cg19ifm821cficin1krap56'>
+            <column caption='% CTR' datatype='real' name='[Calculation_1840846399583444992]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='SUM([vfd_clicked_cpc_ref_link]) / SUM([vfd_booking_success])' />
+            </column>
+            <column caption='% CvR' datatype='real' name='[Calculation_1840846399583752193]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='SUM([num_vendors_w_bookings]) / SUM([vfd_clicked_cpc_ref_link])' />
+            </column>
+            <column caption='% Budget Utilised' datatype='real' name='[Calculation_1840846399584112642]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='SUM([cpc_revenue_eur])/SUM([budget_eur])' />
+            </column>
+            <column caption='€ CPC Budget' datatype='real' name='[budget_eur]' role='measure' type='quantitative' />
+            <column caption='€ CPC Revenue' datatype='real' name='[cpc_revenue_eur]' role='measure' type='quantitative' />
+            <column-instance column='[report_entity]' derivation='None' name='[none:report_entity:nk]' pivot='key' type='nominal' />
+            <column caption='Vendors w CPC Booking' datatype='integer' name='[num_vendors_w_bookings]' role='measure' type='quantitative' />
+            <column caption='Entity' datatype='string' name='[report_entity]' role='dimension' type='nominal' />
+            <column datatype='date' name='[session_month]' role='dimension' type='ordinal' />
+            <column-instance column='[budget_eur]' derivation='Sum' name='[sum:budget_eur:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[cpc_revenue_eur]' derivation='Sum' name='[sum:cpc_revenue_eur:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[num_vendors_w_bookings]' derivation='Sum' name='[sum:num_vendors_w_bookings:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[vfd_booking_success]' derivation='Sum' name='[sum:vfd_booking_success:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[vfd_clicked_cpc_ref_link]' derivation='Sum' name='[sum:vfd_clicked_cpc_ref_link:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[session_month]' derivation='Month-Trunc' name='[tmn:session_month:ok]' pivot='key' type='ordinal' />
+            <column-instance column='[Calculation_1840846399583444992]' derivation='User' name='[usr:Calculation_1840846399583444992:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[Calculation_1840846399583752193]' derivation='User' name='[usr:Calculation_1840846399583752193:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[Calculation_1840846399584112642]' derivation='User' name='[usr:Calculation_1840846399584112642:qk]' pivot='key' type='quantitative' />
+            <column caption='Users w VFD Booking' datatype='integer' name='[vfd_booking_success]' role='measure' type='quantitative' />
+            <column caption='Users w CPC Referral Link Click' datatype='integer' name='[vfd_clicked_cpc_ref_link]' role='measure' type='quantitative' />
+          </datasource-dependencies>
+          <filter class='categorical' column='[federated.17lx3cg19ifm821cficin1krap56].[:Measure Names]'>
+            <groupfilter function='union' user:op='manual'>
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.17lx3cg19ifm821cficin1krap56].[sum:vfd_booking_success:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.17lx3cg19ifm821cficin1krap56].[sum:vfd_clicked_cpc_ref_link:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.17lx3cg19ifm821cficin1krap56].[sum:num_vendors_w_bookings:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.17lx3cg19ifm821cficin1krap56].[usr:Calculation_1840846399583444992:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.17lx3cg19ifm821cficin1krap56].[usr:Calculation_1840846399583752193:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.17lx3cg19ifm821cficin1krap56].[sum:budget_eur:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.17lx3cg19ifm821cficin1krap56].[sum:cpc_revenue_eur:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.17lx3cg19ifm821cficin1krap56].[usr:Calculation_1840846399584112642:qk]&quot;' />
+            </groupfilter>
+          </filter>
+          <manual-sort column='[federated.17lx3cg19ifm821cficin1krap56].[:Measure Names]' direction='ASC'>
+            <dictionary>
+              <bucket>&quot;[federated.17lx3cg19ifm821cficin1krap56].[sum:vfd_booking_success:qk]&quot;</bucket>
+              <bucket>&quot;[federated.17lx3cg19ifm821cficin1krap56].[sum:vfd_clicked_cpc_ref_link:qk]&quot;</bucket>
+              <bucket>&quot;[federated.17lx3cg19ifm821cficin1krap56].[sum:num_vendors_w_bookings:qk]&quot;</bucket>
+              <bucket>&quot;[federated.17lx3cg19ifm821cficin1krap56].[usr:Calculation_1840846399583444992:qk]&quot;</bucket>
+              <bucket>&quot;[federated.17lx3cg19ifm821cficin1krap56].[usr:Calculation_1840846399583752193:qk]&quot;</bucket>
+              <bucket>&quot;[federated.17lx3cg19ifm821cficin1krap56].[sum:budget_eur:qk]&quot;</bucket>
+              <bucket>&quot;[federated.17lx3cg19ifm821cficin1krap56].[sum:cpc_revenue_eur:qk]&quot;</bucket>
+              <bucket>&quot;[federated.17lx3cg19ifm821cficin1krap56].[usr:Calculation_1840846399584112642:qk]&quot;</bucket>
+            </dictionary>
+          </manual-sort>
+          <filter class='categorical' column='[federated.17lx3cg19ifm821cficin1krap56].[none:report_entity:nk]'>
+            <groupfilter function='union' user:ui-domain='relevant' user:ui-enumeration='inclusive' user:ui-marker='enumerate'>
+              <groupfilter function='member' level='[none:report_entity:nk]' member='&quot;DH Europe&quot;' />
+              <groupfilter function='member' level='[none:report_entity:nk]' member='&quot;Foodpanda APAC&quot;' />
+              <groupfilter from='&quot;Pedidosya&quot;' function='range' level='[none:report_entity:nk]' to='&quot;Yemeksepeti&quot;' />
+            </groupfilter>
+          </filter>
+          <slices>
+            <column>[federated.17lx3cg19ifm821cficin1krap56].[:Measure Names]</column>
+            <column>[federated.17lx3cg19ifm821cficin1krap56].[none:report_entity:nk]</column>
+          </slices>
+          <aggregation value='true' />
+        </view>
+        <style>
+          <style-rule element='cell'>
+            <format attr='width' field='[federated.17lx3cg19ifm821cficin1krap56].[tmn:session_month:ok]' value='89' />
+            <format attr='text-format' field='[federated.17lx3cg19ifm821cficin1krap56].[usr:Calculation_1840846399583444992:qk]' value='p0.0%' />
+            <format attr='text-format' field='[federated.17lx3cg19ifm821cficin1krap56].[usr:Calculation_1840846399583752193:qk]' value='p0.0%' />
+            <format attr='text-format' field='[federated.17lx3cg19ifm821cficin1krap56].[usr:Calculation_1840846399584112642:qk]' value='p0.0%' />
+            <format attr='text-format' field='[federated.17lx3cg19ifm821cficin1krap56].[sum:budget_eur:qk]' value='c&quot;€&quot;#,##0,.0K;(&quot;€&quot;#,##0,.0K)' />
+            <format attr='text-format' field='[federated.17lx3cg19ifm821cficin1krap56].[sum:cpc_revenue_eur:qk]' value='c&quot;€&quot;#,##0,.0K;(&quot;€&quot;#,##0,.0K)' />
+          </style-rule>
+          <style-rule element='header'>
+            <format attr='width' field='[federated.17lx3cg19ifm821cficin1krap56].[:Measure Names]' value='188' />
+            <format attr='width' field='[federated.17lx3cg19ifm821cficin1krap56].[none:report_entity:nk]' value='132' />
+          </style-rule>
+          <style-rule element='label'>
+            <format attr='text-format' field='[federated.17lx3cg19ifm821cficin1krap56].[tmn:session_month:ok]' value='*MMM YYYY' />
+          </style-rule>
+          <style-rule element='mark'>
+            <encoding attr='color' field='[federated.17lx3cg19ifm821cficin1krap56].[sum:vfd_booking_success:qk]' palette='blue_10_0' type='interpolated' />
+            <encoding attr='color' field='[federated.17lx3cg19ifm821cficin1krap56].[sum:vfd_clicked_cpc_ref_link:qk]' palette='blue_10_0' type='interpolated' />
+            <encoding attr='color' field='[federated.17lx3cg19ifm821cficin1krap56].[sum:budget_eur:qk]' palette='blue_10_0' type='interpolated' />
+            <encoding attr='color' field='[federated.17lx3cg19ifm821cficin1krap56].[sum:cpc_revenue_eur:qk]' palette='blue_10_0' type='interpolated' />
+          </style-rule>
+          <style-rule element='worksheet'>
+            <format attr='display-field-labels' scope='cols' value='false' />
+          </style-rule>
+        </style>
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Square' />
+            <encodings>
+              <color column='[federated.17lx3cg19ifm821cficin1krap56].[Multiple Values]' separate-domains='true' />
+              <text column='[federated.17lx3cg19ifm821cficin1krap56].[Multiple Values]' separate-domains='true' />
+            </encodings>
+            <style>
+              <style-rule element='mark'>
+                <format attr='mark-labels-show' value='true' />
+              </style-rule>
+              <style-rule element='pane'>
+                <format attr='minwidth' value='-1' />
+                <format attr='maxwidth' value='-1' />
+              </style-rule>
+            </style>
+          </pane>
+        </panes>
+        <rows onTop='true' total='true'>([federated.17lx3cg19ifm821cficin1krap56].[none:report_entity:nk] / [federated.17lx3cg19ifm821cficin1krap56].[:Measure Names])</rows>
+        <cols>[federated.17lx3cg19ifm821cficin1krap56].[tmn:session_month:ok]</cols>
+      </table>
+      <simple-id uuid='{C3136168-B175-4E60-9009-E1EFE8A2B7CD}' />
+    </worksheet>
+  </worksheets>
+  <dashboards>
+    <dashboard _.fcp.AccessibleZoneTabOrder.true...enable-sort-zone-taborder='true' name='CPC Referrals To VFD'>
+      <repository-location id='CPCReferralsToVFD' path='/t/GlobalStandardReporting/workbooks/VendorFundedDeals-CrossSellPerformance' revision='' site='GlobalStandardReporting' />
+      <style />
+      <size maxheight='1000' maxwidth='1000' minheight='1000' minwidth='1000' sizing-mode='fixed' />
+      <zones>
+        <zone h='100000' id='4' type-v2='layout-basic' w='100000' x='0' y='0'>
+          <zone h='98400' id='3' name='CPC Referrals to VFD' w='98400' x='800' y='800'>
+            <zone-style>
+              <format attr='border-color' value='#000000' />
+              <format attr='border-style' value='none' />
+              <format attr='border-width' value='0' />
+              <format attr='margin' value='4' />
+            </zone-style>
+          </zone>
+          <zone-style>
+            <format attr='border-color' value='#000000' />
+            <format attr='border-style' value='none' />
+            <format attr='border-width' value='0' />
+            <format attr='margin' value='8' />
+          </zone-style>
+        </zone>
+      </zones>
+      <devicelayouts>
+        <devicelayout auto-generated='true' name='Phone'>
+          <size maxheight='700' minheight='700' sizing-mode='vscroll' />
+          <zones>
+            <zone h='100000' id='12' type-v2='layout-basic' w='100000' x='0' y='0'>
+              <zone h='98400' id='11' param='vert' type-v2='layout-flow' w='98400' x='800' y='800'>
+                <zone fixed-size='280' h='98400' id='3' is-fixed='true' name='CPC Referrals to VFD' w='98400' x='800' y='800'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+              </zone>
+              <zone-style>
+                <format attr='border-color' value='#000000' />
+                <format attr='border-style' value='none' />
+                <format attr='border-width' value='0' />
+                <format attr='margin' value='8' />
+              </zone-style>
+            </zone>
+          </zones>
+        </devicelayout>
+      </devicelayouts>
+      <simple-id uuid='{821EB7C3-518A-42DA-9398-8DB0A818326C}' />
+    </dashboard>
+    <dashboard _.fcp.AccessibleZoneTabOrder.true...enable-sort-zone-taborder='true' name='VFD Referrals To CPC'>
+      <repository-location id='VFDReferralsToCPC' path='/t/GlobalStandardReporting/workbooks/VendorFundedDeals-CrossSellPerformance' revision='' site='GlobalStandardReporting' />
+      <style />
+      <size maxheight='1000' maxwidth='1000' minheight='1000' minwidth='1000' sizing-mode='fixed' />
+      <zones>
+        <zone h='100000' id='4' type-v2='layout-basic' w='100000' x='0' y='0'>
+          <zone h='98400' id='3' name='VFD Referrals to CPC' w='98400' x='800' y='800'>
+            <zone-style>
+              <format attr='border-color' value='#000000' />
+              <format attr='border-style' value='none' />
+              <format attr='border-width' value='0' />
+              <format attr='margin' value='4' />
+            </zone-style>
+          </zone>
+          <zone-style>
+            <format attr='border-color' value='#000000' />
+            <format attr='border-style' value='none' />
+            <format attr='border-width' value='0' />
+            <format attr='margin' value='8' />
+          </zone-style>
+        </zone>
+      </zones>
+      <devicelayouts>
+        <devicelayout auto-generated='true' name='Phone'>
+          <size maxheight='700' minheight='700' sizing-mode='vscroll' />
+          <zones>
+            <zone h='100000' id='12' type-v2='layout-basic' w='100000' x='0' y='0'>
+              <zone h='84000' id='11' param='vert' type-v2='layout-flow' w='84000' x='8000' y='8000'>
+                <zone fixed-size='280' h='98400' id='3' is-fixed='true' name='VFD Referrals to CPC' w='98400' x='800' y='800'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+              </zone>
+              <zone-style>
+                <format attr='border-color' value='#000000' />
+                <format attr='border-style' value='none' />
+                <format attr='border-width' value='0' />
+                <format attr='margin' value='8' />
+              </zone-style>
+            </zone>
+          </zones>
+        </devicelayout>
+      </devicelayouts>
+      <simple-id uuid='{42D84A29-E8DE-49C7-806B-05D17A6C6D51}' />
+    </dashboard>
+  </dashboards>
+  <windows source-height='51'>
+    <window class='worksheet' name='VFD Referrals to CPC'>
+      <cards>
+        <edge name='left'>
+          <strip size='214'>
+            <card type='pages' />
+            <card type='filters' />
+            <card type='marks' />
+            <card type='measures' />
+          </strip>
+        </edge>
+        <edge name='top'>
+          <strip size='2147483647'>
+            <card type='columns' />
+          </strip>
+          <strip size='2147483647'>
+            <card type='rows' />
+          </strip>
+          <strip size='31'>
+            <card type='title' />
+          </strip>
+        </edge>
+        <edge name='right'>
+          <strip size='160'>
+            <card pane-specification-id='0' param='[federated.17lx3cg19ifm821cficin1krap56].[sum:vfd_booking_success:qk]' type='color' />
+            <card pane-specification-id='0' param='[federated.17lx3cg19ifm821cficin1krap56].[sum:vfd_clicked_cpc_ref_link:qk]' type='color' />
+            <card pane-specification-id='0' param='[federated.17lx3cg19ifm821cficin1krap56].[sum:num_vendors_w_bookings:qk]' type='color' />
+            <card pane-specification-id='0' param='[federated.17lx3cg19ifm821cficin1krap56].[usr:Calculation_1840846399583444992:qk]' type='color' />
+            <card pane-specification-id='0' param='[federated.17lx3cg19ifm821cficin1krap56].[usr:Calculation_1840846399583752193:qk]' type='color' />
+            <card pane-specification-id='0' param='[federated.17lx3cg19ifm821cficin1krap56].[sum:budget_eur:qk]' type='color' />
+            <card pane-specification-id='0' param='[federated.17lx3cg19ifm821cficin1krap56].[sum:cpc_revenue_eur:qk]' type='color' />
+            <card pane-specification-id='0' param='[federated.17lx3cg19ifm821cficin1krap56].[usr:Calculation_1840846399584112642:qk]' type='color' />
+          </strip>
+        </edge>
+      </cards>
+      <viewpoint>
+        <highlight>
+          <color-one-way>
+            <field>[federated.17lx3cg19ifm821cficin1krap56].[none:report_entity:nk]</field>
+            <field>[federated.17lx3cg19ifm821cficin1krap56].[tmn:session_month:qk]</field>
+            <field>[federated.17lx3cg19ifm821cficin1krap56].[yr:session_month:ok]</field>
+          </color-one-way>
+        </highlight>
+      </viewpoint>
+      <simple-id uuid='{6210578C-F9E2-4837-A2BA-960289CE910E}' />
+    </window>
+    <window class='worksheet' name='CPC Referrals to VFD'>
+      <cards>
+        <edge name='left'>
+          <strip size='300'>
+            <card type='pages' />
+            <card type='filters' />
+            <card type='marks' />
+            <card type='measures' />
+          </strip>
+        </edge>
+        <edge name='top'>
+          <strip size='2147483647'>
+            <card type='columns' />
+          </strip>
+          <strip size='2147483647'>
+            <card type='rows' />
+          </strip>
+          <strip size='31'>
+            <card type='title' />
+          </strip>
+        </edge>
+        <edge name='right'>
+          <strip size='160'>
+            <card pane-specification-id='0' param='[federated.1owyjcv1jpws4u16yw4930gyhrju].[sum:users_w_cpc_booking:qk]' type='color' />
+            <card pane-specification-id='0' param='[federated.1owyjcv1jpws4u16yw4930gyhrju].[sum:users_w_cpc_ref_link_click:qk]' type='color' />
+            <card pane-specification-id='0' param='[federated.1owyjcv1jpws4u16yw4930gyhrju].[sum:users_w_vfd_booking:qk]' type='color' />
+            <card pane-specification-id='0' param='[federated.1owyjcv1jpws4u16yw4930gyhrju].[usr:Calculation_1840846399847915523:qk]' type='color' />
+            <card pane-specification-id='0' param='[federated.1owyjcv1jpws4u16yw4930gyhrju].[usr:Calculation_1840846399848493060:qk]' type='color' />
+            <card pane-specification-id='0' param='[federated.1owyjcv1jpws4u16yw4930gyhrju].[sum:num_orders:qk]' type='color' />
+            <card pane-specification-id='0' param='[federated.1owyjcv1jpws4u16yw4930gyhrju].[sum:vfd_eur:qk]' type='color' />
+            <card pane-specification-id='0' param='[federated.1owyjcv1jpws4u16yw4930gyhrju].[sum:gfv_eur:qk]' type='color' />
+            <card pane-specification-id='0' param='[federated.1owyjcv1jpws4u16yw4930gyhrju].[usr:Calculation_1840846399848919045:qk]' type='color' />
+          </strip>
+        </edge>
+      </cards>
+      <viewpoint>
+        <highlight>
+          <color-one-way>
+            <field>[federated.1owyjcv1jpws4u16yw4930gyhrju].[none:country_name:nk]</field>
+            <field>[federated.1owyjcv1jpws4u16yw4930gyhrju].[none:report_entity:nk]</field>
+            <field>[federated.1owyjcv1jpws4u16yw4930gyhrju].[yr:session_month:ok]</field>
+          </color-one-way>
+        </highlight>
+      </viewpoint>
+      <simple-id uuid='{58EFDC5F-9C37-4BF2-999C-256FB9D16DFE}' />
+    </window>
+    <window class='dashboard' name='VFD Referrals To CPC'>
+      <viewpoints>
+        <viewpoint name='VFD Referrals to CPC'>
+          <zoom type='entire-view' />
+        </viewpoint>
+      </viewpoints>
+      <active id='-1' />
+      <simple-id uuid='{4AB3F707-6F14-449D-8A05-015717FCEFD5}' />
+    </window>
+    <window class='dashboard' maximized='true' name='CPC Referrals To VFD'>
+      <viewpoints>
+        <viewpoint name='CPC Referrals to VFD'>
+          <zoom type='entire-view' />
+        </viewpoint>
+      </viewpoints>
+      <active id='-1' />
+      <simple-id uuid='{E7728CB8-90A9-40B0-9206-4597B091B300}' />
+    </window>
+  </windows>
+</workbook>

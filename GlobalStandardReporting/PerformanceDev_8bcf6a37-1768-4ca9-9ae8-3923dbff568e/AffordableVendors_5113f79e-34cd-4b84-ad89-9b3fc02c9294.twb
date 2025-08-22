@@ -1,0 +1,2897 @@
+<?xml version='1.0' encoding='utf-8' ?>
+
+<!-- build 20221.22.1108.1355                               -->
+<workbook original-version='18.1' source-build='2022.1.7 (20221.22.0916.0328)' source-platform='mac' version='18.1' xml:base='https://tableau.deliveryhero.net' xmlns:user='http://www.tableausoftware.com/xml/user'>
+  <document-format-change-manifest>
+    <_.fcp.AccessibleZoneTabOrder.true...AccessibleZoneTabOrder />
+    <_.fcp.AnimationOnByDefault.true...AnimationOnByDefault />
+    <AutoCreateAndUpdateDSDPhoneLayouts />
+    <Hyper_NormalizedExtracts />
+    <_.fcp.MarkAnimation.true...MarkAnimation />
+    <_.fcp.ObjectModelEncapsulateLegacy.true...ObjectModelEncapsulateLegacy />
+    <_.fcp.ObjectModelExtractV2.true...ObjectModelExtractV2 />
+    <_.fcp.ObjectModelTableType.true...ObjectModelTableType />
+    <_.fcp.SchemaViewerObjectModel.true...SchemaViewerObjectModel />
+    <SetMembershipControl />
+    <SheetIdentifierTracking />
+    <SortTagCleanup />
+    <WindowsPersistSimpleIdentifiers />
+    <ZoneBackgroundTransparency />
+  </document-format-change-manifest>
+  <repository-location derived-from='https://tableau.deliveryhero.net/t/GlobalStandardReporting/workbooks/affordablecuisinetypes?rev=1.0' id='AffordableVendors' path='/t/GlobalStandardReporting/workbooks' revision='1.0' site='GlobalStandardReporting' />
+  <preferences>
+    <preference name='ui.encoding.shelf.height' value='24' />
+    <preference name='ui.shelf.height' value='26' />
+  </preferences>
+  <_.fcp.AnimationOnByDefault.false...style>
+    <_.fcp.AnimationOnByDefault.false..._.fcp.MarkAnimation.true...style-rule element='animation'>
+      <_.fcp.AnimationOnByDefault.false...format attr='animation-on' value='ao-on' />
+    </_.fcp.AnimationOnByDefault.false..._.fcp.MarkAnimation.true...style-rule>
+  </_.fcp.AnimationOnByDefault.false...style>
+  <datasources>
+    <datasource caption='vendor_afv_by_cuisine' inline='true' name='federated.15qheri176fflo1f5s6110ic5llu' version='18.1'>
+      <connection class='federated'>
+        <named-connections>
+          <named-connection caption='BigQuery' name='bigquery.1hagmfp0t4qyx3135dpge15eyvkd'>
+            <connection CATALOG='fulfillment-dwh-production' EXECCATALOG='dhub-intl-markets' authentication='oauth' bq-dataset-fetch-rows='' bq-fetch-rows='' bq-fetch-tasks='' bq-large-fetch-rows='' bq-project-fetch-rows='' bq-response-rows='' class='bigquery' connection-dialect='google-sql' project='fulfillment-dwh-production' schema='cl_intl_markets' server-oauth='' username='tugce.usta@deliveryhero.com' workgroup-auth-mode='prompt' />
+          </named-connection>
+        </named-connections>
+        <_.fcp.ObjectModelEncapsulateLegacy.false...relation join='inner' type='join'>
+          <clause type='join'>
+            <expression op='='>
+              <expression op='[Custom SQL Query].[global_entity_id]' />
+              <expression op='[gsr_entitlements_performance_global_entity_id].[global_entity_id]' />
+            </expression>
+          </clause>
+          <relation connection='bigquery.1hagmfp0t4qyx3135dpge15eyvkd' name='Custom SQL Query' type='text'><![CDATA[--main cuisine
+WITH vendor_cuisine AS (
+ SELECT
+        c.global_entity_id,
+        c.vendor_id,
+        m.category_name_english AS category_name_english,
+        m.category_group_global category_group_global,
+        ROW_NUMBER() OVER (PARTITION BY c.global_entity_id, c.vendor_id) as rn
+    FROM `fulfillment-dwh-production.curated_data_shared_central_dwh.vendors` c
+    LEFT JOIN UNNEST (c.categories) m on m.is_main_category IS TRUE
+),
+
+city_view AS(
+
+SELECT 
+    vkpim.global_entity_id
+  , v.location.city as city
+  , e.segment AS segment
+  , e.management_entity AS management_entity
+  , e.sub_entity as sub_entity
+  , vkpim.report_month
+  , v_c.category_group_global AS category_group_global
+  , v_c.category_name_english
+  , vd.key_account_category
+  , COUNT(DISTINCT CASE WHEN vkpim.is_online IS TRUE THEN vkpim.vendor_id END) AS vendors_online
+  , SUM(value.gbv_eur) AS gbv
+  , SUM(successful_orders) AS orders
+FROM `fulfillment-dwh-production.curated_data_shared_central_dwh.agg_vendor_kpis_monthly` AS vkpim
+LEFT JOIN vendor_cuisine   v_c
+   ON vkpim.global_entity_id = v_c.global_entity_id
+  AND	vkpim.vendor_id	= v_c.vendor_id
+  AND v_c.rn = 1
+INNER JOIN `fulfillment-dwh-production.curated_data_shared_central_dwh.global_entities` AS e
+  ON vkpim.global_entity_id = e.global_entity_id
+  AND	e.is_platform_online IS TRUE
+LEFT JOIN `fulfillment-dwh-production.curated_data_shared_central_dwh.vendors`  v ON v.global_entity_id = vkpim.global_entity_id AND v.vendor_id = vkpim.vendor_id
+LEFT JOIN `fulfillment-dwh-production.cl_intl_markets.vendor_dimensions` vd ON vd.global_entity_id = vkpim.global_entity_id AND vd.vendor_id = vkpim.vendor_id
+WHERE report_month >>= DATE_ADD(DATE_TRUNC(CURRENT_DATE(),MONTH), INTERVAL - 6 MONTH)
+AND report_month <<  DATE_TRUNC(CURRENT_DATE(),MONTH)
+GROUP BY 1,2,3,4,5,6,7,8,9
+),
+
+country_view AS
+
+(
+SELECT 
+    vkpim.global_entity_id
+  , CONCAT('Entity - ', e.sub_entity) as city
+  , e.segment AS segment
+  , e.management_entity AS management_entity
+  , e.sub_entity as sub_entity
+  , vkpim.report_month
+  , v_c.category_group_global AS category_group_global
+  , v_c.category_name_english
+  , vd.key_account_category
+  , COUNT(DISTINCT CASE WHEN vkpim.is_online IS TRUE THEN vkpim.vendor_id END) AS vendors_online
+  , SUM(value.gbv_eur) AS gbv
+  , SUM(successful_orders) AS orders,
+FROM `fulfillment-dwh-production.curated_data_shared_central_dwh.agg_vendor_kpis_monthly` AS vkpim
+LEFT JOIN vendor_cuisine   v_c
+   ON vkpim.global_entity_id = v_c.global_entity_id
+  AND	vkpim.vendor_id	= v_c.vendor_id
+  AND v_c.rn = 1
+INNER JOIN `fulfillment-dwh-production.curated_data_shared_central_dwh.global_entities` AS e
+  ON vkpim.global_entity_id = e.global_entity_id
+  AND	e.is_platform_online IS TRUE
+LEFT JOIN `fulfillment-dwh-production.curated_data_shared_central_dwh.vendors`  v ON v.global_entity_id = vkpim.global_entity_id AND v.vendor_id = vkpim.vendor_id
+LEFT JOIN `fulfillment-dwh-production.cl_intl_markets.vendor_dimensions` vd ON vd.global_entity_id = vkpim.global_entity_id AND vd.vendor_id = vkpim.vendor_id
+WHERE report_month >>= DATE_ADD(DATE_TRUNC(CURRENT_DATE(),MONTH), INTERVAL -6 MONTH)
+AND report_month <<  DATE_TRUNC(CURRENT_DATE(),MONTH)
+GROUP BY 1,2,3,4,5,6,7,8,9
+
+
+)
+SELECT * 
+FROM city_view
+UNION ALL
+SELECT * 
+FROM country_view]]></relation>
+          <relation connection='bigquery.1hagmfp0t4qyx3135dpge15eyvkd' name='gsr_entitlements_performance_global_entity_id' table='[fulfillment-dwh-production.cl_intl_markets].[gsr_entitlements_performance_global_entity_id]' type='table' />
+        </_.fcp.ObjectModelEncapsulateLegacy.false...relation>
+        <_.fcp.ObjectModelEncapsulateLegacy.true...relation join='inner' type='join'>
+          <clause type='join'>
+            <expression op='='>
+              <expression op='[Custom SQL Query].[global_entity_id]' />
+              <expression op='[gsr_entitlements_performance_global_entity_id].[global_entity_id]' />
+            </expression>
+          </clause>
+          <relation connection='bigquery.1hagmfp0t4qyx3135dpge15eyvkd' name='Custom SQL Query' type='text'><![CDATA[--main cuisine
+WITH vendor_cuisine AS (
+ SELECT
+        c.global_entity_id,
+        c.vendor_id,
+        m.category_name_english AS category_name_english,
+        m.category_group_global category_group_global,
+        ROW_NUMBER() OVER (PARTITION BY c.global_entity_id, c.vendor_id) as rn
+    FROM `fulfillment-dwh-production.curated_data_shared_central_dwh.vendors` c
+    LEFT JOIN UNNEST (c.categories) m on m.is_main_category IS TRUE
+),
+
+city_view AS(
+
+SELECT 
+    vkpim.global_entity_id
+  , v.location.city as city
+  , e.segment AS segment
+  , e.management_entity AS management_entity
+  , e.sub_entity as sub_entity
+  , vkpim.report_month
+  , v_c.category_group_global AS category_group_global
+  , v_c.category_name_english
+  , vd.key_account_category
+  , COUNT(DISTINCT CASE WHEN vkpim.is_online IS TRUE THEN vkpim.vendor_id END) AS vendors_online
+  , SUM(value.gbv_eur) AS gbv
+  , SUM(successful_orders) AS orders
+FROM `fulfillment-dwh-production.curated_data_shared_central_dwh.agg_vendor_kpis_monthly` AS vkpim
+LEFT JOIN vendor_cuisine   v_c
+   ON vkpim.global_entity_id = v_c.global_entity_id
+  AND	vkpim.vendor_id	= v_c.vendor_id
+  AND v_c.rn = 1
+INNER JOIN `fulfillment-dwh-production.curated_data_shared_central_dwh.global_entities` AS e
+  ON vkpim.global_entity_id = e.global_entity_id
+  AND	e.is_platform_online IS TRUE
+LEFT JOIN `fulfillment-dwh-production.curated_data_shared_central_dwh.vendors`  v ON v.global_entity_id = vkpim.global_entity_id AND v.vendor_id = vkpim.vendor_id
+LEFT JOIN `fulfillment-dwh-production.cl_intl_markets.vendor_dimensions` vd ON vd.global_entity_id = vkpim.global_entity_id AND vd.vendor_id = vkpim.vendor_id
+WHERE report_month >>= DATE_ADD(DATE_TRUNC(CURRENT_DATE(),MONTH), INTERVAL - 6 MONTH)
+AND report_month <<  DATE_TRUNC(CURRENT_DATE(),MONTH)
+GROUP BY 1,2,3,4,5,6,7,8,9
+),
+
+country_view AS
+
+(
+SELECT 
+    vkpim.global_entity_id
+  , CONCAT('Entity - ', e.sub_entity) as city
+  , e.segment AS segment
+  , e.management_entity AS management_entity
+  , e.sub_entity as sub_entity
+  , vkpim.report_month
+  , v_c.category_group_global AS category_group_global
+  , v_c.category_name_english
+  , vd.key_account_category
+  , COUNT(DISTINCT CASE WHEN vkpim.is_online IS TRUE THEN vkpim.vendor_id END) AS vendors_online
+  , SUM(value.gbv_eur) AS gbv
+  , SUM(successful_orders) AS orders,
+FROM `fulfillment-dwh-production.curated_data_shared_central_dwh.agg_vendor_kpis_monthly` AS vkpim
+LEFT JOIN vendor_cuisine   v_c
+   ON vkpim.global_entity_id = v_c.global_entity_id
+  AND	vkpim.vendor_id	= v_c.vendor_id
+  AND v_c.rn = 1
+INNER JOIN `fulfillment-dwh-production.curated_data_shared_central_dwh.global_entities` AS e
+  ON vkpim.global_entity_id = e.global_entity_id
+  AND	e.is_platform_online IS TRUE
+LEFT JOIN `fulfillment-dwh-production.curated_data_shared_central_dwh.vendors`  v ON v.global_entity_id = vkpim.global_entity_id AND v.vendor_id = vkpim.vendor_id
+LEFT JOIN `fulfillment-dwh-production.cl_intl_markets.vendor_dimensions` vd ON vd.global_entity_id = vkpim.global_entity_id AND vd.vendor_id = vkpim.vendor_id
+WHERE report_month >>= DATE_ADD(DATE_TRUNC(CURRENT_DATE(),MONTH), INTERVAL -6 MONTH)
+AND report_month <<  DATE_TRUNC(CURRENT_DATE(),MONTH)
+GROUP BY 1,2,3,4,5,6,7,8,9
+
+
+)
+SELECT * 
+FROM city_view
+UNION ALL
+SELECT * 
+FROM country_view]]></relation>
+          <relation connection='bigquery.1hagmfp0t4qyx3135dpge15eyvkd' name='gsr_entitlements_performance_global_entity_id' table='[fulfillment-dwh-production.cl_intl_markets].[gsr_entitlements_performance_global_entity_id]' type='table' />
+        </_.fcp.ObjectModelEncapsulateLegacy.true...relation>
+        <cols>
+          <map key='[category_group_global]' value='[Custom SQL Query].[category_group_global]' />
+          <map key='[category_name_english]' value='[Custom SQL Query].[category_name_english]' />
+          <map key='[city]' value='[Custom SQL Query].[city]' />
+          <map key='[gbv]' value='[Custom SQL Query].[gbv]' />
+          <map key='[global_entity_id (gsr_entitlements_performance_global_entity_id)]' value='[gsr_entitlements_performance_global_entity_id].[global_entity_id]' />
+          <map key='[global_entity_id]' value='[Custom SQL Query].[global_entity_id]' />
+          <map key='[key_account_category]' value='[Custom SQL Query].[key_account_category]' />
+          <map key='[management_entity]' value='[Custom SQL Query].[management_entity]' />
+          <map key='[orders]' value='[Custom SQL Query].[orders]' />
+          <map key='[report_month]' value='[Custom SQL Query].[report_month]' />
+          <map key='[segment]' value='[Custom SQL Query].[segment]' />
+          <map key='[sub_entity]' value='[Custom SQL Query].[sub_entity]' />
+          <map key='[username]' value='[gsr_entitlements_performance_global_entity_id].[username]' />
+          <map key='[vendors_online]' value='[Custom SQL Query].[vendors_online]' />
+        </cols>
+        <refresh increment-key='' incremental-updates='false' />
+        <metadata-records>
+          <metadata-record class='column'>
+            <remote-name>global_entity_id</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[global_entity_id]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>global_entity_id</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_392D64E4AAF148739C0DC3E5684D9D56]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>city</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[city]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>city</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_392D64E4AAF148739C0DC3E5684D9D56]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>segment</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[segment]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>segment</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_392D64E4AAF148739C0DC3E5684D9D56]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>management_entity</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[management_entity]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>management_entity</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_392D64E4AAF148739C0DC3E5684D9D56]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>sub_entity</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[sub_entity]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>sub_entity</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_392D64E4AAF148739C0DC3E5684D9D56]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>report_month</remote-name>
+            <remote-type>7</remote-type>
+            <local-name>[report_month]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>report_month</remote-alias>
+            <local-type>date</local-type>
+            <aggregation>Year</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_392D64E4AAF148739C0DC3E5684D9D56]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>category_group_global</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[category_group_global]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>category_group_global</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_392D64E4AAF148739C0DC3E5684D9D56]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>category_name_english</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[category_name_english]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>category_name_english</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_392D64E4AAF148739C0DC3E5684D9D56]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>key_account_category</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[key_account_category]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>key_account_category</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_392D64E4AAF148739C0DC3E5684D9D56]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>vendors_online</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[vendors_online]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>vendors_online</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_392D64E4AAF148739C0DC3E5684D9D56]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>gbv</remote-name>
+            <remote-type>5</remote-type>
+            <local-name>[gbv]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>gbv</remote-alias>
+            <local-type>real</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_392D64E4AAF148739C0DC3E5684D9D56]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>orders</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[orders]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>orders</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_392D64E4AAF148739C0DC3E5684D9D56]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>username</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[username]</local-name>
+            <parent-name>[gsr_entitlements_performance_global_entity_id]</parent-name>
+            <remote-alias>username</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_392D64E4AAF148739C0DC3E5684D9D56]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>global_entity_id</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[global_entity_id (gsr_entitlements_performance_global_entity_id)]</local-name>
+            <parent-name>[gsr_entitlements_performance_global_entity_id]</parent-name>
+            <remote-alias>global_entity_id</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_392D64E4AAF148739C0DC3E5684D9D56]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+        </metadata-records>
+      </connection>
+      <aliases enabled='yes' />
+      <column caption='AFV' datatype='real' default-format='n#,##0.0;-#,##0.0' name='[Calculation_4353503099019276289]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='ROUND((SUM([gbv])/ SUM([orders])), 1)' />
+      </column>
+      <column caption='username filter' datatype='boolean' name='[Calculation_4353503099075432454]' role='dimension' type='nominal'>
+        <calculation class='tableau' formula='[username] = USERNAME()' />
+      </column>
+      <_.fcp.ObjectModelTableType.true...column caption='Custom SQL Query' datatype='table' name='[__tableau_internal_object_id__].[_392D64E4AAF148739C0DC3E5684D9D56]' role='measure' type='quantitative' />
+      <column datatype='string' name='[category_group_global]' role='dimension' type='nominal' />
+      <column datatype='string' name='[category_name_english]' role='dimension' type='nominal' />
+      <column datatype='string' name='[city]' role='dimension' semantic-role='[City].[Name]' type='nominal' />
+      <column caption='Global Entity Id (Gsr Entitlements Performance Global Entity Id)' datatype='string' name='[global_entity_id (gsr_entitlements_performance_global_entity_id)]' role='dimension' type='nominal' />
+      <column caption='Username' datatype='string' name='[username]' role='dimension' type='nominal' />
+      <column-instance column='[category_group_global]' derivation='None' name='[none:category_group_global:nk]' pivot='key' type='nominal' />
+      <column-instance column='[category_name_english]' derivation='None' name='[none:category_name_english:nk]' pivot='key' type='nominal' />
+      <extract _.fcp.ObjectModelExtractV2.true...object-id='' count='-1' enabled='true' type='normalized' units='records'>
+        <connection class='hyper' dbname='extract/17/f1/{1225D946-6971-4CEB-8035-EC6089BF3BA6}/federated_15qheri176fflo1f5s6110.hyper' default-settings='yes' extract-engine='true' schema='Extract' tablename='Extract' update-time='03/10/2023 03:39:33 PM'>
+          <_.fcp.ObjectModelEncapsulateLegacy.false...relation join='inner' type='join'>
+            <clause type='join'>
+              <expression op='='>
+                <expression op='[Custom SQL Query].[global_entity_id]' />
+                <expression op='[gsr_entitlements_performance_global_entity_id].[global_entity_id]' />
+              </expression>
+            </clause>
+            <relation name='Custom SQL Query' table='[Extract].[Custom SQL Query]' type='table' />
+            <relation name='gsr_entitlements_performance_global_entity_id' table='[Extract].[gsr_entitlements_performance_global_entity_id]' type='table' />
+          </_.fcp.ObjectModelEncapsulateLegacy.false...relation>
+          <_.fcp.ObjectModelEncapsulateLegacy.true...relation join='inner' type='join'>
+            <clause type='join'>
+              <expression op='='>
+                <expression op='[Custom SQL Query].[global_entity_id]' />
+                <expression op='[gsr_entitlements_performance_global_entity_id].[global_entity_id]' />
+              </expression>
+            </clause>
+            <relation name='Custom SQL Query' table='[Extract].[Custom SQL Query]' type='table' />
+            <relation name='gsr_entitlements_performance_global_entity_id' table='[Extract].[gsr_entitlements_performance_global_entity_id]' type='table' />
+          </_.fcp.ObjectModelEncapsulateLegacy.true...relation>
+          <cols>
+            <map key='[category_group_global]' value='[Custom SQL Query].[category_group_global]' />
+            <map key='[category_name_english]' value='[Custom SQL Query].[category_name_english]' />
+            <map key='[city]' value='[Custom SQL Query].[city]' />
+            <map key='[gbv]' value='[Custom SQL Query].[gbv]' />
+            <map key='[global_entity_id (gsr_entitlements_performance_global_entity_id)]' value='[gsr_entitlements_performance_global_entity_id].[global_entity_id]' />
+            <map key='[global_entity_id]' value='[Custom SQL Query].[global_entity_id]' />
+            <map key='[key_account_category]' value='[Custom SQL Query].[key_account_category]' />
+            <map key='[management_entity]' value='[Custom SQL Query].[management_entity]' />
+            <map key='[orders]' value='[Custom SQL Query].[orders]' />
+            <map key='[report_month]' value='[Custom SQL Query].[report_month]' />
+            <map key='[segment]' value='[Custom SQL Query].[segment]' />
+            <map key='[sub_entity]' value='[Custom SQL Query].[sub_entity]' />
+            <map key='[username]' value='[gsr_entitlements_performance_global_entity_id].[username]' />
+            <map key='[vendors_online]' value='[Custom SQL Query].[vendors_online]' />
+          </cols>
+          <refresh increment-key='' incremental-updates='false'>
+            <refresh-event add-from-file-path='vendor_afv_by_cuisine' increment-value='%null%' refresh-type='create' rows-inserted='507488480' timestamp-start='2023-03-10 15:38:52.018' />
+          </refresh>
+          <metadata-records>
+            <metadata-record class='column'>
+              <remote-name>global_entity_id</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[global_entity_id]</local-name>
+              <parent-name>[Custom SQL Query]</parent-name>
+              <remote-alias>global_entity_id</remote-alias>
+              <ordinal>0</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>62</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_392D64E4AAF148739C0DC3E5684D9D56]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>city</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[city]</local-name>
+              <parent-name>[Custom SQL Query]</parent-name>
+              <remote-alias>city</remote-alias>
+              <ordinal>1</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>11371</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_392D64E4AAF148739C0DC3E5684D9D56]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>segment</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[segment]</local-name>
+              <parent-name>[Custom SQL Query]</parent-name>
+              <remote-alias>segment</remote-alias>
+              <ordinal>2</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>4</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_392D64E4AAF148739C0DC3E5684D9D56]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>management_entity</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[management_entity]</local-name>
+              <parent-name>[Custom SQL Query]</parent-name>
+              <remote-alias>management_entity</remote-alias>
+              <ordinal>3</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>16</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_392D64E4AAF148739C0DC3E5684D9D56]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>sub_entity</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[sub_entity]</local-name>
+              <parent-name>[Custom SQL Query]</parent-name>
+              <remote-alias>sub_entity</remote-alias>
+              <ordinal>4</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>62</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_392D64E4AAF148739C0DC3E5684D9D56]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>report_month</remote-name>
+              <remote-type>133</remote-type>
+              <local-name>[report_month]</local-name>
+              <parent-name>[Custom SQL Query]</parent-name>
+              <remote-alias>report_month</remote-alias>
+              <ordinal>5</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>date</local-type>
+              <aggregation>Year</aggregation>
+              <approx-count>6</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_392D64E4AAF148739C0DC3E5684D9D56]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>category_group_global</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[category_group_global]</local-name>
+              <parent-name>[Custom SQL Query]</parent-name>
+              <remote-alias>category_group_global</remote-alias>
+              <ordinal>6</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>17</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_392D64E4AAF148739C0DC3E5684D9D56]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>category_name_english</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[category_name_english]</local-name>
+              <parent-name>[Custom SQL Query]</parent-name>
+              <remote-alias>category_name_english</remote-alias>
+              <ordinal>7</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>2019</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_392D64E4AAF148739C0DC3E5684D9D56]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>key_account_category</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[key_account_category]</local-name>
+              <parent-name>[Custom SQL Query]</parent-name>
+              <remote-alias>key_account_category</remote-alias>
+              <ordinal>8</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>5</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_392D64E4AAF148739C0DC3E5684D9D56]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>vendors_online</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[vendors_online]</local-name>
+              <parent-name>[Custom SQL Query]</parent-name>
+              <remote-alias>vendors_online</remote-alias>
+              <ordinal>9</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>1973</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_392D64E4AAF148739C0DC3E5684D9D56]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>gbv</remote-name>
+              <remote-type>5</remote-type>
+              <local-name>[gbv]</local-name>
+              <parent-name>[Custom SQL Query]</parent-name>
+              <remote-alias>gbv</remote-alias>
+              <ordinal>10</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>real</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>407447</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_392D64E4AAF148739C0DC3E5684D9D56]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>orders</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[orders]</local-name>
+              <parent-name>[Custom SQL Query]</parent-name>
+              <remote-alias>orders</remote-alias>
+              <ordinal>11</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>17311</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_392D64E4AAF148739C0DC3E5684D9D56]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>username</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[username]</local-name>
+              <parent-name>[gsr_entitlements_performance_global_entity_id]</parent-name>
+              <remote-alias>username</remote-alias>
+              <ordinal>12</ordinal>
+              <family>gsr_entitlements_performance_global_entity_id</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>3825</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_392D64E4AAF148739C0DC3E5684D9D56]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>global_entity_id</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[global_entity_id (gsr_entitlements_performance_global_entity_id)]</local-name>
+              <parent-name>[gsr_entitlements_performance_global_entity_id]</parent-name>
+              <remote-alias>global_entity_id</remote-alias>
+              <ordinal>13</ordinal>
+              <family>gsr_entitlements_performance_global_entity_id</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>59</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_392D64E4AAF148739C0DC3E5684D9D56]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+          </metadata-records>
+        </connection>
+      </extract>
+      <layout _.fcp.SchemaViewerObjectModel.false...dim-percentage='0.5' _.fcp.SchemaViewerObjectModel.false...measure-percentage='0.4' dim-ordering='alphabetic' measure-ordering='alphabetic' show-structure='true' />
+      <style>
+        <style-rule element='mark'>
+          <encoding attr='color' field='[none:category_group_global:nk]' type='palette'>
+            <map to='#4e79a7'>
+              <bucket>%null%</bucket>
+            </map>
+            <map to='#59a14f'>
+              <bucket>&quot;Middle Eastern&quot;</bucket>
+            </map>
+            <map to='#76b7b2'>
+              <bucket>&quot;Japanese &amp; Sushi&quot;</bucket>
+            </map>
+            <map to='#b07aa1'>
+              <bucket>&quot;Seafood&quot;</bucket>
+            </map>
+            <map to='#e15759'>
+              <bucket>&quot;Italian &amp; Pizza&quot;</bucket>
+            </map>
+            <map to='#edc948'>
+              <bucket>&quot;Other&quot;</bucket>
+            </map>
+            <map to='#f28e2b'>
+              <bucket>&quot;Asian&quot;</bucket>
+            </map>
+          </encoding>
+          <encoding attr='color' field='[none:category_name_english:nk]' type='palette'>
+            <map to='#499894'>
+              <bucket>&quot;Arepas&quot;</bucket>
+            </map>
+            <map to='#499894'>
+              <bucket>&quot;Bagel&quot;</bucket>
+            </map>
+            <map to='#499894'>
+              <bucket>&quot;Cambodian&quot;</bucket>
+            </map>
+            <map to='#499894'>
+              <bucket>&quot;CHINESE&quot;</bucket>
+            </map>
+            <map to='#499894'>
+              <bucket>&quot;Chiu Chow&quot;</bucket>
+            </map>
+            <map to='#499894'>
+              <bucket>&quot;Coffee &amp; Tea&quot;</bucket>
+            </map>
+            <map to='#499894'>
+              <bucket>&quot;Corndogs&quot;</bucket>
+            </map>
+            <map to='#499894'>
+              <bucket>&quot;Finnish&quot;</bucket>
+            </map>
+            <map to='#499894'>
+              <bucket>&quot;Fresh Meat &amp; Fish&quot;</bucket>
+            </map>
+            <map to='#499894'>
+              <bucket>&quot;Fruits &amp; Vegetables&quot;</bucket>
+            </map>
+            <map to='#499894'>
+              <bucket>&quot;Iranian&quot;</bucket>
+            </map>
+            <map to='#499894'>
+              <bucket>&quot;Iraqi&quot;</bucket>
+            </map>
+            <map to='#499894'>
+              <bucket>&quot;Juices&quot;</bucket>
+            </map>
+            <map to='#499894'>
+              <bucket>&quot;Koshary&quot;</bucket>
+            </map>
+            <map to='#499894'>
+              <bucket>&quot;Manaqeesh&quot;</bucket>
+            </map>
+            <map to='#499894'>
+              <bucket>&quot;NONE&quot;</bucket>
+            </map>
+            <map to='#499894'>
+              <bucket>&quot;Noodles&quot;</bucket>
+            </map>
+            <map to='#499894'>
+              <bucket>&quot;Palestinian&quot;</bucket>
+            </map>
+            <map to='#499894'>
+              <bucket>&quot;Pizzeria&quot;</bucket>
+            </map>
+            <map to='#499894'>
+              <bucket>&quot;Rice Dishes&quot;</bucket>
+            </map>
+            <map to='#499894'>
+              <bucket>&quot;Submarines&quot;</bucket>
+            </map>
+            <map to='#499894'>
+              <bucket>&quot;Vietnamese&quot;</bucket>
+            </map>
+            <map to='#499894'>
+              <bucket>&quot;Wholesale&quot;</bucket>
+            </map>
+            <map to='#499894'>
+              <bucket>&quot;Αραβική Κουζίνα&quot;</bucket>
+            </map>
+            <map to='#499894'>
+              <bucket>&quot;Γλυκά&quot;</bucket>
+            </map>
+            <map to='#499894'>
+              <bucket>&quot;Διεθνής&quot;</bucket>
+            </map>
+            <map to='#499894'>
+              <bucket>&quot;Κατεψυγμένα Φαγητά&quot;</bucket>
+            </map>
+            <map to='#499894'>
+              <bucket>&quot;Καφέδες&quot;</bucket>
+            </map>
+            <map to='#499894'>
+              <bucket>&quot;Κοτόπουλα&quot;</bucket>
+            </map>
+            <map to='#499894'>
+              <bucket>&quot;Τηγανητό ψάρι&quot;</bucket>
+            </map>
+            <map to='#4e79a7'>
+              <bucket>%null%</bucket>
+            </map>
+            <map to='#4e79a7'>
+              <bucket>&quot;Accessories &quot;</bucket>
+            </map>
+            <map to='#4e79a7'>
+              <bucket>&quot;BAEMIN_1_CHICKEN&quot;</bucket>
+            </map>
+            <map to='#4e79a7'>
+              <bucket>&quot;Books&quot;</bucket>
+            </map>
+            <map to='#4e79a7'>
+              <bucket>&quot;British&quot;</bucket>
+            </map>
+            <map to='#4e79a7'>
+              <bucket>&quot;Brunch&quot;</bucket>
+            </map>
+            <map to='#4e79a7'>
+              <bucket>&quot;Bubble tea&quot;</bucket>
+            </map>
+            <map to='#4e79a7'>
+              <bucket>&quot;Cart Noodles&quot;</bucket>
+            </map>
+            <map to='#4e79a7'>
+              <bucket>&quot;Celíacos&quot;</bucket>
+            </map>
+            <map to='#4e79a7'>
+              <bucket>&quot;Cool food&quot;</bucket>
+            </map>
+            <map to='#4e79a7'>
+              <bucket>&quot;Emirati&quot;</bucket>
+            </map>
+            <map to='#4e79a7'>
+              <bucket>&quot;Ensaladas&quot;</bucket>
+            </map>
+            <map to='#4e79a7'>
+              <bucket>&quot;Far East&quot;</bucket>
+            </map>
+            <map to='#4e79a7'>
+              <bucket>&quot;Fish&quot;</bucket>
+            </map>
+            <map to='#4e79a7'>
+              <bucket>&quot;Fish Soup&quot;</bucket>
+            </map>
+            <map to='#4e79a7'>
+              <bucket>&quot;Fruits and Vegetables&quot;</bucket>
+            </map>
+            <map to='#4e79a7'>
+              <bucket>&quot;Kuwaiti&quot;</bucket>
+            </map>
+            <map to='#4e79a7'>
+              <bucket>&quot;Menú del día&quot;</bucket>
+            </map>
+            <map to='#4e79a7'>
+              <bucket>&quot;Milk Tea&quot;</bucket>
+            </map>
+            <map to='#4e79a7'>
+              <bucket>&quot;Pastries&quot;</bucket>
+            </map>
+            <map to='#4e79a7'>
+              <bucket>&quot;Pizza&quot;</bucket>
+            </map>
+            <map to='#4e79a7'>
+              <bucket>&quot;Postres y Tortas&quot;</bucket>
+            </map>
+            <map to='#4e79a7'>
+              <bucket>&quot;Shawerma &amp; Doner&quot;</bucket>
+            </map>
+            <map to='#4e79a7'>
+              <bucket>&quot;Steak&quot;</bucket>
+            </map>
+            <map to='#4e79a7'>
+              <bucket>&quot;Ασιατικά&quot;</bucket>
+            </map>
+            <map to='#4e79a7'>
+              <bucket>&quot;Καθαριστικά&quot;</bucket>
+            </map>
+            <map to='#4e79a7'>
+              <bucket>&quot;Κεραστικά&quot;</bucket>
+            </map>
+            <map to='#4e79a7'>
+              <bucket>&quot;Κοσμήματα&quot;</bucket>
+            </map>
+            <map to='#4e79a7'>
+              <bucket>&quot;Κρεοπωλείο&quot;</bucket>
+            </map>
+            <map to='#4e79a7'>
+              <bucket>&quot;Ντόνατς&quot;</bucket>
+            </map>
+            <map to='#59a14f'>
+              <bucket>&quot;Alcohol&quot;</bucket>
+            </map>
+            <map to='#59a14f'>
+              <bucket>&quot;Burgers&quot;</bucket>
+            </map>
+            <map to='#59a14f'>
+              <bucket>&quot;Calzone&quot;</bucket>
+            </map>
+            <map to='#59a14f'>
+              <bucket>&quot;Chicken Chop&quot;</bucket>
+            </map>
+            <map to='#59a14f'>
+              <bucket>&quot;Chocolate &quot;</bucket>
+            </map>
+            <map to='#59a14f'>
+              <bucket>&quot;Cocktails&quot;</bucket>
+            </map>
+            <map to='#59a14f'>
+              <bucket>&quot;Comida Ecuatoriana&quot;</bucket>
+            </map>
+            <map to='#59a14f'>
+              <bucket>&quot;Curry&quot;</bucket>
+            </map>
+            <map to='#59a14f'>
+              <bucket>&quot;Doner&quot;</bucket>
+            </map>
+            <map to='#59a14f'>
+              <bucket>&quot;French&quot;</bucket>
+            </map>
+            <map to='#59a14f'>
+              <bucket>&quot;Fried Chicken&quot;</bucket>
+            </map>
+            <map to='#59a14f'>
+              <bucket>&quot;Grain Bowl&quot;</bucket>
+            </map>
+            <map to='#59a14f'>
+              <bucket>&quot;Guay Tiew&quot;</bucket>
+            </map>
+            <map to='#59a14f'>
+              <bucket>&quot;Gyros&quot;</bucket>
+            </map>
+            <map to='#59a14f'>
+              <bucket>&quot;Hamburguesas&quot;</bucket>
+            </map>
+            <map to='#59a14f'>
+              <bucket>&quot;Healthy Food&quot;</bucket>
+            </map>
+            <map to='#59a14f'>
+              <bucket>&quot;Juice Corner&quot;</bucket>
+            </map>
+            <map to='#59a14f'>
+              <bucket>&quot;Mezze&quot;</bucket>
+            </map>
+            <map to='#59a14f'>
+              <bucket>&quot;Milanesas&quot;</bucket>
+            </map>
+            <map to='#59a14f'>
+              <bucket>&quot;Northern Thai&quot;</bucket>
+            </map>
+            <map to='#59a14f'>
+              <bucket>&quot;Oriental&quot;</bucket>
+            </map>
+            <map to='#59a14f'>
+              <bucket>&quot;Pharmacy&quot;</bucket>
+            </map>
+            <map to='#59a14f'>
+              <bucket>&quot;Pies&quot;</bucket>
+            </map>
+            <map to='#59a14f'>
+              <bucket>&quot;Russian&quot;</bucket>
+            </map>
+            <map to='#59a14f'>
+              <bucket>&quot;Smoothies&quot;</bucket>
+            </map>
+            <map to='#59a14f'>
+              <bucket>&quot;Supermarket &quot;</bucket>
+            </map>
+            <map to='#59a14f'>
+              <bucket>&quot;Tortillas&quot;</bucket>
+            </map>
+            <map to='#59a14f'>
+              <bucket>&quot;Waffle&quot;</bucket>
+            </map>
+            <map to='#59a14f'>
+              <bucket>&quot;Κάβα&quot;</bucket>
+            </map>
+            <map to='#59a14f'>
+              <bucket>&quot;Κινέζικα&quot;</bucket>
+            </map>
+            <map to='#59a14f'>
+              <bucket>&quot;Μόδα&quot;</bucket>
+            </map>
+            <map to='#59a14f'>
+              <bucket>&quot;Ποτά&quot;</bucket>
+            </map>
+            <map to='#79706e'>
+              <bucket>&quot;Acai&quot;</bucket>
+            </map>
+            <map to='#79706e'>
+              <bucket>&quot;Acai Bowl&quot;</bucket>
+            </map>
+            <map to='#79706e'>
+              <bucket>&quot;Afghani&quot;</bucket>
+            </map>
+            <map to='#79706e'>
+              <bucket>&quot;Ayam Penyet&quot;</bucket>
+            </map>
+            <map to='#79706e'>
+              <bucket>&quot;Beijing&quot;</bucket>
+            </map>
+            <map to='#79706e'>
+              <bucket>&quot;CBD (Cannabidiol)&quot;</bucket>
+            </map>
+            <map to='#79706e'>
+              <bucket>&quot;Çiğ Köfte&quot;</bucket>
+            </map>
+            <map to='#79706e'>
+              <bucket>&quot;Czech&quot;</bucket>
+            </map>
+            <map to='#79706e'>
+              <bucket>&quot;Desserts&quot;</bucket>
+            </map>
+            <map to='#79706e'>
+              <bucket>&quot;Fitness&quot;</bucket>
+            </map>
+            <map to='#79706e'>
+              <bucket>&quot;Healthy&quot;</bucket>
+            </map>
+            <map to='#79706e'>
+              <bucket>&quot;Hot Pot&quot;</bucket>
+            </map>
+            <map to='#79706e'>
+              <bucket>&quot;International&quot;</bucket>
+            </map>
+            <map to='#79706e'>
+              <bucket>&quot;JOKBAL&quot;</bucket>
+            </map>
+            <map to='#79706e'>
+              <bucket>&quot;Kebab &amp; Turkish Cuisine&quot;</bucket>
+            </map>
+            <map to='#79706e'>
+              <bucket>&quot;Laotian&quot;</bucket>
+            </map>
+            <map to='#79706e'>
+              <bucket>&quot;Manti&quot;</bucket>
+            </map>
+            <map to='#79706e'>
+              <bucket>&quot;Roti Prata&quot;</bucket>
+            </map>
+            <map to='#79706e'>
+              <bucket>&quot;Shawarma &amp; Doner&quot;</bucket>
+            </map>
+            <map to='#79706e'>
+              <bucket>&quot;Tunisian &quot;</bucket>
+            </map>
+            <map to='#79706e'>
+              <bucket>&quot;Turkish&quot;</bucket>
+            </map>
+            <map to='#79706e'>
+              <bucket>&quot;Αλμυρά&quot;</bucket>
+            </map>
+            <map to='#79706e'>
+              <bucket>&quot;Βιβλιοπωλεία&quot;</bucket>
+            </map>
+            <map to='#79706e'>
+              <bucket>&quot;Κεντροευρωπαϊκή&quot;</bucket>
+            </map>
+            <map to='#79706e'>
+              <bucket>&quot;Μπουγάτσα&quot;</bucket>
+            </map>
+            <map to='#79706e'>
+              <bucket>&quot;Ξηροί καρποί&quot;</bucket>
+            </map>
+            <map to='#79706e'>
+              <bucket>&quot;Οπτικά&quot;</bucket>
+            </map>
+            <map to='#79706e'>
+              <bucket>&quot;Πεϊνιρλί&quot;</bucket>
+            </map>
+            <map to='#79706e'>
+              <bucket>&quot;Σχάρας&quot;</bucket>
+            </map>
+            <map to='#79706e'>
+              <bucket>&quot;Τσέχικη&quot;</bucket>
+            </map>
+            <map to='#86bcb6'>
+              <bucket>&quot;Arabic Sweets&quot;</bucket>
+            </map>
+            <map to='#86bcb6'>
+              <bucket>&quot;Austrian&quot;</bucket>
+            </map>
+            <map to='#86bcb6'>
+              <bucket>&quot;Batidos y Jugos Naturales&quot;</bucket>
+            </map>
+            <map to='#86bcb6'>
+              <bucket>&quot;Briyani&quot;</bucket>
+            </map>
+            <map to='#86bcb6'>
+              <bucket>&quot;Cafetería&quot;</bucket>
+            </map>
+            <map to='#86bcb6'>
+              <bucket>&quot;Churros&quot;</bucket>
+            </map>
+            <map to='#86bcb6'>
+              <bucket>&quot;Comida internacional&quot;</bucket>
+            </map>
+            <map to='#86bcb6'>
+              <bucket>&quot;Comida Vegetariana&quot;</bucket>
+            </map>
+            <map to='#86bcb6'>
+              <bucket>&quot;DOSIRAK&quot;</bucket>
+            </map>
+            <map to='#86bcb6'>
+              <bucket>&quot;Empanadas&quot;</bucket>
+            </map>
+            <map to='#86bcb6'>
+              <bucket>&quot;Fruit Shake&quot;</bucket>
+            </map>
+            <map to='#86bcb6'>
+              <bucket>&quot;Fusion&quot;</bucket>
+            </map>
+            <map to='#86bcb6'>
+              <bucket>&quot;German&quot;</bucket>
+            </map>
+            <map to='#86bcb6'>
+              <bucket>&quot;Grocery&quot;</bucket>
+            </map>
+            <map to='#86bcb6'>
+              <bucket>&quot;Latin american&quot;</bucket>
+            </map>
+            <map to='#86bcb6'>
+              <bucket>&quot;Rice Noodles&quot;</bucket>
+            </map>
+            <map to='#86bcb6'>
+              <bucket>&quot;Roastery&quot;</bucket>
+            </map>
+            <map to='#86bcb6'>
+              <bucket>&quot;Sandwiches &amp; Wraps&quot;</bucket>
+            </map>
+            <map to='#86bcb6'>
+              <bucket>&quot;Silog&quot;</bucket>
+            </map>
+            <map to='#86bcb6'>
+              <bucket>&quot;SNACK&quot;</bucket>
+            </map>
+            <map to='#86bcb6'>
+              <bucket>&quot;Spanish&quot;</bucket>
+            </map>
+            <map to='#86bcb6'>
+              <bucket>&quot;Specialty Store &quot;</bucket>
+            </map>
+            <map to='#86bcb6'>
+              <bucket>&quot;Tacos&quot;</bucket>
+            </map>
+            <map to='#86bcb6'>
+              <bucket>&quot;Tapas&quot;</bucket>
+            </map>
+            <map to='#86bcb6'>
+              <bucket>&quot;Uzbek&quot;</bucket>
+            </map>
+            <map to='#86bcb6'>
+              <bucket>&quot;Wings&quot;</bucket>
+            </map>
+            <map to='#86bcb6'>
+              <bucket>&quot;Woks&quot;</bucket>
+            </map>
+            <map to='#86bcb6'>
+              <bucket>&quot;Ασιατική&quot;</bucket>
+            </map>
+            <map to='#86bcb6'>
+              <bucket>&quot;Καφές&quot;</bucket>
+            </map>
+            <map to='#86bcb6'>
+              <bucket>&quot;Πίτες&quot;</bucket>
+            </map>
+            <map to='#86bcb6'>
+              <bucket>&quot;Σαλάτα&quot;</bucket>
+            </map>
+            <map to='#86bcb6'>
+              <bucket>&quot;Ψαραγορά&quot;</bucket>
+            </map>
+            <map to='#8cd17d'>
+              <bucket>&quot;BAEMIN_1_JAPANESE&quot;</bucket>
+            </map>
+            <map to='#8cd17d'>
+              <bucket>&quot;Bakery&quot;</bucket>
+            </map>
+            <map to='#8cd17d'>
+              <bucket>&quot;Ban Mian&quot;</bucket>
+            </map>
+            <map to='#8cd17d'>
+              <bucket>&quot;Bangladeshi&quot;</bucket>
+            </map>
+            <map to='#8cd17d'>
+              <bucket>&quot;Bowls&quot;</bucket>
+            </map>
+            <map to='#8cd17d'>
+              <bucket>&quot;Cakes &amp; Bakery&quot;</bucket>
+            </map>
+            <map to='#8cd17d'>
+              <bucket>&quot;Charity &quot;</bucket>
+            </map>
+            <map to='#8cd17d'>
+              <bucket>&quot;Comida Peruana&quot;</bucket>
+            </map>
+            <map to='#8cd17d'>
+              <bucket>&quot;Donut&quot;</bucket>
+            </map>
+            <map to='#8cd17d'>
+              <bucket>&quot;Grill &amp; Bbq&quot;</bucket>
+            </map>
+            <map to='#8cd17d'>
+              <bucket>&quot;Hong Kong&quot;</bucket>
+            </map>
+            <map to='#8cd17d'>
+              <bucket>&quot;Jugos y Batidos&quot;</bucket>
+            </map>
+            <map to='#8cd17d'>
+              <bucket>&quot;Kare Kare&quot;</bucket>
+            </map>
+            <map to='#8cd17d'>
+              <bucket>&quot;Kokorec&quot;</bucket>
+            </map>
+            <map to='#8cd17d'>
+              <bucket>&quot;Kurdish&quot;</bucket>
+            </map>
+            <map to='#8cd17d'>
+              <bucket>&quot;Nuts&quot;</bucket>
+            </map>
+            <map to='#8cd17d'>
+              <bucket>&quot;Pancakes&quot;</bucket>
+            </map>
+            <map to='#8cd17d'>
+              <bucket>&quot;Pizzas&quot;</bucket>
+            </map>
+            <map to='#8cd17d'>
+              <bucket>&quot;Rice Bowl&quot;</bucket>
+            </map>
+            <map to='#8cd17d'>
+              <bucket>&quot;Saudi&quot;</bucket>
+            </map>
+            <map to='#8cd17d'>
+              <bucket>&quot;Stationary&quot;</bucket>
+            </map>
+            <map to='#8cd17d'>
+              <bucket>&quot;Supplement&quot;</bucket>
+            </map>
+            <map to='#8cd17d'>
+              <bucket>&quot;Sushi&quot;</bucket>
+            </map>
+            <map to='#8cd17d'>
+              <bucket>&quot;Ανθοπωλείο&quot;</bucket>
+            </map>
+            <map to='#8cd17d'>
+              <bucket>&quot;Καφεκοπτείο&quot;</bucket>
+            </map>
+            <map to='#8cd17d'>
+              <bucket>&quot;Λαϊκή αγορά&quot;</bucket>
+            </map>
+            <map to='#8cd17d'>
+              <bucket>&quot;Λουλούδια&quot;</bucket>
+            </map>
+            <map to='#8cd17d'>
+              <bucket>&quot;Μεξικάνικα&quot;</bucket>
+            </map>
+            <map to='#8cd17d'>
+              <bucket>&quot;Παγωτό&quot;</bucket>
+            </map>
+            <map to='#8cd17d'>
+              <bucket>&quot;Πιροσκί&quot;</bucket>
+            </map>
+            <map to='#9d7660'>
+              <bucket>&quot;Balkan&quot;</bucket>
+            </map>
+            <map to='#9d7660'>
+              <bucket>&quot;BBQ&quot;</bucket>
+            </map>
+            <map to='#9d7660'>
+              <bucket>&quot;Bowls &amp; Salads&quot;</bucket>
+            </map>
+            <map to='#9d7660'>
+              <bucket>&quot;Bubble Tea&quot;</bucket>
+            </map>
+            <map to='#9d7660'>
+              <bucket>&quot;Burger&quot;</bucket>
+            </map>
+            <map to='#9d7660'>
+              <bucket>&quot;Chorrillanas&quot;</bucket>
+            </map>
+            <map to='#9d7660'>
+              <bucket>&quot;e-φαρμακείο&quot;</bucket>
+            </map>
+            <map to='#9d7660'>
+              <bucket>&quot;Fast Food&quot;</bucket>
+            </map>
+            <map to='#9d7660'>
+              <bucket>&quot;Gelato&quot;</bucket>
+            </map>
+            <map to='#9d7660'>
+              <bucket>&quot;Kylling&quot;</bucket>
+            </map>
+            <map to='#9d7660'>
+              <bucket>&quot;Laksa&quot;</bucket>
+            </map>
+            <map to='#9d7660'>
+              <bucket>&quot;Middle Eastern&quot;</bucket>
+            </map>
+            <map to='#9d7660'>
+              <bucket>&quot;Parrilla&quot;</bucket>
+            </map>
+            <map to='#9d7660'>
+              <bucket>&quot;Qatari&quot;</bucket>
+            </map>
+            <map to='#9d7660'>
+              <bucket>&quot;Savouries&quot;</bucket>
+            </map>
+            <map to='#9d7660'>
+              <bucket>&quot;Siomai&quot;</bucket>
+            </map>
+            <map to='#9d7660'>
+              <bucket>&quot;Smoothies y Jugos&quot;</bucket>
+            </map>
+            <map to='#9d7660'>
+              <bucket>&quot;Sopas&quot;</bucket>
+            </map>
+            <map to='#9d7660'>
+              <bucket>&quot;Wraps&quot;</bucket>
+            </map>
+            <map to='#9d7660'>
+              <bucket>&quot;Βάφλες&quot;</bucket>
+            </map>
+            <map to='#9d7660'>
+              <bucket>&quot;Βιολογικά&quot;</bucket>
+            </map>
+            <map to='#9d7660'>
+              <bucket>&quot;Βραζιλιάνικη&quot;</bucket>
+            </map>
+            <map to='#9d7660'>
+              <bucket>&quot;Γαλακτοκομικά&quot;</bucket>
+            </map>
+            <map to='#9d7660'>
+              <bucket>&quot;Γύρος&quot;</bucket>
+            </map>
+            <map to='#9d7660'>
+              <bucket>&quot;Ζαχαροπλαστεία&quot;</bucket>
+            </map>
+            <map to='#9d7660'>
+              <bucket>&quot;Ινδική&quot;</bucket>
+            </map>
+            <map to='#9d7660'>
+              <bucket>&quot;Μανάβικο&quot;</bucket>
+            </map>
+            <map to='#9d7660'>
+              <bucket>&quot;Σουβλάκια&quot;</bucket>
+            </map>
+            <map to='#9d7660'>
+              <bucket>&quot;Φαλάφελ&quot;</bucket>
+            </map>
+            <map to='#a0cbe8'>
+              <bucket>&quot;African&quot;</bucket>
+            </map>
+            <map to='#a0cbe8'>
+              <bucket>&quot;Arabic sweets&quot;</bucket>
+            </map>
+            <map to='#a0cbe8'>
+              <bucket>&quot;BAEMIN_1_ASIAN&quot;</bucket>
+            </map>
+            <map to='#a0cbe8'>
+              <bucket>&quot;Breakfast &amp; Börek&quot;</bucket>
+            </map>
+            <map to='#a0cbe8'>
+              <bucket>&quot;Catering &quot;</bucket>
+            </map>
+            <map to='#a0cbe8'>
+              <bucket>&quot;Chicken Rice&quot;</bucket>
+            </map>
+            <map to='#a0cbe8'>
+              <bucket>&quot;Chicken Wings&quot;</bucket>
+            </map>
+            <map to='#a0cbe8'>
+              <bucket>&quot;Comida Italiana&quot;</bucket>
+            </map>
+            <map to='#a0cbe8'>
+              <bucket>&quot;Danish&quot;</bucket>
+            </map>
+            <map to='#a0cbe8'>
+              <bucket>&quot;Desayunos&quot;</bucket>
+            </map>
+            <map to='#a0cbe8'>
+              <bucket>&quot;Eastern&quot;</bucket>
+            </map>
+            <map to='#a0cbe8'>
+              <bucket>&quot;Electronics&quot;</bucket>
+            </map>
+            <map to='#a0cbe8'>
+              <bucket>&quot;Fine Dining&quot;</bucket>
+            </map>
+            <map to='#a0cbe8'>
+              <bucket>&quot;Juice&quot;</bucket>
+            </map>
+            <map to='#a0cbe8'>
+              <bucket>&quot;MEAT&quot;</bucket>
+            </map>
+            <map to='#a0cbe8'>
+              <bucket>&quot;Meatballs&quot;</bucket>
+            </map>
+            <map to='#a0cbe8'>
+              <bucket>&quot;Nasi Kerabu&quot;</bucket>
+            </map>
+            <map to='#a0cbe8'>
+              <bucket>&quot;Nepalese&quot;</bucket>
+            </map>
+            <map to='#a0cbe8'>
+              <bucket>&quot;Pastries &amp; Sweets&quot;</bucket>
+            </map>
+            <map to='#a0cbe8'>
+              <bucket>&quot;Pulao&quot;</bucket>
+            </map>
+            <map to='#a0cbe8'>
+              <bucket>&quot;Salad&quot;</bucket>
+            </map>
+            <map to='#a0cbe8'>
+              <bucket>&quot;Sliders&quot;</bucket>
+            </map>
+            <map to='#a0cbe8'>
+              <bucket>&quot;Soup&quot;</bucket>
+            </map>
+            <map to='#a0cbe8'>
+              <bucket>&quot;Southern Thai&quot;</bucket>
+            </map>
+            <map to='#a0cbe8'>
+              <bucket>&quot;Street Food&quot;</bucket>
+            </map>
+            <map to='#a0cbe8'>
+              <bucket>&quot;Vegan&quot;</bucket>
+            </map>
+            <map to='#a0cbe8'>
+              <bucket>&quot;Vegetarian Options&quot;</bucket>
+            </map>
+            <map to='#a0cbe8'>
+              <bucket>&quot;Ηλεκτρονικά είδη&quot;</bucket>
+            </map>
+            <map to='#a0cbe8'>
+              <bucket>&quot;Παιχνίδι - είδη δώρου&quot;</bucket>
+            </map>
+            <map to='#a0cbe8'>
+              <bucket>&quot;Φούρνος&quot;</bucket>
+            </map>
+            <map to='#a0cbe8'>
+              <bucket>&quot;Ψησταριά&quot;</bucket>
+            </map>
+            <map to='#b07aa1'>
+              <bucket>&quot;Açaí&quot;</bucket>
+            </map>
+            <map to='#b07aa1'>
+              <bucket>&quot;Bak Kut Teh&quot;</bucket>
+            </map>
+            <map to='#b07aa1'>
+              <bucket>&quot;Caribbean&quot;</bucket>
+            </map>
+            <map to='#b07aa1'>
+              <bucket>&quot;Chivitos&quot;</bucket>
+            </map>
+            <map to='#b07aa1'>
+              <bucket>&quot;Churrascos&quot;</bucket>
+            </map>
+            <map to='#b07aa1'>
+              <bucket>&quot;Comida Chilena&quot;</bucket>
+            </map>
+            <map to='#b07aa1'>
+              <bucket>&quot;Comida Hindú&quot;</bucket>
+            </map>
+            <map to='#b07aa1'>
+              <bucket>&quot;Comida Internacional&quot;</bucket>
+            </map>
+            <map to='#b07aa1'>
+              <bucket>&quot;Comida Japonesa&quot;</bucket>
+            </map>
+            <map to='#b07aa1'>
+              <bucket>&quot;Congee&quot;</bucket>
+            </map>
+            <map to='#b07aa1'>
+              <bucket>&quot;FASTFOOD&quot;</bucket>
+            </map>
+            <map to='#b07aa1'>
+              <bucket>&quot;Healthy &quot;</bucket>
+            </map>
+            <map to='#b07aa1'>
+              <bucket>&quot;Helados&quot;</bucket>
+            </map>
+            <map to='#b07aa1'>
+              <bucket>&quot;Home-Made Cuisine&quot;</bucket>
+            </map>
+            <map to='#b07aa1'>
+              <bucket>&quot;Kuey Teow&quot;</bucket>
+            </map>
+            <map to='#b07aa1'>
+              <bucket>&quot;Mala Soups&quot;</bucket>
+            </map>
+            <map to='#b07aa1'>
+              <bucket>&quot;Mediterranean&quot;</bucket>
+            </map>
+            <map to='#b07aa1'>
+              <bucket>&quot;Mexican &quot;</bucket>
+            </map>
+            <map to='#b07aa1'>
+              <bucket>&quot;Nasi Kandar&quot;</bucket>
+            </map>
+            <map to='#b07aa1'>
+              <bucket>&quot;Omani&quot;</bucket>
+            </map>
+            <map to='#b07aa1'>
+              <bucket>&quot;Perfume&quot;</bucket>
+            </map>
+            <map to='#b07aa1'>
+              <bucket>&quot;Persien&quot;</bucket>
+            </map>
+            <map to='#b07aa1'>
+              <bucket>&quot;Toast &amp; Sandwich&quot;</bucket>
+            </map>
+            <map to='#b07aa1'>
+              <bucket>&quot;Βιβλιοπωλείο&quot;</bucket>
+            </map>
+            <map to='#b07aa1'>
+              <bucket>&quot;Θαλασσινά&quot;</bucket>
+            </map>
+            <map to='#b07aa1'>
+              <bucket>&quot;Μαγειρευτά&quot;</bucket>
+            </map>
+            <map to='#b07aa1'>
+              <bucket>&quot;Ξηροί Καρποί&quot;</bucket>
+            </map>
+            <map to='#b07aa1'>
+              <bucket>&quot;Φρουταγορά&quot;</bucket>
+            </map>
+            <map to='#b07aa1'>
+              <bucket>&quot;Ψητά - Grill&quot;</bucket>
+            </map>
+            <map to='#b6992d'>
+              <bucket>&quot;Arabic&quot;</bucket>
+            </map>
+            <map to='#b6992d'>
+              <bucket>&quot;Biryani&quot;</bucket>
+            </map>
+            <map to='#b6992d'>
+              <bucket>&quot;Breakfast&quot;</bucket>
+            </map>
+            <map to='#b6992d'>
+              <bucket>&quot;Burrito&quot;</bucket>
+            </map>
+            <map to='#b6992d'>
+              <bucket>&quot;Cha Chaan Teng&quot;</bucket>
+            </map>
+            <map to='#b6992d'>
+              <bucket>&quot;Chicken&quot;</bucket>
+            </map>
+            <map to='#b6992d'>
+              <bucket>&quot;Chinese&quot;</bucket>
+            </map>
+            <map to='#b6992d'>
+              <bucket>&quot;Georgian&quot;</bucket>
+            </map>
+            <map to='#b6992d'>
+              <bucket>&quot;Hawaiian&quot;</bucket>
+            </map>
+            <map to='#b6992d'>
+              <bucket>&quot;Hypermarket&quot;</bucket>
+            </map>
+            <map to='#b6992d'>
+              <bucket>&quot;Japan&quot;</bucket>
+            </map>
+            <map to='#b6992d'>
+              <bucket>&quot;JAPANESE&quot;</bucket>
+            </map>
+            <map to='#b6992d'>
+              <bucket>&quot;Latino&quot;</bucket>
+            </map>
+            <map to='#b6992d'>
+              <bucket>&quot;Meat&quot;</bucket>
+            </map>
+            <map to='#b6992d'>
+              <bucket>&quot;Menú&quot;</bucket>
+            </map>
+            <map to='#b6992d'>
+              <bucket>&quot;Middle eastern&quot;</bucket>
+            </map>
+            <map to='#b6992d'>
+              <bucket>&quot;Pares&quot;</bucket>
+            </map>
+            <map to='#b6992d'>
+              <bucket>&quot;Pollo&quot;</bucket>
+            </map>
+            <map to='#b6992d'>
+              <bucket>&quot;Postres y Pasteles&quot;</bucket>
+            </map>
+            <map to='#b6992d'>
+              <bucket>&quot;Steaks&quot;</bucket>
+            </map>
+            <map to='#b6992d'>
+              <bucket>&quot;Tea&quot;</bucket>
+            </map>
+            <map to='#b6992d'>
+              <bucket>&quot;Thai&quot;</bucket>
+            </map>
+            <map to='#b6992d'>
+              <bucket>&quot;Tom Yum&quot;</bucket>
+            </map>
+            <map to='#b6992d'>
+              <bucket>&quot;Udon&quot;</bucket>
+            </map>
+            <map to='#b6992d'>
+              <bucket>&quot;Veggie &amp; Vegan&quot;</bucket>
+            </map>
+            <map to='#b6992d'>
+              <bucket>&quot;Ελληνική&quot;</bucket>
+            </map>
+            <map to='#b6992d'>
+              <bucket>&quot;Κόκκοι &amp; Κάψουλες καφέ&quot;</bucket>
+            </map>
+            <map to='#b6992d'>
+              <bucket>&quot;Παραφαρμακεία&quot;</bucket>
+            </map>
+            <map to='#b6992d'>
+              <bucket>&quot;Πίτσα&quot;</bucket>
+            </map>
+            <map to='#b6992d'>
+              <bucket>&quot;Χυμοί&quot;</bucket>
+            </map>
+            <map to='#bab0ac'>
+              <bucket>&quot;Argentinian&quot;</bucket>
+            </map>
+            <map to='#bab0ac'>
+              <bucket>&quot;ASIAN&quot;</bucket>
+            </map>
+            <map to='#bab0ac'>
+              <bucket>&quot;BAEMIN_1_SNACK&quot;</bucket>
+            </map>
+            <map to='#bab0ac'>
+              <bucket>&quot;BAEMIN_1_WESTERN&quot;</bucket>
+            </map>
+            <map to='#bab0ac'>
+              <bucket>&quot;CAFE&quot;</bucket>
+            </map>
+            <map to='#bab0ac'>
+              <bucket>&quot;Cakes&quot;</bucket>
+            </map>
+            <map to='#bab0ac'>
+              <bucket>&quot;Chifas&quot;</bucket>
+            </map>
+            <map to='#bab0ac'>
+              <bucket>&quot;Chotpoti &amp; Fuchka&quot;</bucket>
+            </map>
+            <map to='#bab0ac'>
+              <bucket>&quot;Comida Armenia&quot;</bucket>
+            </map>
+            <map to='#bab0ac'>
+              <bucket>&quot;Crudos&quot;</bucket>
+            </map>
+            <map to='#bab0ac'>
+              <bucket>&quot;Donuts&quot;</bucket>
+            </map>
+            <map to='#bab0ac'>
+              <bucket>&quot;Health &amp; Fitness&quot;</bucket>
+            </map>
+            <map to='#bab0ac'>
+              <bucket>&quot;Hot Dog&quot;</bucket>
+            </map>
+            <map to='#bab0ac'>
+              <bucket>&quot;Italian&quot;</bucket>
+            </map>
+            <map to='#bab0ac'>
+              <bucket>&quot;Jordanian&quot;</bucket>
+            </map>
+            <map to='#bab0ac'>
+              <bucket>&quot;Khaliji&quot;</bucket>
+            </map>
+            <map to='#bab0ac'>
+              <bucket>&quot;Mandi&quot;</bucket>
+            </map>
+            <map to='#bab0ac'>
+              <bucket>&quot;Mee Goreng&quot;</bucket>
+            </map>
+            <map to='#bab0ac'>
+              <bucket>&quot;Salads&quot;</bucket>
+            </map>
+            <map to='#bab0ac'>
+              <bucket>&quot;Soups&quot;</bucket>
+            </map>
+            <map to='#bab0ac'>
+              <bucket>&quot;Swedish&quot;</bucket>
+            </map>
+            <map to='#bab0ac'>
+              <bucket>&quot;Takoyaki&quot;</bucket>
+            </map>
+            <map to='#bab0ac'>
+              <bucket>&quot;Αμερικάνικη Κουζίνα&quot;</bucket>
+            </map>
+            <map to='#bab0ac'>
+              <bucket>&quot;Κρέπες&quot;</bucket>
+            </map>
+            <map to='#bab0ac'>
+              <bucket>&quot;Λιβανέζικα&quot;</bucket>
+            </map>
+            <map to='#bab0ac'>
+              <bucket>&quot;Μεσογειακή&quot;</bucket>
+            </map>
+            <map to='#bab0ac'>
+              <bucket>&quot;Πατσάς&quot;</bucket>
+            </map>
+            <map to='#bab0ac'>
+              <bucket>&quot;Πρωτεϊνικά γεύματα&quot;</bucket>
+            </map>
+            <map to='#bab0ac'>
+              <bucket>&quot;Σάντουιτς&quot;</bucket>
+            </map>
+            <map to='#bab0ac'>
+              <bucket>&quot;Υπεραγορές&quot;</bucket>
+            </map>
+            <map to='#d37295'>
+              <bucket>&quot;Aιγυπτιακή&quot;</bucket>
+            </map>
+            <map to='#d37295'>
+              <bucket>&quot;BAEKBAN&quot;</bucket>
+            </map>
+            <map to='#d37295'>
+              <bucket>&quot;Brazilian&quot;</bucket>
+            </map>
+            <map to='#d37295'>
+              <bucket>&quot;Cakes and Desserts&quot;</bucket>
+            </map>
+            <map to='#d37295'>
+              <bucket>&quot;Chinese &quot;</bucket>
+            </map>
+            <map to='#d37295'>
+              <bucket>&quot;Çiğ Börek&quot;</bucket>
+            </map>
+            <map to='#d37295'>
+              <bucket>&quot;Comida Caribeña&quot;</bucket>
+            </map>
+            <map to='#d37295'>
+              <bucket>&quot;Comida Mexicana&quot;</bucket>
+            </map>
+            <map to='#d37295'>
+              <bucket>&quot;Comida nacional&quot;</bucket>
+            </map>
+            <map to='#d37295'>
+              <bucket>&quot;Completos&quot;</bucket>
+            </map>
+            <map to='#d37295'>
+              <bucket>&quot;Crepes&quot;</bucket>
+            </map>
+            <map to='#d37295'>
+              <bucket>&quot;Dessert&quot;</bucket>
+            </map>
+            <map to='#d37295'>
+              <bucket>&quot;European&quot;</bucket>
+            </map>
+            <map to='#d37295'>
+              <bucket>&quot;Feinkost&quot;</bucket>
+            </map>
+            <map to='#d37295'>
+              <bucket>&quot;Frozen Yogurt&quot;</bucket>
+            </map>
+            <map to='#d37295'>
+              <bucket>&quot;Indian &quot;</bucket>
+            </map>
+            <map to='#d37295'>
+              <bucket>&quot;Jamaican&quot;</bucket>
+            </map>
+            <map to='#d37295'>
+              <bucket>&quot;Japanese&quot;</bucket>
+            </map>
+            <map to='#d37295'>
+              <bucket>&quot;Japanese &quot;</bucket>
+            </map>
+            <map to='#d37295'>
+              <bucket>&quot;Keto&quot;</bucket>
+            </map>
+            <map to='#d37295'>
+              <bucket>&quot;Lebanese&quot;</bucket>
+            </map>
+            <map to='#d37295'>
+              <bucket>&quot;Malaysian&quot;</bucket>
+            </map>
+            <map to='#d37295'>
+              <bucket>&quot;PIZZA&quot;</bucket>
+            </map>
+            <map to='#d37295'>
+              <bucket>&quot;Poke&quot;</bucket>
+            </map>
+            <map to='#d37295'>
+              <bucket>&quot;Satay&quot;</bucket>
+            </map>
+            <map to='#d37295'>
+              <bucket>&quot;Siu Mei&quot;</bucket>
+            </map>
+            <map to='#d37295'>
+              <bucket>&quot;South indian&quot;</bucket>
+            </map>
+            <map to='#d37295'>
+              <bucket>&quot;Κουλούρια&quot;</bucket>
+            </map>
+            <map to='#d37295'>
+              <bucket>&quot;Προϊόντα καπνού - ατμού&quot;</bucket>
+            </map>
+            <map to='#d37295'>
+              <bucket>&quot;Τσάι&quot;</bucket>
+            </map>
+            <map to='#d4a6c8'>
+              <bucket>&quot;BAEMIN_1_PIZZA&quot;</bucket>
+            </map>
+            <map to='#d4a6c8'>
+              <bucket>&quot;Bulalo&quot;</bucket>
+            </map>
+            <map to='#d4a6c8'>
+              <bucket>&quot;Burmese&quot;</bucket>
+            </map>
+            <map to='#d4a6c8'>
+              <bucket>&quot;Charity&quot;</bucket>
+            </map>
+            <map to='#d4a6c8'>
+              <bucket>&quot;Coffee&quot;</bucket>
+            </map>
+            <map to='#d4a6c8'>
+              <bucket>&quot;Comida Dominicana&quot;</bucket>
+            </map>
+            <map to='#d4a6c8'>
+              <bucket>&quot;Comida Thai&quot;</bucket>
+            </map>
+            <map to='#d4a6c8'>
+              <bucket>&quot;Comida Típica&quot;</bucket>
+            </map>
+            <map to='#d4a6c8'>
+              <bucket>&quot;Dim Sum &quot;</bucket>
+            </map>
+            <map to='#d4a6c8'>
+              <bucket>&quot;Frozen Yogurt &quot;</bucket>
+            </map>
+            <map to='#d4a6c8'>
+              <bucket>&quot;Isan Thai&quot;</bucket>
+            </map>
+            <map to='#d4a6c8'>
+              <bucket>&quot;Korean&quot;</bucket>
+            </map>
+            <map to='#d4a6c8'>
+              <bucket>&quot;Mexican&quot;</bucket>
+            </map>
+            <map to='#d4a6c8'>
+              <bucket>&quot;Milkshakes&quot;</bucket>
+            </map>
+            <map to='#d4a6c8'>
+              <bucket>&quot;NIGHTSNACK&quot;</bucket>
+            </map>
+            <map to='#d4a6c8'>
+              <bucket>&quot;Peruvian&quot;</bucket>
+            </map>
+            <map to='#d4a6c8'>
+              <bucket>&quot;Pescados y Mariscos&quot;</bucket>
+            </map>
+            <map to='#d4a6c8'>
+              <bucket>&quot;Pet shop&quot;</bucket>
+            </map>
+            <map to='#d4a6c8'>
+              <bucket>&quot;Porridge&quot;</bucket>
+            </map>
+            <map to='#d4a6c8'>
+              <bucket>&quot;Rice&quot;</bucket>
+            </map>
+            <map to='#d4a6c8'>
+              <bucket>&quot;Saj&quot;</bucket>
+            </map>
+            <map to='#d4a6c8'>
+              <bucket>&quot;Shawarma&quot;</bucket>
+            </map>
+            <map to='#d4a6c8'>
+              <bucket>&quot;Street food&quot;</bucket>
+            </map>
+            <map to='#d4a6c8'>
+              <bucket>&quot;Superfoods&quot;</bucket>
+            </map>
+            <map to='#d4a6c8'>
+              <bucket>&quot;Αλφαμέγα&quot;</bucket>
+            </map>
+            <map to='#d4a6c8'>
+              <bucket>&quot;Ανατολίτικη&quot;</bucket>
+            </map>
+            <map to='#d4a6c8'>
+              <bucket>&quot;Ινδικά&quot;</bucket>
+            </map>
+            <map to='#d4a6c8'>
+              <bucket>&quot;Μεξικάνικη&quot;</bucket>
+            </map>
+            <map to='#d4a6c8'>
+              <bucket>&quot;Προϊόντα τεχνολογίας&quot;</bucket>
+            </map>
+            <map to='#d4a6c8'>
+              <bucket>&quot;Σαλάτες&quot;</bucket>
+            </map>
+            <map to='#d7b5a6'>
+              <bucket>&quot;Bbq&quot;</bucket>
+            </map>
+            <map to='#d7b5a6'>
+              <bucket>&quot;Beverages&quot;</bucket>
+            </map>
+            <map to='#d7b5a6'>
+              <bucket>&quot;Bread &amp; Bakery&quot;</bucket>
+            </map>
+            <map to='#d7b5a6'>
+              <bucket>&quot;Cag Kebab&quot;</bucket>
+            </map>
+            <map to='#d7b5a6'>
+              <bucket>&quot;Convenience Store&quot;</bucket>
+            </map>
+            <map to='#d7b5a6'>
+              <bucket>&quot;Dumpling&quot;</bucket>
+            </map>
+            <map to='#d7b5a6'>
+              <bucket>&quot;Filipino&quot;</bucket>
+            </map>
+            <map to='#d7b5a6'>
+              <bucket>&quot;Foul&quot;</bucket>
+            </map>
+            <map to='#d7b5a6'>
+              <bucket>&quot;Fried chicken&quot;</bucket>
+            </map>
+            <map to='#d7b5a6'>
+              <bucket>&quot;Fruits&quot;</bucket>
+            </map>
+            <map to='#d7b5a6'>
+              <bucket>&quot;Ice Cream&quot;</bucket>
+            </map>
+            <map to='#d7b5a6'>
+              <bucket>&quot;Kuih&quot;</bucket>
+            </map>
+            <map to='#d7b5a6'>
+              <bucket>&quot;Mongolian&quot;</bucket>
+            </map>
+            <map to='#d7b5a6'>
+              <bucket>&quot;Pasta&quot;</bucket>
+            </map>
+            <map to='#d7b5a6'>
+              <bucket>&quot;Picadas&quot;</bucket>
+            </map>
+            <map to='#d7b5a6'>
+              <bucket>&quot;Roti Canai&quot;</bucket>
+            </map>
+            <map to='#d7b5a6'>
+              <bucket>&quot;Salteñas&quot;</bucket>
+            </map>
+            <map to='#d7b5a6'>
+              <bucket>&quot;Sichuan&quot;</bucket>
+            </map>
+            <map to='#d7b5a6'>
+              <bucket>&quot;Tantuni&quot;</bucket>
+            </map>
+            <map to='#d7b5a6'>
+              <bucket>&quot;Tunisian&quot;</bucket>
+            </map>
+            <map to='#d7b5a6'>
+              <bucket>&quot;Ukrainian&quot;</bucket>
+            </map>
+            <map to='#d7b5a6'>
+              <bucket>&quot;ZZIM_TANG&quot;</bucket>
+            </map>
+            <map to='#d7b5a6'>
+              <bucket>&quot;Είδη για κατοικίδια&quot;</bucket>
+            </map>
+            <map to='#d7b5a6'>
+              <bucket>&quot;Ζυμαρικά&quot;</bucket>
+            </map>
+            <map to='#d7b5a6'>
+              <bucket>&quot;Ιταλική&quot;</bucket>
+            </map>
+            <map to='#d7b5a6'>
+              <bucket>&quot;Καλλυντικά&quot;</bucket>
+            </map>
+            <map to='#d7b5a6'>
+              <bucket>&quot;Λουκουμάδες&quot;</bucket>
+            </map>
+            <map to='#d7b5a6'>
+              <bucket>&quot;Μεζεδοπωλείο&quot;</bucket>
+            </map>
+            <map to='#d7b5a6'>
+              <bucket>&quot;Οπτικά είδη&quot;</bucket>
+            </map>
+            <map to='#e15759'>
+              <bucket>&quot;BAEMIN_1_BAEKBAN&quot;</bucket>
+            </map>
+            <map to='#e15759'>
+              <bucket>&quot;Bahraini&quot;</bucket>
+            </map>
+            <map to='#e15759'>
+              <bucket>&quot;Carnes&quot;</bucket>
+            </map>
+            <map to='#e15759'>
+              <bucket>&quot;CHICKEN&quot;</bucket>
+            </map>
+            <map to='#e15759'>
+              <bucket>&quot;Comida India&quot;</bucket>
+            </map>
+            <map to='#e15759'>
+              <bucket>&quot;Comida Rápida&quot;</bucket>
+            </map>
+            <map to='#e15759'>
+              <bucket>&quot;Comida Venezolana&quot;</bucket>
+            </map>
+            <map to='#e15759'>
+              <bucket>&quot;Cosmetics&quot;</bucket>
+            </map>
+            <map to='#e15759'>
+              <bucket>&quot;French &quot;</bucket>
+            </map>
+            <map to='#e15759'>
+              <bucket>&quot;Frozen yogurt&quot;</bucket>
+            </map>
+            <map to='#e15759'>
+              <bucket>&quot;Gluten free&quot;</bucket>
+            </map>
+            <map to='#e15759'>
+              <bucket>&quot;Greek&quot;</bucket>
+            </map>
+            <map to='#e15759'>
+              <bucket>&quot;Grill&quot;</bucket>
+            </map>
+            <map to='#e15759'>
+              <bucket>&quot;Halo-Halo&quot;</bucket>
+            </map>
+            <map to='#e15759'>
+              <bucket>&quot;Hot dogs&quot;</bucket>
+            </map>
+            <map to='#e15759'>
+              <bucket>&quot;Kumru&quot;</bucket>
+            </map>
+            <map to='#e15759'>
+              <bucket>&quot;Lomitos&quot;</bucket>
+            </map>
+            <map to='#e15759'>
+              <bucket>&quot;Meze&quot;</bucket>
+            </map>
+            <map to='#e15759'>
+              <bucket>&quot;North indian&quot;</bucket>
+            </map>
+            <map to='#e15759'>
+              <bucket>&quot;Patisserie &amp; Bakery&quot;</bucket>
+            </map>
+            <map to='#e15759'>
+              <bucket>&quot;Sándwiches&quot;</bucket>
+            </map>
+            <map to='#e15759'>
+              <bucket>&quot;Serbian&quot;</bucket>
+            </map>
+            <map to='#e15759'>
+              <bucket>&quot;Seyami&quot;</bucket>
+            </map>
+            <map to='#e15759'>
+              <bucket>&quot;Supermarket&quot;</bucket>
+            </map>
+            <map to='#e15759'>
+              <bucket>&quot;Tartas&quot;</bucket>
+            </map>
+            <map to='#e15759'>
+              <bucket>&quot;Water&quot;</bucket>
+            </map>
+            <map to='#e15759'>
+              <bucket>&quot;Wraps and Rolls&quot;</bucket>
+            </map>
+            <map to='#e15759'>
+              <bucket>&quot;Yemeni&quot;</bucket>
+            </map>
+            <map to='#e15759'>
+              <bucket>&quot;Βιολογικά προϊόντα&quot;</bucket>
+            </map>
+            <map to='#e15759'>
+              <bucket>&quot;Ζαχαροπλαστείο&quot;</bucket>
+            </map>
+            <map to='#e15759'>
+              <bucket>&quot;Φρέσκοι χυμοί&quot;</bucket>
+            </map>
+            <map to='#f1ce63'>
+              <bucket>&quot;Breakfast &amp; Coffee&quot;</bucket>
+            </map>
+            <map to='#f1ce63'>
+              <bucket>&quot;Butchery&quot;</bucket>
+            </map>
+            <map to='#f1ce63'>
+              <bucket>&quot;Cafe&quot;</bucket>
+            </map>
+            <map to='#f1ce63'>
+              <bucket>&quot;Comida Libanesa&quot;</bucket>
+            </map>
+            <map to='#f1ce63'>
+              <bucket>&quot;Desserts and sweets&quot;</bucket>
+            </map>
+            <map to='#f1ce63'>
+              <bucket>&quot;Dumplings&quot;</bucket>
+            </map>
+            <map to='#f1ce63'>
+              <bucket>&quot;Egyptian&quot;</bucket>
+            </map>
+            <map to='#f1ce63'>
+              <bucket>&quot;Fast food&quot;</bucket>
+            </map>
+            <map to='#f1ce63'>
+              <bucket>&quot;Foody Market&quot;</bucket>
+            </map>
+            <map to='#f1ce63'>
+              <bucket>&quot;Hot Dogs&quot;</bucket>
+            </map>
+            <map to='#f1ce63'>
+              <bucket>&quot;Hungarian&quot;</bucket>
+            </map>
+            <map to='#f1ce63'>
+              <bucket>&quot;Lomi&quot;</bucket>
+            </map>
+            <map to='#f1ce63'>
+              <bucket>&quot;Moroccan&quot;</bucket>
+            </map>
+            <map to='#f1ce63'>
+              <bucket>&quot;Panchos&quot;</bucket>
+            </map>
+            <map to='#f1ce63'>
+              <bucket>&quot;Parrillas&quot;</bucket>
+            </map>
+            <map to='#f1ce63'>
+              <bucket>&quot;Pet Shop&quot;</bucket>
+            </map>
+            <map to='#f1ce63'>
+              <bucket>&quot;Sandwich&quot;</bucket>
+            </map>
+            <map to='#f1ce63'>
+              <bucket>&quot;Snacks &quot;</bucket>
+            </map>
+            <map to='#f1ce63'>
+              <bucket>&quot;Supplements&quot;</bucket>
+            </map>
+            <map to='#f1ce63'>
+              <bucket>&quot;Vegetarian&quot;</bucket>
+            </map>
+            <map to='#f1ce63'>
+              <bucket>&quot;Water Delivery&quot;</bucket>
+            </map>
+            <map to='#f1ce63'>
+              <bucket>&quot;Western&quot;</bucket>
+            </map>
+            <map to='#f1ce63'>
+              <bucket>&quot;WESTERN&quot;</bucket>
+            </map>
+            <map to='#f1ce63'>
+              <bucket>&quot;Wraps &amp; Rolls&quot;</bucket>
+            </map>
+            <map to='#f1ce63'>
+              <bucket>&quot;Ιχθυοπωλείο&quot;</bucket>
+            </map>
+            <map to='#f1ce63'>
+              <bucket>&quot;Κάβες&quot;</bucket>
+            </map>
+            <map to='#f1ce63'>
+              <bucket>&quot;Μπέργκερς&quot;</bucket>
+            </map>
+            <map to='#f1ce63'>
+              <bucket>&quot;Παιχνίδια&quot;</bucket>
+            </map>
+            <map to='#f1ce63'>
+              <bucket>&quot;Περίπτερα&quot;</bucket>
+            </map>
+            <map to='#f28e2b'>
+              <bucket>&quot;American&quot;</bucket>
+            </map>
+            <map to='#f28e2b'>
+              <bucket>&quot;BAEMIN_1_CHINESE&quot;</bucket>
+            </map>
+            <map to='#f28e2b'>
+              <bucket>&quot;BAEMIN_1_MEAT&quot;</bucket>
+            </map>
+            <map to='#f28e2b'>
+              <bucket>&quot;Baked potatoes&quot;</bucket>
+            </map>
+            <map to='#f28e2b'>
+              <bucket>&quot;Bebidas&quot;</bucket>
+            </map>
+            <map to='#f28e2b'>
+              <bucket>&quot;Cantonese&quot;</bucket>
+            </map>
+            <map to='#f28e2b'>
+              <bucket>&quot;Continental&quot;</bucket>
+            </map>
+            <map to='#f28e2b'>
+              <bucket>&quot;Cupcakes&quot;</bucket>
+            </map>
+            <map to='#f28e2b'>
+              <bucket>&quot;Ethnic&quot;</bucket>
+            </map>
+            <map to='#f28e2b'>
+              <bucket>&quot;Galantine&quot;</bucket>
+            </map>
+            <map to='#f28e2b'>
+              <bucket>&quot;Grills&quot;</bucket>
+            </map>
+            <map to='#f28e2b'>
+              <bucket>&quot;Hokkien Mee&quot;</bucket>
+            </map>
+            <map to='#f28e2b'>
+              <bucket>&quot;Kumpir&quot;</bucket>
+            </map>
+            <map to='#f28e2b'>
+              <bucket>&quot;Mini market&quot;</bucket>
+            </map>
+            <map to='#f28e2b'>
+              <bucket>&quot;Nuts &amp; Dried Fruit&quot;</bucket>
+            </map>
+            <map to='#f28e2b'>
+              <bucket>&quot;Organic&quot;</bucket>
+            </map>
+            <map to='#f28e2b'>
+              <bucket>&quot;Pakistani&quot;</bucket>
+            </map>
+            <map to='#f28e2b'>
+              <bucket>&quot;Pancakes &amp; Waffles&quot;</bucket>
+            </map>
+            <map to='#f28e2b'>
+              <bucket>&quot;Pho&quot;</bucket>
+            </map>
+            <map to='#f28e2b'>
+              <bucket>&quot;Portuguese&quot;</bucket>
+            </map>
+            <map to='#f28e2b'>
+              <bucket>&quot;Ramen&quot;</bucket>
+            </map>
+            <map to='#f28e2b'>
+              <bucket>&quot;Sandwiches&quot;</bucket>
+            </map>
+            <map to='#f28e2b'>
+              <bucket>&quot;Southeast Asian&quot;</bucket>
+            </map>
+            <map to='#f28e2b'>
+              <bucket>&quot;Tea &amp; Coffee&quot;</bucket>
+            </map>
+            <map to='#f28e2b'>
+              <bucket>&quot;TexMex&quot;</bucket>
+            </map>
+            <map to='#f28e2b'>
+              <bucket>&quot;Ιαπωνικά&quot;</bucket>
+            </map>
+            <map to='#f28e2b'>
+              <bucket>&quot;Νηστίσιμα&quot;</bucket>
+            </map>
+            <map to='#f28e2b'>
+              <bucket>&quot;Όσπρια&quot;</bucket>
+            </map>
+            <map to='#f28e2b'>
+              <bucket>&quot;Ταϊλανδέζικα&quot;</bucket>
+            </map>
+            <map to='#f28e2b'>
+              <bucket>&quot;Τηγανητό κοτόπουλο&quot;</bucket>
+            </map>
+            <map to='#f28e2b'>
+              <bucket>&quot;Ψωμί&quot;</bucket>
+            </map>
+            <map to='#fabfd2'>
+              <bucket>&quot;Argentine&quot;</bucket>
+            </map>
+            <map to='#fabfd2'>
+              <bucket>&quot;Asados&quot;</bucket>
+            </map>
+            <map to='#fabfd2'>
+              <bucket>&quot;BAEMIN_1_BURGER&quot;</bucket>
+            </map>
+            <map to='#fabfd2'>
+              <bucket>&quot;BAEMIN_1_ZZIM_TANG&quot;</bucket>
+            </map>
+            <map to='#fabfd2'>
+              <bucket>&quot;Baked Potatoes&quot;</bucket>
+            </map>
+            <map to='#fabfd2'>
+              <bucket>&quot;Beverage&quot;</bucket>
+            </map>
+            <map to='#fabfd2'>
+              <bucket>&quot;Bread&quot;</bucket>
+            </map>
+            <map to='#fabfd2'>
+              <bucket>&quot;Cafeteria&quot;</bucket>
+            </map>
+            <map to='#fabfd2'>
+              <bucket>&quot;Ceviches&quot;</bucket>
+            </map>
+            <map to='#fabfd2'>
+              <bucket>&quot;Comida Panameña&quot;</bucket>
+            </map>
+            <map to='#fabfd2'>
+              <bucket>&quot;Delicatessen&quot;</bucket>
+            </map>
+            <map to='#fabfd2'>
+              <bucket>&quot;Etli Ekmek&quot;</bucket>
+            </map>
+            <map to='#fabfd2'>
+              <bucket>&quot;Ice cream&quot;</bucket>
+            </map>
+            <map to='#fabfd2'>
+              <bucket>&quot;Indonesian&quot;</bucket>
+            </map>
+            <map to='#fabfd2'>
+              <bucket>&quot;Kebab&quot;</bucket>
+            </map>
+            <map to='#fabfd2'>
+              <bucket>&quot;Kebab &amp; Turkish&quot;</bucket>
+            </map>
+            <map to='#fabfd2'>
+              <bucket>&quot;Levant&quot;</bucket>
+            </map>
+            <map to='#fabfd2'>
+              <bucket>&quot;Liempo&quot;</bucket>
+            </map>
+            <map to='#fabfd2'>
+              <bucket>&quot;Optics&quot;</bucket>
+            </map>
+            <map to='#fabfd2'>
+              <bucket>&quot;Paellas&quot;</bucket>
+            </map>
+            <map to='#fabfd2'>
+              <bucket>&quot;Papas Fritas&quot;</bucket>
+            </map>
+            <map to='#fabfd2'>
+              <bucket>&quot;Postres&quot;</bucket>
+            </map>
+            <map to='#fabfd2'>
+              <bucket>&quot;Shanghainese&quot;</bucket>
+            </map>
+            <map to='#fabfd2'>
+              <bucket>&quot;Singaporean&quot;</bucket>
+            </map>
+            <map to='#fabfd2'>
+              <bucket>&quot;Sisig&quot;</bucket>
+            </map>
+            <map to='#fabfd2'>
+              <bucket>&quot;Vegan Options&quot;</bucket>
+            </map>
+            <map to='#fabfd2'>
+              <bucket>&quot;Πρόγευμα&quot;</bucket>
+            </map>
+            <map to='#fabfd2'>
+              <bucket>&quot;Σφολιάτες&quot;</bucket>
+            </map>
+            <map to='#fabfd2'>
+              <bucket>&quot;Ταϊλανδέζικη&quot;</bucket>
+            </map>
+            <map to='#ff9d9a'>
+              <bucket>&quot;BAEMIN_1_CAFE&quot;</bucket>
+            </map>
+            <map to='#ff9d9a'>
+              <bucket>&quot;BAEMIN_1_JOKBAL&quot;</bucket>
+            </map>
+            <map to='#ff9d9a'>
+              <bucket>&quot;Candy&quot;</bucket>
+            </map>
+            <map to='#ff9d9a'>
+              <bucket>&quot;Cantonese (Dim Sum)&quot;</bucket>
+            </map>
+            <map to='#ff9d9a'>
+              <bucket>&quot;Chocolate&quot;</bucket>
+            </map>
+            <map to='#ff9d9a'>
+              <bucket>&quot;Comida China&quot;</bucket>
+            </map>
+            <map to='#ff9d9a'>
+              <bucket>&quot;Comida Española&quot;</bucket>
+            </map>
+            <map to='#ff9d9a'>
+              <bucket>&quot;Comida Vegana&quot;</bucket>
+            </map>
+            <map to='#ff9d9a'>
+              <bucket>&quot;Convenience Store &quot;</bucket>
+            </map>
+            <map to='#ff9d9a'>
+              <bucket>&quot;Drinks&quot;</bucket>
+            </map>
+            <map to='#ff9d9a'>
+              <bucket>&quot;efood market&quot;</bucket>
+            </map>
+            <map to='#ff9d9a'>
+              <bucket>&quot;Grocery &quot;</bucket>
+            </map>
+            <map to='#ff9d9a'>
+              <bucket>&quot;Homemade&quot;</bucket>
+            </map>
+            <map to='#ff9d9a'>
+              <bucket>&quot;Indian&quot;</bucket>
+            </map>
+            <map to='#ff9d9a'>
+              <bucket>&quot;Lechon&quot;</bucket>
+            </map>
+            <map to='#ff9d9a'>
+              <bucket>&quot;Licuados y Jugos&quot;</bucket>
+            </map>
+            <map to='#ff9d9a'>
+              <bucket>&quot;Mala Xiang Guo&quot;</bucket>
+            </map>
+            <map to='#ff9d9a'>
+              <bucket>&quot;Nasi Kukus&quot;</bucket>
+            </map>
+            <map to='#ff9d9a'>
+              <bucket>&quot;Pancakes and Waffles&quot;</bucket>
+            </map>
+            <map to='#ff9d9a'>
+              <bucket>&quot;Pancit&quot;</bucket>
+            </map>
+            <map to='#ff9d9a'>
+              <bucket>&quot;Poke Bowl &quot;</bucket>
+            </map>
+            <map to='#ff9d9a'>
+              <bucket>&quot;Sinigang&quot;</bucket>
+            </map>
+            <map to='#ff9d9a'>
+              <bucket>&quot;Slovak&quot;</bucket>
+            </map>
+            <map to='#ff9d9a'>
+              <bucket>&quot;South American&quot;</bucket>
+            </map>
+            <map to='#ff9d9a'>
+              <bucket>&quot;Specialty Store&quot;</bucket>
+            </map>
+            <map to='#ff9d9a'>
+              <bucket>&quot;Taiwanese&quot;</bucket>
+            </map>
+            <map to='#ff9d9a'>
+              <bucket>&quot;Ulam&quot;</bucket>
+            </map>
+            <map to='#ff9d9a'>
+              <bucket>&quot;Waffles&quot;</bucket>
+            </map>
+            <map to='#ff9d9a'>
+              <bucket>&quot;Νερό&quot;</bucket>
+            </map>
+            <map to='#ff9d9a'>
+              <bucket>&quot;Υγεία - ομορφιά&quot;</bucket>
+            </map>
+            <map to='#ffbe7d'>
+              <bucket>&quot;Alcoholic Drinks&quot;</bucket>
+            </map>
+            <map to='#ffbe7d'>
+              <bucket>&quot;Asian&quot;</bucket>
+            </map>
+            <map to='#ffbe7d'>
+              <bucket>&quot;Bakery and Cakes&quot;</bucket>
+            </map>
+            <map to='#ffbe7d'>
+              <bucket>&quot;Café&quot;</bucket>
+            </map>
+            <map to='#ffbe7d'>
+              <bucket>&quot;Calzones&quot;</bucket>
+            </map>
+            <map to='#ffbe7d'>
+              <bucket>&quot;Comida Árabe&quot;</bucket>
+            </map>
+            <map to='#ffbe7d'>
+              <bucket>&quot;Falafel&quot;</bucket>
+            </map>
+            <map to='#ffbe7d'>
+              <bucket>&quot;Fish &amp; chips&quot;</bucket>
+            </map>
+            <map to='#ffbe7d'>
+              <bucket>&quot;Flowers&quot;</bucket>
+            </map>
+            <map to='#ffbe7d'>
+              <bucket>&quot;Fried Rice&quot;</bucket>
+            </map>
+            <map to='#ffbe7d'>
+              <bucket>&quot;Fries&quot;</bucket>
+            </map>
+            <map to='#ffbe7d'>
+              <bucket>&quot;Gramajo&quot;</bucket>
+            </map>
+            <map to='#ffbe7d'>
+              <bucket>&quot;Halal&quot;</bucket>
+            </map>
+            <map to='#ffbe7d'>
+              <bucket>&quot;HK Dessert&quot;</bucket>
+            </map>
+            <map to='#ffbe7d'>
+              <bucket>&quot;Kaya Toast&quot;</bucket>
+            </map>
+            <map to='#ffbe7d'>
+              <bucket>&quot;Lebanese &quot;</bucket>
+            </map>
+            <map to='#ffbe7d'>
+              <bucket>&quot;Lehmeyun&quot;</bucket>
+            </map>
+            <map to='#ffbe7d'>
+              <bucket>&quot;Mofongo&quot;</bucket>
+            </map>
+            <map to='#ffbe7d'>
+              <bucket>&quot;Nasi Lemak&quot;</bucket>
+            </map>
+            <map to='#ffbe7d'>
+              <bucket>&quot;Optical&quot;</bucket>
+            </map>
+            <map to='#ffbe7d'>
+              <bucket>&quot;Pastas&quot;</bucket>
+            </map>
+            <map to='#ffbe7d'>
+              <bucket>&quot;Pide &amp; Lahmacun&quot;</bucket>
+            </map>
+            <map to='#ffbe7d'>
+              <bucket>&quot;Sandwiches &quot;</bucket>
+            </map>
+            <map to='#ffbe7d'>
+              <bucket>&quot;Seafood&quot;</bucket>
+            </map>
+            <map to='#ffbe7d'>
+              <bucket>&quot;Snacks&quot;</bucket>
+            </map>
+            <map to='#ffbe7d'>
+              <bucket>&quot;Syrian&quot;</bucket>
+            </map>
+            <map to='#ffbe7d'>
+              <bucket>&quot;Toys&quot;</bucket>
+            </map>
+            <map to='#ffbe7d'>
+              <bucket>&quot;Αρτοποιήματα&quot;</bucket>
+            </map>
+            <map to='#ffbe7d'>
+              <bucket>&quot;Γαλλική&quot;</bucket>
+            </map>
+            <map to='#ffbe7d'>
+              <bucket>&quot;Κινέζικη&quot;</bucket>
+            </map>
+            <map to='#ffbe7d'>
+              <bucket>&quot;Στέικ&quot;</bucket>
+            </map>
+          </encoding>
+        </style-rule>
+      </style>
+      <semantic-values>
+        <semantic-value key='[Country].[Name]' value='&quot;United States&quot;' />
+      </semantic-values>
+      <date-options start-of-week='monday' />
+      <filter class='categorical' column='[Calculation_4353503099075432454]' filter-group='2'>
+        <groupfilter function='member' level='[Calculation_4353503099075432454]' member='true' user:ui-domain='database' user:ui-enumeration='inclusive' user:ui-marker='enumerate' />
+      </filter>
+      <_.fcp.ObjectModelEncapsulateLegacy.true...object-graph>
+        <objects>
+          <object caption='Custom SQL Query' id='_392D64E4AAF148739C0DC3E5684D9D56'>
+            <properties context=''>
+              <relation join='inner' type='join'>
+                <clause type='join'>
+                  <expression op='='>
+                    <expression op='[Custom SQL Query].[global_entity_id]' />
+                    <expression op='[gsr_entitlements_performance_global_entity_id].[global_entity_id]' />
+                  </expression>
+                </clause>
+                <relation connection='bigquery.1hagmfp0t4qyx3135dpge15eyvkd' name='Custom SQL Query' type='text'><![CDATA[--main cuisine
+WITH vendor_cuisine AS (
+ SELECT
+        c.global_entity_id,
+        c.vendor_id,
+        m.category_name_english AS category_name_english,
+        m.category_group_global category_group_global,
+        ROW_NUMBER() OVER (PARTITION BY c.global_entity_id, c.vendor_id) as rn
+    FROM `fulfillment-dwh-production.curated_data_shared_central_dwh.vendors` c
+    LEFT JOIN UNNEST (c.categories) m on m.is_main_category IS TRUE
+),
+
+city_view AS(
+
+SELECT 
+    vkpim.global_entity_id
+  , v.location.city as city
+  , e.segment AS segment
+  , e.management_entity AS management_entity
+  , e.sub_entity as sub_entity
+  , vkpim.report_month
+  , v_c.category_group_global AS category_group_global
+  , v_c.category_name_english
+  , vd.key_account_category
+  , COUNT(DISTINCT CASE WHEN vkpim.is_online IS TRUE THEN vkpim.vendor_id END) AS vendors_online
+  , SUM(value.gbv_eur) AS gbv
+  , SUM(successful_orders) AS orders
+FROM `fulfillment-dwh-production.curated_data_shared_central_dwh.agg_vendor_kpis_monthly` AS vkpim
+LEFT JOIN vendor_cuisine   v_c
+   ON vkpim.global_entity_id = v_c.global_entity_id
+  AND	vkpim.vendor_id	= v_c.vendor_id
+  AND v_c.rn = 1
+INNER JOIN `fulfillment-dwh-production.curated_data_shared_central_dwh.global_entities` AS e
+  ON vkpim.global_entity_id = e.global_entity_id
+  AND	e.is_platform_online IS TRUE
+LEFT JOIN `fulfillment-dwh-production.curated_data_shared_central_dwh.vendors`  v ON v.global_entity_id = vkpim.global_entity_id AND v.vendor_id = vkpim.vendor_id
+LEFT JOIN `fulfillment-dwh-production.cl_intl_markets.vendor_dimensions` vd ON vd.global_entity_id = vkpim.global_entity_id AND vd.vendor_id = vkpim.vendor_id
+WHERE report_month >>= DATE_ADD(DATE_TRUNC(CURRENT_DATE(),MONTH), INTERVAL - 6 MONTH)
+AND report_month <<  DATE_TRUNC(CURRENT_DATE(),MONTH)
+GROUP BY 1,2,3,4,5,6,7,8,9
+),
+
+country_view AS
+
+(
+SELECT 
+    vkpim.global_entity_id
+  , CONCAT('Entity - ', e.sub_entity) as city
+  , e.segment AS segment
+  , e.management_entity AS management_entity
+  , e.sub_entity as sub_entity
+  , vkpim.report_month
+  , v_c.category_group_global AS category_group_global
+  , v_c.category_name_english
+  , vd.key_account_category
+  , COUNT(DISTINCT CASE WHEN vkpim.is_online IS TRUE THEN vkpim.vendor_id END) AS vendors_online
+  , SUM(value.gbv_eur) AS gbv
+  , SUM(successful_orders) AS orders,
+FROM `fulfillment-dwh-production.curated_data_shared_central_dwh.agg_vendor_kpis_monthly` AS vkpim
+LEFT JOIN vendor_cuisine   v_c
+   ON vkpim.global_entity_id = v_c.global_entity_id
+  AND	vkpim.vendor_id	= v_c.vendor_id
+  AND v_c.rn = 1
+INNER JOIN `fulfillment-dwh-production.curated_data_shared_central_dwh.global_entities` AS e
+  ON vkpim.global_entity_id = e.global_entity_id
+  AND	e.is_platform_online IS TRUE
+LEFT JOIN `fulfillment-dwh-production.curated_data_shared_central_dwh.vendors`  v ON v.global_entity_id = vkpim.global_entity_id AND v.vendor_id = vkpim.vendor_id
+LEFT JOIN `fulfillment-dwh-production.cl_intl_markets.vendor_dimensions` vd ON vd.global_entity_id = vkpim.global_entity_id AND vd.vendor_id = vkpim.vendor_id
+WHERE report_month >>= DATE_ADD(DATE_TRUNC(CURRENT_DATE(),MONTH), INTERVAL -6 MONTH)
+AND report_month <<  DATE_TRUNC(CURRENT_DATE(),MONTH)
+GROUP BY 1,2,3,4,5,6,7,8,9
+
+
+)
+SELECT * 
+FROM city_view
+UNION ALL
+SELECT * 
+FROM country_view]]></relation>
+                <relation connection='bigquery.1hagmfp0t4qyx3135dpge15eyvkd' name='gsr_entitlements_performance_global_entity_id' table='[fulfillment-dwh-production.cl_intl_markets].[gsr_entitlements_performance_global_entity_id]' type='table' />
+              </relation>
+            </properties>
+            <properties context='extract'>
+              <relation join='inner' type='join'>
+                <clause type='join'>
+                  <expression op='='>
+                    <expression op='[Custom SQL Query].[global_entity_id]' />
+                    <expression op='[gsr_entitlements_performance_global_entity_id].[global_entity_id]' />
+                  </expression>
+                </clause>
+                <relation name='Custom SQL Query' table='[Extract].[Custom SQL Query]' type='table' />
+                <relation name='gsr_entitlements_performance_global_entity_id' table='[Extract].[gsr_entitlements_performance_global_entity_id]' type='table' />
+              </relation>
+            </properties>
+          </object>
+        </objects>
+      </_.fcp.ObjectModelEncapsulateLegacy.true...object-graph>
+    </datasource>
+  </datasources>
+  <worksheets>
+    <worksheet name='Sheet 1'>
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='vendor_afv_by_cuisine' name='federated.15qheri176fflo1f5s6110ic5llu' />
+          </datasources>
+          <datasource-dependencies datasource='federated.15qheri176fflo1f5s6110ic5llu'>
+            <column caption='AFV' datatype='real' default-format='n#,##0.0;-#,##0.0' name='[Calculation_4353503099019276289]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='ROUND((SUM([gbv])/ SUM([orders])), 1)' />
+            </column>
+            <column datatype='string' name='[category_name_english]' role='dimension' type='nominal' />
+            <column datatype='string' name='[city]' role='dimension' semantic-role='[City].[Name]' type='nominal' />
+            <column datatype='real' name='[gbv]' role='measure' type='quantitative' />
+            <column-instance column='[category_name_english]' derivation='None' name='[none:category_name_english:nk]' pivot='key' type='nominal' />
+            <column-instance column='[city]' derivation='None' name='[none:city:nk]' pivot='key' type='nominal' />
+            <column-instance column='[report_month]' derivation='None' name='[none:report_month:ok]' pivot='key' type='ordinal' />
+            <column-instance column='[sub_entity]' derivation='None' name='[none:sub_entity:nk]' pivot='key' type='nominal' />
+            <column datatype='integer' name='[orders]' role='measure' type='quantitative' />
+            <column datatype='date' name='[report_month]' role='dimension' type='ordinal' />
+            <column datatype='string' name='[sub_entity]' role='dimension' type='nominal' />
+            <column-instance column='[vendors_online]' derivation='Sum' name='[sum:vendors_online:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[Calculation_4353503099019276289]' derivation='User' name='[usr:Calculation_4353503099019276289:qk]' pivot='key' type='quantitative' />
+            <column datatype='integer' name='[vendors_online]' role='measure' type='quantitative' />
+          </datasource-dependencies>
+          <computed-sort column='[federated.15qheri176fflo1f5s6110ic5llu].[none:category_name_english:nk]' direction='ASC' using='[federated.15qheri176fflo1f5s6110ic5llu].[sum:vendors_online:qk]' />
+          <filter class='categorical' column='[federated.15qheri176fflo1f5s6110ic5llu].[none:city:nk]'>
+            <groupfilter function='union' user:ui-domain='database' user:ui-enumeration='inclusive' user:ui-marker='enumerate'>
+              <groupfilter function='member' level='[none:city:nk]' member='&quot;country&quot;' />
+              <groupfilter function='member' level='[none:city:nk]' member='&quot;Entity - FD - Finland&quot;' />
+              <groupfilter function='member' level='[none:city:nk]' member='&quot;espoo&quot;' />
+              <groupfilter function='member' level='[none:city:nk]' member='&quot;helsinki&quot;' />
+              <groupfilter function='member' level='[none:city:nk]' member='&quot;tampere&quot;' />
+            </groupfilter>
+          </filter>
+          <computed-sort column='[federated.15qheri176fflo1f5s6110ic5llu].[none:city:nk]' direction='DESC' using='[federated.15qheri176fflo1f5s6110ic5llu].[sum:vendors_online:qk]' />
+          <filter class='categorical' column='[federated.15qheri176fflo1f5s6110ic5llu].[none:report_month:ok]'>
+            <groupfilter function='member' level='[none:report_month:ok]' member='#2023-02-01#' user:ui-domain='database' user:ui-enumeration='inclusive' user:ui-marker='enumerate' />
+          </filter>
+          <filter class='categorical' column='[federated.15qheri176fflo1f5s6110ic5llu].[none:sub_entity:nk]'>
+            <groupfilter function='member' level='[none:sub_entity:nk]' member='&quot;FD - Finland&quot;' user:ui-domain='database' user:ui-enumeration='inclusive' user:ui-marker='enumerate' />
+          </filter>
+          <filter class='quantitative' column='[federated.15qheri176fflo1f5s6110ic5llu].[usr:Calculation_4353503099019276289:qk]' included-values='in-range'>
+            <max>20.0</max>
+          </filter>
+          <slices>
+            <column>[federated.15qheri176fflo1f5s6110ic5llu].[none:report_month:ok]</column>
+            <column>[federated.15qheri176fflo1f5s6110ic5llu].[usr:Calculation_4353503099019276289:qk]</column>
+            <column>[federated.15qheri176fflo1f5s6110ic5llu].[none:city:nk]</column>
+            <column>[federated.15qheri176fflo1f5s6110ic5llu].[none:sub_entity:nk]</column>
+          </slices>
+          <aggregation value='true' />
+        </view>
+        <style />
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Automatic' />
+            <encodings>
+              <color column='[federated.15qheri176fflo1f5s6110ic5llu].[none:category_name_english:nk]' />
+              <text column='[federated.15qheri176fflo1f5s6110ic5llu].[sum:vendors_online:qk]' />
+            </encodings>
+            <style>
+              <style-rule element='mark'>
+                <format attr='mark-labels-show' value='true' />
+                <format attr='mark-labels-cull' value='true' />
+              </style-rule>
+            </style>
+          </pane>
+        </panes>
+        <rows>[federated.15qheri176fflo1f5s6110ic5llu].[sum:vendors_online:qk]</rows>
+        <cols>[federated.15qheri176fflo1f5s6110ic5llu].[none:city:nk]</cols>
+      </table>
+      <simple-id uuid='{FD743271-1CC7-4A40-81E6-FEF361331440}' />
+    </worksheet>
+  </worksheets>
+  <dashboards>
+    <dashboard _.fcp.AccessibleZoneTabOrder.true...enable-sort-zone-taborder='true' name='Vendors by Cuisine '>
+      <repository-location id='VendorsbyCuisine' path='/t/GlobalStandardReporting/workbooks/AffordableVendors' revision='' site='GlobalStandardReporting' />
+      <style />
+      <size maxheight='800' maxwidth='1000' minheight='800' minwidth='1000' />
+      <datasources>
+        <datasource caption='vendor_afv_by_cuisine' name='federated.15qheri176fflo1f5s6110ic5llu' />
+      </datasources>
+      <datasource-dependencies datasource='federated.15qheri176fflo1f5s6110ic5llu'>
+        <column caption='AFV' datatype='real' default-format='n#,##0.0;-#,##0.0' name='[Calculation_4353503099019276289]' role='measure' type='quantitative'>
+          <calculation class='tableau' formula='ROUND((SUM([gbv])/ SUM([orders])), 1)' />
+        </column>
+        <column datatype='string' name='[city]' role='dimension' semantic-role='[City].[Name]' type='nominal' />
+        <column-instance column='[city]' derivation='None' name='[none:city:nk]' pivot='key' type='nominal' />
+        <column-instance column='[report_month]' derivation='None' name='[none:report_month:ok]' pivot='key' type='ordinal' />
+        <column-instance column='[sub_entity]' derivation='None' name='[none:sub_entity:nk]' pivot='key' type='nominal' />
+        <column datatype='date' name='[report_month]' role='dimension' type='ordinal' />
+        <column datatype='string' name='[sub_entity]' role='dimension' type='nominal' />
+        <column-instance column='[Calculation_4353503099019276289]' derivation='User' name='[usr:Calculation_4353503099019276289:qk]' pivot='key' type='quantitative' />
+      </datasource-dependencies>
+      <zones>
+        <zone h='100000' id='4' type-v2='layout-basic' w='100000' x='0' y='0'>
+          <zone h='98000' id='7' param='horz' type-v2='layout-flow' w='98400' x='800' y='1000'>
+            <zone h='98000' id='5' type-v2='layout-basic' w='82400' x='800' y='1000'>
+              <zone h='98000' id='3' name='Sheet 1' show-title='false' w='82400' x='800' y='1000'>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+            </zone>
+            <zone fixed-size='160' h='98000' id='6' is-fixed='true' param='vert' type-v2='layout-flow' w='16000' x='83200' y='1000'>
+              <zone h='6375' id='8' name='Sheet 1' param='[federated.15qheri176fflo1f5s6110ic5llu].[usr:Calculation_4353503099019276289:qk]' show-domain='false' show-null-ctrls='false' show-slider='false' type-v2='filter' w='16000' x='83200' y='1000'>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+              <zone h='6500' id='11' mode='dropdown' name='Sheet 1' param='[federated.15qheri176fflo1f5s6110ic5llu].[none:report_month:ok]' type-v2='filter' values='database' w='16000' x='83200' y='7375'>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+              <zone h='6500' id='13' mode='checkdropdown' name='Sheet 1' param='[federated.15qheri176fflo1f5s6110ic5llu].[none:sub_entity:nk]' show-apply='true' type-v2='filter' values='database' w='16000' x='83200' y='13875'>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+              <zone h='6500' id='12' mode='checkdropdown' name='Sheet 1' param='[federated.15qheri176fflo1f5s6110ic5llu].[none:city:nk]' show-apply='true' type-v2='filter' values='relevant' w='16000' x='83200' y='20375'>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+              <zone h='30750' id='10' name='Sheet 1' pane-specification-id='0' param='[federated.15qheri176fflo1f5s6110ic5llu].[none:category_name_english:nk]' type-v2='color' w='16000' x='83200' y='26875'>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+            </zone>
+          </zone>
+          <zone-style>
+            <format attr='border-color' value='#000000' />
+            <format attr='border-style' value='none' />
+            <format attr='border-width' value='0' />
+            <format attr='margin' value='8' />
+          </zone-style>
+        </zone>
+      </zones>
+      <devicelayouts>
+        <devicelayout auto-generated='true' name='Phone'>
+          <size maxheight='700' minheight='700' sizing-mode='vscroll' />
+          <zones>
+            <zone h='100000' id='17' type-v2='layout-basic' w='100000' x='0' y='0'>
+              <zone h='98000' id='16' param='vert' type-v2='layout-flow' w='98400' x='800' y='1000'>
+                <zone h='6375' id='8' name='Sheet 1' param='[federated.15qheri176fflo1f5s6110ic5llu].[usr:Calculation_4353503099019276289:qk]' show-domain='false' show-null-ctrls='false' show-slider='false' type-v2='filter' w='16000' x='83200' y='1000'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone h='6500' id='11' mode='dropdown' name='Sheet 1' param='[federated.15qheri176fflo1f5s6110ic5llu].[none:report_month:ok]' type-v2='filter' values='database' w='16000' x='83200' y='7375'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone h='6500' id='13' mode='checkdropdown' name='Sheet 1' param='[federated.15qheri176fflo1f5s6110ic5llu].[none:sub_entity:nk]' show-apply='true' type-v2='filter' values='database' w='16000' x='83200' y='13875'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone h='6500' id='12' mode='checkdropdown' name='Sheet 1' param='[federated.15qheri176fflo1f5s6110ic5llu].[none:city:nk]' show-apply='true' type-v2='filter' values='relevant' w='16000' x='83200' y='20375'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone fixed-size='280' h='98000' id='3' is-fixed='true' name='Sheet 1' show-title='false' w='82400' x='800' y='1000'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone h='30750' id='10' name='Sheet 1' pane-specification-id='0' param='[federated.15qheri176fflo1f5s6110ic5llu].[none:category_name_english:nk]' type-v2='color' w='16000' x='83200' y='26875'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+              </zone>
+              <zone-style>
+                <format attr='border-color' value='#000000' />
+                <format attr='border-style' value='none' />
+                <format attr='border-width' value='0' />
+                <format attr='margin' value='8' />
+              </zone-style>
+            </zone>
+          </zones>
+        </devicelayout>
+      </devicelayouts>
+      <simple-id uuid='{FCE7AF74-94F7-44F5-B2A4-036A01AB9CB6}' />
+    </dashboard>
+  </dashboards>
+  <windows source-height='30'>
+    <window class='worksheet' name='Sheet 1'>
+      <cards>
+        <edge name='left'>
+          <strip size='160'>
+            <card type='pages' />
+            <card type='filters' />
+            <card type='marks' />
+          </strip>
+        </edge>
+        <edge name='top'>
+          <strip size='2147483647'>
+            <card type='columns' />
+          </strip>
+          <strip size='2147483647'>
+            <card type='rows' />
+          </strip>
+          <strip size='31'>
+            <card type='title' />
+          </strip>
+        </edge>
+        <edge name='right'>
+          <strip size='160'>
+            <card param='[federated.15qheri176fflo1f5s6110ic5llu].[usr:Calculation_4353503099019276289:qk]' show-domain='false' show-null-ctrls='false' show-slider='false' type='filter' />
+            <card pane-specification-id='0' param='[federated.15qheri176fflo1f5s6110ic5llu].[none:category_name_english:nk]' type='color' />
+          </strip>
+        </edge>
+      </cards>
+      <viewpoint>
+        <highlight>
+          <color-one-way>
+            <field>[federated.15qheri176fflo1f5s6110ic5llu].[none:category_name_english:nk]</field>
+            <field>[federated.15qheri176fflo1f5s6110ic5llu].[none:city:nk]</field>
+            <field>[federated.15qheri176fflo1f5s6110ic5llu].[none:report_month:qk]</field>
+            <field>[federated.15qheri176fflo1f5s6110ic5llu].[none:sub_entity:nk]</field>
+          </color-one-way>
+        </highlight>
+      </viewpoint>
+      <simple-id uuid='{B79DC036-9D46-49D4-8FA7-939BD4B7B05F}' />
+    </window>
+    <window class='dashboard' maximized='true' name='Vendors by Cuisine '>
+      <viewpoints>
+        <viewpoint name='Sheet 1'>
+          <zoom type='entire-view' />
+        </viewpoint>
+      </viewpoints>
+      <active id='3' />
+      <simple-id uuid='{9E2C067C-A286-485B-960A-05E37AA5DF38}' />
+    </window>
+  </windows>
+</workbook>

@@ -1,0 +1,1033 @@
+<?xml version='1.0' encoding='utf-8' ?>
+
+<!-- build 20231.24.0118.1101                               -->
+<datasource formatted-name='federated.1szwm1z0kuzxio1dgl5pe0ba85zl' inline='true' source-platform='linux' version='18.1' xml:base='http://tableau.deliveryhero.net' xmlns:user='http://www.tableausoftware.com/xml/user'>
+  <document-format-change-manifest>
+    <_.fcp.ObjectModelEncapsulateLegacy.true...ObjectModelEncapsulateLegacy />
+    <_.fcp.ObjectModelExtractV2.true...ObjectModelExtractV2 />
+    <_.fcp.ObjectModelTableType.true...ObjectModelTableType />
+    <_.fcp.SchemaViewerObjectModel.true...SchemaViewerObjectModel />
+    <_.fcp.VConnDownstreamExtractsWithWarnings.true...VConnDownstreamExtractsWithWarnings />
+  </document-format-change-manifest>
+  <repository-location id='global_quality_score_data' path='/t/GlobalStandardReporting/datasources' revision='1.0' site='GlobalStandardReporting' />
+  <connection class='federated'>
+    <named-connections>
+      <named-connection caption='BigQuery' name='bigquery.1nm82aj1y2pkug1ej5u8w0rhft9e'>
+        <connection CATALOG='dh-codapro-analytics-2460' EXECCATALOG='dh-codapro-analytics-2460' authentication='oauth' bq-dataset-fetch-rows='' bq-fetch-rows='' bq-fetch-tasks='' bq-large-fetch-rows='' bq-project-fetch-rows='' bq-response-rows='' class='bigquery' connection-dialect='google-sql' project='dh-codapro-analytics-2460' schema='test_aleksei' server-oauth='' username='aleksei.ivanchenkov@deliveryhero.com' workgroup-auth-mode='prompt' />
+      </named-connection>
+    </named-connections>
+    <_.fcp.ObjectModelEncapsulateLegacy.false...relation connection='bigquery.1nm82aj1y2pkug1ej5u8w0rhft9e' name='Custom SQL Query' type='text'><![CDATA[WITH
+product_images_data AS(
+  SELECT
+    p.global_entity_id,
+    COALESCE(p._platform_vendor_id, p.vendor_id) AS vendor_id,
+    p.product_id,
+    MAX(LOWER(p.name)) AS name,
+    MAX(LOWER(p.description)) AS description,
+    MAX(img.url) AS image_url
+  FROM `fulfillment-dwh-production.curated_data_shared_data_stream.products` p
+  JOIN `fulfillment-dwh-production.curated_data_shared_coredata_business.vendors` v
+    ON 1=1
+    -- AND p.metadata.source IN ('PANDORA','TB','PY','HS','EFOOD','FOODY')
+    AND p.global_entity_id = v.global_entity_id
+    AND COALESCE(p._platform_vendor_id, p.vendor_id) = v.vendor_id
+    AND v.is_test_vendor = FALSE
+    AND NOT REGEXP_CONTAINS(LOWER(v.vendor_name), "test")
+    AND v.is_available = TRUE
+    AND v.vertical_type = 'restaurants'
+  LEFT JOIN
+    UNNEST(image_urls) AS img
+  WHERE p.active = TRUE
+    AND LENGTH(p.name) >> 1
+    AND (p.created_at IS NOT NULL OR p.global_entity_id IN ('HS_SA', 'HS_BH'))
+    AND p.global_entity_id IN (SELECT global_entity_id FROM `fulfillment-dwh-production.curated_data_shared_coredata.global_entities` WHERE is_reporting_enabled)
+  GROUP BY 1,2,3
+),
+mapping AS (
+  SELECT 'FO_NO' AS global_entity_id, 'fd-no' AS code UNION ALL
+  SELECT 'FP_BD' AS global_entity_id, 'fd-bd' AS code UNION ALL
+  SELECT 'FP_HK' AS global_entity_id, 'fd-hk' AS code UNION ALL
+  SELECT 'FP_KH' AS global_entity_id, 'fd-kh' AS code UNION ALL
+  SELECT 'FP_LA' AS global_entity_id, 'fd-la' AS code UNION ALL
+  SELECT 'FP_MM' AS global_entity_id, 'fd-mm' AS code UNION ALL
+  SELECT 'FP_MY' AS global_entity_id, 'fd-my' AS code UNION ALL
+  SELECT 'FP_PH' AS global_entity_id, 'fd-ph' AS code UNION ALL
+  SELECT 'FP_PK' AS global_entity_id, 'fd-pk' AS code UNION ALL
+  SELECT 'FP_SG' AS global_entity_id, 'fd-sg' AS code UNION ALL
+  SELECT 'FP_SK' AS global_entity_id, 'fd-sk' AS code UNION ALL
+  SELECT 'FP_TH' AS global_entity_id, 'fd-th' AS code UNION ALL
+  SELECT 'FP_TW' AS global_entity_id, 'fd-tw' AS code UNION ALL
+  SELECT 'HN_DK' AS global_entity_id, 'fd-dk' AS code UNION ALL
+  SELECT 'MJM_AT' AS global_entity_id, 'fd-mj' AS code UNION ALL
+  SELECT 'NP_HU' AS global_entity_id, 'fd-hu' AS code UNION ALL
+  SELECT 'OP_SE' AS global_entity_id, 'fd-op' AS code UNION ALL
+  SELECT 'PO_FI' AS global_entity_id, 'fd-po' AS code UNION ALL
+  SELECT 'DJ_CZ' AS global_entity_id, 'fd-cz' AS code UNION ALL
+  SELECT 'YS_TR' AS global_entity_id, 'fd-tr' AS code
+),
+vendor_images_data AS(
+  SELECT
+    v.global_entity_id,
+    v.vendor_id,
+    CASE WHEN MAX(v.chain_id IS NOT NULL) = TRUE THEN 'Is Chain' ELSE 'Not Chain' END AS is_chain,
+    MAX(CASE WHEN c.is_main_category = TRUE THEN c.category_name END) AS main_category_name,
+    MAX(CASE
+          WHEN v.metadata.stream_source = 'PANDORA'THEN CONCAT('https://images.deliveryhero.io/image/', m.code, '/LH/', v.vendor_id, '-listing.jpg')
+          WHEN v.global_entity_id LIKE 'HS_%' THEN COALESCE(mhs.android_cover_photo_url, images_urls.header)
+          ELSE images_urls.header
+        END) AS image_url,
+    MAX(CASE
+          WHEN v.global_entity_id LIKE 'HS_%' THEN COALESCE(mhs.ios_cover_photo_url, images_urls.header)
+          ELSE NULL
+        END) AS image_url_2
+  FROM `fulfillment-dwh-production.curated_data_shared_coredata_business.vendors` v
+  LEFT JOIN
+    UNNEST(categories) c
+  LEFT JOIN mapping m
+    ON v.global_entity_id = m.global_entity_id
+  LEFT JOIN `dh-codapro-analytics-2460.test_aleksei.hs_vendor_header_image_2023_02_23` mhs
+    ON v.global_entity_id LIKE 'HS_%'
+    AND v.vendor_id = mhs.branch_id
+  WHERE 1=1
+    -- AND v.metadata.stream_source IN ('PANDORA','TB','PY','HS','EFOOD','FOODY')
+    AND v.is_test_vendor = FALSE
+    AND NOT REGEXP_CONTAINS(LOWER(v.vendor_name), "test")
+    AND v.is_available = TRUE
+    AND v.vertical_type = 'restaurants'
+    AND v.global_entity_id IN (SELECT global_entity_id FROM `fulfillment-dwh-production.curated_data_shared_coredata.global_entities` WHERE is_reporting_enabled)
+  GROUP BY 1,2
+),
+images_data AS(
+  SELECT
+    CASE
+      WHEN CONTAINS_SUBSTR(image_url, "fd-au/efood") OR CONTAINS_SUBSTR(image_url, "fd-au/FY_CY")
+        THEN JSON_VALUE(labels, '$.original_url')
+      ELSE image_url
+    END AS image_url,
+    CAST(quality_score AS FLOAT64) AS quality_score,
+    insert_date
+  FROM `dhh-images.quality_us.images`
+  WHERE CASE
+          WHEN CONTAINS_SUBSTR(image_url, "fd-au/efood") OR CONTAINS_SUBSTR(image_url, "fd-au/FY_CY")
+            THEN JSON_VALUE(labels, '$.original_url')
+          ELSE image_url
+        END IN(SELECT image_url FROM product_images_data)
+        OR
+        CASE
+          WHEN CONTAINS_SUBSTR(image_url, "fd-au/efood") OR CONTAINS_SUBSTR(image_url, "fd-au/FY_CY")
+            THEN JSON_VALUE(labels, '$.original_url')
+          ELSE image_url
+        END IN(SELECT image_url FROM vendor_images_data)
+  QUALIFY ROW_NUMBER() OVER(PARTITION BY CASE
+                              WHEN CONTAINS_SUBSTR(image_url, "fd-au/efood") OR CONTAINS_SUBSTR(image_url, "fd-au/FY_CY")
+                                THEN JSON_VALUE(labels, '$.original_url')
+                              ELSE image_url
+                            END ORDER BY insert_date DESC) = 1
+),
+product_images_data_fin AS(
+  SELECT
+    p.global_entity_id,
+    p.vendor_id,
+    AVG(CASE WHEN id.quality_score IS NOT NULL THEN id.quality_score END) AS product_image_quality,
+    SAFE_DIVIDE(COUNT(DISTINCT CASE WHEN p.image_url IS NOT NULL AND p.image_url <<>> '' THEN p.product_id END),
+      COUNT(DISTINCT p.product_id)) AS product_image_coverage,
+    SAFE_DIVIDE(COUNT(DISTINCT CASE WHEN p.description IS NOT NULL AND LENGTH(p.description) >> 0 THEN p.product_id END),
+      COUNT(DISTINCT p.product_id)) AS product_description_coverage,
+    SAFE_DIVIDE(COUNT(DISTINCT CASE WHEN (p.description IS NOT NULL AND LENGTH(p.description) >> 0) AND LENGTH(p.description) >>= 5 AND p.description <<>> p.name THEN p.product_id END),
+      COUNT(DISTINCT CASE WHEN p.description IS NOT NULL AND LENGTH(p.description) >> 0 THEN p.product_id END)) AS product_description_quality,
+    SAFE_DIVIDE(COUNT(DISTINCT CASE WHEN (p.description IS NOT NULL AND LENGTH(p.description) >> 0) AND LENGTH(p.description) >>= 5 THEN p.product_id END),
+      COUNT(DISTINCT CASE WHEN p.description IS NOT NULL AND LENGTH(p.description) >> 0 THEN p.product_id END)) AS product_description_quality_more_5s,
+    SAFE_DIVIDE(COUNT(DISTINCT CASE WHEN (p.description IS NOT NULL AND LENGTH(p.description) >> 0) AND p.description <<>> p.name THEN p.product_id END),
+      COUNT(DISTINCT CASE WHEN p.description IS NOT NULL AND LENGTH(p.description) >> 0 THEN p.product_id END)) AS product_description_quality_no_match,
+    SAFE_DIVIDE(COUNT(DISTINCT CASE WHEN (p.image_url IS NOT NULL AND p.image_url <<>> '') AND id.quality_score IS NOT NULL THEN p.product_id END),
+      COUNT(DISTINCT CASE WHEN p.image_url IS NOT NULL AND p.image_url <<>> '' THEN p.product_id END)) AS product_image_score_coverage
+  FROM product_images_data p
+  LEFT JOIN images_data id
+    ON p.image_url = id.image_url
+  GROUP BY 1,2
+),
+vendor_images_data_fin AS(
+  SELECT
+    v.global_entity_id,
+    v.vendor_id,
+    v.is_chain,
+    v.main_category_name,
+    AVG(CASE WHEN COALESCE(id.quality_score, id_2.quality_score) IS NOT NULL THEN COALESCE(id.quality_score, id_2.quality_score) END) AS vendor_image_quality,
+    MAX(CASE WHEN COALESCE(id.quality_score, id_2.quality_score) IS NOT NULL THEN 1 ELSE 0 END) AS vendor_image_score_coverage,
+    MAX(CASE WHEN v.image_url IS NOT NULL THEN 1 ELSE 0 END) AS vendor_image_coverage
+  FROM vendor_images_data v
+  LEFT JOIN images_data id
+    ON v.image_url = id.image_url
+  LEFT JOIN images_data id_2
+    ON v.image_url = id_2.image_url
+  GROUP BY 1,2,3,4
+),
+food_score AS(
+  SELECT
+    v.global_entity_id,
+    AVG(
+      p.product_image_coverage * 0.20
+      +
+      p.product_image_quality * 0.16
+      +
+      v.vendor_image_quality * 0.24
+      +
+      p.product_description_coverage * 0.20
+      +
+      p.product_description_quality * 0.20
+    ) AS food_content_score,
+    MAX(DATE(CURRENT_TIMESTAMP)) AS food_last_updated_at
+  FROM vendor_images_data_fin v
+  JOIN `fulfillment-dwh-production.curated_data_shared_coredata.global_entities` ge
+    ON v.global_entity_id = ge.global_entity_id
+    AND ge.is_reporting_enabled
+  JOIN product_images_data_fin p
+    ON v.global_entity_id = p.global_entity_id
+    AND v.vendor_id = p.vendor_id
+  WHERE v.vendor_image_score_coverage >> 0
+    AND p.product_image_score_coverage >> 0
+  GROUP BY 1
+  ORDER BY 1
+),
+gid AS(
+  SELECT fs.global_entity_id
+  FROM food_score fs
+  UNION DISTINCT
+  SELECT qc.global_entity_id
+  FROM `fulfillment-dwh-production.curated_data_shared_dmart.content_score_global_tracking` qc
+)
+SELECT
+  gid.global_entity_id,
+  ge.country_name,
+  ge.management_entity,
+  CASE
+    WHEN gid.global_entity_id = 'YS_TR' THEN 'Yemeksepeti'
+    WHEN ge.brand_name IN ('Foody', 'eFood') THEN 'eFood'
+    ELSE ge.brand_name
+  END AS brand_name,
+  ge.sub_entity,
+  ge.segment,
+  fs.food_content_score,
+  fs.food_last_updated_at,
+  qc.qc_content_score_geid/100 AS qc_content_score,
+  qc.qc_content_score_last_updated AS qc_last_updated_at,
+  CASE
+    WHEN fs.food_content_score IS NOT NULL AND qc.qc_content_score_geid IS NOT NULL THEN (fs.food_content_score * 0.7) + (qc.qc_content_score_geid/100 * 0.3)
+    WHEN fs.food_content_score IS NOT NULL AND qc.qc_content_score_geid IS NULL THEN fs.food_content_score
+    WHEN fs.food_content_score IS NULL AND qc.qc_content_score_geid IS NOT NULL THEN qc.qc_content_score_geid/100
+  END AS global_content_score
+FROM gid
+LEFT JOIN food_score fs
+  ON gid.global_entity_id = fs.global_entity_id
+LEFT JOIN `fulfillment-dwh-production.curated_data_shared_dmart.content_score_global_tracking` qc
+  ON gid.global_entity_id = qc.global_entity_id
+LEFT JOIN `fulfillment-dwh-production.curated_data_shared_coredata.global_entities` ge
+  ON gid.global_entity_id = ge.global_entity_id
+WHERE (ge.is_reporting_enabled OR gid.global_entity_id LIKE 'GV_%')
+ORDER BY management_entity, brand_name, sub_entity, global_entity_id]]></_.fcp.ObjectModelEncapsulateLegacy.false...relation>
+    <_.fcp.ObjectModelEncapsulateLegacy.true...relation connection='bigquery.1nm82aj1y2pkug1ej5u8w0rhft9e' name='Custom SQL Query' type='text'><![CDATA[WITH
+product_images_data AS(
+  SELECT
+    p.global_entity_id,
+    COALESCE(p._platform_vendor_id, p.vendor_id) AS vendor_id,
+    p.product_id,
+    MAX(LOWER(p.name)) AS name,
+    MAX(LOWER(p.description)) AS description,
+    MAX(img.url) AS image_url
+  FROM `fulfillment-dwh-production.curated_data_shared_data_stream.products` p
+  JOIN `fulfillment-dwh-production.curated_data_shared_coredata_business.vendors` v
+    ON 1=1
+    -- AND p.metadata.source IN ('PANDORA','TB','PY','HS','EFOOD','FOODY')
+    AND p.global_entity_id = v.global_entity_id
+    AND COALESCE(p._platform_vendor_id, p.vendor_id) = v.vendor_id
+    AND v.is_test_vendor = FALSE
+    AND NOT REGEXP_CONTAINS(LOWER(v.vendor_name), "test")
+    AND v.is_available = TRUE
+    AND v.vertical_type = 'restaurants'
+  LEFT JOIN
+    UNNEST(image_urls) AS img
+  WHERE p.active = TRUE
+    AND LENGTH(p.name) >> 1
+    AND (p.created_at IS NOT NULL OR p.global_entity_id IN ('HS_SA', 'HS_BH'))
+    AND p.global_entity_id IN (SELECT global_entity_id FROM `fulfillment-dwh-production.curated_data_shared_coredata.global_entities` WHERE is_reporting_enabled)
+  GROUP BY 1,2,3
+),
+mapping AS (
+  SELECT 'FO_NO' AS global_entity_id, 'fd-no' AS code UNION ALL
+  SELECT 'FP_BD' AS global_entity_id, 'fd-bd' AS code UNION ALL
+  SELECT 'FP_HK' AS global_entity_id, 'fd-hk' AS code UNION ALL
+  SELECT 'FP_KH' AS global_entity_id, 'fd-kh' AS code UNION ALL
+  SELECT 'FP_LA' AS global_entity_id, 'fd-la' AS code UNION ALL
+  SELECT 'FP_MM' AS global_entity_id, 'fd-mm' AS code UNION ALL
+  SELECT 'FP_MY' AS global_entity_id, 'fd-my' AS code UNION ALL
+  SELECT 'FP_PH' AS global_entity_id, 'fd-ph' AS code UNION ALL
+  SELECT 'FP_PK' AS global_entity_id, 'fd-pk' AS code UNION ALL
+  SELECT 'FP_SG' AS global_entity_id, 'fd-sg' AS code UNION ALL
+  SELECT 'FP_SK' AS global_entity_id, 'fd-sk' AS code UNION ALL
+  SELECT 'FP_TH' AS global_entity_id, 'fd-th' AS code UNION ALL
+  SELECT 'FP_TW' AS global_entity_id, 'fd-tw' AS code UNION ALL
+  SELECT 'HN_DK' AS global_entity_id, 'fd-dk' AS code UNION ALL
+  SELECT 'MJM_AT' AS global_entity_id, 'fd-mj' AS code UNION ALL
+  SELECT 'NP_HU' AS global_entity_id, 'fd-hu' AS code UNION ALL
+  SELECT 'OP_SE' AS global_entity_id, 'fd-op' AS code UNION ALL
+  SELECT 'PO_FI' AS global_entity_id, 'fd-po' AS code UNION ALL
+  SELECT 'DJ_CZ' AS global_entity_id, 'fd-cz' AS code UNION ALL
+  SELECT 'YS_TR' AS global_entity_id, 'fd-tr' AS code
+),
+vendor_images_data AS(
+  SELECT
+    v.global_entity_id,
+    v.vendor_id,
+    CASE WHEN MAX(v.chain_id IS NOT NULL) = TRUE THEN 'Is Chain' ELSE 'Not Chain' END AS is_chain,
+    MAX(CASE WHEN c.is_main_category = TRUE THEN c.category_name END) AS main_category_name,
+    MAX(CASE
+          WHEN v.metadata.stream_source = 'PANDORA'THEN CONCAT('https://images.deliveryhero.io/image/', m.code, '/LH/', v.vendor_id, '-listing.jpg')
+          WHEN v.global_entity_id LIKE 'HS_%' THEN COALESCE(mhs.android_cover_photo_url, images_urls.header)
+          ELSE images_urls.header
+        END) AS image_url,
+    MAX(CASE
+          WHEN v.global_entity_id LIKE 'HS_%' THEN COALESCE(mhs.ios_cover_photo_url, images_urls.header)
+          ELSE NULL
+        END) AS image_url_2
+  FROM `fulfillment-dwh-production.curated_data_shared_coredata_business.vendors` v
+  LEFT JOIN
+    UNNEST(categories) c
+  LEFT JOIN mapping m
+    ON v.global_entity_id = m.global_entity_id
+  LEFT JOIN `dh-codapro-analytics-2460.test_aleksei.hs_vendor_header_image_2023_02_23` mhs
+    ON v.global_entity_id LIKE 'HS_%'
+    AND v.vendor_id = mhs.branch_id
+  WHERE 1=1
+    -- AND v.metadata.stream_source IN ('PANDORA','TB','PY','HS','EFOOD','FOODY')
+    AND v.is_test_vendor = FALSE
+    AND NOT REGEXP_CONTAINS(LOWER(v.vendor_name), "test")
+    AND v.is_available = TRUE
+    AND v.vertical_type = 'restaurants'
+    AND v.global_entity_id IN (SELECT global_entity_id FROM `fulfillment-dwh-production.curated_data_shared_coredata.global_entities` WHERE is_reporting_enabled)
+  GROUP BY 1,2
+),
+images_data AS(
+  SELECT
+    CASE
+      WHEN CONTAINS_SUBSTR(image_url, "fd-au/efood") OR CONTAINS_SUBSTR(image_url, "fd-au/FY_CY")
+        THEN JSON_VALUE(labels, '$.original_url')
+      ELSE image_url
+    END AS image_url,
+    CAST(quality_score AS FLOAT64) AS quality_score,
+    insert_date
+  FROM `dhh-images.quality_us.images`
+  WHERE CASE
+          WHEN CONTAINS_SUBSTR(image_url, "fd-au/efood") OR CONTAINS_SUBSTR(image_url, "fd-au/FY_CY")
+            THEN JSON_VALUE(labels, '$.original_url')
+          ELSE image_url
+        END IN(SELECT image_url FROM product_images_data)
+        OR
+        CASE
+          WHEN CONTAINS_SUBSTR(image_url, "fd-au/efood") OR CONTAINS_SUBSTR(image_url, "fd-au/FY_CY")
+            THEN JSON_VALUE(labels, '$.original_url')
+          ELSE image_url
+        END IN(SELECT image_url FROM vendor_images_data)
+  QUALIFY ROW_NUMBER() OVER(PARTITION BY CASE
+                              WHEN CONTAINS_SUBSTR(image_url, "fd-au/efood") OR CONTAINS_SUBSTR(image_url, "fd-au/FY_CY")
+                                THEN JSON_VALUE(labels, '$.original_url')
+                              ELSE image_url
+                            END ORDER BY insert_date DESC) = 1
+),
+product_images_data_fin AS(
+  SELECT
+    p.global_entity_id,
+    p.vendor_id,
+    AVG(CASE WHEN id.quality_score IS NOT NULL THEN id.quality_score END) AS product_image_quality,
+    SAFE_DIVIDE(COUNT(DISTINCT CASE WHEN p.image_url IS NOT NULL AND p.image_url <<>> '' THEN p.product_id END),
+      COUNT(DISTINCT p.product_id)) AS product_image_coverage,
+    SAFE_DIVIDE(COUNT(DISTINCT CASE WHEN p.description IS NOT NULL AND LENGTH(p.description) >> 0 THEN p.product_id END),
+      COUNT(DISTINCT p.product_id)) AS product_description_coverage,
+    SAFE_DIVIDE(COUNT(DISTINCT CASE WHEN (p.description IS NOT NULL AND LENGTH(p.description) >> 0) AND LENGTH(p.description) >>= 5 AND p.description <<>> p.name THEN p.product_id END),
+      COUNT(DISTINCT CASE WHEN p.description IS NOT NULL AND LENGTH(p.description) >> 0 THEN p.product_id END)) AS product_description_quality,
+    SAFE_DIVIDE(COUNT(DISTINCT CASE WHEN (p.description IS NOT NULL AND LENGTH(p.description) >> 0) AND LENGTH(p.description) >>= 5 THEN p.product_id END),
+      COUNT(DISTINCT CASE WHEN p.description IS NOT NULL AND LENGTH(p.description) >> 0 THEN p.product_id END)) AS product_description_quality_more_5s,
+    SAFE_DIVIDE(COUNT(DISTINCT CASE WHEN (p.description IS NOT NULL AND LENGTH(p.description) >> 0) AND p.description <<>> p.name THEN p.product_id END),
+      COUNT(DISTINCT CASE WHEN p.description IS NOT NULL AND LENGTH(p.description) >> 0 THEN p.product_id END)) AS product_description_quality_no_match,
+    SAFE_DIVIDE(COUNT(DISTINCT CASE WHEN (p.image_url IS NOT NULL AND p.image_url <<>> '') AND id.quality_score IS NOT NULL THEN p.product_id END),
+      COUNT(DISTINCT CASE WHEN p.image_url IS NOT NULL AND p.image_url <<>> '' THEN p.product_id END)) AS product_image_score_coverage
+  FROM product_images_data p
+  LEFT JOIN images_data id
+    ON p.image_url = id.image_url
+  GROUP BY 1,2
+),
+vendor_images_data_fin AS(
+  SELECT
+    v.global_entity_id,
+    v.vendor_id,
+    v.is_chain,
+    v.main_category_name,
+    AVG(CASE WHEN COALESCE(id.quality_score, id_2.quality_score) IS NOT NULL THEN COALESCE(id.quality_score, id_2.quality_score) END) AS vendor_image_quality,
+    MAX(CASE WHEN COALESCE(id.quality_score, id_2.quality_score) IS NOT NULL THEN 1 ELSE 0 END) AS vendor_image_score_coverage,
+    MAX(CASE WHEN v.image_url IS NOT NULL THEN 1 ELSE 0 END) AS vendor_image_coverage
+  FROM vendor_images_data v
+  LEFT JOIN images_data id
+    ON v.image_url = id.image_url
+  LEFT JOIN images_data id_2
+    ON v.image_url = id_2.image_url
+  GROUP BY 1,2,3,4
+),
+food_score AS(
+  SELECT
+    v.global_entity_id,
+    AVG(
+      p.product_image_coverage * 0.20
+      +
+      p.product_image_quality * 0.16
+      +
+      v.vendor_image_quality * 0.24
+      +
+      p.product_description_coverage * 0.20
+      +
+      p.product_description_quality * 0.20
+    ) AS food_content_score,
+    MAX(DATE(CURRENT_TIMESTAMP)) AS food_last_updated_at
+  FROM vendor_images_data_fin v
+  JOIN `fulfillment-dwh-production.curated_data_shared_coredata.global_entities` ge
+    ON v.global_entity_id = ge.global_entity_id
+    AND ge.is_reporting_enabled
+  JOIN product_images_data_fin p
+    ON v.global_entity_id = p.global_entity_id
+    AND v.vendor_id = p.vendor_id
+  WHERE v.vendor_image_score_coverage >> 0
+    AND p.product_image_score_coverage >> 0
+  GROUP BY 1
+  ORDER BY 1
+),
+gid AS(
+  SELECT fs.global_entity_id
+  FROM food_score fs
+  UNION DISTINCT
+  SELECT qc.global_entity_id
+  FROM `fulfillment-dwh-production.curated_data_shared_dmart.content_score_global_tracking` qc
+)
+SELECT
+  gid.global_entity_id,
+  ge.country_name,
+  ge.management_entity,
+  CASE
+    WHEN gid.global_entity_id = 'YS_TR' THEN 'Yemeksepeti'
+    WHEN ge.brand_name IN ('Foody', 'eFood') THEN 'eFood'
+    ELSE ge.brand_name
+  END AS brand_name,
+  ge.sub_entity,
+  ge.segment,
+  fs.food_content_score,
+  fs.food_last_updated_at,
+  qc.qc_content_score_geid/100 AS qc_content_score,
+  qc.qc_content_score_last_updated AS qc_last_updated_at,
+  CASE
+    WHEN fs.food_content_score IS NOT NULL AND qc.qc_content_score_geid IS NOT NULL THEN (fs.food_content_score * 0.7) + (qc.qc_content_score_geid/100 * 0.3)
+    WHEN fs.food_content_score IS NOT NULL AND qc.qc_content_score_geid IS NULL THEN fs.food_content_score
+    WHEN fs.food_content_score IS NULL AND qc.qc_content_score_geid IS NOT NULL THEN qc.qc_content_score_geid/100
+  END AS global_content_score
+FROM gid
+LEFT JOIN food_score fs
+  ON gid.global_entity_id = fs.global_entity_id
+LEFT JOIN `fulfillment-dwh-production.curated_data_shared_dmart.content_score_global_tracking` qc
+  ON gid.global_entity_id = qc.global_entity_id
+LEFT JOIN `fulfillment-dwh-production.curated_data_shared_coredata.global_entities` ge
+  ON gid.global_entity_id = ge.global_entity_id
+WHERE (ge.is_reporting_enabled OR gid.global_entity_id LIKE 'GV_%')
+ORDER BY management_entity, brand_name, sub_entity, global_entity_id]]></_.fcp.ObjectModelEncapsulateLegacy.true...relation>
+    <metadata-records>
+      <metadata-record class='column'>
+        <remote-name>global_entity_id</remote-name>
+        <remote-type>130</remote-type>
+        <local-name>[global_entity_id]</local-name>
+        <parent-name>[Custom SQL Query]</parent-name>
+        <remote-alias>global_entity_id</remote-alias>
+        <local-type>string</local-type>
+        <aggregation>Count</aggregation>
+        <contains-null>true</contains-null>
+        <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_CB8FAA44DAB74C70A623D0A367231E8A]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+      </metadata-record>
+      <metadata-record class='column'>
+        <remote-name>country_name</remote-name>
+        <remote-type>130</remote-type>
+        <local-name>[country_name]</local-name>
+        <parent-name>[Custom SQL Query]</parent-name>
+        <remote-alias>country_name</remote-alias>
+        <local-type>string</local-type>
+        <aggregation>Count</aggregation>
+        <contains-null>true</contains-null>
+        <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_CB8FAA44DAB74C70A623D0A367231E8A]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+      </metadata-record>
+      <metadata-record class='column'>
+        <remote-name>management_entity</remote-name>
+        <remote-type>130</remote-type>
+        <local-name>[management_entity]</local-name>
+        <parent-name>[Custom SQL Query]</parent-name>
+        <remote-alias>management_entity</remote-alias>
+        <local-type>string</local-type>
+        <aggregation>Count</aggregation>
+        <contains-null>true</contains-null>
+        <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_CB8FAA44DAB74C70A623D0A367231E8A]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+      </metadata-record>
+      <metadata-record class='column'>
+        <remote-name>brand_name</remote-name>
+        <remote-type>130</remote-type>
+        <local-name>[brand_name]</local-name>
+        <parent-name>[Custom SQL Query]</parent-name>
+        <remote-alias>brand_name</remote-alias>
+        <local-type>string</local-type>
+        <aggregation>Count</aggregation>
+        <contains-null>true</contains-null>
+        <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_CB8FAA44DAB74C70A623D0A367231E8A]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+      </metadata-record>
+      <metadata-record class='column'>
+        <remote-name>sub_entity</remote-name>
+        <remote-type>130</remote-type>
+        <local-name>[sub_entity]</local-name>
+        <parent-name>[Custom SQL Query]</parent-name>
+        <remote-alias>sub_entity</remote-alias>
+        <local-type>string</local-type>
+        <aggregation>Count</aggregation>
+        <contains-null>true</contains-null>
+        <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_CB8FAA44DAB74C70A623D0A367231E8A]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+      </metadata-record>
+      <metadata-record class='column'>
+        <remote-name>segment</remote-name>
+        <remote-type>130</remote-type>
+        <local-name>[segment]</local-name>
+        <parent-name>[Custom SQL Query]</parent-name>
+        <remote-alias>segment</remote-alias>
+        <local-type>string</local-type>
+        <aggregation>Count</aggregation>
+        <contains-null>true</contains-null>
+        <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_CB8FAA44DAB74C70A623D0A367231E8A]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+      </metadata-record>
+      <metadata-record class='column'>
+        <remote-name>food_content_score</remote-name>
+        <remote-type>5</remote-type>
+        <local-name>[food_content_score]</local-name>
+        <parent-name>[Custom SQL Query]</parent-name>
+        <remote-alias>food_content_score</remote-alias>
+        <local-type>real</local-type>
+        <aggregation>Sum</aggregation>
+        <contains-null>true</contains-null>
+        <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_CB8FAA44DAB74C70A623D0A367231E8A]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+      </metadata-record>
+      <metadata-record class='column'>
+        <remote-name>food_last_updated_at</remote-name>
+        <remote-type>7</remote-type>
+        <local-name>[food_last_updated_at]</local-name>
+        <parent-name>[Custom SQL Query]</parent-name>
+        <remote-alias>food_last_updated_at</remote-alias>
+        <local-type>date</local-type>
+        <aggregation>Year</aggregation>
+        <contains-null>true</contains-null>
+        <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_CB8FAA44DAB74C70A623D0A367231E8A]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+      </metadata-record>
+      <metadata-record class='column'>
+        <remote-name>qc_content_score</remote-name>
+        <remote-type>5</remote-type>
+        <local-name>[qc_content_score]</local-name>
+        <parent-name>[Custom SQL Query]</parent-name>
+        <remote-alias>qc_content_score</remote-alias>
+        <local-type>real</local-type>
+        <aggregation>Sum</aggregation>
+        <contains-null>true</contains-null>
+        <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_CB8FAA44DAB74C70A623D0A367231E8A]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+      </metadata-record>
+      <metadata-record class='column'>
+        <remote-name>qc_last_updated_at</remote-name>
+        <remote-type>7</remote-type>
+        <local-name>[qc_last_updated_at]</local-name>
+        <parent-name>[Custom SQL Query]</parent-name>
+        <remote-alias>qc_last_updated_at</remote-alias>
+        <local-type>date</local-type>
+        <aggregation>Year</aggregation>
+        <contains-null>true</contains-null>
+        <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_CB8FAA44DAB74C70A623D0A367231E8A]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+      </metadata-record>
+      <metadata-record class='column'>
+        <remote-name>global_content_score</remote-name>
+        <remote-type>5</remote-type>
+        <local-name>[global_content_score]</local-name>
+        <parent-name>[Custom SQL Query]</parent-name>
+        <remote-alias>global_content_score</remote-alias>
+        <local-type>real</local-type>
+        <aggregation>Sum</aggregation>
+        <contains-null>true</contains-null>
+        <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_CB8FAA44DAB74C70A623D0A367231E8A]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+      </metadata-record>
+    </metadata-records>
+  </connection>
+  <aliases enabled='yes' />
+  <column datatype='string' name='[:Measure Names]' role='dimension' type='nominal'>
+    <aliases>
+      <alias key='&quot;[federated.1szwm1z0kuzxio1dgl5pe0ba85zl].[avg:food_content_score:qk]&quot;' value='Food Score' />
+      <alias key='&quot;[federated.1szwm1z0kuzxio1dgl5pe0ba85zl].[avg:global_content_score:qk]&quot;' value='Global Content Score' />
+      <alias key='&quot;[federated.1szwm1z0kuzxio1dgl5pe0ba85zl].[avg:qc_content_score:qk]&quot;' value='QC Score' />
+    </aliases>
+  </column>
+  <column caption='Column by' datatype='string' name='[Calculation_635852022903394313]' role='dimension' type='nominal'>
+    <calculation class='tableau' formula='CASE [Parameters].[Column by (copy)_635852022902898695]&#10;    WHEN &apos;-&apos; THEN &apos;&apos;&#10;    WHEN &apos;segment&apos; THEN STR([segment])&#10;    WHEN &apos;management_entity&apos; THEN STR([management_entity])&#10;    WHEN &apos;brand_name&apos; THEN STR([brand_name])&#10;    WHEN &apos;gid&apos; THEN STR([global_entity_id])&#10;    WHEN &apos;country_name&apos; THEN STR([country_name])&#10;    WHEN &apos;sub_entity&apos; THEN STR([sub_entity])&#10;END' />
+  </column>
+  <column caption='Row by' datatype='string' name='[Column by (copy)_635852022904070154]' role='dimension' type='nominal'>
+    <calculation class='tableau' formula='CASE [Parameters].[Row by (food) (copy)_635852022903222280]&#10;    WHEN &apos;-&apos; THEN &apos;&apos;&#10;    WHEN &apos;segment&apos; THEN STR([segment])&#10;    WHEN &apos;management_entity&apos; THEN STR([management_entity])&#10;    WHEN &apos;brand_name&apos; THEN STR([brand_name])&#10;    WHEN &apos;gid&apos; THEN STR([global_entity_id])&#10;    WHEN &apos;country_name&apos; THEN STR([country_name])&#10;    WHEN &apos;sub_entity&apos; THEN STR([sub_entity])&#10;END' />
+  </column>
+  <_.fcp.ObjectModelTableType.true...column caption='global_quality_score_data' datatype='table' name='[__tableau_internal_object_id__].[_CB8FAA44DAB74C70A623D0A367231E8A]' role='measure' type='quantitative' />
+  <column datatype='string' name='[country_name]' role='dimension' semantic-role='[Country].[ISO3166_2]' type='nominal' />
+  <column datatype='real' name='[food_content_score]' role='measure' type='quantitative' />
+  <column datatype='real' name='[global_content_score]' role='measure' type='quantitative' />
+  <column datatype='real' name='[qc_content_score]' role='measure' type='quantitative' />
+  <column-instance column='[food_content_score]' derivation='Avg' name='[avg:food_content_score:qk]' pivot='key' type='quantitative' />
+  <column-instance column='[global_content_score]' derivation='Avg' name='[avg:global_content_score:qk]' pivot='key' type='quantitative' />
+  <column-instance column='[qc_content_score]' derivation='Avg' name='[avg:qc_content_score:qk]' pivot='key' type='quantitative' />
+  <extract _.fcp.ObjectModelExtractV2.true...object-id='' _.fcp.VConnDownstreamExtractsWithWarnings.true...user-specific='false' count='-1' enabled='true' units='records'>
+    <connection class='hyper' dbname='extract/39/06/{75B0E835-5806-4F18-9798-822CECD0AA60}/federated_1szwm1z0kuzxio1dgl5pe0.hyper' extract-engine='true' schema='Extract' tablename='Extract' update-time='03/04/2024 09:18:30 AM'>
+      <_.fcp.ObjectModelEncapsulateLegacy.false...relation name='Extract' table='[Extract].[Extract]' type='table' />
+      <_.fcp.ObjectModelEncapsulateLegacy.true...relation name='Extract' table='[Extract].[Extract]' type='table' />
+      <metadata-records>
+        <metadata-record class='column'>
+          <remote-name>global_entity_id</remote-name>
+          <remote-type>129</remote-type>
+          <local-name>[global_entity_id]</local-name>
+          <parent-name>[Extract]</parent-name>
+          <remote-alias>global_entity_id</remote-alias>
+          <ordinal>0</ordinal>
+          <family>Custom SQL Query</family>
+          <local-type>string</local-type>
+          <aggregation>Count</aggregation>
+          <approx-count>73</approx-count>
+          <contains-null>true</contains-null>
+          <collation flag='0' name='LROOT' />
+          <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_CB8FAA44DAB74C70A623D0A367231E8A]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+        </metadata-record>
+        <metadata-record class='column'>
+          <remote-name>country_name</remote-name>
+          <remote-type>129</remote-type>
+          <local-name>[country_name]</local-name>
+          <parent-name>[Extract]</parent-name>
+          <remote-alias>country_name</remote-alias>
+          <ordinal>1</ordinal>
+          <family>Custom SQL Query</family>
+          <local-type>string</local-type>
+          <aggregation>Count</aggregation>
+          <approx-count>70</approx-count>
+          <contains-null>true</contains-null>
+          <collation flag='0' name='LROOT' />
+          <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_CB8FAA44DAB74C70A623D0A367231E8A]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+        </metadata-record>
+        <metadata-record class='column'>
+          <remote-name>management_entity</remote-name>
+          <remote-type>129</remote-type>
+          <local-name>[management_entity]</local-name>
+          <parent-name>[Extract]</parent-name>
+          <remote-alias>management_entity</remote-alias>
+          <ordinal>2</ordinal>
+          <family>Custom SQL Query</family>
+          <local-type>string</local-type>
+          <aggregation>Count</aggregation>
+          <approx-count>8</approx-count>
+          <contains-null>true</contains-null>
+          <collation flag='0' name='LROOT' />
+          <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_CB8FAA44DAB74C70A623D0A367231E8A]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+        </metadata-record>
+        <metadata-record class='column'>
+          <remote-name>brand_name</remote-name>
+          <remote-type>129</remote-type>
+          <local-name>[brand_name]</local-name>
+          <parent-name>[Extract]</parent-name>
+          <remote-alias>brand_name</remote-alias>
+          <ordinal>3</ordinal>
+          <family>Custom SQL Query</family>
+          <local-type>string</local-type>
+          <aggregation>Count</aggregation>
+          <approx-count>9</approx-count>
+          <contains-null>true</contains-null>
+          <collation flag='0' name='LROOT' />
+          <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_CB8FAA44DAB74C70A623D0A367231E8A]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+        </metadata-record>
+        <metadata-record class='column'>
+          <remote-name>sub_entity</remote-name>
+          <remote-type>129</remote-type>
+          <local-name>[sub_entity]</local-name>
+          <parent-name>[Extract]</parent-name>
+          <remote-alias>sub_entity</remote-alias>
+          <ordinal>4</ordinal>
+          <family>Custom SQL Query</family>
+          <local-type>string</local-type>
+          <aggregation>Count</aggregation>
+          <approx-count>73</approx-count>
+          <contains-null>true</contains-null>
+          <collation flag='0' name='LROOT' />
+          <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_CB8FAA44DAB74C70A623D0A367231E8A]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+        </metadata-record>
+        <metadata-record class='column'>
+          <remote-name>segment</remote-name>
+          <remote-type>129</remote-type>
+          <local-name>[segment]</local-name>
+          <parent-name>[Extract]</parent-name>
+          <remote-alias>segment</remote-alias>
+          <ordinal>5</ordinal>
+          <family>Custom SQL Query</family>
+          <local-type>string</local-type>
+          <aggregation>Count</aggregation>
+          <approx-count>4</approx-count>
+          <contains-null>true</contains-null>
+          <collation flag='0' name='LROOT' />
+          <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_CB8FAA44DAB74C70A623D0A367231E8A]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+        </metadata-record>
+        <metadata-record class='column'>
+          <remote-name>food_content_score</remote-name>
+          <remote-type>5</remote-type>
+          <local-name>[food_content_score]</local-name>
+          <parent-name>[Extract]</parent-name>
+          <remote-alias>food_content_score</remote-alias>
+          <ordinal>6</ordinal>
+          <family>Custom SQL Query</family>
+          <local-type>real</local-type>
+          <aggregation>Sum</aggregation>
+          <approx-count>49</approx-count>
+          <contains-null>true</contains-null>
+          <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_CB8FAA44DAB74C70A623D0A367231E8A]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+        </metadata-record>
+        <metadata-record class='column'>
+          <remote-name>food_last_updated_at</remote-name>
+          <remote-type>133</remote-type>
+          <local-name>[food_last_updated_at]</local-name>
+          <parent-name>[Extract]</parent-name>
+          <remote-alias>food_last_updated_at</remote-alias>
+          <ordinal>7</ordinal>
+          <family>Custom SQL Query</family>
+          <local-type>date</local-type>
+          <aggregation>Year</aggregation>
+          <approx-count>2</approx-count>
+          <contains-null>true</contains-null>
+          <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_CB8FAA44DAB74C70A623D0A367231E8A]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+        </metadata-record>
+        <metadata-record class='column'>
+          <remote-name>qc_content_score</remote-name>
+          <remote-type>5</remote-type>
+          <local-name>[qc_content_score]</local-name>
+          <parent-name>[Extract]</parent-name>
+          <remote-alias>qc_content_score</remote-alias>
+          <ordinal>8</ordinal>
+          <family>Custom SQL Query</family>
+          <local-type>real</local-type>
+          <aggregation>Sum</aggregation>
+          <approx-count>71</approx-count>
+          <contains-null>true</contains-null>
+          <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_CB8FAA44DAB74C70A623D0A367231E8A]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+        </metadata-record>
+        <metadata-record class='column'>
+          <remote-name>qc_last_updated_at</remote-name>
+          <remote-type>133</remote-type>
+          <local-name>[qc_last_updated_at]</local-name>
+          <parent-name>[Extract]</parent-name>
+          <remote-alias>qc_last_updated_at</remote-alias>
+          <ordinal>9</ordinal>
+          <family>Custom SQL Query</family>
+          <local-type>date</local-type>
+          <aggregation>Year</aggregation>
+          <approx-count>2</approx-count>
+          <contains-null>true</contains-null>
+          <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_CB8FAA44DAB74C70A623D0A367231E8A]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+        </metadata-record>
+        <metadata-record class='column'>
+          <remote-name>global_content_score</remote-name>
+          <remote-type>5</remote-type>
+          <local-name>[global_content_score]</local-name>
+          <parent-name>[Extract]</parent-name>
+          <remote-alias>global_content_score</remote-alias>
+          <ordinal>10</ordinal>
+          <family>Custom SQL Query</family>
+          <local-type>real</local-type>
+          <aggregation>Sum</aggregation>
+          <approx-count>73</approx-count>
+          <contains-null>true</contains-null>
+          <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_CB8FAA44DAB74C70A623D0A367231E8A]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+        </metadata-record>
+      </metadata-records>
+    </connection>
+  </extract>
+  <layout _.fcp.SchemaViewerObjectModel.false...dim-percentage='0.5' _.fcp.SchemaViewerObjectModel.false...measure-percentage='0.4' dim-ordering='alphabetic' measure-ordering='alphabetic' show-structure='true' />
+  <style>
+    <style-rule element='mark'>
+      <encoding attr='color' field='[:Measure Names]' type='palette'>
+        <map to='#b07aa1'>
+          <bucket>&quot;[federated.1szwm1z0kuzxio1dgl5pe0ba85zl].[avg:qc_content_score:qk]&quot;</bucket>
+        </map>
+        <map to='#edc948'>
+          <bucket>&quot;[federated.1szwm1z0kuzxio1dgl5pe0ba85zl].[avg:food_content_score:qk]&quot;</bucket>
+        </map>
+        <map to='#f28e2b'>
+          <bucket>&quot;[federated.1szwm1z0kuzxio1dgl5pe0ba85zl].[avg:global_content_score:qk]&quot;</bucket>
+        </map>
+      </encoding>
+    </style-rule>
+  </style>
+  <semantic-values>
+    <semantic-value key='[Country].[Name]' value='&quot;United States&quot;' />
+  </semantic-values>
+  <date-options start-of-week='monday' />
+  <datasource-dependencies datasource='Parameters'>
+    <column caption='Column by (global)' datatype='string' name='[Column by (copy)_635852022902898695]' param-domain-type='list' role='measure' type='nominal' value='&quot;-&quot;'>
+      <calculation class='tableau' formula='&quot;-&quot;' />
+      <aliases>
+        <alias key='&quot;brand_name&quot;' value='Brand Name' />
+        <alias key='&quot;country_name&quot;' value='Country Name' />
+        <alias key='&quot;gid&quot;' value='Global Entity Id' />
+        <alias key='&quot;management_entity&quot;' value='Management Entity' />
+        <alias key='&quot;segment&quot;' value='Segment' />
+        <alias key='&quot;sub_entity&quot;' value='Sub Entity' />
+      </aliases>
+      <members>
+        <member value='&quot;-&quot;' />
+        <member alias='Segment' value='&quot;segment&quot;' />
+        <member alias='Management Entity' value='&quot;management_entity&quot;' />
+        <member alias='Brand Name' value='&quot;brand_name&quot;' />
+        <member alias='Global Entity Id' value='&quot;gid&quot;' />
+        <member alias='Country Name' value='&quot;country_name&quot;' />
+        <member alias='Sub Entity' value='&quot;sub_entity&quot;' />
+      </members>
+    </column>
+    <column caption='Row by (global)' datatype='string' name='[Row by (food) (copy)_635852022903222280]' param-domain-type='list' role='measure' type='nominal' value='&quot;-&quot;'>
+      <calculation class='tableau' formula='&quot;-&quot;' />
+      <aliases>
+        <alias key='&quot;brand_name&quot;' value='Brand Name' />
+        <alias key='&quot;country_name&quot;' value='Country Name' />
+        <alias key='&quot;gid&quot;' value='Global Entity Id' />
+        <alias key='&quot;management_entity&quot;' value='Management Entity' />
+        <alias key='&quot;segment&quot;' value='Segment' />
+        <alias key='&quot;sub_entity&quot;' value='Sub Entity' />
+      </aliases>
+      <members>
+        <member value='&quot;-&quot;' />
+        <member alias='Segment' value='&quot;segment&quot;' />
+        <member alias='Management Entity' value='&quot;management_entity&quot;' />
+        <member alias='Brand Name' value='&quot;brand_name&quot;' />
+        <member alias='Global Entity Id' value='&quot;gid&quot;' />
+        <member alias='Country Name' value='&quot;country_name&quot;' />
+        <member alias='Sub Entity' value='&quot;sub_entity&quot;' />
+      </members>
+    </column>
+  </datasource-dependencies>
+  <_.fcp.ObjectModelEncapsulateLegacy.true...object-graph>
+    <objects>
+      <object caption='global_quality_score_data' id='_CB8FAA44DAB74C70A623D0A367231E8A'>
+        <properties context=''>
+          <relation connection='bigquery.1nm82aj1y2pkug1ej5u8w0rhft9e' name='Custom SQL Query' type='text'><![CDATA[WITH
+product_images_data AS(
+  SELECT
+    p.global_entity_id,
+    COALESCE(p._platform_vendor_id, p.vendor_id) AS vendor_id,
+    p.product_id,
+    MAX(LOWER(p.name)) AS name,
+    MAX(LOWER(p.description)) AS description,
+    MAX(img.url) AS image_url
+  FROM `fulfillment-dwh-production.curated_data_shared_data_stream.products` p
+  JOIN `fulfillment-dwh-production.curated_data_shared_coredata_business.vendors` v
+    ON 1=1
+    -- AND p.metadata.source IN ('PANDORA','TB','PY','HS','EFOOD','FOODY')
+    AND p.global_entity_id = v.global_entity_id
+    AND COALESCE(p._platform_vendor_id, p.vendor_id) = v.vendor_id
+    AND v.is_test_vendor = FALSE
+    AND NOT REGEXP_CONTAINS(LOWER(v.vendor_name), "test")
+    AND v.is_available = TRUE
+    AND v.vertical_type = 'restaurants'
+  LEFT JOIN
+    UNNEST(image_urls) AS img
+  WHERE p.active = TRUE
+    AND LENGTH(p.name) >> 1
+    AND (p.created_at IS NOT NULL OR p.global_entity_id IN ('HS_SA', 'HS_BH'))
+    AND p.global_entity_id IN (SELECT global_entity_id FROM `fulfillment-dwh-production.curated_data_shared_coredata.global_entities` WHERE is_reporting_enabled)
+  GROUP BY 1,2,3
+),
+mapping AS (
+  SELECT 'FO_NO' AS global_entity_id, 'fd-no' AS code UNION ALL
+  SELECT 'FP_BD' AS global_entity_id, 'fd-bd' AS code UNION ALL
+  SELECT 'FP_HK' AS global_entity_id, 'fd-hk' AS code UNION ALL
+  SELECT 'FP_KH' AS global_entity_id, 'fd-kh' AS code UNION ALL
+  SELECT 'FP_LA' AS global_entity_id, 'fd-la' AS code UNION ALL
+  SELECT 'FP_MM' AS global_entity_id, 'fd-mm' AS code UNION ALL
+  SELECT 'FP_MY' AS global_entity_id, 'fd-my' AS code UNION ALL
+  SELECT 'FP_PH' AS global_entity_id, 'fd-ph' AS code UNION ALL
+  SELECT 'FP_PK' AS global_entity_id, 'fd-pk' AS code UNION ALL
+  SELECT 'FP_SG' AS global_entity_id, 'fd-sg' AS code UNION ALL
+  SELECT 'FP_SK' AS global_entity_id, 'fd-sk' AS code UNION ALL
+  SELECT 'FP_TH' AS global_entity_id, 'fd-th' AS code UNION ALL
+  SELECT 'FP_TW' AS global_entity_id, 'fd-tw' AS code UNION ALL
+  SELECT 'HN_DK' AS global_entity_id, 'fd-dk' AS code UNION ALL
+  SELECT 'MJM_AT' AS global_entity_id, 'fd-mj' AS code UNION ALL
+  SELECT 'NP_HU' AS global_entity_id, 'fd-hu' AS code UNION ALL
+  SELECT 'OP_SE' AS global_entity_id, 'fd-op' AS code UNION ALL
+  SELECT 'PO_FI' AS global_entity_id, 'fd-po' AS code UNION ALL
+  SELECT 'DJ_CZ' AS global_entity_id, 'fd-cz' AS code UNION ALL
+  SELECT 'YS_TR' AS global_entity_id, 'fd-tr' AS code
+),
+vendor_images_data AS(
+  SELECT
+    v.global_entity_id,
+    v.vendor_id,
+    CASE WHEN MAX(v.chain_id IS NOT NULL) = TRUE THEN 'Is Chain' ELSE 'Not Chain' END AS is_chain,
+    MAX(CASE WHEN c.is_main_category = TRUE THEN c.category_name END) AS main_category_name,
+    MAX(CASE
+          WHEN v.metadata.stream_source = 'PANDORA'THEN CONCAT('https://images.deliveryhero.io/image/', m.code, '/LH/', v.vendor_id, '-listing.jpg')
+          WHEN v.global_entity_id LIKE 'HS_%' THEN COALESCE(mhs.android_cover_photo_url, images_urls.header)
+          ELSE images_urls.header
+        END) AS image_url,
+    MAX(CASE
+          WHEN v.global_entity_id LIKE 'HS_%' THEN COALESCE(mhs.ios_cover_photo_url, images_urls.header)
+          ELSE NULL
+        END) AS image_url_2
+  FROM `fulfillment-dwh-production.curated_data_shared_coredata_business.vendors` v
+  LEFT JOIN
+    UNNEST(categories) c
+  LEFT JOIN mapping m
+    ON v.global_entity_id = m.global_entity_id
+  LEFT JOIN `dh-codapro-analytics-2460.test_aleksei.hs_vendor_header_image_2023_02_23` mhs
+    ON v.global_entity_id LIKE 'HS_%'
+    AND v.vendor_id = mhs.branch_id
+  WHERE 1=1
+    -- AND v.metadata.stream_source IN ('PANDORA','TB','PY','HS','EFOOD','FOODY')
+    AND v.is_test_vendor = FALSE
+    AND NOT REGEXP_CONTAINS(LOWER(v.vendor_name), "test")
+    AND v.is_available = TRUE
+    AND v.vertical_type = 'restaurants'
+    AND v.global_entity_id IN (SELECT global_entity_id FROM `fulfillment-dwh-production.curated_data_shared_coredata.global_entities` WHERE is_reporting_enabled)
+  GROUP BY 1,2
+),
+images_data AS(
+  SELECT
+    CASE
+      WHEN CONTAINS_SUBSTR(image_url, "fd-au/efood") OR CONTAINS_SUBSTR(image_url, "fd-au/FY_CY")
+        THEN JSON_VALUE(labels, '$.original_url')
+      ELSE image_url
+    END AS image_url,
+    CAST(quality_score AS FLOAT64) AS quality_score,
+    insert_date
+  FROM `dhh-images.quality_us.images`
+  WHERE CASE
+          WHEN CONTAINS_SUBSTR(image_url, "fd-au/efood") OR CONTAINS_SUBSTR(image_url, "fd-au/FY_CY")
+            THEN JSON_VALUE(labels, '$.original_url')
+          ELSE image_url
+        END IN(SELECT image_url FROM product_images_data)
+        OR
+        CASE
+          WHEN CONTAINS_SUBSTR(image_url, "fd-au/efood") OR CONTAINS_SUBSTR(image_url, "fd-au/FY_CY")
+            THEN JSON_VALUE(labels, '$.original_url')
+          ELSE image_url
+        END IN(SELECT image_url FROM vendor_images_data)
+  QUALIFY ROW_NUMBER() OVER(PARTITION BY CASE
+                              WHEN CONTAINS_SUBSTR(image_url, "fd-au/efood") OR CONTAINS_SUBSTR(image_url, "fd-au/FY_CY")
+                                THEN JSON_VALUE(labels, '$.original_url')
+                              ELSE image_url
+                            END ORDER BY insert_date DESC) = 1
+),
+product_images_data_fin AS(
+  SELECT
+    p.global_entity_id,
+    p.vendor_id,
+    AVG(CASE WHEN id.quality_score IS NOT NULL THEN id.quality_score END) AS product_image_quality,
+    SAFE_DIVIDE(COUNT(DISTINCT CASE WHEN p.image_url IS NOT NULL AND p.image_url <<>> '' THEN p.product_id END),
+      COUNT(DISTINCT p.product_id)) AS product_image_coverage,
+    SAFE_DIVIDE(COUNT(DISTINCT CASE WHEN p.description IS NOT NULL AND LENGTH(p.description) >> 0 THEN p.product_id END),
+      COUNT(DISTINCT p.product_id)) AS product_description_coverage,
+    SAFE_DIVIDE(COUNT(DISTINCT CASE WHEN (p.description IS NOT NULL AND LENGTH(p.description) >> 0) AND LENGTH(p.description) >>= 5 AND p.description <<>> p.name THEN p.product_id END),
+      COUNT(DISTINCT CASE WHEN p.description IS NOT NULL AND LENGTH(p.description) >> 0 THEN p.product_id END)) AS product_description_quality,
+    SAFE_DIVIDE(COUNT(DISTINCT CASE WHEN (p.description IS NOT NULL AND LENGTH(p.description) >> 0) AND LENGTH(p.description) >>= 5 THEN p.product_id END),
+      COUNT(DISTINCT CASE WHEN p.description IS NOT NULL AND LENGTH(p.description) >> 0 THEN p.product_id END)) AS product_description_quality_more_5s,
+    SAFE_DIVIDE(COUNT(DISTINCT CASE WHEN (p.description IS NOT NULL AND LENGTH(p.description) >> 0) AND p.description <<>> p.name THEN p.product_id END),
+      COUNT(DISTINCT CASE WHEN p.description IS NOT NULL AND LENGTH(p.description) >> 0 THEN p.product_id END)) AS product_description_quality_no_match,
+    SAFE_DIVIDE(COUNT(DISTINCT CASE WHEN (p.image_url IS NOT NULL AND p.image_url <<>> '') AND id.quality_score IS NOT NULL THEN p.product_id END),
+      COUNT(DISTINCT CASE WHEN p.image_url IS NOT NULL AND p.image_url <<>> '' THEN p.product_id END)) AS product_image_score_coverage
+  FROM product_images_data p
+  LEFT JOIN images_data id
+    ON p.image_url = id.image_url
+  GROUP BY 1,2
+),
+vendor_images_data_fin AS(
+  SELECT
+    v.global_entity_id,
+    v.vendor_id,
+    v.is_chain,
+    v.main_category_name,
+    AVG(CASE WHEN COALESCE(id.quality_score, id_2.quality_score) IS NOT NULL THEN COALESCE(id.quality_score, id_2.quality_score) END) AS vendor_image_quality,
+    MAX(CASE WHEN COALESCE(id.quality_score, id_2.quality_score) IS NOT NULL THEN 1 ELSE 0 END) AS vendor_image_score_coverage,
+    MAX(CASE WHEN v.image_url IS NOT NULL THEN 1 ELSE 0 END) AS vendor_image_coverage
+  FROM vendor_images_data v
+  LEFT JOIN images_data id
+    ON v.image_url = id.image_url
+  LEFT JOIN images_data id_2
+    ON v.image_url = id_2.image_url
+  GROUP BY 1,2,3,4
+),
+food_score AS(
+  SELECT
+    v.global_entity_id,
+    AVG(
+      p.product_image_coverage * 0.20
+      +
+      p.product_image_quality * 0.16
+      +
+      v.vendor_image_quality * 0.24
+      +
+      p.product_description_coverage * 0.20
+      +
+      p.product_description_quality * 0.20
+    ) AS food_content_score,
+    MAX(DATE(CURRENT_TIMESTAMP)) AS food_last_updated_at
+  FROM vendor_images_data_fin v
+  JOIN `fulfillment-dwh-production.curated_data_shared_coredata.global_entities` ge
+    ON v.global_entity_id = ge.global_entity_id
+    AND ge.is_reporting_enabled
+  JOIN product_images_data_fin p
+    ON v.global_entity_id = p.global_entity_id
+    AND v.vendor_id = p.vendor_id
+  WHERE v.vendor_image_score_coverage >> 0
+    AND p.product_image_score_coverage >> 0
+  GROUP BY 1
+  ORDER BY 1
+),
+gid AS(
+  SELECT fs.global_entity_id
+  FROM food_score fs
+  UNION DISTINCT
+  SELECT qc.global_entity_id
+  FROM `fulfillment-dwh-production.curated_data_shared_dmart.content_score_global_tracking` qc
+)
+SELECT
+  gid.global_entity_id,
+  ge.country_name,
+  ge.management_entity,
+  CASE
+    WHEN gid.global_entity_id = 'YS_TR' THEN 'Yemeksepeti'
+    WHEN ge.brand_name IN ('Foody', 'eFood') THEN 'eFood'
+    ELSE ge.brand_name
+  END AS brand_name,
+  ge.sub_entity,
+  ge.segment,
+  fs.food_content_score,
+  fs.food_last_updated_at,
+  qc.qc_content_score_geid/100 AS qc_content_score,
+  qc.qc_content_score_last_updated AS qc_last_updated_at,
+  CASE
+    WHEN fs.food_content_score IS NOT NULL AND qc.qc_content_score_geid IS NOT NULL THEN (fs.food_content_score * 0.7) + (qc.qc_content_score_geid/100 * 0.3)
+    WHEN fs.food_content_score IS NOT NULL AND qc.qc_content_score_geid IS NULL THEN fs.food_content_score
+    WHEN fs.food_content_score IS NULL AND qc.qc_content_score_geid IS NOT NULL THEN qc.qc_content_score_geid/100
+  END AS global_content_score
+FROM gid
+LEFT JOIN food_score fs
+  ON gid.global_entity_id = fs.global_entity_id
+LEFT JOIN `fulfillment-dwh-production.curated_data_shared_dmart.content_score_global_tracking` qc
+  ON gid.global_entity_id = qc.global_entity_id
+LEFT JOIN `fulfillment-dwh-production.curated_data_shared_coredata.global_entities` ge
+  ON gid.global_entity_id = ge.global_entity_id
+WHERE (ge.is_reporting_enabled OR gid.global_entity_id LIKE 'GV_%')
+ORDER BY management_entity, brand_name, sub_entity, global_entity_id]]></relation>
+        </properties>
+        <properties context='extract'>
+          <relation name='Extract' table='[Extract].[Extract]' type='table' />
+        </properties>
+      </object>
+    </objects>
+  </_.fcp.ObjectModelEncapsulateLegacy.true...object-graph>
+</datasource>

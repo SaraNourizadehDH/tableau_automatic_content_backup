@@ -1,0 +1,2376 @@
+<?xml version='1.0' encoding='utf-8' ?>
+
+<!-- build 20233.25.0106.1650                               -->
+<workbook original-version='18.1' source-build='2023.3.16 (20233.25.0325.1434)' source-platform='win' version='18.1' xml:base='https://tableau.deliveryhero.net' xmlns:user='http://www.tableausoftware.com/xml/user'>
+  <document-format-change-manifest>
+    <_.fcp.AccessibleZoneTabOrder.true...AccessibleZoneTabOrder />
+    <_.fcp.AnimationOnByDefault.true...AnimationOnByDefault />
+    <AutoCreateAndUpdateDSDPhoneLayouts />
+    <_.fcp.MarkAnimation.true...MarkAnimation />
+    <_.fcp.ObjectModelEncapsulateLegacy.true...ObjectModelEncapsulateLegacy />
+    <_.fcp.ObjectModelTableType.true...ObjectModelTableType />
+    <_.fcp.SchemaViewerObjectModel.true...SchemaViewerObjectModel />
+    <SetMembershipControl />
+    <SheetIdentifierTracking />
+    <SortTagCleanup />
+    <WindowsPersistSimpleIdentifiers />
+    <ZoneBackgroundTransparency />
+  </document-format-change-manifest>
+  <repository-location id='SurgevsDemandAnalysis' path='/t/GlobalStandardReporting/workbooks' revision='1.0' site='GlobalStandardReporting' />
+  <preferences>
+    <preference name='ui.encoding.shelf.height' value='24' />
+    <preference name='ui.shelf.height' value='26' />
+  </preferences>
+  <_.fcp.AnimationOnByDefault.false...style>
+    <_.fcp.AnimationOnByDefault.false..._.fcp.MarkAnimation.true...style-rule element='animation'>
+      <_.fcp.AnimationOnByDefault.false...format attr='animation-on' value='ao-on' />
+    </_.fcp.AnimationOnByDefault.false..._.fcp.MarkAnimation.true...style-rule>
+  </_.fcp.AnimationOnByDefault.false...style>
+  <datasources>
+    <datasource hasconnection='false' inline='true' name='Parameters' version='18.1'>
+      <aliases enabled='yes' />
+      <column caption='Date from' datatype='date' name='[Parameter 1]' param-domain-type='any' role='measure' type='quantitative' value='#2025-03-03#'>
+        <calculation class='tableau' formula='#2025-03-03#' />
+      </column>
+      <column caption='Date to' datatype='date' name='[Parameter 2]' param-domain-type='any' role='measure' type='quantitative' value='#2025-03-02#'>
+        <calculation class='tableau' formula='#2025-03-02#' />
+      </column>
+      <column caption='country_code' datatype='string' name='[Parameter 3]' param-domain-type='any' role='measure' type='nominal' value='&quot;sg&quot;'>
+        <calculation class='tableau' formula='&quot;sg&quot;' />
+      </column>
+      <column caption='zone_id' datatype='integer' name='[Parameter 4]' param-domain-type='any' role='measure' type='quantitative' value='7'>
+        <calculation class='tableau' formula='7' />
+      </column>
+      <column caption='Days' datatype='integer' name='[Parameter 5]' param-domain-type='any' role='measure' type='quantitative' value='0'>
+        <calculation class='tableau' formula='0' />
+      </column>
+      <column caption='minutes buckets' datatype='integer' default-format='*# \m\i\n' name='[country_code Parameter]' param-domain-type='any' role='measure' type='quantitative' value='15'>
+        <calculation class='tableau' formula='15' />
+      </column>
+    </datasource>
+    <datasource caption='Surge Components' inline='true' name='federated.13msmxh0ab6xcl10848zu1718maw' version='18.1'>
+      <connection class='federated'>
+        <named-connections>
+          <named-connection caption='BigQuery' name='bigquery.1ufi2us0ysxjs81ddflct0cqczxr'>
+            <connection CATALOG='fulfillment-dwh-production' EXECCATALOG='dh-imd' authentication='oauth' class='bigquery' connection-dialect='google-sql' project='DataHub Production' schema='curated_data_shared' server-oauth='server-custom' username='laurent.broering@deliveryhero.com' workgroup-auth-mode='prompt' />
+          </named-connection>
+        </named-connections>
+        <_.fcp.ObjectModelEncapsulateLegacy.false...relation connection='bigquery.1ufi2us0ysxjs81ddflct0cqczxr' name='Custom SQL Query' type='text'><![CDATA[WITH
+timestamps AS (
+  SELECT
+    created_at_bucket
+  FROM UNNEST(GENERATE_TIMESTAMP_ARRAY(
+    TIMESTAMP_TRUNC(TIMESTAMP(<[Parameters].[Parameter 1]>), MINUTE) - INTERVAL 1 DAY,
+    TIMESTAMP_TRUNC(TIMESTAMP(<[Parameters].[Parameter 1]> + INTERVAL <[Parameters].[Parameter 5]> DAY), MINUTE) + INTERVAL 2 DAY - INTERVAL 1 MINUTE,
+    INTERVAL 1 MINUTE)) created_at_bucket
+)
+, orders AS (
+  select
+    platform_order_code,
+    dps_mean_delay,
+    dps_travel_time_fee_eur,
+    dps_surge_fee_eur,
+    country_code,
+    IFNULL(dps_mean_delay_zone_id, zone_id) AS zone_id,
+    order_placed_at,
+    IFNULL(IFNULL(dps_session_timestamp, dps_session_id_created_at - INTERVAL 8 MINUTE), order_placed_at - INTERVAL 8 MINUTE) AS dps_session_started_at,
+    TIMESTAMP(order_report_time, timezone) AS order_delivered_at, -- stored local time as datetime but on GMT, this transforms it back to timestamp UTC
+    timezone,
+  from `fulfillment-dwh-production.curated_data_shared.dps_sessions_mapped_to_orders`
+  where
+    created_date between <[Parameters].[Parameter 1]> - INTERVAL 1 DAY and <[Parameters].[Parameter 1]> + INTERVAL <[Parameters].[Parameter 5]> DAY + INTERVAL 1 DAY
+    -- and created_date_local between <[Parameters].[Parameter 1]> and <[Parameters].[Parameter 1]> + INTERVAL <[Parameters].[Parameter 5]> DAY
+    AND country_code = <[Parameters].[Parameter 3]>
+    AND IFNULL(dps_mean_delay_zone_id, zone_id) = <[Parameters].[Parameter 4]>
+    AND is_own_delivery
+    AND is_sent
+    -- AND zone_id = dps_mean_delay_zone_id
+  ORDER BY 1
+)
+SELECT
+  t.created_at_bucket,
+  o.country_code,
+  o.zone_id,
+  `stats`[SAFE_OFFSET(0)].created_at,
+  `stats`[SAFE_OFFSET(0)].mean_delay,
+  `stats`[SAFE_OFFSET(0)].estimated_courier_delay,
+  `stats`[SAFE_OFFSET(0)].accepteds_count,
+  `stats`[SAFE_OFFSET(0)].dispatcheds_count,
+  `stats`[SAFE_OFFSET(0)].queueds_count,
+  `stats`[SAFE_OFFSET(0)].drop_off_count,
+  `stats`[SAFE_OFFSET(0)].couriers_count,
+  `stats`[SAFE_OFFSET(0)].couriers_starting_count,
+  `stats`[SAFE_OFFSET(0)].couriers_ending_count,
+  datetime(t.created_at_bucket, timezone) local_created_at_bucket,
+  SUM(IF(DATE_TRUNC(o.order_placed_at, minute) <<= t.created_at_bucket AND DATE_TRUNC(o.order_delivered_at, minute) >>= t.created_at_bucket, 1, 0)) AS active_orders,
+  SUM(IF(DATE_TRUNC(o.order_placed_at, minute) = t.created_at_bucket, 1, 0)) AS placed_orders,
+  SUM(IF(DATE_TRUNC(o.order_delivered_at, minute) = t.created_at_bucket, 1, 0)) AS delivered_orders,
+  MIN(IF(DATE_TRUNC(o.dps_session_started_at, minute) = t.created_at_bucket, dps_mean_delay, NULL)) AS min_dps_mean_delay,
+  AVG(IF(DATE_TRUNC(o.dps_session_started_at, minute) = t.created_at_bucket, dps_mean_delay, NULL)) AS avg_dps_mean_delay,
+  MAX(IF(DATE_TRUNC(o.dps_session_started_at, minute) = t.created_at_bucket, dps_mean_delay, NULL)) AS max_dps_mean_delay,
+  SUM(IF(DATE_TRUNC(o.dps_session_started_at, minute) = t.created_at_bucket, dps_surge_fee_eur, NULL)) AS sum_dps_surge_fee_eur,
+  SUM(IF(DATE_TRUNC(o.dps_session_started_at, minute) = t.created_at_bucket, dps_travel_time_fee_eur, NULL)) AS sum_dps_travel_time_fee_eur,
+FROM timestamps t
+CROSS JOIN orders o
+LEFT JOIN `fulfillment-dwh-production.curated_data_shared.zone_stats` z
+  ON t.created_at_bucket = z.created_at_bucket
+    AND o.country_code = z.country_code
+    AND o.zone_id = z.zone_id
+WHERE DATETIME(t.created_at_bucket, timezone) between <[Parameters].[Parameter 1]> + INTERVAL 6 HOUR and <[Parameters].[Parameter 1]> + INTERVAL <[Parameters].[Parameter 5]> DAY + INTERVAL + 1 DAY - INTERVAL - 1 MINUTE + INTERVAL 3 HOUR
+GROUP BY ALL
+ORDER BY 1]]></_.fcp.ObjectModelEncapsulateLegacy.false...relation>
+        <_.fcp.ObjectModelEncapsulateLegacy.true...relation connection='bigquery.1ufi2us0ysxjs81ddflct0cqczxr' name='Custom SQL Query' type='text'><![CDATA[WITH
+timestamps AS (
+  SELECT
+    created_at_bucket
+  FROM UNNEST(GENERATE_TIMESTAMP_ARRAY(
+    TIMESTAMP_TRUNC(TIMESTAMP(<[Parameters].[Parameter 1]>), MINUTE) - INTERVAL 1 DAY,
+    TIMESTAMP_TRUNC(TIMESTAMP(<[Parameters].[Parameter 1]> + INTERVAL <[Parameters].[Parameter 5]> DAY), MINUTE) + INTERVAL 2 DAY - INTERVAL 1 MINUTE,
+    INTERVAL 1 MINUTE)) created_at_bucket
+)
+, orders AS (
+  select
+    platform_order_code,
+    dps_mean_delay,
+    dps_travel_time_fee_eur,
+    dps_surge_fee_eur,
+    country_code,
+    IFNULL(dps_mean_delay_zone_id, zone_id) AS zone_id,
+    order_placed_at,
+    IFNULL(IFNULL(dps_session_timestamp, dps_session_id_created_at - INTERVAL 8 MINUTE), order_placed_at - INTERVAL 8 MINUTE) AS dps_session_started_at,
+    TIMESTAMP(order_report_time, timezone) AS order_delivered_at, -- stored local time as datetime but on GMT, this transforms it back to timestamp UTC
+    timezone,
+  from `fulfillment-dwh-production.curated_data_shared.dps_sessions_mapped_to_orders`
+  where
+    created_date between <[Parameters].[Parameter 1]> - INTERVAL 1 DAY and <[Parameters].[Parameter 1]> + INTERVAL <[Parameters].[Parameter 5]> DAY + INTERVAL 1 DAY
+    -- and created_date_local between <[Parameters].[Parameter 1]> and <[Parameters].[Parameter 1]> + INTERVAL <[Parameters].[Parameter 5]> DAY
+    AND country_code = <[Parameters].[Parameter 3]>
+    AND IFNULL(dps_mean_delay_zone_id, zone_id) = <[Parameters].[Parameter 4]>
+    AND is_own_delivery
+    AND is_sent
+    -- AND zone_id = dps_mean_delay_zone_id
+  ORDER BY 1
+)
+SELECT
+  t.created_at_bucket,
+  o.country_code,
+  o.zone_id,
+  `stats`[SAFE_OFFSET(0)].created_at,
+  `stats`[SAFE_OFFSET(0)].mean_delay,
+  `stats`[SAFE_OFFSET(0)].estimated_courier_delay,
+  `stats`[SAFE_OFFSET(0)].accepteds_count,
+  `stats`[SAFE_OFFSET(0)].dispatcheds_count,
+  `stats`[SAFE_OFFSET(0)].queueds_count,
+  `stats`[SAFE_OFFSET(0)].drop_off_count,
+  `stats`[SAFE_OFFSET(0)].couriers_count,
+  `stats`[SAFE_OFFSET(0)].couriers_starting_count,
+  `stats`[SAFE_OFFSET(0)].couriers_ending_count,
+  datetime(t.created_at_bucket, timezone) local_created_at_bucket,
+  SUM(IF(DATE_TRUNC(o.order_placed_at, minute) <<= t.created_at_bucket AND DATE_TRUNC(o.order_delivered_at, minute) >>= t.created_at_bucket, 1, 0)) AS active_orders,
+  SUM(IF(DATE_TRUNC(o.order_placed_at, minute) = t.created_at_bucket, 1, 0)) AS placed_orders,
+  SUM(IF(DATE_TRUNC(o.order_delivered_at, minute) = t.created_at_bucket, 1, 0)) AS delivered_orders,
+  MIN(IF(DATE_TRUNC(o.dps_session_started_at, minute) = t.created_at_bucket, dps_mean_delay, NULL)) AS min_dps_mean_delay,
+  AVG(IF(DATE_TRUNC(o.dps_session_started_at, minute) = t.created_at_bucket, dps_mean_delay, NULL)) AS avg_dps_mean_delay,
+  MAX(IF(DATE_TRUNC(o.dps_session_started_at, minute) = t.created_at_bucket, dps_mean_delay, NULL)) AS max_dps_mean_delay,
+  SUM(IF(DATE_TRUNC(o.dps_session_started_at, minute) = t.created_at_bucket, dps_surge_fee_eur, NULL)) AS sum_dps_surge_fee_eur,
+  SUM(IF(DATE_TRUNC(o.dps_session_started_at, minute) = t.created_at_bucket, dps_travel_time_fee_eur, NULL)) AS sum_dps_travel_time_fee_eur,
+FROM timestamps t
+CROSS JOIN orders o
+LEFT JOIN `fulfillment-dwh-production.curated_data_shared.zone_stats` z
+  ON t.created_at_bucket = z.created_at_bucket
+    AND o.country_code = z.country_code
+    AND o.zone_id = z.zone_id
+WHERE DATETIME(t.created_at_bucket, timezone) between <[Parameters].[Parameter 1]> + INTERVAL 6 HOUR and <[Parameters].[Parameter 1]> + INTERVAL <[Parameters].[Parameter 5]> DAY + INTERVAL + 1 DAY - INTERVAL - 1 MINUTE + INTERVAL 3 HOUR
+GROUP BY ALL
+ORDER BY 1]]></_.fcp.ObjectModelEncapsulateLegacy.true...relation>
+        <metadata-records>
+          <metadata-record class='column'>
+            <remote-name>created_at_bucket</remote-name>
+            <remote-type>7</remote-type>
+            <local-name>[created_at_bucket]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>created_at_bucket</remote-alias>
+            <local-type>datetime</local-type>
+            <aggregation>Year</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_91476FD8AF7B42C0B8B9A1AD222EF5F8]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>country_code</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[country_code]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>country_code</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_91476FD8AF7B42C0B8B9A1AD222EF5F8]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>zone_id</remote-name>
+            <remote-type>5</remote-type>
+            <local-name>[zone_id]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>zone_id</remote-alias>
+            <local-type>real</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_91476FD8AF7B42C0B8B9A1AD222EF5F8]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>created_at</remote-name>
+            <remote-type>7</remote-type>
+            <local-name>[created_at]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>created_at</remote-alias>
+            <local-type>datetime</local-type>
+            <aggregation>Year</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_91476FD8AF7B42C0B8B9A1AD222EF5F8]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>mean_delay</remote-name>
+            <remote-type>5</remote-type>
+            <local-name>[mean_delay]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>mean_delay</remote-alias>
+            <local-type>real</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_91476FD8AF7B42C0B8B9A1AD222EF5F8]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>estimated_courier_delay</remote-name>
+            <remote-type>5</remote-type>
+            <local-name>[estimated_courier_delay]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>estimated_courier_delay</remote-alias>
+            <local-type>real</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_91476FD8AF7B42C0B8B9A1AD222EF5F8]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>accepteds_count</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[accepteds_count]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>accepteds_count</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_91476FD8AF7B42C0B8B9A1AD222EF5F8]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>dispatcheds_count</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[dispatcheds_count]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>dispatcheds_count</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_91476FD8AF7B42C0B8B9A1AD222EF5F8]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>queueds_count</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[queueds_count]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>queueds_count</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_91476FD8AF7B42C0B8B9A1AD222EF5F8]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>drop_off_count</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[drop_off_count]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>drop_off_count</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_91476FD8AF7B42C0B8B9A1AD222EF5F8]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>couriers_count</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[couriers_count]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>couriers_count</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_91476FD8AF7B42C0B8B9A1AD222EF5F8]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>couriers_starting_count</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[couriers_starting_count]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>couriers_starting_count</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_91476FD8AF7B42C0B8B9A1AD222EF5F8]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>couriers_ending_count</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[couriers_ending_count]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>couriers_ending_count</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_91476FD8AF7B42C0B8B9A1AD222EF5F8]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>local_created_at_bucket</remote-name>
+            <remote-type>7</remote-type>
+            <local-name>[local_created_at_bucket]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>local_created_at_bucket</remote-alias>
+            <local-type>datetime</local-type>
+            <aggregation>Year</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_91476FD8AF7B42C0B8B9A1AD222EF5F8]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>active_orders</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[active_orders]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>active_orders</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_91476FD8AF7B42C0B8B9A1AD222EF5F8]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>placed_orders</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[placed_orders]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>placed_orders</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_91476FD8AF7B42C0B8B9A1AD222EF5F8]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>delivered_orders</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[delivered_orders]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>delivered_orders</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_91476FD8AF7B42C0B8B9A1AD222EF5F8]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>min_dps_mean_delay</remote-name>
+            <remote-type>5</remote-type>
+            <local-name>[min_dps_mean_delay]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>min_dps_mean_delay</remote-alias>
+            <local-type>real</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_91476FD8AF7B42C0B8B9A1AD222EF5F8]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>avg_dps_mean_delay</remote-name>
+            <remote-type>5</remote-type>
+            <local-name>[avg_dps_mean_delay]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>avg_dps_mean_delay</remote-alias>
+            <local-type>real</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_91476FD8AF7B42C0B8B9A1AD222EF5F8]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>max_dps_mean_delay</remote-name>
+            <remote-type>5</remote-type>
+            <local-name>[max_dps_mean_delay]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>max_dps_mean_delay</remote-alias>
+            <local-type>real</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_91476FD8AF7B42C0B8B9A1AD222EF5F8]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>sum_dps_surge_fee_eur</remote-name>
+            <remote-type>5</remote-type>
+            <local-name>[sum_dps_surge_fee_eur]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>sum_dps_surge_fee_eur</remote-alias>
+            <local-type>real</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_91476FD8AF7B42C0B8B9A1AD222EF5F8]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>sum_dps_travel_time_fee_eur</remote-name>
+            <remote-type>5</remote-type>
+            <local-name>[sum_dps_travel_time_fee_eur]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>sum_dps_travel_time_fee_eur</remote-alias>
+            <local-type>real</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_91476FD8AF7B42C0B8B9A1AD222EF5F8]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+        </metadata-records>
+      </connection>
+      <aliases enabled='yes' />
+      <column caption='Bucketed Local Time' datatype='datetime' name='[Calculation_3055129402128461840]' role='dimension' type='ordinal'>
+        <calculation class='tableau' formula='DATETIME(INT(FLOAT([local_created_at_bucket]) * (24 * 60 / [Parameters].[country_code Parameter])) / (24 * 60 / [Parameters].[country_code Parameter]))' />
+      </column>
+      <column caption='Surge %' datatype='real' default-format='p0.0%' name='[Calculation_3055129402132221969]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='SUM([sum_dps_surge_fee_eur])/SUM([sum_dps_travel_time_fee_eur])' />
+      </column>
+      <column caption='Active Orders/Courier' datatype='real' name='[Calculation_3055129402155204630]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='SUM([active_orders])/SUM([couriers_count])' />
+      </column>
+      <_.fcp.ObjectModelTableType.true...column caption='Surge Components' datatype='table' name='[__tableau_internal_object_id__].[_91476FD8AF7B42C0B8B9A1AD222EF5F8]' role='measure' type='quantitative' />
+      <column datatype='integer' name='[accepteds_count]' role='measure' type='quantitative' />
+      <column datatype='integer' name='[active_orders]' role='measure' type='quantitative' />
+      <column datatype='real' name='[avg_dps_mean_delay]' role='measure' type='quantitative' />
+      <column datatype='string' name='[country_code]' role='dimension' semantic-role='[Country].[ISO3166_2]' type='nominal' />
+      <column datatype='integer' name='[couriers_count]' role='measure' type='quantitative' />
+      <column datatype='integer' name='[couriers_ending_count]' role='measure' type='quantitative' />
+      <column datatype='integer' name='[couriers_starting_count]' role='measure' type='quantitative' />
+      <column datatype='integer' name='[delivered_orders]' role='measure' type='quantitative' />
+      <column datatype='integer' name='[dispatcheds_count]' role='measure' type='quantitative' />
+      <column datatype='integer' name='[drop_off_count]' role='measure' type='quantitative' />
+      <column datatype='real' name='[estimated_courier_delay]' role='measure' type='quantitative' />
+      <column datatype='real' name='[max_dps_mean_delay]' role='measure' type='quantitative' />
+      <column datatype='real' name='[mean_delay]' role='measure' type='quantitative' />
+      <column datatype='real' name='[min_dps_mean_delay]' role='measure' type='quantitative' />
+      <column datatype='integer' name='[placed_orders]' role='measure' type='quantitative' />
+      <column datatype='integer' name='[queueds_count]' role='measure' type='quantitative' />
+      <column datatype='real' name='[sum_dps_surge_fee_eur]' role='measure' type='quantitative' />
+      <column datatype='real' name='[sum_dps_travel_time_fee_eur]' role='measure' type='quantitative' />
+      <column aggregation='Sum' datatype='real' name='[zone_id]' role='dimension' type='ordinal' />
+      <column-instance column='[__tableau_internal_object_id__].[_91476FD8AF7B42C0B8B9A1AD222EF5F8]' derivation='Count' name='[__tableau_internal_object_id__].[cnt:_91476FD8AF7B42C0B8B9A1AD222EF5F8:qk]' pivot='key' type='quantitative' />
+      <column-instance column='[active_orders]' derivation='Avg' name='[avg:active_orders:qk]' pivot='key' type='quantitative' />
+      <column-instance column='[avg_dps_mean_delay]' derivation='Avg' name='[avg:avg_dps_mean_delay:qk]' pivot='key' type='quantitative' />
+      <column-instance column='[couriers_count]' derivation='Avg' name='[avg:couriers_count:qk]' pivot='key' type='quantitative' />
+      <column-instance column='[max_dps_mean_delay]' derivation='Avg' name='[avg:max_dps_mean_delay:qk]' pivot='key' type='quantitative' />
+      <column-instance column='[mean_delay]' derivation='Avg' name='[avg:mean_delay:qk]' pivot='key' type='quantitative' />
+      <column-instance column='[min_dps_mean_delay]' derivation='Avg' name='[avg:min_dps_mean_delay:qk]' pivot='key' type='quantitative' />
+      <column-instance column='[accepteds_count]' derivation='Sum' name='[sum:accepteds_count:qk]' pivot='key' type='quantitative' />
+      <column-instance column='[active_orders]' derivation='Sum' name='[sum:active_orders:qk]' pivot='key' type='quantitative' />
+      <column-instance column='[avg_dps_mean_delay]' derivation='Sum' name='[sum:avg_dps_mean_delay:qk]' pivot='key' type='quantitative' />
+      <column-instance column='[couriers_count]' derivation='Sum' name='[sum:couriers_count:qk]' pivot='key' type='quantitative' />
+      <column-instance column='[couriers_ending_count]' derivation='Sum' name='[sum:couriers_ending_count:qk]' pivot='key' type='quantitative' />
+      <column-instance column='[couriers_starting_count]' derivation='Sum' name='[sum:couriers_starting_count:qk]' pivot='key' type='quantitative' />
+      <column-instance column='[delivered_orders]' derivation='Sum' name='[sum:delivered_orders:qk]' pivot='key' type='quantitative' />
+      <column-instance column='[dispatcheds_count]' derivation='Sum' name='[sum:dispatcheds_count:qk]' pivot='key' type='quantitative' />
+      <column-instance column='[drop_off_count]' derivation='Sum' name='[sum:drop_off_count:qk]' pivot='key' type='quantitative' />
+      <column-instance column='[estimated_courier_delay]' derivation='Sum' name='[sum:estimated_courier_delay:qk]' pivot='key' type='quantitative' />
+      <column-instance column='[max_dps_mean_delay]' derivation='Sum' name='[sum:max_dps_mean_delay:qk]' pivot='key' type='quantitative' />
+      <column-instance column='[mean_delay]' derivation='Sum' name='[sum:mean_delay:qk]' pivot='key' type='quantitative' />
+      <column-instance column='[min_dps_mean_delay]' derivation='Sum' name='[sum:min_dps_mean_delay:qk]' pivot='key' type='quantitative' />
+      <column-instance column='[placed_orders]' derivation='Sum' name='[sum:placed_orders:qk]' pivot='key' type='quantitative' />
+      <column-instance column='[queueds_count]' derivation='Sum' name='[sum:queueds_count:qk]' pivot='key' type='quantitative' />
+      <column-instance column='[sum_dps_surge_fee_eur]' derivation='Sum' name='[sum:sum_dps_surge_fee_eur:qk]' pivot='key' type='quantitative' />
+      <column-instance column='[sum_dps_travel_time_fee_eur]' derivation='Sum' name='[sum:sum_dps_travel_time_fee_eur:qk]' pivot='key' type='quantitative' />
+      <column-instance column='[Calculation_3055129402132221969]' derivation='User' name='[usr:Calculation_3055129402132221969:qk]' pivot='key' type='quantitative' />
+      <column-instance column='[Calculation_3055129402155204630]' derivation='User' name='[usr:Calculation_3055129402155204630:qk]' pivot='key' type='quantitative' />
+      <layout _.fcp.SchemaViewerObjectModel.false...dim-percentage='0.5' _.fcp.SchemaViewerObjectModel.false...measure-percentage='0.4' dim-ordering='alphabetic' measure-ordering='alphabetic' show-structure='true' />
+      <style>
+        <style-rule element='mark'>
+          <encoding attr='color' field='[:Measure Names]' type='palette'>
+            <map to='#499894'>
+              <bucket>&quot;[federated.13msmxh0ab6xcl10848zu1718maw].[sum:drop_off_count:qk]&quot;</bucket>
+            </map>
+            <map to='#4e79a7'>
+              <bucket>&quot;[federated.13msmxh0ab6xcl10848zu1718maw].[avg:active_orders:qk]&quot;</bucket>
+            </map>
+            <map to='#4e79a7'>
+              <bucket>&quot;[federated.13msmxh0ab6xcl10848zu1718maw].[avg:mean_delay:qk]&quot;</bucket>
+            </map>
+            <map to='#4e79a7'>
+              <bucket>&quot;[federated.13msmxh0ab6xcl10848zu1718maw].[sum:accepteds_count:qk]&quot;</bucket>
+            </map>
+            <map to='#4e79a7'>
+              <bucket>&quot;[federated.13msmxh0ab6xcl10848zu1718maw].[sum:mean_delay:qk]&quot;</bucket>
+            </map>
+            <map to='#4e79a7'>
+              <bucket>&quot;[federated.13msmxh0ab6xcl10848zu1718maw].[sum:placed_orders:qk]&quot;</bucket>
+            </map>
+            <map to='#4e79a7'>
+              <bucket>&quot;[federated.13msmxh0ab6xcl10848zu1718maw].[usr:Calculation_3055129402132221969:qk]&quot;</bucket>
+            </map>
+            <map to='#59a14f'>
+              <bucket>&quot;[federated.13msmxh0ab6xcl10848zu1718maw].[sum:couriers_ending_count:qk]&quot;</bucket>
+            </map>
+            <map to='#86bcb6'>
+              <bucket>&quot;[federated.13msmxh0ab6xcl10848zu1718maw].[sum:estimated_courier_delay:qk]&quot;</bucket>
+            </map>
+            <map to='#8cd17d'>
+              <bucket>&quot;[federated.13msmxh0ab6xcl10848zu1718maw].[sum:couriers_starting_count:qk]&quot;</bucket>
+            </map>
+            <map to='#9c755f'>
+              <bucket>&quot;[federated.13msmxh0ab6xcl10848zu1718maw].[avg:avg_dps_surge_fee_eur:qk]&quot;</bucket>
+            </map>
+            <map to='#9c755f'>
+              <bucket>&quot;[federated.13msmxh0ab6xcl10848zu1718maw].[sum:avg_dps_surge_fee_eur:qk]&quot;</bucket>
+            </map>
+            <map to='#a0cbe8'>
+              <bucket>&quot;[federated.13msmxh0ab6xcl10848zu1718maw].[sum:active_orders:qk]&quot;</bucket>
+            </map>
+            <map to='#b07aa1'>
+              <bucket>&quot;[federated.13msmxh0ab6xcl10848zu1718maw].[sum:sum_dps_surge_fee_eur:qk]&quot;</bucket>
+            </map>
+            <map to='#d37295'>
+              <bucket>&quot;[federated.13msmxh0ab6xcl10848zu1718maw].[sum:queueds_count:qk]&quot;</bucket>
+            </map>
+            <map to='#d4a6c8'>
+              <bucket>&quot;[federated.13msmxh0ab6xcl10848zu1718maw].[sum:sum_dps_travel_time_fee_eur:qk]&quot;</bucket>
+            </map>
+            <map to='#e15759'>
+              <bucket>&quot;[federated.13msmxh0ab6xcl10848zu1718maw].[sum:avg_dps_mean_delay:qk]&quot;</bucket>
+            </map>
+            <map to='#edc948'>
+              <bucket>&quot;[federated.13msmxh0ab6xcl10848zu1718maw].[avg:min_dps_mean_delay:qk]&quot;</bucket>
+            </map>
+            <map to='#edc948'>
+              <bucket>&quot;[federated.13msmxh0ab6xcl10848zu1718maw].[sum:min_dps_mean_delay:qk]&quot;</bucket>
+            </map>
+            <map to='#f1ce63'>
+              <bucket>&quot;[federated.13msmxh0ab6xcl10848zu1718maw].[sum:dispatcheds_count:qk]&quot;</bucket>
+            </map>
+            <map to='#f28e2b'>
+              <bucket>&quot;[federated.13msmxh0ab6xcl10848zu1718maw].[__tableau_internal_object_id__].[cnt:_91476FD8AF7B42C0B8B9A1AD222EF5F8:qk]&quot;</bucket>
+            </map>
+            <map to='#f28e2b'>
+              <bucket>&quot;[federated.13msmxh0ab6xcl10848zu1718maw].[avg:avg_dps_mean_delay:qk]&quot;</bucket>
+            </map>
+            <map to='#f28e2b'>
+              <bucket>&quot;[federated.13msmxh0ab6xcl10848zu1718maw].[avg:couriers_count:qk]&quot;</bucket>
+            </map>
+            <map to='#f28e2b'>
+              <bucket>&quot;[federated.13msmxh0ab6xcl10848zu1718maw].[sum:delivered_orders:qk]&quot;</bucket>
+            </map>
+            <map to='#f28e2b'>
+              <bucket>&quot;[federated.13msmxh0ab6xcl10848zu1718maw].[usr:Calculation_3055129402155204630:qk]&quot;</bucket>
+            </map>
+            <map to='#ff9da7'>
+              <bucket>&quot;[federated.13msmxh0ab6xcl10848zu1718maw].[avg:max_dps_mean_delay:qk]&quot;</bucket>
+            </map>
+            <map to='#ff9da7'>
+              <bucket>&quot;[federated.13msmxh0ab6xcl10848zu1718maw].[sum:max_dps_mean_delay:qk]&quot;</bucket>
+            </map>
+            <map to='#ffbe7d'>
+              <bucket>&quot;[federated.13msmxh0ab6xcl10848zu1718maw].[sum:couriers_count:qk]&quot;</bucket>
+            </map>
+          </encoding>
+        </style-rule>
+      </style>
+      <semantic-values>
+        <semantic-value key='[Country].[Name]' value='&quot;Germany&quot;' />
+      </semantic-values>
+      <date-options start-of-week='monday' />
+      <field-sort-info field-sort-order-type='custom-order'>
+        <field-sort-custom-order field='created_at_bucket' />
+        <field-sort-custom-order field='country_code' />
+        <field-sort-custom-order field='zone_id' />
+        <field-sort-custom-order field='created_at' />
+        <field-sort-custom-order field='mean_delay' />
+        <field-sort-custom-order field='estimated_courier_delay' />
+        <field-sort-custom-order field='accepteds_count' />
+        <field-sort-custom-order field='dispatcheds_count' />
+        <field-sort-custom-order field='queueds_count' />
+        <field-sort-custom-order field='drop_off_count' />
+        <field-sort-custom-order field='couriers_count' />
+        <field-sort-custom-order field='couriers_starting_count' />
+        <field-sort-custom-order field='couriers_ending_count' />
+        <field-sort-custom-order field='local_created_at_bucket' />
+        <field-sort-custom-order field='active_orders' />
+        <field-sort-custom-order field='placed_orders' />
+        <field-sort-custom-order field='delivered_orders' />
+        <field-sort-custom-order field='min_dps_mean_delay' />
+        <field-sort-custom-order field='avg_dps_mean_delay' />
+        <field-sort-custom-order field='max_dps_mean_delay' />
+        <field-sort-custom-order field='avg_dps_surge_fee_eur' />
+        <field-sort-custom-order field='Calculation_3055129402132221969' />
+        <field-sort-custom-order field='avg_dps_travel_time_fee_eur' />
+        <field-sort-custom-order field='Calculation_3055129402128461840' />
+        <field-sort-custom-order field='Geometry (generated)' />
+        <field-sort-custom-order field='Latitude (generated)' />
+        <field-sort-custom-order field='Longitude (generated)' />
+        <field-sort-custom-order field=':Measure Names' />
+        <field-sort-custom-order field='Multiple Values' />
+      </field-sort-info>
+      <datasource-dependencies datasource='Parameters'>
+        <column caption='Date from' datatype='date' name='[Parameter 1]' param-domain-type='any' role='measure' type='quantitative' value='#2025-03-03#'>
+          <calculation class='tableau' formula='#2025-03-03#' />
+        </column>
+        <column caption='country_code' datatype='string' name='[Parameter 3]' param-domain-type='any' role='measure' type='nominal' value='&quot;sg&quot;'>
+          <calculation class='tableau' formula='&quot;sg&quot;' />
+        </column>
+        <column caption='zone_id' datatype='integer' name='[Parameter 4]' param-domain-type='any' role='measure' type='quantitative' value='7'>
+          <calculation class='tableau' formula='7' />
+        </column>
+        <column caption='Days' datatype='integer' name='[Parameter 5]' param-domain-type='any' role='measure' type='quantitative' value='0'>
+          <calculation class='tableau' formula='0' />
+        </column>
+        <column caption='minutes buckets' datatype='integer' default-format='*# \m\i\n' name='[country_code Parameter]' param-domain-type='any' role='measure' type='quantitative' value='15'>
+          <calculation class='tableau' formula='15' />
+        </column>
+      </datasource-dependencies>
+      <_.fcp.ObjectModelEncapsulateLegacy.true...object-graph>
+        <objects>
+          <object caption='Surge Components' id='_91476FD8AF7B42C0B8B9A1AD222EF5F8'>
+            <properties context=''>
+              <relation connection='bigquery.1ufi2us0ysxjs81ddflct0cqczxr' name='Custom SQL Query' type='text'><![CDATA[WITH
+timestamps AS (
+  SELECT
+    created_at_bucket
+  FROM UNNEST(GENERATE_TIMESTAMP_ARRAY(
+    TIMESTAMP_TRUNC(TIMESTAMP(<[Parameters].[Parameter 1]>), MINUTE) - INTERVAL 1 DAY,
+    TIMESTAMP_TRUNC(TIMESTAMP(<[Parameters].[Parameter 1]> + INTERVAL <[Parameters].[Parameter 5]> DAY), MINUTE) + INTERVAL 2 DAY - INTERVAL 1 MINUTE,
+    INTERVAL 1 MINUTE)) created_at_bucket
+)
+, orders AS (
+  select
+    platform_order_code,
+    dps_mean_delay,
+    dps_travel_time_fee_eur,
+    dps_surge_fee_eur,
+    country_code,
+    IFNULL(dps_mean_delay_zone_id, zone_id) AS zone_id,
+    order_placed_at,
+    IFNULL(IFNULL(dps_session_timestamp, dps_session_id_created_at - INTERVAL 8 MINUTE), order_placed_at - INTERVAL 8 MINUTE) AS dps_session_started_at,
+    TIMESTAMP(order_report_time, timezone) AS order_delivered_at, -- stored local time as datetime but on GMT, this transforms it back to timestamp UTC
+    timezone,
+  from `fulfillment-dwh-production.curated_data_shared.dps_sessions_mapped_to_orders`
+  where
+    created_date between <[Parameters].[Parameter 1]> - INTERVAL 1 DAY and <[Parameters].[Parameter 1]> + INTERVAL <[Parameters].[Parameter 5]> DAY + INTERVAL 1 DAY
+    -- and created_date_local between <[Parameters].[Parameter 1]> and <[Parameters].[Parameter 1]> + INTERVAL <[Parameters].[Parameter 5]> DAY
+    AND country_code = <[Parameters].[Parameter 3]>
+    AND IFNULL(dps_mean_delay_zone_id, zone_id) = <[Parameters].[Parameter 4]>
+    AND is_own_delivery
+    AND is_sent
+    -- AND zone_id = dps_mean_delay_zone_id
+  ORDER BY 1
+)
+SELECT
+  t.created_at_bucket,
+  o.country_code,
+  o.zone_id,
+  `stats`[SAFE_OFFSET(0)].created_at,
+  `stats`[SAFE_OFFSET(0)].mean_delay,
+  `stats`[SAFE_OFFSET(0)].estimated_courier_delay,
+  `stats`[SAFE_OFFSET(0)].accepteds_count,
+  `stats`[SAFE_OFFSET(0)].dispatcheds_count,
+  `stats`[SAFE_OFFSET(0)].queueds_count,
+  `stats`[SAFE_OFFSET(0)].drop_off_count,
+  `stats`[SAFE_OFFSET(0)].couriers_count,
+  `stats`[SAFE_OFFSET(0)].couriers_starting_count,
+  `stats`[SAFE_OFFSET(0)].couriers_ending_count,
+  datetime(t.created_at_bucket, timezone) local_created_at_bucket,
+  SUM(IF(DATE_TRUNC(o.order_placed_at, minute) <<= t.created_at_bucket AND DATE_TRUNC(o.order_delivered_at, minute) >>= t.created_at_bucket, 1, 0)) AS active_orders,
+  SUM(IF(DATE_TRUNC(o.order_placed_at, minute) = t.created_at_bucket, 1, 0)) AS placed_orders,
+  SUM(IF(DATE_TRUNC(o.order_delivered_at, minute) = t.created_at_bucket, 1, 0)) AS delivered_orders,
+  MIN(IF(DATE_TRUNC(o.dps_session_started_at, minute) = t.created_at_bucket, dps_mean_delay, NULL)) AS min_dps_mean_delay,
+  AVG(IF(DATE_TRUNC(o.dps_session_started_at, minute) = t.created_at_bucket, dps_mean_delay, NULL)) AS avg_dps_mean_delay,
+  MAX(IF(DATE_TRUNC(o.dps_session_started_at, minute) = t.created_at_bucket, dps_mean_delay, NULL)) AS max_dps_mean_delay,
+  SUM(IF(DATE_TRUNC(o.dps_session_started_at, minute) = t.created_at_bucket, dps_surge_fee_eur, NULL)) AS sum_dps_surge_fee_eur,
+  SUM(IF(DATE_TRUNC(o.dps_session_started_at, minute) = t.created_at_bucket, dps_travel_time_fee_eur, NULL)) AS sum_dps_travel_time_fee_eur,
+FROM timestamps t
+CROSS JOIN orders o
+LEFT JOIN `fulfillment-dwh-production.curated_data_shared.zone_stats` z
+  ON t.created_at_bucket = z.created_at_bucket
+    AND o.country_code = z.country_code
+    AND o.zone_id = z.zone_id
+WHERE DATETIME(t.created_at_bucket, timezone) between <[Parameters].[Parameter 1]> + INTERVAL 6 HOUR and <[Parameters].[Parameter 1]> + INTERVAL <[Parameters].[Parameter 5]> DAY + INTERVAL + 1 DAY - INTERVAL - 1 MINUTE + INTERVAL 3 HOUR
+GROUP BY ALL
+ORDER BY 1]]></relation>
+            </properties>
+          </object>
+        </objects>
+      </_.fcp.ObjectModelEncapsulateLegacy.true...object-graph>
+    </datasource>
+  </datasources>
+  <actions>
+    <action caption='Highlight1' name='[Action2_E1F6B75E7ADA4A569A7D598899B91D4E]'>
+      <activation auto-clear='true' type='on-hover' />
+      <source dashboard='Surge Components' type='sheet' />
+      <command command='tsc:brush'>
+        <param name='field-captions' value='Bucketed Local Time' />
+        <param name='target' value='Surge Components' />
+      </command>
+    </action>
+  </actions>
+  <worksheets>
+    <worksheet name='Surge'>
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='Surge Components' name='federated.13msmxh0ab6xcl10848zu1718maw' />
+            <datasource name='Parameters' />
+          </datasources>
+          <datasource-dependencies datasource='Parameters'>
+            <column caption='minutes buckets' datatype='integer' default-format='*# \m\i\n' name='[country_code Parameter]' param-domain-type='any' role='measure' type='quantitative' value='15'>
+              <calculation class='tableau' formula='15' />
+            </column>
+          </datasource-dependencies>
+          <datasource-dependencies datasource='federated.13msmxh0ab6xcl10848zu1718maw'>
+            <column caption='Bucketed Local Time' datatype='datetime' name='[Calculation_3055129402128461840]' role='dimension' type='ordinal'>
+              <calculation class='tableau' formula='DATETIME(INT(FLOAT([local_created_at_bucket]) * (24 * 60 / [Parameters].[country_code Parameter])) / (24 * 60 / [Parameters].[country_code Parameter]))' />
+            </column>
+            <column caption='Surge %' datatype='real' default-format='p0.0%' name='[Calculation_3055129402132221969]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='SUM([sum_dps_surge_fee_eur])/SUM([sum_dps_travel_time_fee_eur])' />
+            </column>
+            <column caption='Active Orders/Courier' datatype='real' name='[Calculation_3055129402155204630]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='SUM([active_orders])/SUM([couriers_count])' />
+            </column>
+            <column datatype='integer' name='[active_orders]' role='measure' type='quantitative' />
+            <column-instance column='[active_orders]' derivation='Avg' name='[avg:active_orders:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[avg_dps_mean_delay]' derivation='Avg' name='[avg:avg_dps_mean_delay:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[couriers_count]' derivation='Avg' name='[avg:couriers_count:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[max_dps_mean_delay]' derivation='Avg' name='[avg:max_dps_mean_delay:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[mean_delay]' derivation='Avg' name='[avg:mean_delay:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[min_dps_mean_delay]' derivation='Avg' name='[avg:min_dps_mean_delay:qk]' pivot='key' type='quantitative' />
+            <column datatype='real' name='[avg_dps_mean_delay]' role='measure' type='quantitative' />
+            <column datatype='integer' name='[couriers_count]' role='measure' type='quantitative' />
+            <column datatype='integer' name='[delivered_orders]' role='measure' type='quantitative' />
+            <column-instance column='[Calculation_3055129402128461840]' derivation='Hour' name='[hr:Calculation_3055129402128461840:ok]' pivot='key' type='ordinal' />
+            <column datatype='datetime' name='[local_created_at_bucket]' role='dimension' type='ordinal' />
+            <column datatype='real' name='[max_dps_mean_delay]' role='measure' type='quantitative' />
+            <column datatype='real' name='[mean_delay]' role='measure' type='quantitative' />
+            <column datatype='real' name='[min_dps_mean_delay]' role='measure' type='quantitative' />
+            <column-instance column='[Calculation_3055129402128461840]' derivation='None' name='[none:Calculation_3055129402128461840:qk]' pivot='key' type='quantitative' />
+            <column datatype='integer' name='[placed_orders]' role='measure' type='quantitative' />
+            <column-instance column='[delivered_orders]' derivation='Sum' name='[sum:delivered_orders:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[placed_orders]' derivation='Sum' name='[sum:placed_orders:qk]' pivot='key' type='quantitative' />
+            <column datatype='real' name='[sum_dps_surge_fee_eur]' role='measure' type='quantitative' />
+            <column datatype='real' name='[sum_dps_travel_time_fee_eur]' role='measure' type='quantitative' />
+            <column-instance column='[Calculation_3055129402132221969]' derivation='User' name='[usr:Calculation_3055129402132221969:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[Calculation_3055129402155204630]' derivation='User' name='[usr:Calculation_3055129402155204630:qk]' pivot='key' type='quantitative' />
+          </datasource-dependencies>
+          <filter class='categorical' column='[federated.13msmxh0ab6xcl10848zu1718maw].[:Measure Names]'>
+            <groupfilter function='union' user:ui-domain='database' user:ui-enumeration='inclusive' user:ui-marker='enumerate'>
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.13msmxh0ab6xcl10848zu1718maw].[avg:avg_dps_mean_delay:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.13msmxh0ab6xcl10848zu1718maw].[avg:max_dps_mean_delay:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.13msmxh0ab6xcl10848zu1718maw].[avg:min_dps_mean_delay:qk]&quot;' />
+            </groupfilter>
+          </filter>
+          <manual-sort column='[federated.13msmxh0ab6xcl10848zu1718maw].[:Measure Names]' direction='ASC'>
+            <dictionary>
+              <bucket>&quot;[federated.13msmxh0ab6xcl10848zu1718maw].[usr:Calculation_3055129402155204630:qk]&quot;</bucket>
+              <bucket>&quot;[federated.13msmxh0ab6xcl10848zu1718maw].[usr:Calculation_3055129402132221969:qk]&quot;</bucket>
+              <bucket>&quot;[federated.13msmxh0ab6xcl10848zu1718maw].[avg:mean_delay:qk]&quot;</bucket>
+              <bucket>&quot;[federated.13msmxh0ab6xcl10848zu1718maw].[avg:avg_dps_mean_delay:qk]&quot;</bucket>
+              <bucket>&quot;[federated.13msmxh0ab6xcl10848zu1718maw].[avg:max_dps_mean_delay:qk]&quot;</bucket>
+              <bucket>&quot;[federated.13msmxh0ab6xcl10848zu1718maw].[avg:min_dps_mean_delay:qk]&quot;</bucket>
+            </dictionary>
+          </manual-sort>
+          <filter class='categorical' column='[federated.13msmxh0ab6xcl10848zu1718maw].[hr:Calculation_3055129402128461840:ok]' filter-group='3'>
+            <groupfilter function='union' user:ui-domain='relevant' user:ui-enumeration='inclusive' user:ui-marker='enumerate'>
+              <groupfilter function='member' level='[hr:Calculation_3055129402128461840:ok]' member='10' />
+              <groupfilter function='member' level='[hr:Calculation_3055129402128461840:ok]' member='11' />
+              <groupfilter function='member' level='[hr:Calculation_3055129402128461840:ok]' member='12' />
+              <groupfilter function='member' level='[hr:Calculation_3055129402128461840:ok]' member='13' />
+              <groupfilter function='member' level='[hr:Calculation_3055129402128461840:ok]' member='14' />
+            </groupfilter>
+          </filter>
+          <slices>
+            <column>[federated.13msmxh0ab6xcl10848zu1718maw].[:Measure Names]</column>
+            <column>[federated.13msmxh0ab6xcl10848zu1718maw].[hr:Calculation_3055129402128461840:ok]</column>
+          </slices>
+          <aggregation value='true' />
+        </view>
+        <style>
+          <style-rule element='axis'>
+            <encoding attr='space' class='0' field='[federated.13msmxh0ab6xcl10848zu1718maw].[usr:Calculation_3055129402132221969:qk]' field-type='quantitative' fold='true' scope='rows' type='space' />
+            <format attr='title' class='0' field='[federated.13msmxh0ab6xcl10848zu1718maw].[none:Calculation_3055129402128461840:qk]' scope='cols' value='' />
+          </style-rule>
+          <style-rule element='label'>
+            <format attr='text-format' field='[federated.13msmxh0ab6xcl10848zu1718maw].[usr:Calculation_3055129402155204630:qk]' value='n#,##0.00;-#,##0.00' />
+          </style-rule>
+          <style-rule element='legend'>
+            <format attr='col-width' field='[federated.13msmxh0ab6xcl10848zu1718maw].[:Measure Names]' value='220' />
+          </style-rule>
+        </style>
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Automatic' />
+            <encodings>
+              <color column='[federated.13msmxh0ab6xcl10848zu1718maw].[:Measure Names]' />
+              <tooltip column='[federated.13msmxh0ab6xcl10848zu1718maw].[usr:Calculation_3055129402132221969:qk]' />
+              <tooltip column='[federated.13msmxh0ab6xcl10848zu1718maw].[usr:Calculation_3055129402155204630:qk]' />
+              <tooltip column='[federated.13msmxh0ab6xcl10848zu1718maw].[avg:active_orders:qk]' />
+              <tooltip column='[federated.13msmxh0ab6xcl10848zu1718maw].[avg:couriers_count:qk]' />
+              <tooltip column='[federated.13msmxh0ab6xcl10848zu1718maw].[sum:placed_orders:qk]' />
+              <tooltip column='[federated.13msmxh0ab6xcl10848zu1718maw].[sum:delivered_orders:qk]' />
+              <tooltip column='[federated.13msmxh0ab6xcl10848zu1718maw].[avg:mean_delay:qk]' />
+              <tooltip column='[federated.13msmxh0ab6xcl10848zu1718maw].[avg:avg_dps_mean_delay:qk]' />
+              <tooltip column='[federated.13msmxh0ab6xcl10848zu1718maw].[avg:max_dps_mean_delay:qk]' />
+              <tooltip column='[federated.13msmxh0ab6xcl10848zu1718maw].[avg:min_dps_mean_delay:qk]' />
+            </encodings>
+            <customized-tooltip>
+              <formatted-text>
+                <run fontcolor='#787878'>Local Time:&#9;</run>
+                <run bold='true'><![CDATA[<[federated.13msmxh0ab6xcl10848zu1718maw].[none:Calculation_3055129402128461840:qk]>]]></run>
+                <run>Æ&#10;</run>
+                <run fontcolor='#787878'>Avg Active Orders:&#9;</run>
+                <run bold='true'><![CDATA[<[federated.13msmxh0ab6xcl10848zu1718maw].[avg:active_orders:qk]>]]></run>
+                <run>Æ&#10;</run>
+                <run fontcolor='#787878'>Avg Couriers:&#9;</run>
+                <run bold='true'><![CDATA[<[federated.13msmxh0ab6xcl10848zu1718maw].[avg:couriers_count:qk]>]]></run>
+                <run>Æ&#10;</run>
+                <run fontcolor='#787878'>Active Orders/Courier:&#9;</run>
+                <run bold='true'><![CDATA[<[federated.13msmxh0ab6xcl10848zu1718maw].[usr:Calculation_3055129402155204630:qk]>]]></run>
+                <run>Æ&#10;</run>
+                <run fontcolor='#787878'>Delivered Orders:&#9;</run>
+                <run bold='true'><![CDATA[<[federated.13msmxh0ab6xcl10848zu1718maw].[sum:delivered_orders:qk]>]]></run>
+                <run>Æ&#10;</run>
+                <run fontcolor='#787878'>Placed Orders:&#9;</run>
+                <run bold='true'><![CDATA[<[federated.13msmxh0ab6xcl10848zu1718maw].[sum:placed_orders:qk]>]]></run>
+                <run>Æ&#10;</run>
+                <run fontcolor='#787878'>Surge %:&#9;</run>
+                <run bold='true'><![CDATA[<[federated.13msmxh0ab6xcl10848zu1718maw].[usr:Calculation_3055129402132221969:qk]>]]></run>
+                <run>Æ&#10;</run>
+                <run fontcolor='#787878'>Avg Mean Delay:&#9;</run>
+                <run bold='true'><![CDATA[<[federated.13msmxh0ab6xcl10848zu1718maw].[avg:mean_delay:qk]>]]></run>
+                <run>Æ&#10;</run>
+                <run fontcolor='#787878'>Avg DPS Mean Delay:&#9;</run>
+                <run bold='true'><![CDATA[<[federated.13msmxh0ab6xcl10848zu1718maw].[avg:avg_dps_mean_delay:qk]> (<[federated.13msmxh0ab6xcl10848zu1718maw].[avg:min_dps_mean_delay:qk]>-<[federated.13msmxh0ab6xcl10848zu1718maw].[avg:max_dps_mean_delay:qk]>)]]></run>
+              </formatted-text>
+            </customized-tooltip>
+            <style>
+              <style-rule element='datalabel'>
+                <format attr='color-mode' value='match' />
+              </style-rule>
+              <style-rule element='mark'>
+                <format attr='line-interpolation' value='linear' />
+                <format attr='mark-labels-show' value='true' />
+                <format attr='mark-labels-mode' value='highlight' />
+                <format attr='mark-labels-cull' value='true' />
+              </style-rule>
+            </style>
+          </pane>
+          <pane id='6' selection-relaxation-option='selection-relaxation-allow' y-axis-name='[federated.13msmxh0ab6xcl10848zu1718maw].[usr:Calculation_3055129402132221969:qk]'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Line' />
+            <encodings>
+              <color column='[federated.13msmxh0ab6xcl10848zu1718maw].[:Measure Names]' />
+              <tooltip column='[federated.13msmxh0ab6xcl10848zu1718maw].[usr:Calculation_3055129402132221969:qk]' />
+              <tooltip column='[federated.13msmxh0ab6xcl10848zu1718maw].[usr:Calculation_3055129402155204630:qk]' />
+              <tooltip column='[federated.13msmxh0ab6xcl10848zu1718maw].[avg:active_orders:qk]' />
+              <tooltip column='[federated.13msmxh0ab6xcl10848zu1718maw].[avg:couriers_count:qk]' />
+              <tooltip column='[federated.13msmxh0ab6xcl10848zu1718maw].[sum:placed_orders:qk]' />
+              <tooltip column='[federated.13msmxh0ab6xcl10848zu1718maw].[sum:delivered_orders:qk]' />
+              <tooltip column='[federated.13msmxh0ab6xcl10848zu1718maw].[avg:mean_delay:qk]' />
+              <tooltip column='[federated.13msmxh0ab6xcl10848zu1718maw].[avg:avg_dps_mean_delay:qk]' />
+              <tooltip column='[federated.13msmxh0ab6xcl10848zu1718maw].[avg:max_dps_mean_delay:qk]' />
+              <tooltip column='[federated.13msmxh0ab6xcl10848zu1718maw].[avg:min_dps_mean_delay:qk]' />
+            </encodings>
+            <customized-tooltip>
+              <formatted-text>
+                <run fontcolor='#787878'>Local Time:&#9;</run>
+                <run bold='true'><![CDATA[<[federated.13msmxh0ab6xcl10848zu1718maw].[none:Calculation_3055129402128461840:qk]>]]></run>
+                <run>Æ&#10;</run>
+                <run fontcolor='#787878'>Avg Active Orders:&#9;</run>
+                <run bold='true'><![CDATA[<[federated.13msmxh0ab6xcl10848zu1718maw].[avg:active_orders:qk]>]]></run>
+                <run>Æ&#10;</run>
+                <run fontcolor='#787878'>Avg Couriers:&#9;</run>
+                <run bold='true'><![CDATA[<[federated.13msmxh0ab6xcl10848zu1718maw].[avg:couriers_count:qk]>]]></run>
+                <run>Æ&#10;</run>
+                <run fontcolor='#787878'>Active Orders/Courier:&#9;</run>
+                <run bold='true'><![CDATA[<[federated.13msmxh0ab6xcl10848zu1718maw].[usr:Calculation_3055129402155204630:qk]>]]></run>
+                <run>Æ&#10;</run>
+                <run fontcolor='#787878'>Delivered Orders:&#9;</run>
+                <run bold='true'><![CDATA[<[federated.13msmxh0ab6xcl10848zu1718maw].[sum:delivered_orders:qk]>]]></run>
+                <run>Æ&#10;</run>
+                <run fontcolor='#787878'>Placed Orders:&#9;</run>
+                <run bold='true'><![CDATA[<[federated.13msmxh0ab6xcl10848zu1718maw].[sum:placed_orders:qk]>]]></run>
+                <run>Æ&#10;</run>
+                <run fontcolor='#787878'>Surge %:&#9;</run>
+                <run bold='true'><![CDATA[<[federated.13msmxh0ab6xcl10848zu1718maw].[usr:Calculation_3055129402132221969:qk]>]]></run>
+                <run>Æ&#10;</run>
+                <run fontcolor='#787878'>Avg Mean Delay:&#9;</run>
+                <run bold='true'><![CDATA[<[federated.13msmxh0ab6xcl10848zu1718maw].[avg:mean_delay:qk]>]]></run>
+                <run>Æ&#10;</run>
+                <run fontcolor='#787878'>Avg DPS Mean Delay:&#9;</run>
+                <run bold='true'><![CDATA[<[federated.13msmxh0ab6xcl10848zu1718maw].[avg:avg_dps_mean_delay:qk]> (<[federated.13msmxh0ab6xcl10848zu1718maw].[avg:min_dps_mean_delay:qk]>-<[federated.13msmxh0ab6xcl10848zu1718maw].[avg:max_dps_mean_delay:qk]>)]]></run>
+              </formatted-text>
+            </customized-tooltip>
+            <style>
+              <style-rule element='datalabel'>
+                <format attr='color-mode' value='match' />
+              </style-rule>
+              <style-rule element='mark'>
+                <format attr='size' value='1' />
+                <format attr='line-interpolation' value='linear' />
+                <format attr='mark-labels-show' value='true' />
+                <format attr='mark-labels-mode' value='highlight' />
+                <format attr='mark-labels-cull' value='true' />
+              </style-rule>
+            </style>
+          </pane>
+          <pane id='7' selection-relaxation-option='selection-relaxation-allow' y-axis-name='[federated.13msmxh0ab6xcl10848zu1718maw].[usr:Calculation_3055129402155204630:qk]'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Bar' />
+            <mark-sizing custom-mark-size-in-axis-units='0.0050000000000000001' mark-alignment='mark-alignment-left' mark-sizing-setting='marks-scaling-on' use-custom-mark-size='true' />
+            <encodings>
+              <color column='[federated.13msmxh0ab6xcl10848zu1718maw].[:Measure Names]' />
+              <tooltip column='[federated.13msmxh0ab6xcl10848zu1718maw].[usr:Calculation_3055129402132221969:qk]' />
+              <tooltip column='[federated.13msmxh0ab6xcl10848zu1718maw].[usr:Calculation_3055129402155204630:qk]' />
+              <tooltip column='[federated.13msmxh0ab6xcl10848zu1718maw].[avg:active_orders:qk]' />
+              <tooltip column='[federated.13msmxh0ab6xcl10848zu1718maw].[avg:couriers_count:qk]' />
+              <tooltip column='[federated.13msmxh0ab6xcl10848zu1718maw].[sum:placed_orders:qk]' />
+              <tooltip column='[federated.13msmxh0ab6xcl10848zu1718maw].[sum:delivered_orders:qk]' />
+              <tooltip column='[federated.13msmxh0ab6xcl10848zu1718maw].[avg:mean_delay:qk]' />
+              <tooltip column='[federated.13msmxh0ab6xcl10848zu1718maw].[avg:avg_dps_mean_delay:qk]' />
+              <tooltip column='[federated.13msmxh0ab6xcl10848zu1718maw].[avg:max_dps_mean_delay:qk]' />
+              <tooltip column='[federated.13msmxh0ab6xcl10848zu1718maw].[avg:min_dps_mean_delay:qk]' />
+            </encodings>
+            <customized-tooltip>
+              <formatted-text>
+                <run fontcolor='#787878'>Local Time:&#9;</run>
+                <run bold='true'><![CDATA[<[federated.13msmxh0ab6xcl10848zu1718maw].[none:Calculation_3055129402128461840:qk]>]]></run>
+                <run>Æ&#10;</run>
+                <run fontcolor='#787878'>Avg Active Orders:&#9;</run>
+                <run bold='true'><![CDATA[<[federated.13msmxh0ab6xcl10848zu1718maw].[avg:active_orders:qk]>]]></run>
+                <run>Æ&#10;</run>
+                <run fontcolor='#787878'>Avg Couriers:&#9;</run>
+                <run bold='true'><![CDATA[<[federated.13msmxh0ab6xcl10848zu1718maw].[avg:couriers_count:qk]>]]></run>
+                <run>Æ&#10;</run>
+                <run fontcolor='#787878'>Active Orders/Courier:&#9;</run>
+                <run bold='true'><![CDATA[<[federated.13msmxh0ab6xcl10848zu1718maw].[usr:Calculation_3055129402155204630:qk]>]]></run>
+                <run>Æ&#10;</run>
+                <run fontcolor='#787878'>Delivered Orders:&#9;</run>
+                <run bold='true'><![CDATA[<[federated.13msmxh0ab6xcl10848zu1718maw].[sum:delivered_orders:qk]>]]></run>
+                <run>Æ&#10;</run>
+                <run fontcolor='#787878'>Placed Orders:&#9;</run>
+                <run bold='true'><![CDATA[<[federated.13msmxh0ab6xcl10848zu1718maw].[sum:placed_orders:qk]>]]></run>
+                <run>Æ&#10;</run>
+                <run fontcolor='#787878'>Surge %:&#9;</run>
+                <run bold='true'><![CDATA[<[federated.13msmxh0ab6xcl10848zu1718maw].[usr:Calculation_3055129402132221969:qk]>]]></run>
+                <run>Æ&#10;</run>
+                <run fontcolor='#787878'>Avg Mean Delay:&#9;</run>
+                <run bold='true'><![CDATA[<[federated.13msmxh0ab6xcl10848zu1718maw].[avg:mean_delay:qk]>]]></run>
+                <run>Æ&#10;</run>
+                <run fontcolor='#787878'>Avg DPS Mean Delay:&#9;</run>
+                <run bold='true'><![CDATA[<[federated.13msmxh0ab6xcl10848zu1718maw].[avg:avg_dps_mean_delay:qk]> (<[federated.13msmxh0ab6xcl10848zu1718maw].[avg:min_dps_mean_delay:qk]>-<[federated.13msmxh0ab6xcl10848zu1718maw].[avg:max_dps_mean_delay:qk]>)]]></run>
+              </formatted-text>
+            </customized-tooltip>
+            <style>
+              <style-rule element='datalabel'>
+                <format attr='color-mode' value='match' />
+              </style-rule>
+              <style-rule element='mark'>
+                <format attr='size' value='1.5' />
+                <format attr='line-interpolation' value='linear' />
+                <format attr='mark-labels-show' value='true' />
+                <format attr='mark-labels-mode' value='highlight' />
+                <format attr='mark-labels-cull' value='true' />
+              </style-rule>
+            </style>
+          </pane>
+        </panes>
+        <rows>([federated.13msmxh0ab6xcl10848zu1718maw].[usr:Calculation_3055129402155204630:qk] + [federated.13msmxh0ab6xcl10848zu1718maw].[usr:Calculation_3055129402132221969:qk])</rows>
+        <cols>[federated.13msmxh0ab6xcl10848zu1718maw].[none:Calculation_3055129402128461840:qk]</cols>
+      </table>
+      <simple-id uuid='{4E667619-C98D-4869-AC91-9A381C43B92D}' />
+    </worksheet>
+    <worksheet name='Surge (2)'>
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='Surge Components' name='federated.13msmxh0ab6xcl10848zu1718maw' />
+            <datasource name='Parameters' />
+          </datasources>
+          <datasource-dependencies datasource='Parameters'>
+            <column caption='minutes buckets' datatype='integer' default-format='*# \m\i\n' name='[country_code Parameter]' param-domain-type='any' role='measure' type='quantitative' value='15'>
+              <calculation class='tableau' formula='15' />
+            </column>
+          </datasource-dependencies>
+          <datasource-dependencies datasource='federated.13msmxh0ab6xcl10848zu1718maw'>
+            <column caption='Bucketed Local Time' datatype='datetime' name='[Calculation_3055129402128461840]' role='dimension' type='ordinal'>
+              <calculation class='tableau' formula='DATETIME(INT(FLOAT([local_created_at_bucket]) * (24 * 60 / [Parameters].[country_code Parameter])) / (24 * 60 / [Parameters].[country_code Parameter]))' />
+            </column>
+            <column caption='Surge %' datatype='real' default-format='p0.0%' name='[Calculation_3055129402132221969]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='SUM([sum_dps_surge_fee_eur])/SUM([sum_dps_travel_time_fee_eur])' />
+            </column>
+            <column caption='Active Orders/Courier' datatype='real' name='[Calculation_3055129402155204630]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='SUM([active_orders])/SUM([couriers_count])' />
+            </column>
+            <column datatype='integer' name='[active_orders]' role='measure' type='quantitative' />
+            <column-instance column='[active_orders]' derivation='Avg' name='[avg:active_orders:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[avg_dps_mean_delay]' derivation='Avg' name='[avg:avg_dps_mean_delay:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[couriers_count]' derivation='Avg' name='[avg:couriers_count:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[max_dps_mean_delay]' derivation='Avg' name='[avg:max_dps_mean_delay:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[mean_delay]' derivation='Avg' name='[avg:mean_delay:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[min_dps_mean_delay]' derivation='Avg' name='[avg:min_dps_mean_delay:qk]' pivot='key' type='quantitative' />
+            <column datatype='real' name='[avg_dps_mean_delay]' role='measure' type='quantitative' />
+            <column datatype='integer' name='[couriers_count]' role='measure' type='quantitative' />
+            <column datatype='integer' name='[delivered_orders]' role='measure' type='quantitative' />
+            <column-instance column='[Calculation_3055129402128461840]' derivation='Hour' name='[hr:Calculation_3055129402128461840:ok]' pivot='key' type='ordinal' />
+            <column datatype='datetime' name='[local_created_at_bucket]' role='dimension' type='ordinal' />
+            <column datatype='real' name='[max_dps_mean_delay]' role='measure' type='quantitative' />
+            <column datatype='real' name='[mean_delay]' role='measure' type='quantitative' />
+            <column datatype='real' name='[min_dps_mean_delay]' role='measure' type='quantitative' />
+            <column-instance column='[Calculation_3055129402128461840]' derivation='None' name='[none:Calculation_3055129402128461840:qk]' pivot='key' type='quantitative' />
+            <column datatype='integer' name='[placed_orders]' role='measure' type='quantitative' />
+            <column-instance column='[delivered_orders]' derivation='Sum' name='[sum:delivered_orders:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[placed_orders]' derivation='Sum' name='[sum:placed_orders:qk]' pivot='key' type='quantitative' />
+            <column datatype='real' name='[sum_dps_surge_fee_eur]' role='measure' type='quantitative' />
+            <column datatype='real' name='[sum_dps_travel_time_fee_eur]' role='measure' type='quantitative' />
+            <column-instance column='[Calculation_3055129402132221969]' derivation='User' name='[usr:Calculation_3055129402132221969:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[Calculation_3055129402155204630]' derivation='User' name='[usr:Calculation_3055129402155204630:qk]' pivot='key' type='quantitative' />
+          </datasource-dependencies>
+          <filter class='categorical' column='[federated.13msmxh0ab6xcl10848zu1718maw].[:Measure Names]'>
+            <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.13msmxh0ab6xcl10848zu1718maw].[sum:delivered_orders:qk]&quot;' user:ui-domain='relevant' user:ui-enumeration='inclusive' user:ui-marker='enumerate' />
+          </filter>
+          <manual-sort column='[federated.13msmxh0ab6xcl10848zu1718maw].[:Measure Names]' direction='ASC'>
+            <dictionary>
+              <bucket>&quot;[federated.13msmxh0ab6xcl10848zu1718maw].[sum:placed_orders:qk]&quot;</bucket>
+              <bucket>&quot;[federated.13msmxh0ab6xcl10848zu1718maw].[sum:delivered_orders:qk]&quot;</bucket>
+            </dictionary>
+          </manual-sort>
+          <filter class='categorical' column='[federated.13msmxh0ab6xcl10848zu1718maw].[hr:Calculation_3055129402128461840:ok]' filter-group='3'>
+            <groupfilter function='union' user:ui-domain='relevant' user:ui-enumeration='inclusive' user:ui-marker='enumerate'>
+              <groupfilter function='member' level='[hr:Calculation_3055129402128461840:ok]' member='10' />
+              <groupfilter function='member' level='[hr:Calculation_3055129402128461840:ok]' member='11' />
+              <groupfilter function='member' level='[hr:Calculation_3055129402128461840:ok]' member='12' />
+              <groupfilter function='member' level='[hr:Calculation_3055129402128461840:ok]' member='13' />
+              <groupfilter function='member' level='[hr:Calculation_3055129402128461840:ok]' member='14' />
+            </groupfilter>
+          </filter>
+          <slices>
+            <column>[federated.13msmxh0ab6xcl10848zu1718maw].[hr:Calculation_3055129402128461840:ok]</column>
+            <column>[federated.13msmxh0ab6xcl10848zu1718maw].[:Measure Names]</column>
+          </slices>
+          <aggregation value='true' />
+        </view>
+        <style>
+          <style-rule element='axis'>
+            <format attr='title' class='0' field='[federated.13msmxh0ab6xcl10848zu1718maw].[none:Calculation_3055129402128461840:qk]' scope='cols' value='' />
+            <encoding attr='space' class='0' field='[federated.13msmxh0ab6xcl10848zu1718maw].[Multiple Values]' field-type='quantitative' fold='true' scope='rows' synchronized='true' type='space' />
+          </style-rule>
+          <style-rule element='label'>
+            <format attr='text-format' field='[federated.13msmxh0ab6xcl10848zu1718maw].[usr:Calculation_3055129402155204630:qk]' value='n#,##0.00;-#,##0.00' />
+          </style-rule>
+          <style-rule element='legend'>
+            <format attr='col-width' field='[federated.13msmxh0ab6xcl10848zu1718maw].[:Measure Names]' value='220' />
+          </style-rule>
+        </style>
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Automatic' />
+            <encodings>
+              <color column='[federated.13msmxh0ab6xcl10848zu1718maw].[:Measure Names]' />
+              <tooltip column='[federated.13msmxh0ab6xcl10848zu1718maw].[usr:Calculation_3055129402132221969:qk]' />
+              <tooltip column='[federated.13msmxh0ab6xcl10848zu1718maw].[usr:Calculation_3055129402155204630:qk]' />
+              <tooltip column='[federated.13msmxh0ab6xcl10848zu1718maw].[avg:active_orders:qk]' />
+              <tooltip column='[federated.13msmxh0ab6xcl10848zu1718maw].[avg:couriers_count:qk]' />
+              <tooltip column='[federated.13msmxh0ab6xcl10848zu1718maw].[sum:placed_orders:qk]' />
+              <tooltip column='[federated.13msmxh0ab6xcl10848zu1718maw].[sum:delivered_orders:qk]' />
+              <tooltip column='[federated.13msmxh0ab6xcl10848zu1718maw].[avg:mean_delay:qk]' />
+              <tooltip column='[federated.13msmxh0ab6xcl10848zu1718maw].[avg:avg_dps_mean_delay:qk]' />
+              <tooltip column='[federated.13msmxh0ab6xcl10848zu1718maw].[avg:max_dps_mean_delay:qk]' />
+              <tooltip column='[federated.13msmxh0ab6xcl10848zu1718maw].[avg:min_dps_mean_delay:qk]' />
+            </encodings>
+            <customized-tooltip>
+              <formatted-text>
+                <run fontcolor='#787878'>Local Time:&#9;</run>
+                <run bold='true'><![CDATA[<[federated.13msmxh0ab6xcl10848zu1718maw].[none:Calculation_3055129402128461840:qk]>]]></run>
+                <run>Æ&#10;</run>
+                <run fontcolor='#787878'>Avg Active Orders:&#9;</run>
+                <run bold='true'><![CDATA[<[federated.13msmxh0ab6xcl10848zu1718maw].[avg:active_orders:qk]>]]></run>
+                <run>Æ&#10;</run>
+                <run fontcolor='#787878'>Avg Couriers:&#9;</run>
+                <run bold='true'><![CDATA[<[federated.13msmxh0ab6xcl10848zu1718maw].[avg:couriers_count:qk]>]]></run>
+                <run>Æ&#10;</run>
+                <run fontcolor='#787878'>Active Orders/Courier:&#9;</run>
+                <run bold='true'><![CDATA[<[federated.13msmxh0ab6xcl10848zu1718maw].[usr:Calculation_3055129402155204630:qk]>]]></run>
+                <run>Æ&#10;</run>
+                <run fontcolor='#787878'>Delivered Orders:&#9;</run>
+                <run bold='true'><![CDATA[<[federated.13msmxh0ab6xcl10848zu1718maw].[sum:delivered_orders:qk]>]]></run>
+                <run>Æ&#10;</run>
+                <run fontcolor='#787878'>Placed Orders:&#9;</run>
+                <run bold='true'><![CDATA[<[federated.13msmxh0ab6xcl10848zu1718maw].[sum:placed_orders:qk]>]]></run>
+                <run>Æ&#10;</run>
+                <run fontcolor='#787878'>Surge %:&#9;</run>
+                <run bold='true'><![CDATA[<[federated.13msmxh0ab6xcl10848zu1718maw].[usr:Calculation_3055129402132221969:qk]>]]></run>
+                <run>Æ&#10;</run>
+                <run fontcolor='#787878'>Avg Mean Delay:&#9;</run>
+                <run bold='true'><![CDATA[<[federated.13msmxh0ab6xcl10848zu1718maw].[avg:mean_delay:qk]>]]></run>
+                <run>Æ&#10;</run>
+                <run fontcolor='#787878'>Avg DPS Mean Delay:&#9;</run>
+                <run bold='true'><![CDATA[<[federated.13msmxh0ab6xcl10848zu1718maw].[avg:avg_dps_mean_delay:qk]> (<[federated.13msmxh0ab6xcl10848zu1718maw].[avg:min_dps_mean_delay:qk]>-<[federated.13msmxh0ab6xcl10848zu1718maw].[avg:max_dps_mean_delay:qk]>)]]></run>
+              </formatted-text>
+            </customized-tooltip>
+            <style>
+              <style-rule element='mark'>
+                <format attr='line-interpolation' value='linear' />
+              </style-rule>
+            </style>
+          </pane>
+          <pane id='4' selection-relaxation-option='selection-relaxation-allow' y-axis-name='[federated.13msmxh0ab6xcl10848zu1718maw].[sum:placed_orders:qk]'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Line' />
+            <mark-sizing mark-sizing-setting='marks-scaling-off' />
+            <encodings>
+              <color column='[federated.13msmxh0ab6xcl10848zu1718maw].[:Measure Names]' />
+              <tooltip column='[federated.13msmxh0ab6xcl10848zu1718maw].[usr:Calculation_3055129402132221969:qk]' />
+              <tooltip column='[federated.13msmxh0ab6xcl10848zu1718maw].[usr:Calculation_3055129402155204630:qk]' />
+              <tooltip column='[federated.13msmxh0ab6xcl10848zu1718maw].[avg:active_orders:qk]' />
+              <tooltip column='[federated.13msmxh0ab6xcl10848zu1718maw].[avg:couriers_count:qk]' />
+              <tooltip column='[federated.13msmxh0ab6xcl10848zu1718maw].[sum:placed_orders:qk]' />
+              <tooltip column='[federated.13msmxh0ab6xcl10848zu1718maw].[sum:delivered_orders:qk]' />
+              <tooltip column='[federated.13msmxh0ab6xcl10848zu1718maw].[avg:mean_delay:qk]' />
+              <tooltip column='[federated.13msmxh0ab6xcl10848zu1718maw].[avg:avg_dps_mean_delay:qk]' />
+              <tooltip column='[federated.13msmxh0ab6xcl10848zu1718maw].[avg:max_dps_mean_delay:qk]' />
+              <tooltip column='[federated.13msmxh0ab6xcl10848zu1718maw].[avg:min_dps_mean_delay:qk]' />
+            </encodings>
+            <customized-tooltip>
+              <formatted-text>
+                <run fontcolor='#787878'>Local Time:&#9;</run>
+                <run bold='true'><![CDATA[<[federated.13msmxh0ab6xcl10848zu1718maw].[none:Calculation_3055129402128461840:qk]>]]></run>
+                <run>Æ&#10;</run>
+                <run fontcolor='#787878'>Avg Active Orders:&#9;</run>
+                <run bold='true'><![CDATA[<[federated.13msmxh0ab6xcl10848zu1718maw].[avg:active_orders:qk]>]]></run>
+                <run>Æ&#10;</run>
+                <run fontcolor='#787878'>Avg Couriers:&#9;</run>
+                <run bold='true'><![CDATA[<[federated.13msmxh0ab6xcl10848zu1718maw].[avg:couriers_count:qk]>]]></run>
+                <run>Æ&#10;</run>
+                <run fontcolor='#787878'>Active Orders/Courier:&#9;</run>
+                <run bold='true'><![CDATA[<[federated.13msmxh0ab6xcl10848zu1718maw].[usr:Calculation_3055129402155204630:qk]>]]></run>
+                <run>Æ&#10;</run>
+                <run fontcolor='#787878'>Delivered Orders:&#9;</run>
+                <run bold='true'><![CDATA[<[federated.13msmxh0ab6xcl10848zu1718maw].[sum:delivered_orders:qk]>]]></run>
+                <run>Æ&#10;</run>
+                <run fontcolor='#787878'>Placed Orders:&#9;</run>
+                <run bold='true'><![CDATA[<[federated.13msmxh0ab6xcl10848zu1718maw].[sum:delivered_orders:qk]>]]></run>
+                <run>Æ&#10;</run>
+                <run fontcolor='#787878'>Surge %:&#9;</run>
+                <run bold='true'><![CDATA[<[federated.13msmxh0ab6xcl10848zu1718maw].[usr:Calculation_3055129402132221969:qk]>]]></run>
+                <run>Æ&#10;</run>
+                <run fontcolor='#787878'>Avg Mean Delay:&#9;</run>
+                <run bold='true'><![CDATA[<[federated.13msmxh0ab6xcl10848zu1718maw].[avg:mean_delay:qk]>]]></run>
+                <run>Æ&#10;</run>
+                <run fontcolor='#787878'>Avg DPS Mean Delay:&#9;</run>
+                <run bold='true'><![CDATA[<[federated.13msmxh0ab6xcl10848zu1718maw].[avg:avg_dps_mean_delay:qk]> (<[federated.13msmxh0ab6xcl10848zu1718maw].[avg:min_dps_mean_delay:qk]>-<[federated.13msmxh0ab6xcl10848zu1718maw].[avg:max_dps_mean_delay:qk]>)]]></run>
+              </formatted-text>
+            </customized-tooltip>
+            <style>
+              <style-rule element='datalabel'>
+                <format attr='color-mode' value='match' />
+              </style-rule>
+              <style-rule element='mark'>
+                <format attr='size' value='1' />
+                <format attr='line-interpolation' value='linear' />
+                <format attr='mark-labels-show' value='true' />
+                <format attr='mark-labels-mode' value='highlight' />
+                <format attr='mark-labels-cull' value='true' />
+              </style-rule>
+            </style>
+          </pane>
+          <pane id='6' selection-relaxation-option='selection-relaxation-allow' y-axis-name='[federated.13msmxh0ab6xcl10848zu1718maw].[Multiple Values]'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Automatic' />
+            <encodings>
+              <color column='[federated.13msmxh0ab6xcl10848zu1718maw].[:Measure Names]' />
+              <tooltip column='[federated.13msmxh0ab6xcl10848zu1718maw].[usr:Calculation_3055129402132221969:qk]' />
+              <tooltip column='[federated.13msmxh0ab6xcl10848zu1718maw].[usr:Calculation_3055129402155204630:qk]' />
+              <tooltip column='[federated.13msmxh0ab6xcl10848zu1718maw].[avg:active_orders:qk]' />
+              <tooltip column='[federated.13msmxh0ab6xcl10848zu1718maw].[avg:couriers_count:qk]' />
+              <tooltip column='[federated.13msmxh0ab6xcl10848zu1718maw].[sum:placed_orders:qk]' />
+              <tooltip column='[federated.13msmxh0ab6xcl10848zu1718maw].[sum:delivered_orders:qk]' />
+              <tooltip column='[federated.13msmxh0ab6xcl10848zu1718maw].[avg:mean_delay:qk]' />
+              <tooltip column='[federated.13msmxh0ab6xcl10848zu1718maw].[avg:avg_dps_mean_delay:qk]' />
+              <tooltip column='[federated.13msmxh0ab6xcl10848zu1718maw].[avg:max_dps_mean_delay:qk]' />
+              <tooltip column='[federated.13msmxh0ab6xcl10848zu1718maw].[avg:min_dps_mean_delay:qk]' />
+            </encodings>
+            <customized-tooltip>
+              <formatted-text>
+                <run fontcolor='#787878'>Local Time:&#9;</run>
+                <run bold='true'><![CDATA[<[federated.13msmxh0ab6xcl10848zu1718maw].[none:Calculation_3055129402128461840:qk]>]]></run>
+                <run>Æ&#10;</run>
+                <run fontcolor='#787878'>Avg Active Orders:&#9;</run>
+                <run bold='true'><![CDATA[<[federated.13msmxh0ab6xcl10848zu1718maw].[avg:active_orders:qk]>]]></run>
+                <run>Æ&#10;</run>
+                <run fontcolor='#787878'>Avg Couriers:&#9;</run>
+                <run bold='true'><![CDATA[<[federated.13msmxh0ab6xcl10848zu1718maw].[avg:couriers_count:qk]>]]></run>
+                <run>Æ&#10;</run>
+                <run fontcolor='#787878'>Active Orders/Courier:&#9;</run>
+                <run bold='true'><![CDATA[<[federated.13msmxh0ab6xcl10848zu1718maw].[usr:Calculation_3055129402155204630:qk]>]]></run>
+                <run>Æ&#10;</run>
+                <run fontcolor='#787878'>Delivered Orders:&#9;</run>
+                <run bold='true'><![CDATA[<[federated.13msmxh0ab6xcl10848zu1718maw].[sum:delivered_orders:qk]>]]></run>
+                <run>Æ&#10;</run>
+                <run fontcolor='#787878'>Placed Orders:&#9;</run>
+                <run bold='true'><![CDATA[<[federated.13msmxh0ab6xcl10848zu1718maw].[sum:placed_orders:qk]>]]></run>
+                <run>Æ&#10;</run>
+                <run fontcolor='#787878'>Surge %:&#9;</run>
+                <run bold='true'><![CDATA[<[federated.13msmxh0ab6xcl10848zu1718maw].[usr:Calculation_3055129402132221969:qk]>]]></run>
+                <run>Æ&#10;</run>
+                <run fontcolor='#787878'>Avg Mean Delay:&#9;</run>
+                <run bold='true'><![CDATA[<[federated.13msmxh0ab6xcl10848zu1718maw].[avg:mean_delay:qk]>]]></run>
+                <run>Æ&#10;</run>
+                <run fontcolor='#787878'>Avg DPS Mean Delay:&#9;</run>
+                <run bold='true'><![CDATA[<[federated.13msmxh0ab6xcl10848zu1718maw].[avg:avg_dps_mean_delay:qk]> (<[federated.13msmxh0ab6xcl10848zu1718maw].[avg:min_dps_mean_delay:qk]>-<[federated.13msmxh0ab6xcl10848zu1718maw].[avg:max_dps_mean_delay:qk]>)]]></run>
+              </formatted-text>
+            </customized-tooltip>
+            <style>
+              <style-rule element='mark'>
+                <format attr='line-interpolation' value='linear' />
+              </style-rule>
+            </style>
+          </pane>
+        </panes>
+        <rows>([federated.13msmxh0ab6xcl10848zu1718maw].[sum:placed_orders:qk] + [federated.13msmxh0ab6xcl10848zu1718maw].[Multiple Values])</rows>
+        <cols>[federated.13msmxh0ab6xcl10848zu1718maw].[none:Calculation_3055129402128461840:qk]</cols>
+      </table>
+      <simple-id uuid='{E454AB6E-68FE-4138-A6D9-0EBD207C7052}' />
+    </worksheet>
+    <worksheet name='Surge (3)'>
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='Surge Components' name='federated.13msmxh0ab6xcl10848zu1718maw' />
+            <datasource name='Parameters' />
+          </datasources>
+          <datasource-dependencies datasource='Parameters'>
+            <column caption='minutes buckets' datatype='integer' default-format='*# \m\i\n' name='[country_code Parameter]' param-domain-type='any' role='measure' type='quantitative' value='15'>
+              <calculation class='tableau' formula='15' />
+            </column>
+          </datasource-dependencies>
+          <datasource-dependencies datasource='federated.13msmxh0ab6xcl10848zu1718maw'>
+            <column caption='Bucketed Local Time' datatype='datetime' name='[Calculation_3055129402128461840]' role='dimension' type='ordinal'>
+              <calculation class='tableau' formula='DATETIME(INT(FLOAT([local_created_at_bucket]) * (24 * 60 / [Parameters].[country_code Parameter])) / (24 * 60 / [Parameters].[country_code Parameter]))' />
+            </column>
+            <column caption='Surge %' datatype='real' default-format='p0.0%' name='[Calculation_3055129402132221969]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='SUM([sum_dps_surge_fee_eur])/SUM([sum_dps_travel_time_fee_eur])' />
+            </column>
+            <column caption='Active Orders/Courier' datatype='real' name='[Calculation_3055129402155204630]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='SUM([active_orders])/SUM([couriers_count])' />
+            </column>
+            <column datatype='integer' name='[active_orders]' role='measure' type='quantitative' />
+            <column-instance column='[active_orders]' derivation='Avg' name='[avg:active_orders:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[avg_dps_mean_delay]' derivation='Avg' name='[avg:avg_dps_mean_delay:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[couriers_count]' derivation='Avg' name='[avg:couriers_count:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[max_dps_mean_delay]' derivation='Avg' name='[avg:max_dps_mean_delay:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[mean_delay]' derivation='Avg' name='[avg:mean_delay:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[min_dps_mean_delay]' derivation='Avg' name='[avg:min_dps_mean_delay:qk]' pivot='key' type='quantitative' />
+            <column datatype='real' name='[avg_dps_mean_delay]' role='measure' type='quantitative' />
+            <column datatype='integer' name='[couriers_count]' role='measure' type='quantitative' />
+            <column datatype='integer' name='[delivered_orders]' role='measure' type='quantitative' />
+            <column-instance column='[Calculation_3055129402128461840]' derivation='Hour' name='[hr:Calculation_3055129402128461840:ok]' pivot='key' type='ordinal' />
+            <column datatype='datetime' name='[local_created_at_bucket]' role='dimension' type='ordinal' />
+            <column datatype='real' name='[max_dps_mean_delay]' role='measure' type='quantitative' />
+            <column datatype='real' name='[mean_delay]' role='measure' type='quantitative' />
+            <column datatype='real' name='[min_dps_mean_delay]' role='measure' type='quantitative' />
+            <column-instance column='[Calculation_3055129402128461840]' derivation='None' name='[none:Calculation_3055129402128461840:qk]' pivot='key' type='quantitative' />
+            <column datatype='integer' name='[placed_orders]' role='measure' type='quantitative' />
+            <column-instance column='[delivered_orders]' derivation='Sum' name='[sum:delivered_orders:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[placed_orders]' derivation='Sum' name='[sum:placed_orders:qk]' pivot='key' type='quantitative' />
+            <column datatype='real' name='[sum_dps_surge_fee_eur]' role='measure' type='quantitative' />
+            <column datatype='real' name='[sum_dps_travel_time_fee_eur]' role='measure' type='quantitative' />
+            <column-instance column='[Calculation_3055129402132221969]' derivation='User' name='[usr:Calculation_3055129402132221969:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[Calculation_3055129402155204630]' derivation='User' name='[usr:Calculation_3055129402155204630:qk]' pivot='key' type='quantitative' />
+          </datasource-dependencies>
+          <filter class='categorical' column='[federated.13msmxh0ab6xcl10848zu1718maw].[:Measure Names]'>
+            <groupfilter function='union' user:op='manual'>
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.13msmxh0ab6xcl10848zu1718maw].[avg:avg_dps_mean_delay:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.13msmxh0ab6xcl10848zu1718maw].[avg:max_dps_mean_delay:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.13msmxh0ab6xcl10848zu1718maw].[avg:min_dps_mean_delay:qk]&quot;' />
+            </groupfilter>
+          </filter>
+          <manual-sort column='[federated.13msmxh0ab6xcl10848zu1718maw].[:Measure Names]' direction='ASC'>
+            <dictionary>
+              <bucket>&quot;[federated.13msmxh0ab6xcl10848zu1718maw].[usr:Calculation_3055129402155204630:qk]&quot;</bucket>
+              <bucket>&quot;[federated.13msmxh0ab6xcl10848zu1718maw].[usr:Calculation_3055129402132221969:qk]&quot;</bucket>
+              <bucket>&quot;[federated.13msmxh0ab6xcl10848zu1718maw].[avg:mean_delay:qk]&quot;</bucket>
+              <bucket>&quot;[federated.13msmxh0ab6xcl10848zu1718maw].[avg:avg_dps_mean_delay:qk]&quot;</bucket>
+              <bucket>&quot;[federated.13msmxh0ab6xcl10848zu1718maw].[avg:max_dps_mean_delay:qk]&quot;</bucket>
+              <bucket>&quot;[federated.13msmxh0ab6xcl10848zu1718maw].[avg:min_dps_mean_delay:qk]&quot;</bucket>
+            </dictionary>
+          </manual-sort>
+          <filter class='categorical' column='[federated.13msmxh0ab6xcl10848zu1718maw].[hr:Calculation_3055129402128461840:ok]' filter-group='3'>
+            <groupfilter function='union' user:ui-domain='relevant' user:ui-enumeration='inclusive' user:ui-marker='enumerate'>
+              <groupfilter function='member' level='[hr:Calculation_3055129402128461840:ok]' member='10' />
+              <groupfilter function='member' level='[hr:Calculation_3055129402128461840:ok]' member='11' />
+              <groupfilter function='member' level='[hr:Calculation_3055129402128461840:ok]' member='12' />
+              <groupfilter function='member' level='[hr:Calculation_3055129402128461840:ok]' member='13' />
+              <groupfilter function='member' level='[hr:Calculation_3055129402128461840:ok]' member='14' />
+            </groupfilter>
+          </filter>
+          <slices>
+            <column>[federated.13msmxh0ab6xcl10848zu1718maw].[:Measure Names]</column>
+            <column>[federated.13msmxh0ab6xcl10848zu1718maw].[hr:Calculation_3055129402128461840:ok]</column>
+          </slices>
+          <aggregation value='true' />
+        </view>
+        <style>
+          <style-rule element='axis'>
+            <encoding attr='space' class='0' field='[federated.13msmxh0ab6xcl10848zu1718maw].[Multiple Values]' field-type='quantitative' fold='true' range-type='independent' scope='rows' synchronized='true' type='space' />
+            <format attr='title' class='0' field='[federated.13msmxh0ab6xcl10848zu1718maw].[none:Calculation_3055129402128461840:qk]' scope='cols' value='' />
+          </style-rule>
+          <style-rule element='label'>
+            <format attr='text-format' field='[federated.13msmxh0ab6xcl10848zu1718maw].[usr:Calculation_3055129402155204630:qk]' value='n#,##0.00;-#,##0.00' />
+          </style-rule>
+          <style-rule element='legend'>
+            <format attr='col-width' field='[federated.13msmxh0ab6xcl10848zu1718maw].[:Measure Names]' value='180' />
+          </style-rule>
+        </style>
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Automatic' />
+            <encodings>
+              <color column='[federated.13msmxh0ab6xcl10848zu1718maw].[:Measure Names]' />
+              <tooltip column='[federated.13msmxh0ab6xcl10848zu1718maw].[usr:Calculation_3055129402132221969:qk]' />
+              <tooltip column='[federated.13msmxh0ab6xcl10848zu1718maw].[usr:Calculation_3055129402155204630:qk]' />
+              <tooltip column='[federated.13msmxh0ab6xcl10848zu1718maw].[avg:active_orders:qk]' />
+              <tooltip column='[federated.13msmxh0ab6xcl10848zu1718maw].[avg:couriers_count:qk]' />
+              <tooltip column='[federated.13msmxh0ab6xcl10848zu1718maw].[sum:placed_orders:qk]' />
+              <tooltip column='[federated.13msmxh0ab6xcl10848zu1718maw].[sum:delivered_orders:qk]' />
+              <tooltip column='[federated.13msmxh0ab6xcl10848zu1718maw].[avg:mean_delay:qk]' />
+              <tooltip column='[federated.13msmxh0ab6xcl10848zu1718maw].[avg:avg_dps_mean_delay:qk]' />
+              <tooltip column='[federated.13msmxh0ab6xcl10848zu1718maw].[avg:max_dps_mean_delay:qk]' />
+              <tooltip column='[federated.13msmxh0ab6xcl10848zu1718maw].[avg:min_dps_mean_delay:qk]' />
+            </encodings>
+            <customized-tooltip>
+              <formatted-text>
+                <run fontcolor='#787878'>Local Time:&#9;</run>
+                <run bold='true'><![CDATA[<[federated.13msmxh0ab6xcl10848zu1718maw].[none:Calculation_3055129402128461840:qk]>]]></run>
+                <run>Æ&#10;</run>
+                <run fontcolor='#787878'>Avg Active Orders:&#9;</run>
+                <run bold='true'><![CDATA[<[federated.13msmxh0ab6xcl10848zu1718maw].[avg:active_orders:qk]>]]></run>
+                <run>Æ&#10;</run>
+                <run fontcolor='#787878'>Avg Couriers:&#9;</run>
+                <run bold='true'><![CDATA[<[federated.13msmxh0ab6xcl10848zu1718maw].[avg:couriers_count:qk]>]]></run>
+                <run>Æ&#10;</run>
+                <run fontcolor='#787878'>Active Orders/Courier:&#9;</run>
+                <run bold='true'><![CDATA[<[federated.13msmxh0ab6xcl10848zu1718maw].[usr:Calculation_3055129402155204630:qk]>]]></run>
+                <run>Æ&#10;</run>
+                <run fontcolor='#787878'>Delivered Orders:&#9;</run>
+                <run bold='true'><![CDATA[<[federated.13msmxh0ab6xcl10848zu1718maw].[sum:delivered_orders:qk]>]]></run>
+                <run>Æ&#10;</run>
+                <run fontcolor='#787878'>Placed Orders:&#9;</run>
+                <run bold='true'><![CDATA[<[federated.13msmxh0ab6xcl10848zu1718maw].[sum:placed_orders:qk]>]]></run>
+                <run>Æ&#10;</run>
+                <run fontcolor='#787878'>Surge %:&#9;</run>
+                <run bold='true'><![CDATA[<[federated.13msmxh0ab6xcl10848zu1718maw].[usr:Calculation_3055129402132221969:qk]>]]></run>
+                <run>Æ&#10;</run>
+                <run fontcolor='#787878'>Avg Mean Delay:&#9;</run>
+                <run bold='true'><![CDATA[<[federated.13msmxh0ab6xcl10848zu1718maw].[avg:mean_delay:qk]>]]></run>
+                <run>Æ&#10;</run>
+                <run fontcolor='#787878'>Avg DPS Mean Delay:&#9;</run>
+                <run bold='true'><![CDATA[<[federated.13msmxh0ab6xcl10848zu1718maw].[avg:avg_dps_mean_delay:qk]> (<[federated.13msmxh0ab6xcl10848zu1718maw].[avg:min_dps_mean_delay:qk]>-<[federated.13msmxh0ab6xcl10848zu1718maw].[avg:max_dps_mean_delay:qk]>)]]></run>
+              </formatted-text>
+            </customized-tooltip>
+            <style>
+              <style-rule element='datalabel'>
+                <format attr='color-mode' value='match' />
+              </style-rule>
+              <style-rule element='mark'>
+                <format attr='line-interpolation' value='linear' />
+                <format attr='mark-labels-show' value='true' />
+                <format attr='mark-labels-mode' value='highlight' />
+                <format attr='mark-labels-cull' value='true' />
+              </style-rule>
+            </style>
+          </pane>
+          <pane id='1' selection-relaxation-option='selection-relaxation-allow' y-axis-name='[federated.13msmxh0ab6xcl10848zu1718maw].[Multiple Values]'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Automatic' />
+            <encodings>
+              <color column='[federated.13msmxh0ab6xcl10848zu1718maw].[:Measure Names]' />
+              <tooltip column='[federated.13msmxh0ab6xcl10848zu1718maw].[usr:Calculation_3055129402132221969:qk]' />
+              <tooltip column='[federated.13msmxh0ab6xcl10848zu1718maw].[usr:Calculation_3055129402155204630:qk]' />
+              <tooltip column='[federated.13msmxh0ab6xcl10848zu1718maw].[avg:active_orders:qk]' />
+              <tooltip column='[federated.13msmxh0ab6xcl10848zu1718maw].[avg:couriers_count:qk]' />
+              <tooltip column='[federated.13msmxh0ab6xcl10848zu1718maw].[sum:placed_orders:qk]' />
+              <tooltip column='[federated.13msmxh0ab6xcl10848zu1718maw].[sum:delivered_orders:qk]' />
+              <tooltip column='[federated.13msmxh0ab6xcl10848zu1718maw].[avg:mean_delay:qk]' />
+              <tooltip column='[federated.13msmxh0ab6xcl10848zu1718maw].[avg:avg_dps_mean_delay:qk]' />
+              <tooltip column='[federated.13msmxh0ab6xcl10848zu1718maw].[avg:max_dps_mean_delay:qk]' />
+              <tooltip column='[federated.13msmxh0ab6xcl10848zu1718maw].[avg:min_dps_mean_delay:qk]' />
+            </encodings>
+            <customized-tooltip>
+              <formatted-text>
+                <run fontcolor='#787878'>Local Time:&#9;</run>
+                <run bold='true'><![CDATA[<[federated.13msmxh0ab6xcl10848zu1718maw].[none:Calculation_3055129402128461840:qk]>]]></run>
+                <run>Æ&#10;</run>
+                <run fontcolor='#787878'>Avg Active Orders:&#9;</run>
+                <run bold='true'><![CDATA[<[federated.13msmxh0ab6xcl10848zu1718maw].[avg:active_orders:qk]>]]></run>
+                <run>Æ&#10;</run>
+                <run fontcolor='#787878'>Avg Couriers:&#9;</run>
+                <run bold='true'><![CDATA[<[federated.13msmxh0ab6xcl10848zu1718maw].[avg:couriers_count:qk]>]]></run>
+                <run>Æ&#10;</run>
+                <run fontcolor='#787878'>Active Orders/Courier:&#9;</run>
+                <run bold='true'><![CDATA[<[federated.13msmxh0ab6xcl10848zu1718maw].[usr:Calculation_3055129402155204630:qk]>]]></run>
+                <run>Æ&#10;</run>
+                <run fontcolor='#787878'>Delivered Orders:&#9;</run>
+                <run bold='true'><![CDATA[<[federated.13msmxh0ab6xcl10848zu1718maw].[sum:delivered_orders:qk]>]]></run>
+                <run>Æ&#10;</run>
+                <run fontcolor='#787878'>Placed Orders:&#9;</run>
+                <run bold='true'><![CDATA[<[federated.13msmxh0ab6xcl10848zu1718maw].[sum:placed_orders:qk]>]]></run>
+                <run>Æ&#10;</run>
+                <run fontcolor='#787878'>Surge %:&#9;</run>
+                <run bold='true'><![CDATA[<[federated.13msmxh0ab6xcl10848zu1718maw].[usr:Calculation_3055129402132221969:qk]>]]></run>
+                <run>Æ&#10;</run>
+                <run fontcolor='#787878'>Avg Mean Delay:&#9;</run>
+                <run bold='true'><![CDATA[<[federated.13msmxh0ab6xcl10848zu1718maw].[avg:mean_delay:qk]>]]></run>
+                <run>Æ&#10;</run>
+                <run fontcolor='#787878'>Avg DPS Mean Delay:&#9;</run>
+                <run bold='true'><![CDATA[<[federated.13msmxh0ab6xcl10848zu1718maw].[avg:avg_dps_mean_delay:qk]> (<[federated.13msmxh0ab6xcl10848zu1718maw].[avg:min_dps_mean_delay:qk]>-<[federated.13msmxh0ab6xcl10848zu1718maw].[avg:max_dps_mean_delay:qk]>)]]></run>
+              </formatted-text>
+            </customized-tooltip>
+            <style>
+              <style-rule element='datalabel'>
+                <format attr='color-mode' value='match' />
+              </style-rule>
+              <style-rule element='mark'>
+                <format attr='line-interpolation' value='linear' />
+                <format attr='mark-labels-show' value='true' />
+                <format attr='mark-labels-mode' value='highlight' />
+                <format attr='mark-labels-cull' value='true' />
+              </style-rule>
+            </style>
+          </pane>
+          <pane id='8' selection-relaxation-option='selection-relaxation-allow' y-axis-name='[federated.13msmxh0ab6xcl10848zu1718maw].[avg:mean_delay:qk]'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Automatic' />
+            <encodings>
+              <color column='[federated.13msmxh0ab6xcl10848zu1718maw].[:Measure Names]' />
+              <tooltip column='[federated.13msmxh0ab6xcl10848zu1718maw].[usr:Calculation_3055129402132221969:qk]' />
+              <tooltip column='[federated.13msmxh0ab6xcl10848zu1718maw].[usr:Calculation_3055129402155204630:qk]' />
+              <tooltip column='[federated.13msmxh0ab6xcl10848zu1718maw].[avg:active_orders:qk]' />
+              <tooltip column='[federated.13msmxh0ab6xcl10848zu1718maw].[avg:couriers_count:qk]' />
+              <tooltip column='[federated.13msmxh0ab6xcl10848zu1718maw].[sum:placed_orders:qk]' />
+              <tooltip column='[federated.13msmxh0ab6xcl10848zu1718maw].[sum:delivered_orders:qk]' />
+              <tooltip column='[federated.13msmxh0ab6xcl10848zu1718maw].[avg:mean_delay:qk]' />
+              <tooltip column='[federated.13msmxh0ab6xcl10848zu1718maw].[avg:avg_dps_mean_delay:qk]' />
+              <tooltip column='[federated.13msmxh0ab6xcl10848zu1718maw].[avg:max_dps_mean_delay:qk]' />
+              <tooltip column='[federated.13msmxh0ab6xcl10848zu1718maw].[avg:min_dps_mean_delay:qk]' />
+            </encodings>
+            <customized-tooltip>
+              <formatted-text>
+                <run fontcolor='#787878'>Local Time:&#9;</run>
+                <run bold='true'><![CDATA[<[federated.13msmxh0ab6xcl10848zu1718maw].[none:Calculation_3055129402128461840:qk]>]]></run>
+                <run>Æ&#10;</run>
+                <run fontcolor='#787878'>Avg Active Orders:&#9;</run>
+                <run bold='true'><![CDATA[<[federated.13msmxh0ab6xcl10848zu1718maw].[avg:active_orders:qk]>]]></run>
+                <run>Æ&#10;</run>
+                <run fontcolor='#787878'>Avg Couriers:&#9;</run>
+                <run bold='true'><![CDATA[<[federated.13msmxh0ab6xcl10848zu1718maw].[avg:couriers_count:qk]>]]></run>
+                <run>Æ&#10;</run>
+                <run fontcolor='#787878'>Active Orders/Courier:&#9;</run>
+                <run bold='true'><![CDATA[<[federated.13msmxh0ab6xcl10848zu1718maw].[usr:Calculation_3055129402155204630:qk]>]]></run>
+                <run>Æ&#10;</run>
+                <run fontcolor='#787878'>Delivered Orders:&#9;</run>
+                <run bold='true'><![CDATA[<[federated.13msmxh0ab6xcl10848zu1718maw].[sum:delivered_orders:qk]>]]></run>
+                <run>Æ&#10;</run>
+                <run fontcolor='#787878'>Placed Orders:&#9;</run>
+                <run bold='true'><![CDATA[<[federated.13msmxh0ab6xcl10848zu1718maw].[sum:placed_orders:qk]>]]></run>
+                <run>Æ&#10;</run>
+                <run fontcolor='#787878'>Surge %:&#9;</run>
+                <run bold='true'><![CDATA[<[federated.13msmxh0ab6xcl10848zu1718maw].[usr:Calculation_3055129402132221969:qk]>]]></run>
+                <run>Æ&#10;</run>
+                <run fontcolor='#787878'>Avg Mean Delay:&#9;</run>
+                <run bold='true'><![CDATA[<[federated.13msmxh0ab6xcl10848zu1718maw].[avg:mean_delay:qk]>]]></run>
+                <run>Æ&#10;</run>
+                <run fontcolor='#787878'>Avg DPS Mean Delay:&#9;</run>
+                <run bold='true'><![CDATA[<[federated.13msmxh0ab6xcl10848zu1718maw].[avg:avg_dps_mean_delay:qk]> (<[federated.13msmxh0ab6xcl10848zu1718maw].[avg:min_dps_mean_delay:qk]>-<[federated.13msmxh0ab6xcl10848zu1718maw].[avg:max_dps_mean_delay:qk]>)]]></run>
+              </formatted-text>
+            </customized-tooltip>
+            <style>
+              <style-rule element='datalabel'>
+                <format attr='color-mode' value='match' />
+              </style-rule>
+              <style-rule element='mark'>
+                <format attr='line-interpolation' value='linear' />
+                <format attr='mark-labels-show' value='true' />
+                <format attr='mark-labels-mode' value='highlight' />
+                <format attr='mark-labels-cull' value='true' />
+              </style-rule>
+            </style>
+          </pane>
+        </panes>
+        <rows>([federated.13msmxh0ab6xcl10848zu1718maw].[avg:mean_delay:qk] + [federated.13msmxh0ab6xcl10848zu1718maw].[Multiple Values])</rows>
+        <cols>[federated.13msmxh0ab6xcl10848zu1718maw].[none:Calculation_3055129402128461840:qk]</cols>
+      </table>
+      <simple-id uuid='{FAD5B831-72A9-4620-A7A9-6050042689E3}' />
+    </worksheet>
+    <worksheet name='Surge (4)'>
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='Surge Components' name='federated.13msmxh0ab6xcl10848zu1718maw' />
+            <datasource name='Parameters' />
+          </datasources>
+          <datasource-dependencies datasource='Parameters'>
+            <column caption='minutes buckets' datatype='integer' default-format='*# \m\i\n' name='[country_code Parameter]' param-domain-type='any' role='measure' type='quantitative' value='15'>
+              <calculation class='tableau' formula='15' />
+            </column>
+          </datasource-dependencies>
+          <datasource-dependencies datasource='federated.13msmxh0ab6xcl10848zu1718maw'>
+            <column caption='Bucketed Local Time' datatype='datetime' name='[Calculation_3055129402128461840]' role='dimension' type='ordinal'>
+              <calculation class='tableau' formula='DATETIME(INT(FLOAT([local_created_at_bucket]) * (24 * 60 / [Parameters].[country_code Parameter])) / (24 * 60 / [Parameters].[country_code Parameter]))' />
+            </column>
+            <column caption='Surge %' datatype='real' default-format='p0.0%' name='[Calculation_3055129402132221969]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='SUM([sum_dps_surge_fee_eur])/SUM([sum_dps_travel_time_fee_eur])' />
+            </column>
+            <column caption='Active Orders/Courier' datatype='real' name='[Calculation_3055129402155204630]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='SUM([active_orders])/SUM([couriers_count])' />
+            </column>
+            <column datatype='integer' name='[active_orders]' role='measure' type='quantitative' />
+            <column-instance column='[active_orders]' derivation='Avg' name='[avg:active_orders:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[avg_dps_mean_delay]' derivation='Avg' name='[avg:avg_dps_mean_delay:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[couriers_count]' derivation='Avg' name='[avg:couriers_count:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[max_dps_mean_delay]' derivation='Avg' name='[avg:max_dps_mean_delay:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[mean_delay]' derivation='Avg' name='[avg:mean_delay:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[min_dps_mean_delay]' derivation='Avg' name='[avg:min_dps_mean_delay:qk]' pivot='key' type='quantitative' />
+            <column datatype='real' name='[avg_dps_mean_delay]' role='measure' type='quantitative' />
+            <column datatype='integer' name='[couriers_count]' role='measure' type='quantitative' />
+            <column datatype='integer' name='[delivered_orders]' role='measure' type='quantitative' />
+            <column-instance column='[Calculation_3055129402128461840]' derivation='Hour' name='[hr:Calculation_3055129402128461840:ok]' pivot='key' type='ordinal' />
+            <column datatype='datetime' name='[local_created_at_bucket]' role='dimension' type='ordinal' />
+            <column datatype='real' name='[max_dps_mean_delay]' role='measure' type='quantitative' />
+            <column datatype='real' name='[mean_delay]' role='measure' type='quantitative' />
+            <column datatype='real' name='[min_dps_mean_delay]' role='measure' type='quantitative' />
+            <column-instance column='[Calculation_3055129402128461840]' derivation='None' name='[none:Calculation_3055129402128461840:qk]' pivot='key' type='quantitative' />
+            <column datatype='integer' name='[placed_orders]' role='measure' type='quantitative' />
+            <column-instance column='[delivered_orders]' derivation='Sum' name='[sum:delivered_orders:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[placed_orders]' derivation='Sum' name='[sum:placed_orders:qk]' pivot='key' type='quantitative' />
+            <column datatype='real' name='[sum_dps_surge_fee_eur]' role='measure' type='quantitative' />
+            <column datatype='real' name='[sum_dps_travel_time_fee_eur]' role='measure' type='quantitative' />
+            <column-instance column='[Calculation_3055129402132221969]' derivation='User' name='[usr:Calculation_3055129402132221969:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[Calculation_3055129402155204630]' derivation='User' name='[usr:Calculation_3055129402155204630:qk]' pivot='key' type='quantitative' />
+          </datasource-dependencies>
+          <manual-sort column='[federated.13msmxh0ab6xcl10848zu1718maw].[:Measure Names]' direction='ASC'>
+            <dictionary>
+              <bucket>&quot;[federated.13msmxh0ab6xcl10848zu1718maw].[avg:mean_delay:qk]&quot;</bucket>
+              <bucket>&quot;[federated.13msmxh0ab6xcl10848zu1718maw].[avg:active_orders:qk]&quot;</bucket>
+              <bucket>&quot;[federated.13msmxh0ab6xcl10848zu1718maw].[avg:couriers_count:qk]&quot;</bucket>
+              <bucket>&quot;[federated.13msmxh0ab6xcl10848zu1718maw].[avg:avg_dps_mean_delay:qk]&quot;</bucket>
+              <bucket>&quot;[federated.13msmxh0ab6xcl10848zu1718maw].[avg:max_dps_mean_delay:qk]&quot;</bucket>
+              <bucket>&quot;[federated.13msmxh0ab6xcl10848zu1718maw].[avg:min_dps_mean_delay:qk]&quot;</bucket>
+              <bucket>&quot;[federated.13msmxh0ab6xcl10848zu1718maw].[usr:Calculation_3055129402132221969:qk]&quot;</bucket>
+              <bucket>&quot;[federated.13msmxh0ab6xcl10848zu1718maw].[sum:delivered_orders:qk]&quot;</bucket>
+              <bucket>&quot;[federated.13msmxh0ab6xcl10848zu1718maw].[sum:placed_orders:qk]&quot;</bucket>
+            </dictionary>
+          </manual-sort>
+          <filter class='categorical' column='[federated.13msmxh0ab6xcl10848zu1718maw].[hr:Calculation_3055129402128461840:ok]' filter-group='3'>
+            <groupfilter function='union' user:ui-domain='relevant' user:ui-enumeration='inclusive' user:ui-marker='enumerate'>
+              <groupfilter function='member' level='[hr:Calculation_3055129402128461840:ok]' member='10' />
+              <groupfilter function='member' level='[hr:Calculation_3055129402128461840:ok]' member='11' />
+              <groupfilter function='member' level='[hr:Calculation_3055129402128461840:ok]' member='12' />
+              <groupfilter function='member' level='[hr:Calculation_3055129402128461840:ok]' member='13' />
+              <groupfilter function='member' level='[hr:Calculation_3055129402128461840:ok]' member='14' />
+            </groupfilter>
+          </filter>
+          <slices>
+            <column>[federated.13msmxh0ab6xcl10848zu1718maw].[hr:Calculation_3055129402128461840:ok]</column>
+          </slices>
+          <aggregation value='true' />
+        </view>
+        <style>
+          <style-rule element='axis'>
+            <encoding attr='space' class='0' field='[federated.13msmxh0ab6xcl10848zu1718maw].[avg:couriers_count:qk]' field-type='quantitative' fold='true' scope='rows' synchronized='true' type='space' />
+            <format attr='title' class='0' field='[federated.13msmxh0ab6xcl10848zu1718maw].[none:Calculation_3055129402128461840:qk]' scope='cols' value='' />
+          </style-rule>
+          <style-rule element='label'>
+            <format attr='text-format' field='[federated.13msmxh0ab6xcl10848zu1718maw].[usr:Calculation_3055129402155204630:qk]' value='n#,##0.00;-#,##0.00' />
+          </style-rule>
+          <style-rule element='legend'>
+            <format attr='col-width' field='[federated.13msmxh0ab6xcl10848zu1718maw].[:Measure Names]' value='220' />
+          </style-rule>
+        </style>
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Automatic' />
+            <encodings>
+              <color column='[federated.13msmxh0ab6xcl10848zu1718maw].[:Measure Names]' />
+              <tooltip column='[federated.13msmxh0ab6xcl10848zu1718maw].[usr:Calculation_3055129402132221969:qk]' />
+              <tooltip column='[federated.13msmxh0ab6xcl10848zu1718maw].[usr:Calculation_3055129402155204630:qk]' />
+              <tooltip column='[federated.13msmxh0ab6xcl10848zu1718maw].[avg:active_orders:qk]' />
+              <tooltip column='[federated.13msmxh0ab6xcl10848zu1718maw].[avg:couriers_count:qk]' />
+              <tooltip column='[federated.13msmxh0ab6xcl10848zu1718maw].[sum:placed_orders:qk]' />
+              <tooltip column='[federated.13msmxh0ab6xcl10848zu1718maw].[sum:delivered_orders:qk]' />
+              <tooltip column='[federated.13msmxh0ab6xcl10848zu1718maw].[avg:mean_delay:qk]' />
+              <tooltip column='[federated.13msmxh0ab6xcl10848zu1718maw].[avg:avg_dps_mean_delay:qk]' />
+              <tooltip column='[federated.13msmxh0ab6xcl10848zu1718maw].[avg:max_dps_mean_delay:qk]' />
+              <tooltip column='[federated.13msmxh0ab6xcl10848zu1718maw].[avg:min_dps_mean_delay:qk]' />
+            </encodings>
+            <customized-tooltip>
+              <formatted-text>
+                <run fontcolor='#787878'>Local Time:&#9;</run>
+                <run bold='true'><![CDATA[<[federated.13msmxh0ab6xcl10848zu1718maw].[none:Calculation_3055129402128461840:qk]>]]></run>
+                <run>Æ&#10;</run>
+                <run fontcolor='#787878'>Avg Active Orders:&#9;</run>
+                <run bold='true'><![CDATA[<[federated.13msmxh0ab6xcl10848zu1718maw].[avg:active_orders:qk]>]]></run>
+                <run>Æ&#10;</run>
+                <run fontcolor='#787878'>Avg Couriers:&#9;</run>
+                <run bold='true'><![CDATA[<[federated.13msmxh0ab6xcl10848zu1718maw].[avg:couriers_count:qk]>]]></run>
+                <run>Æ&#10;</run>
+                <run fontcolor='#787878'>Active Orders/Courier:&#9;</run>
+                <run bold='true'><![CDATA[<[federated.13msmxh0ab6xcl10848zu1718maw].[usr:Calculation_3055129402155204630:qk]>]]></run>
+                <run>Æ&#10;</run>
+                <run fontcolor='#787878'>Delivered Orders:&#9;</run>
+                <run bold='true'><![CDATA[<[federated.13msmxh0ab6xcl10848zu1718maw].[sum:delivered_orders:qk]>]]></run>
+                <run>Æ&#10;</run>
+                <run fontcolor='#787878'>Placed Orders:&#9;</run>
+                <run bold='true'><![CDATA[<[federated.13msmxh0ab6xcl10848zu1718maw].[sum:placed_orders:qk]>]]></run>
+                <run>Æ&#10;</run>
+                <run fontcolor='#787878'>Surge %:&#9;</run>
+                <run bold='true'><![CDATA[<[federated.13msmxh0ab6xcl10848zu1718maw].[usr:Calculation_3055129402132221969:qk]>]]></run>
+                <run>Æ&#10;</run>
+                <run fontcolor='#787878'>Avg Mean Delay:&#9;</run>
+                <run bold='true'><![CDATA[<[federated.13msmxh0ab6xcl10848zu1718maw].[avg:mean_delay:qk]>]]></run>
+                <run>Æ&#10;</run>
+                <run fontcolor='#787878'>Avg DPS Mean Delay:&#9;</run>
+                <run bold='true'><![CDATA[<[federated.13msmxh0ab6xcl10848zu1718maw].[avg:avg_dps_mean_delay:qk]> (<[federated.13msmxh0ab6xcl10848zu1718maw].[avg:min_dps_mean_delay:qk]>-<[federated.13msmxh0ab6xcl10848zu1718maw].[avg:max_dps_mean_delay:qk]>)]]></run>
+              </formatted-text>
+            </customized-tooltip>
+            <style>
+              <style-rule element='datalabel'>
+                <format attr='color-mode' value='match' />
+              </style-rule>
+              <style-rule element='mark'>
+                <format attr='line-interpolation' value='linear' />
+                <format attr='mark-labels-show' value='true' />
+                <format attr='mark-labels-mode' value='highlight' />
+                <format attr='mark-labels-cull' value='true' />
+              </style-rule>
+            </style>
+          </pane>
+          <pane id='2' selection-relaxation-option='selection-relaxation-allow' y-axis-name='[federated.13msmxh0ab6xcl10848zu1718maw].[avg:active_orders:qk]'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Automatic' />
+            <encodings>
+              <color column='[federated.13msmxh0ab6xcl10848zu1718maw].[:Measure Names]' />
+              <tooltip column='[federated.13msmxh0ab6xcl10848zu1718maw].[usr:Calculation_3055129402132221969:qk]' />
+              <tooltip column='[federated.13msmxh0ab6xcl10848zu1718maw].[usr:Calculation_3055129402155204630:qk]' />
+              <tooltip column='[federated.13msmxh0ab6xcl10848zu1718maw].[avg:active_orders:qk]' />
+              <tooltip column='[federated.13msmxh0ab6xcl10848zu1718maw].[avg:couriers_count:qk]' />
+              <tooltip column='[federated.13msmxh0ab6xcl10848zu1718maw].[sum:placed_orders:qk]' />
+              <tooltip column='[federated.13msmxh0ab6xcl10848zu1718maw].[sum:delivered_orders:qk]' />
+              <tooltip column='[federated.13msmxh0ab6xcl10848zu1718maw].[avg:mean_delay:qk]' />
+              <tooltip column='[federated.13msmxh0ab6xcl10848zu1718maw].[avg:avg_dps_mean_delay:qk]' />
+              <tooltip column='[federated.13msmxh0ab6xcl10848zu1718maw].[avg:max_dps_mean_delay:qk]' />
+              <tooltip column='[federated.13msmxh0ab6xcl10848zu1718maw].[avg:min_dps_mean_delay:qk]' />
+            </encodings>
+            <customized-tooltip>
+              <formatted-text>
+                <run fontcolor='#787878'>Local Time:&#9;</run>
+                <run bold='true'><![CDATA[<[federated.13msmxh0ab6xcl10848zu1718maw].[none:Calculation_3055129402128461840:qk]>]]></run>
+                <run>Æ&#10;</run>
+                <run fontcolor='#787878'>Avg Active Orders:&#9;</run>
+                <run bold='true'><![CDATA[<[federated.13msmxh0ab6xcl10848zu1718maw].[avg:active_orders:qk]>]]></run>
+                <run>Æ&#10;</run>
+                <run fontcolor='#787878'>Avg Couriers:&#9;</run>
+                <run bold='true'><![CDATA[<[federated.13msmxh0ab6xcl10848zu1718maw].[avg:couriers_count:qk]>]]></run>
+                <run>Æ&#10;</run>
+                <run fontcolor='#787878'>Active Orders/Courier:&#9;</run>
+                <run bold='true'><![CDATA[<[federated.13msmxh0ab6xcl10848zu1718maw].[usr:Calculation_3055129402155204630:qk]>]]></run>
+                <run>Æ&#10;</run>
+                <run fontcolor='#787878'>Delivered Orders:&#9;</run>
+                <run bold='true'><![CDATA[<[federated.13msmxh0ab6xcl10848zu1718maw].[sum:delivered_orders:qk]>]]></run>
+                <run>Æ&#10;</run>
+                <run fontcolor='#787878'>Placed Orders:&#9;</run>
+                <run bold='true'><![CDATA[<[federated.13msmxh0ab6xcl10848zu1718maw].[sum:placed_orders:qk]>]]></run>
+                <run>Æ&#10;</run>
+                <run fontcolor='#787878'>Surge %:&#9;</run>
+                <run bold='true'><![CDATA[<[federated.13msmxh0ab6xcl10848zu1718maw].[usr:Calculation_3055129402132221969:qk]>]]></run>
+                <run>Æ&#10;</run>
+                <run fontcolor='#787878'>Avg Mean Delay:&#9;</run>
+                <run bold='true'><![CDATA[<[federated.13msmxh0ab6xcl10848zu1718maw].[avg:mean_delay:qk]>]]></run>
+                <run>Æ&#10;</run>
+                <run fontcolor='#787878'>Avg DPS Mean Delay:&#9;</run>
+                <run bold='true'><![CDATA[<[federated.13msmxh0ab6xcl10848zu1718maw].[avg:avg_dps_mean_delay:qk]> (<[federated.13msmxh0ab6xcl10848zu1718maw].[avg:min_dps_mean_delay:qk]>-<[federated.13msmxh0ab6xcl10848zu1718maw].[avg:max_dps_mean_delay:qk]>)]]></run>
+              </formatted-text>
+            </customized-tooltip>
+            <style>
+              <style-rule element='datalabel'>
+                <format attr='color-mode' value='match' />
+              </style-rule>
+              <style-rule element='mark'>
+                <format attr='line-interpolation' value='linear' />
+                <format attr='mark-labels-show' value='true' />
+                <format attr='mark-labels-mode' value='highlight' />
+                <format attr='mark-labels-cull' value='true' />
+              </style-rule>
+            </style>
+          </pane>
+          <pane id='3' selection-relaxation-option='selection-relaxation-allow' y-axis-name='[federated.13msmxh0ab6xcl10848zu1718maw].[avg:couriers_count:qk]'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Automatic' />
+            <encodings>
+              <color column='[federated.13msmxh0ab6xcl10848zu1718maw].[:Measure Names]' />
+              <tooltip column='[federated.13msmxh0ab6xcl10848zu1718maw].[usr:Calculation_3055129402132221969:qk]' />
+              <tooltip column='[federated.13msmxh0ab6xcl10848zu1718maw].[usr:Calculation_3055129402155204630:qk]' />
+              <tooltip column='[federated.13msmxh0ab6xcl10848zu1718maw].[avg:active_orders:qk]' />
+              <tooltip column='[federated.13msmxh0ab6xcl10848zu1718maw].[avg:couriers_count:qk]' />
+              <tooltip column='[federated.13msmxh0ab6xcl10848zu1718maw].[sum:placed_orders:qk]' />
+              <tooltip column='[federated.13msmxh0ab6xcl10848zu1718maw].[sum:delivered_orders:qk]' />
+              <tooltip column='[federated.13msmxh0ab6xcl10848zu1718maw].[avg:mean_delay:qk]' />
+              <tooltip column='[federated.13msmxh0ab6xcl10848zu1718maw].[avg:avg_dps_mean_delay:qk]' />
+              <tooltip column='[federated.13msmxh0ab6xcl10848zu1718maw].[avg:max_dps_mean_delay:qk]' />
+              <tooltip column='[federated.13msmxh0ab6xcl10848zu1718maw].[avg:min_dps_mean_delay:qk]' />
+            </encodings>
+            <customized-tooltip>
+              <formatted-text>
+                <run fontcolor='#787878'>Local Time:&#9;</run>
+                <run bold='true'><![CDATA[<[federated.13msmxh0ab6xcl10848zu1718maw].[none:Calculation_3055129402128461840:qk]>]]></run>
+                <run>Æ&#10;</run>
+                <run fontcolor='#787878'>Avg Active Orders:&#9;</run>
+                <run bold='true'><![CDATA[<[federated.13msmxh0ab6xcl10848zu1718maw].[avg:active_orders:qk]>]]></run>
+                <run>Æ&#10;</run>
+                <run fontcolor='#787878'>Avg Couriers:&#9;</run>
+                <run bold='true'><![CDATA[<[federated.13msmxh0ab6xcl10848zu1718maw].[avg:couriers_count:qk]>]]></run>
+                <run>Æ&#10;</run>
+                <run fontcolor='#787878'>Active Orders/Courier:&#9;</run>
+                <run bold='true'><![CDATA[<[federated.13msmxh0ab6xcl10848zu1718maw].[usr:Calculation_3055129402155204630:qk]>]]></run>
+                <run>Æ&#10;</run>
+                <run fontcolor='#787878'>Delivered Orders:&#9;</run>
+                <run bold='true'><![CDATA[<[federated.13msmxh0ab6xcl10848zu1718maw].[sum:delivered_orders:qk]>]]></run>
+                <run>Æ&#10;</run>
+                <run fontcolor='#787878'>Placed Orders:&#9;</run>
+                <run bold='true'><![CDATA[<[federated.13msmxh0ab6xcl10848zu1718maw].[sum:placed_orders:qk]>]]></run>
+                <run>Æ&#10;</run>
+                <run fontcolor='#787878'>Surge %:&#9;</run>
+                <run bold='true'><![CDATA[<[federated.13msmxh0ab6xcl10848zu1718maw].[usr:Calculation_3055129402132221969:qk]>]]></run>
+                <run>Æ&#10;</run>
+                <run fontcolor='#787878'>Avg Mean Delay:&#9;</run>
+                <run bold='true'><![CDATA[<[federated.13msmxh0ab6xcl10848zu1718maw].[avg:mean_delay:qk]>]]></run>
+                <run>Æ&#10;</run>
+                <run fontcolor='#787878'>Avg DPS Mean Delay:&#9;</run>
+                <run bold='true'><![CDATA[<[federated.13msmxh0ab6xcl10848zu1718maw].[avg:avg_dps_mean_delay:qk]> (<[federated.13msmxh0ab6xcl10848zu1718maw].[avg:min_dps_mean_delay:qk]>-<[federated.13msmxh0ab6xcl10848zu1718maw].[avg:max_dps_mean_delay:qk]>)]]></run>
+              </formatted-text>
+            </customized-tooltip>
+            <style>
+              <style-rule element='datalabel'>
+                <format attr='color-mode' value='match' />
+              </style-rule>
+              <style-rule element='mark'>
+                <format attr='line-interpolation' value='linear' />
+                <format attr='mark-labels-show' value='true' />
+                <format attr='mark-labels-mode' value='highlight' />
+                <format attr='mark-labels-cull' value='true' />
+              </style-rule>
+            </style>
+          </pane>
+        </panes>
+        <rows>([federated.13msmxh0ab6xcl10848zu1718maw].[avg:active_orders:qk] + [federated.13msmxh0ab6xcl10848zu1718maw].[avg:couriers_count:qk])</rows>
+        <cols>[federated.13msmxh0ab6xcl10848zu1718maw].[none:Calculation_3055129402128461840:qk]</cols>
+      </table>
+      <simple-id uuid='{E19F2902-7BC9-444F-8927-660954760CC5}' />
+    </worksheet>
+  </worksheets>
+  <dashboards>
+    <dashboard _.fcp.AccessibleZoneTabOrder.true...enable-sort-zone-taborder='true' name='Surge Components'>
+      <repository-location id='SurgeComponents' path='/t/GlobalStandardReporting/workbooks/SurgevsDemandAnalysis' revision='' site='GlobalStandardReporting' />
+      <style />
+      <size maxheight='800' maxwidth='1400' minheight='800' minwidth='1400' sizing-mode='fixed' />
+      <datasources>
+        <datasource name='Parameters' />
+        <datasource caption='Surge Components' name='federated.13msmxh0ab6xcl10848zu1718maw' />
+      </datasources>
+      <datasource-dependencies datasource='Parameters'>
+        <column caption='Date from' datatype='date' name='[Parameter 1]' param-domain-type='any' role='measure' type='quantitative' value='#2025-03-03#'>
+          <calculation class='tableau' formula='#2025-03-03#' />
+        </column>
+        <column caption='country_code' datatype='string' name='[Parameter 3]' param-domain-type='any' role='measure' type='nominal' value='&quot;sg&quot;'>
+          <calculation class='tableau' formula='&quot;sg&quot;' />
+        </column>
+        <column caption='zone_id' datatype='integer' name='[Parameter 4]' param-domain-type='any' role='measure' type='quantitative' value='7'>
+          <calculation class='tableau' formula='7' />
+        </column>
+        <column caption='Days' datatype='integer' name='[Parameter 5]' param-domain-type='any' role='measure' type='quantitative' value='0'>
+          <calculation class='tableau' formula='0' />
+        </column>
+        <column caption='minutes buckets' datatype='integer' default-format='*# \m\i\n' name='[country_code Parameter]' param-domain-type='any' role='measure' type='quantitative' value='15'>
+          <calculation class='tableau' formula='15' />
+        </column>
+      </datasource-dependencies>
+      <datasource-dependencies datasource='federated.13msmxh0ab6xcl10848zu1718maw'>
+        <column caption='Bucketed Local Time' datatype='datetime' name='[Calculation_3055129402128461840]' role='dimension' type='ordinal'>
+          <calculation class='tableau' formula='DATETIME(INT(FLOAT([local_created_at_bucket]) * (24 * 60 / [Parameters].[country_code Parameter])) / (24 * 60 / [Parameters].[country_code Parameter]))' />
+        </column>
+        <column-instance column='[Calculation_3055129402128461840]' derivation='Hour' name='[hr:Calculation_3055129402128461840:ok]' pivot='key' type='ordinal' />
+      </datasource-dependencies>
+      <zones>
+        <zone h='100000' id='4' type-v2='layout-basic' w='100000' x='0' y='0'>
+          <zone h='94000' id='7' param='horz' type-v2='layout-flow' w='98858' x='571' y='5000'>
+            <zone h='94000' id='5' type-v2='layout-basic' w='85644' x='571' y='5000'>
+              <zone h='94000' id='33' param='vert' type-v2='layout-flow' w='85644' x='571' y='5000'>
+                <zone h='42125' id='3' name='Surge' show-title='false' w='85644' x='571' y='5000'>
+                  <layout-cache minheight='131' minwidth='247' type-h='scalable' type-w='scalable' />
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                  </zone-style>
+                </zone>
+                <zone fixed-size='22' h='3750' id='11' is-fixed='true' name='Surge' pane-specification-id='7' param='[federated.13msmxh0ab6xcl10848zu1718maw].[:Measure Names]' show-title='false' type-v2='color' w='85644' x='571' y='47125'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                  </zone-style>
+                </zone>
+                <zone h='42125' id='27' layout-strategy-id='distribute-evenly' param='horz' type-v2='layout-flow' w='85644' x='571' y='50875'>
+                  <zone h='42125' id='28' name='Surge (3)' show-title='false' w='28572' x='571' y='50875'>
+                    <layout-cache minheight='131' minwidth='205' type-h='scalable' type-w='scalable' />
+                    <zone-style>
+                      <format attr='border-color' value='#000000' />
+                      <format attr='border-style' value='none' />
+                      <format attr='border-width' value='0' />
+                      <format attr='margin' value='4' />
+                    </zone-style>
+                  </zone>
+                  <zone h='42125' id='30' name='Surge (4)' show-title='false' w='28571' x='29143' y='50875'>
+                    <layout-cache minheight='131' minwidth='219' type-h='scalable' type-w='scalable' />
+                    <zone-style>
+                      <format attr='border-color' value='#000000' />
+                      <format attr='border-style' value='none' />
+                      <format attr='border-width' value='0' />
+                      <format attr='margin' value='4' />
+                    </zone-style>
+                  </zone>
+                  <zone h='42125' id='20' name='Surge (2)' show-title='false' w='28500' x='57714' y='50875'>
+                    <layout-cache minheight='131' minwidth='219' type-h='scalable' type-w='scalable' />
+                    <zone-style>
+                      <format attr='border-color' value='#000000' />
+                      <format attr='border-style' value='none' />
+                      <format attr='border-width' value='0' />
+                      <format attr='margin' value='4' />
+                    </zone-style>
+                  </zone>
+                </zone>
+                <zone fixed-size='48' h='6000' id='24' is-fixed='true' layout-strategy-id='distribute-evenly' param='horz' type-v2='layout-flow' w='85644' x='571' y='93000'>
+                  <zone h='6000' id='31' leg-item-layout='grid' name='Surge (3)' pane-specification-id='8' param='[federated.13msmxh0ab6xcl10848zu1718maw].[:Measure Names]' show-title='false' type-v2='color' w='28572' x='571' y='93000'>
+                    <zone-style>
+                      <format attr='border-color' value='#000000' />
+                      <format attr='border-style' value='none' />
+                      <format attr='border-width' value='0' />
+                      <format attr='margin' value='4' />
+                    </zone-style>
+                  </zone>
+                  <zone h='6000' id='32' name='Surge (4)' pane-specification-id='2' param='[federated.13msmxh0ab6xcl10848zu1718maw].[:Measure Names]' show-title='false' type-v2='color' w='28571' x='29143' y='93000'>
+                    <zone-style>
+                      <format attr='border-color' value='#000000' />
+                      <format attr='border-style' value='none' />
+                      <format attr='border-width' value='0' />
+                      <format attr='margin' value='4' />
+                    </zone-style>
+                  </zone>
+                  <zone h='6000' id='23' name='Surge (2)' pane-specification-id='4' param='[federated.13msmxh0ab6xcl10848zu1718maw].[:Measure Names]' show-title='false' type-v2='color' w='28500' x='57714' y='93000'>
+                    <zone-style>
+                      <format attr='border-color' value='#000000' />
+                      <format attr='border-style' value='none' />
+                      <format attr='border-width' value='0' />
+                      <format attr='margin' value='4' />
+                    </zone-style>
+                  </zone>
+                </zone>
+              </zone>
+            </zone>
+            <zone fixed-size='185' h='94000' id='6' is-fixed='true' param='vert' type-v2='layout-flow' w='13214' x='86215' y='5000'>
+              <zone h='6500' id='18' mode='type_in' param='[Parameters].[Parameter 3]' type-v2='paramctrl' w='13214' x='86215' y='5000'>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+              <zone h='6500' id='19' mode='type_in' param='[Parameters].[Parameter 4]' type-v2='paramctrl' w='13214' x='86215' y='11500'>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+              <zone h='6500' id='12' mode='type_in' param='[Parameters].[country_code Parameter]' type-v2='paramctrl' w='13214' x='86215' y='18000'>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+              <zone h='6500' id='15' mode='datetime' param='[Parameters].[Parameter 1]' type-v2='paramctrl' w='13214' x='86215' y='24500'>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+              <zone custom-title='true' h='6500' id='34' mode='type_in' param='[Parameters].[Parameter 5]' type-v2='paramctrl' w='13214' x='86215' y='31000'>
+                <formatted-text>
+                  <run>Additional Days</run>
+                </formatted-text>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+              <zone h='6500' id='26' mode='checkdropdown' name='Surge (2)' param='[federated.13msmxh0ab6xcl10848zu1718maw].[hr:Calculation_3055129402128461840:ok]' show-apply='true' type-v2='filter' values='relevant' w='13214' x='86215' y='37500'>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+              <zone forceUpdate='true' h='52000' id='17' type-v2='text' w='13214' x='86215' y='44000'>
+                <formatted-text>
+                  <run>Shows zone stats, calculates the number of active orders, and the avg Surge %. Data relative only to OD and successful orders.
+
+- Placed orders are bucketed based on order_placed_at.
+- Delivered orders are bucketed based on order_report_time.
+- Active orders are bucketed based on both order_placed_at and order_report_time.
+- Mean delay and couriers count are based on created_at_bucket.
+- Surge % and DPS mean delay are based on dps_session_timestamp (if unavailable, dps_session_id_created_at or order_placed_at - 8 minutes)</run>
+                </formatted-text>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+            </zone>
+          </zone>
+          <zone h='4000' id='25' type-v2='text' w='98858' x='571' y='1000'>
+            <formatted-text>
+              <run bold='true' fontname='Tableau Medium' fontsize='15'>Surge components</run>
+            </formatted-text>
+            <zone-style>
+              <format attr='border-color' value='#000000' />
+              <format attr='border-style' value='none' />
+              <format attr='border-width' value='0' />
+              <format attr='margin' value='4' />
+            </zone-style>
+          </zone>
+          <zone-style>
+            <format attr='border-color' value='#000000' />
+            <format attr='border-style' value='none' />
+            <format attr='border-width' value='0' />
+            <format attr='margin' value='8' />
+          </zone-style>
+        </zone>
+      </zones>
+      <devicelayouts>
+        <devicelayout auto-generated='true' name='Phone'>
+          <size maxheight='2000' minheight='2000' sizing-mode='vscroll' />
+          <zones>
+            <zone h='100000' id='36' type-v2='layout-basic' w='100000' x='0' y='0'>
+              <zone h='98000' id='35' param='vert' type-v2='layout-flow' w='98858' x='571' y='1000'>
+                <zone h='4000' id='25' type-v2='text' w='98858' x='571' y='1000'>
+                  <formatted-text>
+                    <run bold='true' fontname='Tableau Medium' fontsize='15'>Surge components</run>
+                  </formatted-text>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone fixed-size='280' h='42125' id='3' is-fixed='true' name='Surge' show-title='false' w='85644' x='571' y='5000'>
+                  <layout-cache minheight='131' minwidth='247' type-h='scalable' type-w='scalable' />
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone fixed-size='22' h='3750' id='11' name='Surge' pane-specification-id='7' param='[federated.13msmxh0ab6xcl10848zu1718maw].[:Measure Names]' show-title='false' type-v2='color' w='85644' x='571' y='47125'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone h='6500' id='18' mode='type_in' param='[Parameters].[Parameter 3]' type-v2='paramctrl' w='13214' x='86215' y='5000'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone h='6500' id='19' mode='type_in' param='[Parameters].[Parameter 4]' type-v2='paramctrl' w='13214' x='86215' y='11500'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone h='6500' id='12' mode='type_in' param='[Parameters].[country_code Parameter]' type-v2='paramctrl' w='13214' x='86215' y='18000'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone h='6500' id='15' mode='datetime' param='[Parameters].[Parameter 1]' type-v2='paramctrl' w='13214' x='86215' y='24500'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone custom-title='true' h='6500' id='34' mode='type_in' param='[Parameters].[Parameter 5]' type-v2='paramctrl' w='13214' x='86215' y='31000'>
+                  <formatted-text>
+                    <run>Additional Days</run>
+                  </formatted-text>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone forceUpdate='true' h='52000' id='17' type-v2='text' w='13214' x='86215' y='44000'>
+                  <formatted-text>
+                    <run>Shows zone stats, calculates the number of active orders, and the avg Surge %. Data relative only to OD and successful orders.
+
+- Placed orders are bucketed based on order_placed_at.
+- Delivered orders are bucketed based on order_report_time.
+- Active orders are bucketed based on both order_placed_at and order_report_time.
+- Mean delay and couriers count are based on created_at_bucket.
+- Surge % and DPS mean delay are based on dps_session_timestamp (if unavailable, dps_session_id_created_at or order_placed_at - 8 minutes)</run>
+                  </formatted-text>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone fixed-size='280' h='42125' id='28' is-fixed='true' name='Surge (3)' show-title='false' w='28572' x='571' y='50875'>
+                  <layout-cache minheight='131' minwidth='205' type-h='scalable' type-w='scalable' />
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone h='6000' id='31' leg-item-layout='grid' name='Surge (3)' pane-specification-id='8' param='[federated.13msmxh0ab6xcl10848zu1718maw].[:Measure Names]' show-title='false' type-v2='color' w='28572' x='571' y='93000'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone fixed-size='280' h='42125' id='30' is-fixed='true' name='Surge (4)' show-title='false' w='28571' x='29143' y='50875'>
+                  <layout-cache minheight='131' minwidth='219' type-h='scalable' type-w='scalable' />
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone h='6000' id='32' name='Surge (4)' pane-specification-id='2' param='[federated.13msmxh0ab6xcl10848zu1718maw].[:Measure Names]' show-title='false' type-v2='color' w='28571' x='29143' y='93000'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone h='6500' id='26' mode='checkdropdown' name='Surge (2)' param='[federated.13msmxh0ab6xcl10848zu1718maw].[hr:Calculation_3055129402128461840:ok]' show-apply='true' type-v2='filter' values='relevant' w='13214' x='86215' y='37500'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone fixed-size='280' h='42125' id='20' is-fixed='true' name='Surge (2)' show-title='false' w='28500' x='57714' y='50875'>
+                  <layout-cache minheight='131' minwidth='219' type-h='scalable' type-w='scalable' />
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone h='6000' id='23' name='Surge (2)' pane-specification-id='4' param='[federated.13msmxh0ab6xcl10848zu1718maw].[:Measure Names]' show-title='false' type-v2='color' w='28500' x='57714' y='93000'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+              </zone>
+              <zone-style>
+                <format attr='border-color' value='#000000' />
+                <format attr='border-style' value='none' />
+                <format attr='border-width' value='0' />
+                <format attr='margin' value='8' />
+              </zone-style>
+            </zone>
+          </zones>
+        </devicelayout>
+      </devicelayouts>
+      <simple-id uuid='{B1A1F937-F0C1-4038-8339-42CCB06FDA7D}' />
+    </dashboard>
+  </dashboards>
+  <windows source-height='30'>
+    <window class='dashboard' maximized='true' name='Surge Components'>
+      <viewpoints>
+        <viewpoint name='Surge'>
+          <zoom type='entire-view' />
+        </viewpoint>
+        <viewpoint name='Surge (2)'>
+          <zoom type='entire-view' />
+        </viewpoint>
+        <viewpoint name='Surge (3)'>
+          <zoom type='entire-view' />
+        </viewpoint>
+        <viewpoint name='Surge (4)'>
+          <zoom type='entire-view' />
+        </viewpoint>
+      </viewpoints>
+      <active id='-1' />
+      <simple-id uuid='{4E94DED7-56B6-4EF9-B5FF-0593B6DCFE29}' />
+    </window>
+    <window class='worksheet' hidden='true' name='Surge'>
+      <cards>
+        <edge name='left'>
+          <strip size='160'>
+            <card type='pages' />
+            <card type='filters' />
+            <card type='marks' />
+          </strip>
+        </edge>
+        <edge name='top'>
+          <strip size='2147483647'>
+            <card type='columns' />
+          </strip>
+          <strip size='2147483647'>
+            <card type='rows' />
+          </strip>
+          <strip size='31'>
+            <card type='title' />
+          </strip>
+        </edge>
+        <edge name='right'>
+          <strip size='160'>
+            <card param='[federated.13msmxh0ab6xcl10848zu1718maw].[:Measure Names]' show-apply='true' show-morefewerbutton='false' type='filter' />
+            <card pane-specification-id='7' param='[federated.13msmxh0ab6xcl10848zu1718maw].[:Measure Names]' type='color' />
+            <card mode='type_in' param='[Parameters].[country_code Parameter]' type='parameter' />
+          </strip>
+        </edge>
+      </cards>
+      <viewpoint>
+        <highlight>
+          <color-one-way>
+            <field>[federated.13msmxh0ab6xcl10848zu1718maw].[:Measure Names]</field>
+            <field>[federated.13msmxh0ab6xcl10848zu1718maw].[hr:Calculation_3055129402128461840:ok]</field>
+            <field>[federated.13msmxh0ab6xcl10848zu1718maw].[none:Calculation_3055129402134585363:qk]</field>
+            <field>[federated.13msmxh0ab6xcl10848zu1718maw].[none:Calculation_3055129402134614036:nk]</field>
+            <field>[federated.13msmxh0ab6xcl10848zu1718maw].[none:local_created_at_bucket:qk]</field>
+            <field>[federated.13msmxh0ab6xcl10848zu1718maw].[thr:Calculation_3055129402128461840:qk]</field>
+          </color-one-way>
+        </highlight>
+      </viewpoint>
+      <simple-id uuid='{FAE484B7-E722-474F-8E4E-896CB5CFBB41}' />
+    </window>
+    <window class='worksheet' hidden='true' name='Surge (2)'>
+      <cards>
+        <edge name='left'>
+          <strip size='160'>
+            <card type='pages' />
+            <card type='filters' />
+            <card type='marks' />
+            <card type='measures' />
+          </strip>
+        </edge>
+        <edge name='top'>
+          <strip size='2147483647'>
+            <card type='columns' />
+          </strip>
+          <strip size='2147483647'>
+            <card type='rows' />
+          </strip>
+          <strip size='31'>
+            <card type='title' />
+          </strip>
+        </edge>
+        <edge name='right'>
+          <strip size='160'>
+            <card pane-specification-id='4' param='[federated.13msmxh0ab6xcl10848zu1718maw].[:Measure Names]' type='color' />
+            <card mode='type_in' param='[Parameters].[country_code Parameter]' type='parameter' />
+          </strip>
+        </edge>
+      </cards>
+      <viewpoint>
+        <highlight>
+          <color-one-way>
+            <field>[federated.13msmxh0ab6xcl10848zu1718maw].[:Measure Names]</field>
+            <field>[federated.13msmxh0ab6xcl10848zu1718maw].[hr:Calculation_3055129402128461840:ok]</field>
+            <field>[federated.13msmxh0ab6xcl10848zu1718maw].[none:Calculation_3055129402134585363:qk]</field>
+            <field>[federated.13msmxh0ab6xcl10848zu1718maw].[none:Calculation_3055129402134614036:nk]</field>
+            <field>[federated.13msmxh0ab6xcl10848zu1718maw].[none:local_created_at_bucket:qk]</field>
+            <field>[federated.13msmxh0ab6xcl10848zu1718maw].[thr:Calculation_3055129402128461840:qk]</field>
+          </color-one-way>
+        </highlight>
+      </viewpoint>
+      <simple-id uuid='{DC938E88-1B32-41A2-9CBE-D7B97C30F6E3}' />
+    </window>
+    <window class='worksheet' hidden='true' name='Surge (3)'>
+      <cards>
+        <edge name='left'>
+          <strip size='160'>
+            <card type='pages' />
+            <card type='filters' />
+            <card type='marks' />
+            <card type='measures' />
+          </strip>
+        </edge>
+        <edge name='top'>
+          <strip size='2147483647'>
+            <card type='columns' />
+          </strip>
+          <strip size='2147483647'>
+            <card type='rows' />
+          </strip>
+          <strip size='31'>
+            <card type='title' />
+          </strip>
+        </edge>
+        <edge name='right'>
+          <strip size='160'>
+            <card param='[federated.13msmxh0ab6xcl10848zu1718maw].[:Measure Names]' show-apply='true' show-morefewerbutton='false' type='filter' />
+            <card pane-specification-id='8' param='[federated.13msmxh0ab6xcl10848zu1718maw].[:Measure Names]' type='color' />
+            <card mode='type_in' param='[Parameters].[country_code Parameter]' type='parameter' />
+          </strip>
+        </edge>
+      </cards>
+      <viewpoint>
+        <highlight>
+          <color-one-way>
+            <field>[federated.13msmxh0ab6xcl10848zu1718maw].[:Measure Names]</field>
+            <field>[federated.13msmxh0ab6xcl10848zu1718maw].[hr:Calculation_3055129402128461840:ok]</field>
+            <field>[federated.13msmxh0ab6xcl10848zu1718maw].[none:Calculation_3055129402134585363:qk]</field>
+            <field>[federated.13msmxh0ab6xcl10848zu1718maw].[none:Calculation_3055129402134614036:nk]</field>
+            <field>[federated.13msmxh0ab6xcl10848zu1718maw].[none:local_created_at_bucket:qk]</field>
+            <field>[federated.13msmxh0ab6xcl10848zu1718maw].[thr:Calculation_3055129402128461840:qk]</field>
+          </color-one-way>
+        </highlight>
+      </viewpoint>
+      <simple-id uuid='{F60C21A3-F9D7-42EE-8AA4-ACE855F90A1A}' />
+    </window>
+    <window class='worksheet' hidden='true' name='Surge (4)'>
+      <cards>
+        <edge name='left'>
+          <strip size='160'>
+            <card type='pages' />
+            <card type='filters' />
+            <card type='marks' />
+          </strip>
+        </edge>
+        <edge name='top'>
+          <strip size='2147483647'>
+            <card type='columns' />
+          </strip>
+          <strip size='2147483647'>
+            <card type='rows' />
+          </strip>
+          <strip size='31'>
+            <card type='title' />
+          </strip>
+        </edge>
+        <edge name='right'>
+          <strip size='160'>
+            <card pane-specification-id='2' param='[federated.13msmxh0ab6xcl10848zu1718maw].[:Measure Names]' type='color' />
+            <card mode='type_in' param='[Parameters].[country_code Parameter]' type='parameter' />
+          </strip>
+        </edge>
+      </cards>
+      <viewpoint>
+        <highlight>
+          <color-one-way>
+            <field>[federated.13msmxh0ab6xcl10848zu1718maw].[:Measure Names]</field>
+            <field>[federated.13msmxh0ab6xcl10848zu1718maw].[hr:Calculation_3055129402128461840:ok]</field>
+            <field>[federated.13msmxh0ab6xcl10848zu1718maw].[none:Calculation_3055129402134585363:qk]</field>
+            <field>[federated.13msmxh0ab6xcl10848zu1718maw].[none:Calculation_3055129402134614036:nk]</field>
+            <field>[federated.13msmxh0ab6xcl10848zu1718maw].[none:local_created_at_bucket:qk]</field>
+            <field>[federated.13msmxh0ab6xcl10848zu1718maw].[thr:Calculation_3055129402128461840:qk]</field>
+          </color-one-way>
+        </highlight>
+      </viewpoint>
+      <simple-id uuid='{1763C331-5AA7-4A30-8902-5FFAAA0E7713}' />
+    </window>
+  </windows>
+</workbook>
