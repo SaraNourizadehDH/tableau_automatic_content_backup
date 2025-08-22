@@ -1,0 +1,1994 @@
+<?xml version='1.0' encoding='utf-8' ?>
+
+<!-- build 20233.25.0106.1650                               -->
+<workbook original-version='18.1' source-build='2023.3.14 (20233.25.0106.1650)' version='18.1' xml:base='https://tableau.deliveryhero.net' xmlns:user='http://www.tableausoftware.com/xml/user'>
+  <document-format-change-manifest>
+    <_.fcp.AccessibleZoneTabOrder.true...AccessibleZoneTabOrder />
+    <_.fcp.AnimationOnByDefault.true...AnimationOnByDefault />
+    <AutoCreateAndUpdateDSDPhoneLayouts />
+    <_.fcp.MarkAnimation.true...MarkAnimation />
+    <_.fcp.ObjectModelEncapsulateLegacy.true...ObjectModelEncapsulateLegacy />
+    <_.fcp.ObjectModelExtractV2.true...ObjectModelExtractV2 />
+    <_.fcp.ObjectModelTableType.true...ObjectModelTableType />
+    <_.fcp.SchemaViewerObjectModel.true...SchemaViewerObjectModel />
+    <SetMembershipControl />
+    <SheetIdentifierTracking />
+    <SortTagCleanup />
+    <WindowsPersistSimpleIdentifiers />
+    <ZoneBackgroundTransparency />
+  </document-format-change-manifest>
+  <repository-location derived-from='https://tableau.deliveryhero.net/t/Foodora/workbooks/PDSalesforceComplianceMonthlyDRAFT?rev=1.0' id='PDSalesforceComplianceMonthlyDRAFT' path='/t/Foodora/workbooks' revision='1.1' site='Foodora' />
+  <preferences />
+  <_.fcp.AnimationOnByDefault.false...style>
+    <_.fcp.AnimationOnByDefault.false..._.fcp.MarkAnimation.true...style-rule element='animation'>
+      <_.fcp.AnimationOnByDefault.false...format attr='animation-on' value='ao-on' />
+    </_.fcp.AnimationOnByDefault.false..._.fcp.MarkAnimation.true...style-rule>
+  </_.fcp.AnimationOnByDefault.false...style>
+  <datasources>
+    <datasource caption='Reps call and meeting' inline='true' name='federated.0ukehl10s4159q12y16vy0q9bqyn' version='18.1'>
+      <connection class='federated'>
+        <named-connections>
+          <named-connection caption='BigQuery' name='bigquery.02jl4et1j0wce91c39umq034glon'>
+            <connection CATALOG='dhh---analytics-apac' EXECCATALOG='pd-data--adhoc' authentication='oauth' bq-dataset-fetch-rows='' bq-fetch-rows='' bq-fetch-tasks='' bq-large-fetch-rows='' bq-project-fetch-rows='' bq-response-rows='' class='bigquery' connection-dialect='google-sql' project='APAC Data Production' schema='sandbox_ssc' server-oauth='' username='theeranop.wongtitirote@foodpanda.co.th' workgroup-auth-mode='prompt' />
+          </named-connection>
+        </named-connections>
+        <_.fcp.ObjectModelEncapsulateLegacy.false...relation connection='bigquery.02jl4et1j0wce91c39umq034glon' name='Daily call and meeting' type='text'>WITH report_day AS (
+SELECT report_date
+FROM UNNEST(GENERATE_DATE_ARRAY(
+  DATE_TRUNC(CURRENT_DATE(), YEAR),         -- Jan 1 of current year
+  DATE_SUB(CURRENT_DATE(), INTERVAL 1 DAY), -- Yesterday
+  INTERVAL 1 DAY
+)) AS report_date
+),
+
+report_date_base AS(
+SELECT report_date,
+DATE_TRUNC(report_date, MONTH) AS report_month
+FROM report_day
+),
+
+users_monthly AS (
+  SELECT
+  users.report_date AS report_month,
+  users.country,
+  countries.global_entity_id,
+  users.full_name_internal_non_pii,
+  users.email_internal_non_pii,
+  users.sf_user_id,
+  users.central_job_role,
+  users.title,
+  users.job_role_vertical,
+  users.user_type,
+  users.account_age_snapshot,
+  users.is_active_snapshot,
+  users.is_contractor,
+  countries.region
+FROM `fulfillment-dwh-production.pandata_report.regional_apac_lead_account_opp_aggregated_users_layer` users
+INNER JOIN `fulfillment-dwh-production.pandata_curated.shared_countries` countries
+        ON users.country = countries.name
+WHERE users.report_date BETWEEN DATE_TRUNC(CURRENT_DATE(), YEAR)
+                     AND DATE_SUB(CURRENT_DATE(), INTERVAL 1 DAY)
+  AND user_type = &quot;field rep&quot;
+QUALIFY ROW_NUMBER() OVER (PARTITION BY sf_user_id, report_date ORDER BY full_name_internal_non_pii) = 1
+AND users.is_active_snapshot
+),
+
+user_base AS(
+SELECT
+report_date_base.report_date,
+report_date_base.report_month,
+country,
+users_monthly.global_entity_id,
+full_name_internal_non_pii,
+email_internal_non_pii,
+sf_user_id,
+central_job_role,
+title,
+job_role_vertical,
+user_type,
+account_age_snapshot,
+is_active_snapshot,
+is_contractor,
+region
+FROM users_monthly
+JOIN report_date_base
+ON report_date_base.report_month = users_monthly.report_month
+),
+
+task AS (
+  SELECT
+  st.id AS task_id,
+  st.accountid AS sf_account_id,
+  st.type,
+  st.global_entity_id,
+  st.activity_subject__c AS activity_subject,
+  DATETIME(st.createddate) AS created_at_utc,
+  DATETIME(st.completeddatetime) AS completed_at_utc,
+  DATE(DATETIME(st.createddate)) AS created_date,
+  st.status,
+  st.ownerid AS created_by_sf_id,
+  st.topis_discussed__c AS topic_discussed,
+  IF(activity_subject__c IN (&quot;Call - Decision maker reached&quot;, &quot;Call - Employee reached&quot;), TRUE, FALSE ) AS is_task_success
+FROM  `fulfillment-dwh-production.curated_data_shared_salesforce.task` AS st
+WHERE  DATE(st.partition_date)  &gt;&gt;= &quot;2025-01-01&quot;
+  AND type IN (&quot;Call&quot;,&quot;Meeting&quot;)
+),
+
+sf_task_final AS (
+SELECT 
+DATE(completed_at_utc) AS report_date_sf_task,
+global_entity_id,
+created_by_sf_id,
+IF( global_entity_id = &quot;FO_NO&quot;, 0, 30 ) AS meeting_target,
+IF( global_entity_id = &quot;FO_NO&quot;, 60, 30 ) AS call_target,
+CASE WHEN EXTRACT(DAY FROM completed_at_utc) BETWEEN 1 AND 23 AND global_entity_id != &quot;FP_NO&quot; THEN 8 
+WHEN EXTRACT(DAY FROM completed_at_utc) BETWEEN 24 AND 31 AND global_entity_id != &quot;FP_NO&quot; THEN 6
+ELSE 0 END AS week_meeting_target,
+CASE WHEN EXTRACT(DAY FROM completed_at_utc) BETWEEN 1 AND 23 AND global_entity_id != &quot;FP_NO&quot; THEN 8 
+WHEN EXTRACT(DAY FROM completed_at_utc) BETWEEN 24 AND 31 AND global_entity_id != &quot;FP_NO&quot; THEN 6
+WHEN EXTRACT(DAY FROM completed_at_utc) BETWEEN 1 AND 23 AND global_entity_id = &quot;FP_NO&quot; THEN 16 
+WHEN EXTRACT(DAY FROM completed_at_utc) BETWEEN 24 AND 31 AND global_entity_id = &quot;FP_NO&quot; THEN 12
+ELSE 0 END AS week_call_target,
+COUNT(DISTINCT IF(type IN (&quot;Meeting&quot;, &quot;Walk In&quot;) AND is_task_success AND status = &quot;Completed&quot;, task_id, NULL)) AS meeting_done,
+COUNT(DISTINCT IF(type = &quot;Call&quot; AND is_task_success AND status = &quot;Completed&quot;, task_id, NULL)) AS call_done,
+FROM task
+WHERE completed_at_utc IS NOT NULL
+GROUP BY ALL
+)
+
+SELECT
+report_date,
+report_month,
+country,
+user_base.global_entity_id,
+full_name_internal_non_pii AS reps_name,
+email_internal_non_pii,
+sf_user_id,
+central_job_role,
+title,
+job_role_vertical,
+user_type,
+account_age_snapshot,
+is_active_snapshot,
+is_contractor,
+region,
+meeting_target,
+call_target,
+week_meeting_target,
+week_call_target,
+meeting_done,
+call_done
+FROM user_base
+LEFT JOIN sf_task_final
+ON user_base.sf_user_id = sf_task_final.created_by_sf_id
+AND user_base.global_entity_id = sf_task_final.global_entity_id
+AND user_base.report_date = sf_task_final.report_date_sf_task</_.fcp.ObjectModelEncapsulateLegacy.false...relation>
+        <_.fcp.ObjectModelEncapsulateLegacy.true...relation connection='bigquery.02jl4et1j0wce91c39umq034glon' name='Daily call and meeting' type='text'>WITH report_day AS (
+SELECT report_date
+FROM UNNEST(GENERATE_DATE_ARRAY(
+  DATE_TRUNC(CURRENT_DATE(), YEAR),         -- Jan 1 of current year
+  DATE_SUB(CURRENT_DATE(), INTERVAL 1 DAY), -- Yesterday
+  INTERVAL 1 DAY
+)) AS report_date
+),
+
+report_date_base AS(
+SELECT report_date,
+DATE_TRUNC(report_date, MONTH) AS report_month
+FROM report_day
+),
+
+users_monthly AS (
+  SELECT
+  users.report_date AS report_month,
+  users.country,
+  countries.global_entity_id,
+  users.full_name_internal_non_pii,
+  users.email_internal_non_pii,
+  users.sf_user_id,
+  users.central_job_role,
+  users.title,
+  users.job_role_vertical,
+  users.user_type,
+  users.account_age_snapshot,
+  users.is_active_snapshot,
+  users.is_contractor,
+  countries.region
+FROM `fulfillment-dwh-production.pandata_report.regional_apac_lead_account_opp_aggregated_users_layer` users
+INNER JOIN `fulfillment-dwh-production.pandata_curated.shared_countries` countries
+        ON users.country = countries.name
+WHERE users.report_date BETWEEN DATE_TRUNC(CURRENT_DATE(), YEAR)
+                     AND DATE_SUB(CURRENT_DATE(), INTERVAL 1 DAY)
+  AND user_type = &quot;field rep&quot;
+QUALIFY ROW_NUMBER() OVER (PARTITION BY sf_user_id, report_date ORDER BY full_name_internal_non_pii) = 1
+AND users.is_active_snapshot
+),
+
+user_base AS(
+SELECT
+report_date_base.report_date,
+report_date_base.report_month,
+country,
+users_monthly.global_entity_id,
+full_name_internal_non_pii,
+email_internal_non_pii,
+sf_user_id,
+central_job_role,
+title,
+job_role_vertical,
+user_type,
+account_age_snapshot,
+is_active_snapshot,
+is_contractor,
+region
+FROM users_monthly
+JOIN report_date_base
+ON report_date_base.report_month = users_monthly.report_month
+),
+
+task AS (
+  SELECT
+  st.id AS task_id,
+  st.accountid AS sf_account_id,
+  st.type,
+  st.global_entity_id,
+  st.activity_subject__c AS activity_subject,
+  DATETIME(st.createddate) AS created_at_utc,
+  DATETIME(st.completeddatetime) AS completed_at_utc,
+  DATE(DATETIME(st.createddate)) AS created_date,
+  st.status,
+  st.ownerid AS created_by_sf_id,
+  st.topis_discussed__c AS topic_discussed,
+  IF(activity_subject__c IN (&quot;Call - Decision maker reached&quot;, &quot;Call - Employee reached&quot;), TRUE, FALSE ) AS is_task_success
+FROM  `fulfillment-dwh-production.curated_data_shared_salesforce.task` AS st
+WHERE  DATE(st.partition_date)  &gt;&gt;= &quot;2025-01-01&quot;
+  AND type IN (&quot;Call&quot;,&quot;Meeting&quot;)
+),
+
+sf_task_final AS (
+SELECT 
+DATE(completed_at_utc) AS report_date_sf_task,
+global_entity_id,
+created_by_sf_id,
+IF( global_entity_id = &quot;FO_NO&quot;, 0, 30 ) AS meeting_target,
+IF( global_entity_id = &quot;FO_NO&quot;, 60, 30 ) AS call_target,
+CASE WHEN EXTRACT(DAY FROM completed_at_utc) BETWEEN 1 AND 23 AND global_entity_id != &quot;FP_NO&quot; THEN 8 
+WHEN EXTRACT(DAY FROM completed_at_utc) BETWEEN 24 AND 31 AND global_entity_id != &quot;FP_NO&quot; THEN 6
+ELSE 0 END AS week_meeting_target,
+CASE WHEN EXTRACT(DAY FROM completed_at_utc) BETWEEN 1 AND 23 AND global_entity_id != &quot;FP_NO&quot; THEN 8 
+WHEN EXTRACT(DAY FROM completed_at_utc) BETWEEN 24 AND 31 AND global_entity_id != &quot;FP_NO&quot; THEN 6
+WHEN EXTRACT(DAY FROM completed_at_utc) BETWEEN 1 AND 23 AND global_entity_id = &quot;FP_NO&quot; THEN 16 
+WHEN EXTRACT(DAY FROM completed_at_utc) BETWEEN 24 AND 31 AND global_entity_id = &quot;FP_NO&quot; THEN 12
+ELSE 0 END AS week_call_target,
+COUNT(DISTINCT IF(type IN (&quot;Meeting&quot;, &quot;Walk In&quot;) AND is_task_success AND status = &quot;Completed&quot;, task_id, NULL)) AS meeting_done,
+COUNT(DISTINCT IF(type = &quot;Call&quot; AND is_task_success AND status = &quot;Completed&quot;, task_id, NULL)) AS call_done,
+FROM task
+WHERE completed_at_utc IS NOT NULL
+GROUP BY ALL
+)
+
+SELECT
+report_date,
+report_month,
+country,
+user_base.global_entity_id,
+full_name_internal_non_pii AS reps_name,
+email_internal_non_pii,
+sf_user_id,
+central_job_role,
+title,
+job_role_vertical,
+user_type,
+account_age_snapshot,
+is_active_snapshot,
+is_contractor,
+region,
+meeting_target,
+call_target,
+week_meeting_target,
+week_call_target,
+meeting_done,
+call_done
+FROM user_base
+LEFT JOIN sf_task_final
+ON user_base.sf_user_id = sf_task_final.created_by_sf_id
+AND user_base.global_entity_id = sf_task_final.global_entity_id
+AND user_base.report_date = sf_task_final.report_date_sf_task</_.fcp.ObjectModelEncapsulateLegacy.true...relation>
+        <metadata-records>
+          <metadata-record class='column'>
+            <remote-name>report_date</remote-name>
+            <remote-type>7</remote-type>
+            <local-name>[report_date]</local-name>
+            <parent-name>[Daily call and meeting]</parent-name>
+            <remote-alias>report_date</remote-alias>
+            <local-type>date</local-type>
+            <aggregation>Year</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_FD1B1538BC834E62986CB35EA110A148]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>report_month</remote-name>
+            <remote-type>7</remote-type>
+            <local-name>[report_month]</local-name>
+            <parent-name>[Daily call and meeting]</parent-name>
+            <remote-alias>report_month</remote-alias>
+            <local-type>date</local-type>
+            <aggregation>Year</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_FD1B1538BC834E62986CB35EA110A148]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>country</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[country]</local-name>
+            <parent-name>[Daily call and meeting]</parent-name>
+            <remote-alias>country</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_FD1B1538BC834E62986CB35EA110A148]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>global_entity_id</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[global_entity_id]</local-name>
+            <parent-name>[Daily call and meeting]</parent-name>
+            <remote-alias>global_entity_id</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_FD1B1538BC834E62986CB35EA110A148]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>reps_name</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[reps_name]</local-name>
+            <parent-name>[Daily call and meeting]</parent-name>
+            <remote-alias>reps_name</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_FD1B1538BC834E62986CB35EA110A148]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>email_internal_non_pii</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[email_internal_non_pii]</local-name>
+            <parent-name>[Daily call and meeting]</parent-name>
+            <remote-alias>email_internal_non_pii</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_FD1B1538BC834E62986CB35EA110A148]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>sf_user_id</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[sf_user_id]</local-name>
+            <parent-name>[Daily call and meeting]</parent-name>
+            <remote-alias>sf_user_id</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_FD1B1538BC834E62986CB35EA110A148]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>central_job_role</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[central_job_role]</local-name>
+            <parent-name>[Daily call and meeting]</parent-name>
+            <remote-alias>central_job_role</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_FD1B1538BC834E62986CB35EA110A148]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>title</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[title]</local-name>
+            <parent-name>[Daily call and meeting]</parent-name>
+            <remote-alias>title</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_FD1B1538BC834E62986CB35EA110A148]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>job_role_vertical</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[job_role_vertical]</local-name>
+            <parent-name>[Daily call and meeting]</parent-name>
+            <remote-alias>job_role_vertical</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_FD1B1538BC834E62986CB35EA110A148]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>user_type</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[user_type]</local-name>
+            <parent-name>[Daily call and meeting]</parent-name>
+            <remote-alias>user_type</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_FD1B1538BC834E62986CB35EA110A148]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>account_age_snapshot</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[account_age_snapshot]</local-name>
+            <parent-name>[Daily call and meeting]</parent-name>
+            <remote-alias>account_age_snapshot</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_FD1B1538BC834E62986CB35EA110A148]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>is_active_snapshot</remote-name>
+            <remote-type>11</remote-type>
+            <local-name>[is_active_snapshot]</local-name>
+            <parent-name>[Daily call and meeting]</parent-name>
+            <remote-alias>is_active_snapshot</remote-alias>
+            <local-type>boolean</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_FD1B1538BC834E62986CB35EA110A148]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>is_contractor</remote-name>
+            <remote-type>11</remote-type>
+            <local-name>[is_contractor]</local-name>
+            <parent-name>[Daily call and meeting]</parent-name>
+            <remote-alias>is_contractor</remote-alias>
+            <local-type>boolean</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_FD1B1538BC834E62986CB35EA110A148]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>region</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[region]</local-name>
+            <parent-name>[Daily call and meeting]</parent-name>
+            <remote-alias>region</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_FD1B1538BC834E62986CB35EA110A148]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>meeting_target</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[meeting_target]</local-name>
+            <parent-name>[Daily call and meeting]</parent-name>
+            <remote-alias>meeting_target</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_FD1B1538BC834E62986CB35EA110A148]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>call_target</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[call_target]</local-name>
+            <parent-name>[Daily call and meeting]</parent-name>
+            <remote-alias>call_target</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_FD1B1538BC834E62986CB35EA110A148]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>week_meeting_target</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[week_meeting_target]</local-name>
+            <parent-name>[Daily call and meeting]</parent-name>
+            <remote-alias>week_meeting_target</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_FD1B1538BC834E62986CB35EA110A148]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>week_call_target</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[week_call_target]</local-name>
+            <parent-name>[Daily call and meeting]</parent-name>
+            <remote-alias>week_call_target</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_FD1B1538BC834E62986CB35EA110A148]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>meeting_done</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[meeting_done]</local-name>
+            <parent-name>[Daily call and meeting]</parent-name>
+            <remote-alias>meeting_done</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_FD1B1538BC834E62986CB35EA110A148]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>call_done</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[call_done]</local-name>
+            <parent-name>[Daily call and meeting]</parent-name>
+            <remote-alias>call_done</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_FD1B1538BC834E62986CB35EA110A148]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+        </metadata-records>
+      </connection>
+      <aliases enabled='yes' />
+      <column datatype='string' name='[:Measure Names]' role='dimension' type='nominal'>
+        <aliases>
+          <alias key='&quot;[federated.0ukehl10s4159q12y16vy0q9bqyn].[max:call_target:qk]&quot;' value='Target monthly calls' />
+          <alias key='&quot;[federated.0ukehl10s4159q12y16vy0q9bqyn].[max:meeting_target:qk]&quot;' value='Target monthly meetings' />
+          <alias key='&quot;[federated.0ukehl10s4159q12y16vy0q9bqyn].[pcdf:sum:call_done:qk]&quot;' value='% MoM # of Calls' />
+          <alias key='&quot;[federated.0ukehl10s4159q12y16vy0q9bqyn].[pcdf:sum:meeting_done:qk]&quot;' value='% MoM # of Meetings' />
+          <alias key='&quot;[federated.0ukehl10s4159q12y16vy0q9bqyn].[sum:Calculation_220676408130203650:qk]&quot;' value='Weekly Meetings Targets' />
+          <alias key='&quot;[federated.0ukehl10s4159q12y16vy0q9bqyn].[sum:Calculation_220676408131043331:qk]&quot;' value='Weekly Calls Targets' />
+          <alias key='&quot;[federated.0ukehl10s4159q12y16vy0q9bqyn].[sum:Calculation_4021292280044822528:qk]&quot;' value='Meetings Done Last Week' />
+          <alias key='&quot;[federated.0ukehl10s4159q12y16vy0q9bqyn].[sum:Calculation_4021292280045072385:qk]&quot;' value='Calls Done Last Week' />
+          <alias key='&quot;[federated.0ukehl10s4159q12y16vy0q9bqyn].[sum:Calculation_4021292280045641730:qk]&quot;' value='Meetings MTD' />
+          <alias key='&quot;[federated.0ukehl10s4159q12y16vy0q9bqyn].[sum:Calculation_4021292280045727747:qk]&quot;' value='Calls MTD' />
+          <alias key='&quot;[federated.0ukehl10s4159q12y16vy0q9bqyn].[sum:Calculation_4021292280059846664:qk]&quot;' value='Monthly Meeting Target' />
+          <alias key='&quot;[federated.0ukehl10s4159q12y16vy0q9bqyn].[sum:Calculation_4021292280060084233:qk]&quot;' value='Monthly Call Target' />
+          <alias key='&quot;[federated.0ukehl10s4159q12y16vy0q9bqyn].[sum:call_done:qk]&quot;' value='# of Calls' />
+          <alias key='&quot;[federated.0ukehl10s4159q12y16vy0q9bqyn].[sum:meeting_done:qk]&quot;' value='# of Meetings' />
+          <alias key='&quot;[federated.0ukehl10s4159q12y16vy0q9bqyn].[usr:Calculation_4021292280059846664:qk]&quot;' value='Monthly Meeting  Targets' />
+          <alias key='&quot;[federated.0ukehl10s4159q12y16vy0q9bqyn].[usr:Calculation_4021292280060084233:qk]&quot;' value='Monthly Call Targets' />
+        </aliases>
+      </column>
+      <column caption='last month filter' datatype='boolean' name='[Calculation_1746622628366393344 1]' role='dimension' type='nominal'>
+        <calculation class='tableau' formula='DATEPART(&apos;month&apos;, [report_date]) = DATEPART(&apos;month&apos;, DATEADD(&apos;month&apos;, -1, TODAY()))&#10;AND DATEPART(&apos;year&apos;, [report_date]) = DATEPART(&apos;year&apos;, DATEADD(&apos;month&apos;, -1, TODAY()))' />
+      </column>
+      <column caption='mtd month filter' datatype='boolean' name='[Calculation_1746622628366393344]' role='dimension' type='nominal'>
+        <calculation class='tableau' formula='DATEPART(&apos;month&apos;, [report_date]) = DATEPART(&apos;month&apos;, TODAY())&#10;AND DATEPART(&apos;year&apos;, [report_date]) = DATEPART(&apos;year&apos;, TODAY())' />
+      </column>
+      <column caption='Last day of last week' datatype='date' name='[Calculation_220676408127479809]' role='dimension' type='quantitative'>
+        <calculation class='tableau' formula='{ FIXED [reps_name] :&#10;    MAX(&#10;        IF DATEDIFF(&apos;week&apos;, [report_date], TODAY()) = 1 THEN [report_date] END&#10;    )&#10;}' />
+      </column>
+      <column caption='Fixed weekly meeting target' datatype='integer' name='[Calculation_220676408130203650]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='{FIXED [reps_name] : IF DAY(TODAY() - 1) &gt;= 1 AND DAY(TODAY() - 1) &lt;= 23 AND MAX([global_entity_id]) != &quot;FP_NO&quot; THEN 8&#10;    ELSEIF DAY(TODAY() - 1) &gt;= 24 AND DAY(TODAY() - 1) &lt;= 31 AND MAX([global_entity_id]) != &quot;FP_NO&quot; THEN 6&#10;    ELSE 0 &#10;END}' />
+      </column>
+      <column caption='Fixed weekly call target' datatype='integer' name='[Calculation_220676408131043331]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='{FIXED [reps_name] : IF DAY(TODAY() - 1) &gt;= 1 AND DAY(TODAY() - 1) &lt;= 23 AND MAX([global_entity_id]) != &quot;FP_NO&quot; THEN 8&#10;    ELSEIF DAY(TODAY() - 1) &gt;= 24 AND DAY(TODAY() - 1) &lt;= 31 AND MAX([global_entity_id]) != &quot;FP_NO&quot; THEN 6&#10;    ELSEIF DAY(TODAY() - 1) &gt;= 1 AND DAY(TODAY() - 1) &lt;= 23 AND MAX([global_entity_id]) = &quot;FP_NO&quot; THEN 16&#10;    ELSEIF DAY(TODAY() - 1) &gt;= 24 AND DAY(TODAY() - 1) &lt;= 31 AND MAX([global_entity_id]) = &quot;FP_NO&quot; THEN 12&#10;    ELSE 0 &#10;END}' />
+      </column>
+      <column caption='Column name - Trend' datatype='string' name='[Calculation_2973572063509094403]' role='dimension' type='nominal'>
+        <calculation class='tableau' formula='&apos;Trend&apos;' />
+      </column>
+      <column caption='Meeting done last week' datatype='integer' name='[Calculation_4021292280044822528]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='IF DATEPART(&apos;week&apos;, [report_date]) = DATEPART(&apos;week&apos;, TODAY() - 7)&#10;   AND DATEPART(&apos;year&apos;, [report_date]) = DATEPART(&apos;year&apos;, TODAY() - 7)&#10;THEN [meeting_done]&#10;ELSE 0&#10;END' />
+      </column>
+      <column caption='Call done last week' datatype='integer' name='[Calculation_4021292280045072385]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='IF DATEPART(&apos;week&apos;, [report_date]) = DATEPART(&apos;week&apos;, TODAY() - 7)&#10;   AND DATEPART(&apos;year&apos;, [report_date]) = DATEPART(&apos;year&apos;, TODAY() - 7)&#10;THEN [call_done]&#10;ELSE 0&#10;END' />
+      </column>
+      <column caption='Meeting MTD' datatype='integer' name='[Calculation_4021292280045641730]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='IF DATETRUNC(&apos;month&apos;, [report_date]) = DATETRUNC(&apos;month&apos;, TODAY())&#10;   AND [report_date] &lt;= TODAY()&#10;THEN [meeting_done]&#10;ELSE 0&#10;END' />
+      </column>
+      <column caption='Call MTD' datatype='integer' name='[Calculation_4021292280045727747]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='IF DATETRUNC(&apos;month&apos;, [report_date]) = DATETRUNC(&apos;month&apos;, TODAY())&#10;   AND [report_date] &lt;= TODAY()&#10;THEN [call_done]&#10;ELSE 0&#10;END' />
+      </column>
+      <column caption='Fixed monthly meeting  target' datatype='integer' name='[Calculation_4021292280059846664]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='MAX(30)' />
+      </column>
+      <column caption='Fixed monthly calls target' datatype='integer' name='[Calculation_4021292280060084233]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='MAX(30)' />
+      </column>
+      <_.fcp.ObjectModelTableType.true...column caption='Custom SQL Query' datatype='table' name='[__tableau_internal_object_id__].[_FD1B1538BC834E62986CB35EA110A148]' role='measure' type='quantitative' />
+      <column datatype='integer' name='[call_done]' role='measure' type='quantitative' />
+      <column datatype='integer' name='[call_target]' role='measure' type='quantitative' />
+      <column datatype='string' name='[country]' role='dimension' semantic-role='[Country].[ISO3166_2]' type='nominal' />
+      <column datatype='integer' name='[meeting_done]' role='measure' type='quantitative' />
+      <column datatype='integer' name='[meeting_target]' role='measure' type='quantitative' />
+      <column-instance column='[call_target]' derivation='Max' name='[max:call_target:qk]' pivot='key' type='quantitative' />
+      <column-instance column='[meeting_target]' derivation='Max' name='[max:meeting_target:qk]' pivot='key' type='quantitative' />
+      <column-instance column='[call_done]' derivation='Sum' name='[pcdf:sum:call_done:qk]' pivot='key' type='quantitative'>
+        <table-calc diff-options='Relative' ordering-type='Rows' type='PctDiff'>
+          <address>
+            <value>-1</value>
+          </address>
+        </table-calc>
+      </column-instance>
+      <column-instance column='[meeting_done]' derivation='Sum' name='[pcdf:sum:meeting_done:qk]' pivot='key' type='quantitative'>
+        <table-calc diff-options='Relative' ordering-type='Rows' type='PctDiff'>
+          <address>
+            <value>-1</value>
+          </address>
+        </table-calc>
+      </column-instance>
+      <column-instance column='[Calculation_220676408130203650]' derivation='Sum' name='[sum:Calculation_220676408130203650:qk]' pivot='key' type='quantitative' />
+      <column-instance column='[Calculation_220676408131043331]' derivation='Sum' name='[sum:Calculation_220676408131043331:qk]' pivot='key' type='quantitative' />
+      <column-instance column='[Calculation_4021292280044822528]' derivation='Sum' name='[sum:Calculation_4021292280044822528:qk]' pivot='key' type='quantitative' />
+      <column-instance column='[Calculation_4021292280045072385]' derivation='Sum' name='[sum:Calculation_4021292280045072385:qk]' pivot='key' type='quantitative' />
+      <column-instance column='[Calculation_4021292280045641730]' derivation='Sum' name='[sum:Calculation_4021292280045641730:qk]' pivot='key' type='quantitative' />
+      <column-instance column='[Calculation_4021292280045727747]' derivation='Sum' name='[sum:Calculation_4021292280045727747:qk]' pivot='key' type='quantitative' />
+      <column-instance column='[Calculation_4021292280059846664]' derivation='Sum' name='[sum:Calculation_4021292280059846664:qk]' pivot='key' type='quantitative' />
+      <column-instance column='[Calculation_4021292280060084233]' derivation='Sum' name='[sum:Calculation_4021292280060084233:qk]' pivot='key' type='quantitative' />
+      <column-instance column='[call_done]' derivation='Sum' name='[sum:call_done:qk]' pivot='key' type='quantitative' />
+      <column-instance column='[meeting_done]' derivation='Sum' name='[sum:meeting_done:qk]' pivot='key' type='quantitative' />
+      <column-instance column='[Calculation_4021292280059846664]' derivation='User' name='[usr:Calculation_4021292280059846664:qk]' pivot='key' type='quantitative' />
+      <column-instance column='[Calculation_4021292280060084233]' derivation='User' name='[usr:Calculation_4021292280060084233:qk]' pivot='key' type='quantitative' />
+      <extract _.fcp.ObjectModelExtractV2.true...object-id='' count='-1' enabled='true' units='records'>
+        <connection access_mode='readonly' author-locale='en_US' class='hyper' dbname='extract/9e/d5/{D6E9B3CF-7F20-4EE7-BB8E-49E80631B1EC}/federated_0ukehl10s4159q12y16vy0.hyper' extract-engine='true' schema='Extract' sslmode='' tablename='Extract' update-time='08/18/2025 02:01:22 AM'>
+          <_.fcp.ObjectModelEncapsulateLegacy.false...relation name='Extract' table='[Extract].[Extract]' type='table' />
+          <_.fcp.ObjectModelEncapsulateLegacy.true...relation name='Extract' table='[Extract].[Extract]' type='table' />
+          <metadata-records>
+            <metadata-record class='column'>
+              <remote-name>report_date</remote-name>
+              <remote-type>133</remote-type>
+              <local-name>[report_date]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>report_date</remote-alias>
+              <ordinal>0</ordinal>
+              <family>Daily call and meeting</family>
+              <local-type>date</local-type>
+              <aggregation>Year</aggregation>
+              <approx-count>304</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_FD1B1538BC834E62986CB35EA110A148]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>report_month</remote-name>
+              <remote-type>133</remote-type>
+              <local-name>[report_month]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>report_month</remote-alias>
+              <ordinal>1</ordinal>
+              <family>Daily call and meeting</family>
+              <local-type>date</local-type>
+              <aggregation>Year</aggregation>
+              <approx-count>8</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_FD1B1538BC834E62986CB35EA110A148]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>country</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[country]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>country</remote-alias>
+              <ordinal>2</ordinal>
+              <family>Daily call and meeting</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>17</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_FD1B1538BC834E62986CB35EA110A148]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>global_entity_id</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[global_entity_id]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>global_entity_id</remote-alias>
+              <ordinal>3</ordinal>
+              <family>Daily call and meeting</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>17</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_FD1B1538BC834E62986CB35EA110A148]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>reps_name</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[reps_name]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>reps_name</remote-alias>
+              <ordinal>4</ordinal>
+              <family>Daily call and meeting</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>1507</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_FD1B1538BC834E62986CB35EA110A148]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>email_internal_non_pii</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[email_internal_non_pii]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>email_internal_non_pii</remote-alias>
+              <ordinal>5</ordinal>
+              <family>Daily call and meeting</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>1470</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_FD1B1538BC834E62986CB35EA110A148]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>sf_user_id</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[sf_user_id]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>sf_user_id</remote-alias>
+              <ordinal>6</ordinal>
+              <family>Daily call and meeting</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>1470</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_FD1B1538BC834E62986CB35EA110A148]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>central_job_role</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[central_job_role]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>central_job_role</remote-alias>
+              <ordinal>7</ordinal>
+              <family>Daily call and meeting</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>1</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_FD1B1538BC834E62986CB35EA110A148]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>title</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[title]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>title</remote-alias>
+              <ordinal>8</ordinal>
+              <family>Daily call and meeting</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>119</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_FD1B1538BC834E62986CB35EA110A148]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>job_role_vertical</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[job_role_vertical]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>job_role_vertical</remote-alias>
+              <ordinal>9</ordinal>
+              <family>Daily call and meeting</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>2</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_FD1B1538BC834E62986CB35EA110A148]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>user_type</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[user_type]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>user_type</remote-alias>
+              <ordinal>10</ordinal>
+              <family>Daily call and meeting</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>1</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_FD1B1538BC834E62986CB35EA110A148]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>account_age_snapshot</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[account_age_snapshot]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>account_age_snapshot</remote-alias>
+              <ordinal>11</ordinal>
+              <family>Daily call and meeting</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>3057</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_FD1B1538BC834E62986CB35EA110A148]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>is_active_snapshot</remote-name>
+              <remote-type>11</remote-type>
+              <local-name>[is_active_snapshot]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>is_active_snapshot</remote-alias>
+              <ordinal>12</ordinal>
+              <family>Daily call and meeting</family>
+              <local-type>boolean</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>1</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_FD1B1538BC834E62986CB35EA110A148]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>is_contractor</remote-name>
+              <remote-type>11</remote-type>
+              <local-name>[is_contractor]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>is_contractor</remote-alias>
+              <ordinal>13</ordinal>
+              <family>Daily call and meeting</family>
+              <local-type>boolean</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>1</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_FD1B1538BC834E62986CB35EA110A148]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>region</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[region]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>region</remote-alias>
+              <ordinal>14</ordinal>
+              <family>Daily call and meeting</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>3</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_FD1B1538BC834E62986CB35EA110A148]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>meeting_target</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[meeting_target]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>meeting_target</remote-alias>
+              <ordinal>15</ordinal>
+              <family>Daily call and meeting</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>6</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_FD1B1538BC834E62986CB35EA110A148]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>call_target</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[call_target]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>call_target</remote-alias>
+              <ordinal>16</ordinal>
+              <family>Daily call and meeting</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>6</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_FD1B1538BC834E62986CB35EA110A148]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>week_meeting_target</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[week_meeting_target]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>week_meeting_target</remote-alias>
+              <ordinal>17</ordinal>
+              <family>Daily call and meeting</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>3</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_FD1B1538BC834E62986CB35EA110A148]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>week_call_target</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[week_call_target]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>week_call_target</remote-alias>
+              <ordinal>18</ordinal>
+              <family>Daily call and meeting</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>3</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_FD1B1538BC834E62986CB35EA110A148]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>meeting_done</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[meeting_done]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>meeting_done</remote-alias>
+              <ordinal>19</ordinal>
+              <family>Daily call and meeting</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>46</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_FD1B1538BC834E62986CB35EA110A148]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>call_done</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[call_done]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>call_done</remote-alias>
+              <ordinal>20</ordinal>
+              <family>Daily call and meeting</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>66</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_FD1B1538BC834E62986CB35EA110A148]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+          </metadata-records>
+        </connection>
+      </extract>
+      <layout _.fcp.SchemaViewerObjectModel.false...dim-percentage='0.5' _.fcp.SchemaViewerObjectModel.false...measure-percentage='0.4' _.fcp.SchemaViewerObjectModel.true...common-percentage='1' _.fcp.SchemaViewerObjectModel.true...user-set-layout-v2='true' dim-ordering='alphabetic' measure-ordering='alphabetic' show-structure='true' />
+      <semantic-values>
+        <semantic-value key='[Country].[Name]' value='&quot;Singapore&quot;' />
+      </semantic-values>
+      <_.fcp.ObjectModelEncapsulateLegacy.true...object-graph>
+        <objects>
+          <object caption='Custom SQL Query' id='_FD1B1538BC834E62986CB35EA110A148'>
+            <properties context=''>
+              <relation connection='bigquery.02jl4et1j0wce91c39umq034glon' name='Daily call and meeting' type='text'>WITH report_day AS (
+SELECT report_date
+FROM UNNEST(GENERATE_DATE_ARRAY(
+  DATE_TRUNC(CURRENT_DATE(), YEAR),         -- Jan 1 of current year
+  DATE_SUB(CURRENT_DATE(), INTERVAL 1 DAY), -- Yesterday
+  INTERVAL 1 DAY
+)) AS report_date
+),
+
+report_date_base AS(
+SELECT report_date,
+DATE_TRUNC(report_date, MONTH) AS report_month
+FROM report_day
+),
+
+users_monthly AS (
+  SELECT
+  users.report_date AS report_month,
+  users.country,
+  countries.global_entity_id,
+  users.full_name_internal_non_pii,
+  users.email_internal_non_pii,
+  users.sf_user_id,
+  users.central_job_role,
+  users.title,
+  users.job_role_vertical,
+  users.user_type,
+  users.account_age_snapshot,
+  users.is_active_snapshot,
+  users.is_contractor,
+  countries.region
+FROM `fulfillment-dwh-production.pandata_report.regional_apac_lead_account_opp_aggregated_users_layer` users
+INNER JOIN `fulfillment-dwh-production.pandata_curated.shared_countries` countries
+        ON users.country = countries.name
+WHERE users.report_date BETWEEN DATE_TRUNC(CURRENT_DATE(), YEAR)
+                     AND DATE_SUB(CURRENT_DATE(), INTERVAL 1 DAY)
+  AND user_type = &quot;field rep&quot;
+QUALIFY ROW_NUMBER() OVER (PARTITION BY sf_user_id, report_date ORDER BY full_name_internal_non_pii) = 1
+AND users.is_active_snapshot
+),
+
+user_base AS(
+SELECT
+report_date_base.report_date,
+report_date_base.report_month,
+country,
+users_monthly.global_entity_id,
+full_name_internal_non_pii,
+email_internal_non_pii,
+sf_user_id,
+central_job_role,
+title,
+job_role_vertical,
+user_type,
+account_age_snapshot,
+is_active_snapshot,
+is_contractor,
+region
+FROM users_monthly
+JOIN report_date_base
+ON report_date_base.report_month = users_monthly.report_month
+),
+
+task AS (
+  SELECT
+  st.id AS task_id,
+  st.accountid AS sf_account_id,
+  st.type,
+  st.global_entity_id,
+  st.activity_subject__c AS activity_subject,
+  DATETIME(st.createddate) AS created_at_utc,
+  DATETIME(st.completeddatetime) AS completed_at_utc,
+  DATE(DATETIME(st.createddate)) AS created_date,
+  st.status,
+  st.ownerid AS created_by_sf_id,
+  st.topis_discussed__c AS topic_discussed,
+  IF(activity_subject__c IN (&quot;Call - Decision maker reached&quot;, &quot;Call - Employee reached&quot;), TRUE, FALSE ) AS is_task_success
+FROM  `fulfillment-dwh-production.curated_data_shared_salesforce.task` AS st
+WHERE  DATE(st.partition_date)  &gt;&gt;= &quot;2025-01-01&quot;
+  AND type IN (&quot;Call&quot;,&quot;Meeting&quot;)
+),
+
+sf_task_final AS (
+SELECT 
+DATE(completed_at_utc) AS report_date_sf_task,
+global_entity_id,
+created_by_sf_id,
+IF( global_entity_id = &quot;FO_NO&quot;, 0, 30 ) AS meeting_target,
+IF( global_entity_id = &quot;FO_NO&quot;, 60, 30 ) AS call_target,
+CASE WHEN EXTRACT(DAY FROM completed_at_utc) BETWEEN 1 AND 23 AND global_entity_id != &quot;FP_NO&quot; THEN 8 
+WHEN EXTRACT(DAY FROM completed_at_utc) BETWEEN 24 AND 31 AND global_entity_id != &quot;FP_NO&quot; THEN 6
+ELSE 0 END AS week_meeting_target,
+CASE WHEN EXTRACT(DAY FROM completed_at_utc) BETWEEN 1 AND 23 AND global_entity_id != &quot;FP_NO&quot; THEN 8 
+WHEN EXTRACT(DAY FROM completed_at_utc) BETWEEN 24 AND 31 AND global_entity_id != &quot;FP_NO&quot; THEN 6
+WHEN EXTRACT(DAY FROM completed_at_utc) BETWEEN 1 AND 23 AND global_entity_id = &quot;FP_NO&quot; THEN 16 
+WHEN EXTRACT(DAY FROM completed_at_utc) BETWEEN 24 AND 31 AND global_entity_id = &quot;FP_NO&quot; THEN 12
+ELSE 0 END AS week_call_target,
+COUNT(DISTINCT IF(type IN (&quot;Meeting&quot;, &quot;Walk In&quot;) AND is_task_success AND status = &quot;Completed&quot;, task_id, NULL)) AS meeting_done,
+COUNT(DISTINCT IF(type = &quot;Call&quot; AND is_task_success AND status = &quot;Completed&quot;, task_id, NULL)) AS call_done,
+FROM task
+WHERE completed_at_utc IS NOT NULL
+GROUP BY ALL
+)
+
+SELECT
+report_date,
+report_month,
+country,
+user_base.global_entity_id,
+full_name_internal_non_pii AS reps_name,
+email_internal_non_pii,
+sf_user_id,
+central_job_role,
+title,
+job_role_vertical,
+user_type,
+account_age_snapshot,
+is_active_snapshot,
+is_contractor,
+region,
+meeting_target,
+call_target,
+week_meeting_target,
+week_call_target,
+meeting_done,
+call_done
+FROM user_base
+LEFT JOIN sf_task_final
+ON user_base.sf_user_id = sf_task_final.created_by_sf_id
+AND user_base.global_entity_id = sf_task_final.global_entity_id
+AND user_base.report_date = sf_task_final.report_date_sf_task</relation>
+            </properties>
+            <properties context='extract'>
+              <relation name='Extract' table='[Extract].[Extract]' type='table' />
+            </properties>
+          </object>
+        </objects>
+      </_.fcp.ObjectModelEncapsulateLegacy.true...object-graph>
+    </datasource>
+  </datasources>
+  <worksheets>
+    <worksheet name='SF Compliance (MoM)'>
+      <layout-options>
+        <title>
+          <formatted-text>
+            <run bold='true'>MoM SF Compliance </run>
+          </formatted-text>
+        </title>
+      </layout-options>
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='Reps call and meeting' name='federated.0ukehl10s4159q12y16vy0q9bqyn' />
+          </datasources>
+          <datasource-dependencies datasource='federated.0ukehl10s4159q12y16vy0q9bqyn'>
+            <column caption='Meeting MTD' datatype='integer' name='[Calculation_4021292280045641730]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='IF DATETRUNC(&apos;month&apos;, [report_date]) = DATETRUNC(&apos;month&apos;, TODAY())&#10;   AND [report_date] &lt;= TODAY()&#10;THEN [meeting_done]&#10;ELSE 0&#10;END' />
+            </column>
+            <column caption='Call MTD' datatype='integer' name='[Calculation_4021292280045727747]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='IF DATETRUNC(&apos;month&apos;, [report_date]) = DATETRUNC(&apos;month&apos;, TODAY())&#10;   AND [report_date] &lt;= TODAY()&#10;THEN [call_done]&#10;ELSE 0&#10;END' />
+            </column>
+            <column datatype='integer' name='[call_done]' role='measure' type='quantitative' />
+            <column datatype='string' name='[country]' role='dimension' semantic-role='[Country].[ISO3166_2]' type='nominal' />
+            <column datatype='integer' name='[meeting_done]' role='measure' type='quantitative' />
+            <column-instance column='[country]' derivation='None' name='[none:country:nk]' pivot='key' type='nominal' />
+            <column-instance column='[call_done]' derivation='Sum' name='[pcdf:sum:call_done:qk]' pivot='key' type='quantitative'>
+              <table-calc diff-options='Relative' ordering-type='Rows' type='PctDiff'>
+                <address>
+                  <value>-1</value>
+                </address>
+              </table-calc>
+            </column-instance>
+            <column-instance column='[meeting_done]' derivation='Sum' name='[pcdf:sum:meeting_done:qk]' pivot='key' type='quantitative'>
+              <table-calc diff-options='Relative' ordering-type='Rows' type='PctDiff'>
+                <address>
+                  <value>-1</value>
+                </address>
+              </table-calc>
+            </column-instance>
+            <column datatype='date' name='[report_date]' role='dimension' type='ordinal' />
+            <column-instance column='[Calculation_4021292280045641730]' derivation='Sum' name='[sum:Calculation_4021292280045641730:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[Calculation_4021292280045727747]' derivation='Sum' name='[sum:Calculation_4021292280045727747:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[meeting_done]' derivation='Sum' name='[sum:meeting_done:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[report_date]' derivation='Month-Trunc' name='[tmn:report_date:ok]' pivot='key' type='ordinal' />
+          </datasource-dependencies>
+          <filter class='categorical' column='[federated.0ukehl10s4159q12y16vy0q9bqyn].[:Measure Names]'>
+            <groupfilter function='union' user:op='manual'>
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.0ukehl10s4159q12y16vy0q9bqyn].[pcdf:sum:meeting_done:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.0ukehl10s4159q12y16vy0q9bqyn].[pcdf:sum:call_done:qk]&quot;' />
+            </groupfilter>
+          </filter>
+          <manual-sort column='[federated.0ukehl10s4159q12y16vy0q9bqyn].[:Measure Names]' direction='ASC'>
+            <dictionary>
+              <bucket>&quot;[federated.0ukehl10s4159q12y16vy0q9bqyn].[sum:Calculation_4021292280045641730:qk]&quot;</bucket>
+              <bucket>&quot;[federated.0ukehl10s4159q12y16vy0q9bqyn].[sum:meeting_done:qk]&quot;</bucket>
+              <bucket>&quot;[federated.0ukehl10s4159q12y16vy0q9bqyn].[sum:Calculation_4021292280045727747:qk]&quot;</bucket>
+            </dictionary>
+          </manual-sort>
+          <filter class='categorical' column='[federated.0ukehl10s4159q12y16vy0q9bqyn].[none:country:nk]' filter-group='4'>
+            <groupfilter function='level-members' level='[none:country:nk]' user:ui-enumeration='all' user:ui-marker='enumerate' />
+          </filter>
+          <filter class='categorical' column='[federated.0ukehl10s4159q12y16vy0q9bqyn].[tmn:report_date:ok]' filter-group='3'>
+            <groupfilter function='level-members' level='[tmn:report_date:ok]' user:ui-enumeration='all' user:ui-marker='enumerate' />
+          </filter>
+          <slices>
+            <column>[federated.0ukehl10s4159q12y16vy0q9bqyn].[:Measure Names]</column>
+            <column>[federated.0ukehl10s4159q12y16vy0q9bqyn].[tmn:report_date:ok]</column>
+            <column>[federated.0ukehl10s4159q12y16vy0q9bqyn].[none:country:nk]</column>
+          </slices>
+          <aggregation value='true' />
+        </view>
+        <style>
+          <style-rule element='axis'>
+            <format attr='line-visibility' scope='cols' value='on' />
+            <format attr='line-pattern-only' scope='cols' value='solid' />
+          </style-rule>
+          <style-rule element='cell'>
+            <format attr='width' value='164' />
+            <format attr='width' field='[federated.0ukehl10s4159q12y16vy0q9bqyn].[:Measure Names]' value='131' />
+            <format attr='text-format' field='[federated.0ukehl10s4159q12y16vy0q9bqyn].[Multiple Values]' value='N' />
+            <format attr='font-weight' field='[federated.0ukehl10s4159q12y16vy0q9bqyn].[:Measure Names]' value='normal' />
+            <format attr='font-size' field='[federated.0ukehl10s4159q12y16vy0q9bqyn].[:Measure Names]' value='18' />
+            <format attr='text-align' field='[federated.0ukehl10s4159q12y16vy0q9bqyn].[:Measure Names]' value='center' />
+            <format attr='font-size' field='[federated.0ukehl10s4159q12y16vy0q9bqyn].[Multiple Values]' value='12' />
+            <format attr='text-align' field='[federated.0ukehl10s4159q12y16vy0q9bqyn].[Multiple Values]' value='center' />
+            <format attr='text-align' value='right' />
+            <format attr='border-width' value='0' />
+            <format attr='border-style' value='none' />
+            <format attr='border-width' scope='cols' value='1' />
+            <format attr='border-style' scope='cols' value='solid' />
+            <format attr='font-weight' value='normal' />
+            <format attr='border-width' scope='rows' value='1' />
+            <format attr='border-style' scope='rows' value='solid' />
+            <format attr='text-format' field='[federated.0ukehl10s4159q12y16vy0q9bqyn].[pcdf:sum:meeting_done:qk]' value='p0.0%' />
+            <format attr='text-format' field='[federated.0ukehl10s4159q12y16vy0q9bqyn].[pcdf:sum:call_done:qk]' value='p0.0%' />
+          </style-rule>
+          <style-rule element='header'>
+            <format attr='width' field='[federated.0ukehl10s4159q12y16vy0q9bqyn].[none:country:nk]' value='168' />
+            <format attr='height' field='[federated.0ukehl10s4159q12y16vy0q9bqyn].[:Measure Names]' value='56' />
+            <format attr='width' field='[federated.0ukehl10s4159q12y16vy0q9bqyn].[:Measure Names]' value='176' />
+            <format attr='font-weight' data-class='subtotal' field='[federated.0ukehl10s4159q12y16vy0q9bqyn].[:Measure Names]' value='bold' />
+            <format attr='font-size' data-class='subtotal' field='[federated.0ukehl10s4159q12y16vy0q9bqyn].[:Measure Names]' value='12' />
+            <format attr='text-orientation' data-class='subtotal' field='[federated.0ukehl10s4159q12y16vy0q9bqyn].[:Measure Names]' value='0' />
+            <format attr='wrap' data-class='subtotal' field='[federated.0ukehl10s4159q12y16vy0q9bqyn].[:Measure Names]' value='on' />
+            <format attr='background-color' scope='rows' value='#00000000' />
+            <format attr='background-color' field='[federated.0ukehl10s4159q12y16vy0q9bqyn].[:Measure Names]' value='#a6007e' />
+            <format attr='band-color' scope='rows' value='#00000000' />
+            <format attr='band-color' scope='cols' value='#00000000' />
+            <format attr='border-style' scope='rows' value='solid' />
+            <format attr='background-color' field='[federated.0ukehl10s4159q12y16vy0q9bqyn].[tmn:report_date:ok]' value='#e6e6e6' />
+          </style-rule>
+          <style-rule element='field-labels-decoration'>
+            <format attr='text-align' value='right' />
+          </style-rule>
+          <style-rule element='label'>
+            <format attr='display' field='[federated.0ukehl10s4159q12y16vy0q9bqyn].[:Measure Names]' value='false' />
+            <format attr='display' field='[federated.0ukehl10s4159q12y16vy0q9bqyn].[none:country:nk]' value='false' />
+            <format attr='text-align' field='[federated.0ukehl10s4159q12y16vy0q9bqyn].[:Measure Names]' value='center' />
+            <format attr='text-orientation' field='[federated.0ukehl10s4159q12y16vy0q9bqyn].[:Measure Names]' value='0' />
+            <format attr='vertical-align' field='[federated.0ukehl10s4159q12y16vy0q9bqyn].[:Measure Names]' value='center' />
+            <format attr='wrap' field='[federated.0ukehl10s4159q12y16vy0q9bqyn].[:Measure Names]' value='on' />
+            <format attr='color' field='[federated.0ukehl10s4159q12y16vy0q9bqyn].[:Measure Names]' value='#ffffff' />
+            <format attr='text-align' scope='rows' value='left' />
+            <format attr='font-size' field='[federated.0ukehl10s4159q12y16vy0q9bqyn].[:Measure Names]' value='11' />
+            <format attr='text-format' field='[federated.0ukehl10s4159q12y16vy0q9bqyn].[tmn:report_date:ok]' value='*MMM YY' />
+          </style-rule>
+          <style-rule element='mark'>
+            <encoding attr='color' field='[federated.0ukehl10s4159q12y16vy0q9bqyn].[sum:Calculation_4021292280045641730:qk]' max='0' min='0' type='custom-interpolated'>
+              <color-palette custom='true' name='' type='ordered-sequential'>
+                <color>#f1f1f1</color>
+                <color>#f0f0f0</color>
+                <color>#efefef</color>
+                <color>#efefef</color>
+                <color>#eeeeee</color>
+                <color>#eeeeee</color>
+                <color>#ededed</color>
+                <color>#ececec</color>
+                <color>#ececec</color>
+                <color>#ebebeb</color>
+                <color>#ebebeb</color>
+              </color-palette>
+            </encoding>
+            <encoding attr='color' field='[federated.0ukehl10s4159q12y16vy0q9bqyn].[sum:Calculation_4021292280045727747:qk]' max='0' min='0' type='custom-interpolated'>
+              <color-palette custom='true' name='' type='ordered-sequential'>
+                <color>#f1f1f1</color>
+                <color>#f2f2f2</color>
+                <color>#f3f3f3</color>
+                <color>#f5f5f5</color>
+                <color>#f6f6f6</color>
+                <color>#f8f8f8</color>
+                <color>#f9f9f9</color>
+                <color>#fafafa</color>
+                <color>#fcfcfc</color>
+                <color>#fdfdfd</color>
+                <color>#ffffff</color>
+              </color-palette>
+            </encoding>
+            <encoding attr='color' field='[federated.0ukehl10s4159q12y16vy0q9bqyn].[Multiple Values]' num-steps='9' type='custom-interpolated'>
+              <color-palette custom='true' name='' type='ordered-diverging'>
+                <color>#9e3d22</color>
+                <color>#a7513a</color>
+                <color>#b16854</color>
+                <color>#bb8171</color>
+                <color>#c59c91</color>
+                <color>#cfb9b4</color>
+                <color>#d9d9d9</color>
+                <color>#cdabc4</color>
+                <color>#c181b0</color>
+                <color>#b65b9d</color>
+                <color>#aa388b</color>
+                <color>#9e1a7a</color>
+                <color>#93006b</color>
+              </color-palette>
+            </encoding>
+          </style-rule>
+          <style-rule element='pane'>
+            <format attr='band-color' scope='cols' value='#00000000' />
+            <format attr='band-color' scope='rows' value='#00000000' />
+            <format attr='border-style' scope='rows' value='solid' />
+          </style-rule>
+          <style-rule element='table'>
+            <format attr='band-size' scope='rows' value='1' />
+            <format attr='band-size' scope='cols' value='1' />
+          </style-rule>
+          <style-rule element='worksheet'>
+            <format attr='display-field-labels' scope='rows' value='false' />
+            <format attr='font-weight' value='bold' />
+          </style-rule>
+          <style-rule element='table-div'>
+            <format attr='line-visibility' scope='cols' value='on' />
+            <format attr='line-pattern-only' scope='cols' value='solid' />
+            <format attr='stroke-color' scope='rows' value='#000000' />
+            <format attr='stroke-size' scope='rows' value='2' />
+          </style-rule>
+          <style-rule element='title'>
+            <format attr='background-color' value='#e4e4e4' />
+          </style-rule>
+          <style-rule element='quick-filter'>
+            <format attr='title' field='[federated.0ukehl10s4159q12y16vy0q9bqyn].[none:country:nk]' value='Country' />
+            <format attr='font-weight' value='bold' />
+            <format attr='color' value='#6c5cd8' />
+            <format attr='background-color' value='#e6e6e6' />
+            <format attr='border-width' value='0' />
+            <format attr='font-size' value='12' />
+          </style-rule>
+          <style-rule element='quick-filter-title'>
+            <format attr='font-size' value='12' />
+          </style-rule>
+        </style>
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Square' />
+            <encodings>
+              <color column='[federated.0ukehl10s4159q12y16vy0q9bqyn].[Multiple Values]' />
+              <text column='[federated.0ukehl10s4159q12y16vy0q9bqyn].[Multiple Values]' />
+            </encodings>
+            <style>
+              <style-rule element='mark'>
+                <format attr='mark-labels-show' value='true' />
+              </style-rule>
+              <style-rule element='pane'>
+                <format attr='minwidth' value='-1' />
+                <format attr='maxwidth' value='-1' />
+              </style-rule>
+            </style>
+          </pane>
+        </panes>
+        <rows>([federated.0ukehl10s4159q12y16vy0q9bqyn].[:Measure Names] / [federated.0ukehl10s4159q12y16vy0q9bqyn].[none:country:nk])</rows>
+        <cols>[federated.0ukehl10s4159q12y16vy0q9bqyn].[tmn:report_date:ok]</cols>
+      </table>
+      <simple-id uuid='{50A347B9-A210-4391-9E8B-A988C09F75A3}' />
+    </worksheet>
+    <worksheet name='SF Compliance (MoM) (2)'>
+      <layout-options>
+        <title>
+          <formatted-text>
+            <run>Monthly SF Compliance </run>
+          </formatted-text>
+        </title>
+      </layout-options>
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='Reps call and meeting' name='federated.0ukehl10s4159q12y16vy0q9bqyn' />
+          </datasources>
+          <datasource-dependencies datasource='federated.0ukehl10s4159q12y16vy0q9bqyn'>
+            <column caption='Column name - Trend' datatype='string' name='[Calculation_2973572063509094403]' role='dimension' type='nominal'>
+              <calculation class='tableau' formula='&apos;Trend&apos;' />
+            </column>
+            <column datatype='integer' name='[call_done]' role='measure' type='quantitative' />
+            <column datatype='string' name='[country]' role='dimension' semantic-role='[Country].[ISO3166_2]' type='nominal' />
+            <column datatype='integer' name='[meeting_done]' role='measure' type='quantitative' />
+            <column-instance column='[Calculation_2973572063509094403]' derivation='None' name='[none:Calculation_2973572063509094403:nk]' pivot='key' type='nominal' />
+            <column-instance column='[country]' derivation='None' name='[none:country:nk]' pivot='key' type='nominal' />
+            <column datatype='date' name='[report_date]' role='dimension' type='ordinal' />
+            <column-instance column='[call_done]' derivation='Sum' name='[sum:call_done:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[meeting_done]' derivation='Sum' name='[sum:meeting_done:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[report_date]' derivation='Month-Trunc' name='[tmn:report_date:ok]' pivot='key' type='ordinal' />
+          </datasource-dependencies>
+          <filter class='categorical' column='[federated.0ukehl10s4159q12y16vy0q9bqyn].[:Measure Names]'>
+            <groupfilter function='union' user:op='manual'>
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.0ukehl10s4159q12y16vy0q9bqyn].[sum:call_done:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.0ukehl10s4159q12y16vy0q9bqyn].[sum:meeting_done:qk]&quot;' />
+            </groupfilter>
+          </filter>
+          <filter class='categorical' column='[federated.0ukehl10s4159q12y16vy0q9bqyn].[none:country:nk]' filter-group='4'>
+            <groupfilter function='level-members' level='[none:country:nk]' user:ui-enumeration='all' user:ui-marker='enumerate' />
+          </filter>
+          <filter class='categorical' column='[federated.0ukehl10s4159q12y16vy0q9bqyn].[tmn:report_date:ok]' filter-group='3'>
+            <groupfilter function='level-members' level='[tmn:report_date:ok]' user:ui-enumeration='all' user:ui-marker='enumerate' />
+          </filter>
+          <slices>
+            <column>[federated.0ukehl10s4159q12y16vy0q9bqyn].[:Measure Names]</column>
+            <column>[federated.0ukehl10s4159q12y16vy0q9bqyn].[tmn:report_date:ok]</column>
+            <column>[federated.0ukehl10s4159q12y16vy0q9bqyn].[none:country:nk]</column>
+          </slices>
+          <aggregation value='true' />
+        </view>
+        <style>
+          <style-rule element='axis'>
+            <format attr='display' class='0' field='[federated.0ukehl10s4159q12y16vy0q9bqyn].[Multiple Values]' scope='rows' value='false' />
+            <format attr='line-pattern-only' scope='cols' value='solid' />
+            <format attr='stroke-size' scope='cols' value='0' />
+            <format attr='line-visibility' scope='cols' value='off' />
+            <format attr='tick-color' scope='cols' value='#00000000' />
+          </style-rule>
+          <style-rule element='cell'>
+            <format attr='width' value='164' />
+            <format attr='width' field='[federated.0ukehl10s4159q12y16vy0q9bqyn].[:Measure Names]' value='131' />
+            <format attr='text-format' field='[federated.0ukehl10s4159q12y16vy0q9bqyn].[Multiple Values]' value='N' />
+            <format attr='font-weight' field='[federated.0ukehl10s4159q12y16vy0q9bqyn].[:Measure Names]' value='normal' />
+            <format attr='font-size' field='[federated.0ukehl10s4159q12y16vy0q9bqyn].[:Measure Names]' value='18' />
+            <format attr='text-align' field='[federated.0ukehl10s4159q12y16vy0q9bqyn].[:Measure Names]' value='center' />
+            <format attr='font-size' field='[federated.0ukehl10s4159q12y16vy0q9bqyn].[Multiple Values]' value='12' />
+            <format attr='text-align' field='[federated.0ukehl10s4159q12y16vy0q9bqyn].[Multiple Values]' value='center' />
+            <format attr='text-align' value='right' />
+            <format attr='border-width' value='0' />
+            <format attr='border-style' value='none' />
+            <format attr='border-width' scope='cols' value='1' />
+            <format attr='border-style' scope='cols' value='solid' />
+            <format attr='font-weight' value='normal' />
+            <format attr='border-width' scope='rows' value='1' />
+            <format attr='border-style' scope='rows' value='solid' />
+            <format attr='text-format' field='[federated.0ukehl10s4159q12y16vy0q9bqyn].[sum:call_done:qk]' value='' />
+            <format attr='text-format' field='[federated.0ukehl10s4159q12y16vy0q9bqyn].[sum:meeting_done:qk]' value='' />
+          </style-rule>
+          <style-rule element='header'>
+            <format attr='width' field='[federated.0ukehl10s4159q12y16vy0q9bqyn].[none:country:nk]' value='168' />
+            <format attr='height' field='[federated.0ukehl10s4159q12y16vy0q9bqyn].[:Measure Names]' value='56' />
+            <format attr='width' field='[federated.0ukehl10s4159q12y16vy0q9bqyn].[:Measure Names]' value='176' />
+            <format attr='font-weight' data-class='subtotal' field='[federated.0ukehl10s4159q12y16vy0q9bqyn].[:Measure Names]' value='bold' />
+            <format attr='font-size' data-class='subtotal' field='[federated.0ukehl10s4159q12y16vy0q9bqyn].[:Measure Names]' value='12' />
+            <format attr='text-orientation' data-class='subtotal' field='[federated.0ukehl10s4159q12y16vy0q9bqyn].[:Measure Names]' value='0' />
+            <format attr='wrap' data-class='subtotal' field='[federated.0ukehl10s4159q12y16vy0q9bqyn].[:Measure Names]' value='on' />
+            <format attr='background-color' scope='rows' value='#00000000' />
+            <format attr='background-color' field='[federated.0ukehl10s4159q12y16vy0q9bqyn].[:Measure Names]' value='#a6007e' />
+            <format attr='band-color' scope='rows' value='#00000000' />
+            <format attr='band-color' scope='cols' value='#00000000' />
+            <format attr='border-style' scope='rows' value='solid' />
+            <format attr='background-color' field='[federated.0ukehl10s4159q12y16vy0q9bqyn].[tmn:report_date:ok]' value='#e6e6e6' />
+            <format attr='border-width' data-class='total' scope='rows' value='0' />
+            <format attr='border-style' data-class='total' scope='rows' value='none' />
+          </style-rule>
+          <style-rule element='field-labels-decoration'>
+            <format attr='text-align' value='right' />
+          </style-rule>
+          <style-rule element='label'>
+            <format attr='display' field='[federated.0ukehl10s4159q12y16vy0q9bqyn].[:Measure Names]' value='false' />
+            <format attr='display' field='[federated.0ukehl10s4159q12y16vy0q9bqyn].[none:country:nk]' value='false' />
+            <format attr='display' field='[federated.0ukehl10s4159q12y16vy0q9bqyn].[tmn:report_date:ok]' value='false' />
+            <format attr='display' field='[federated.0ukehl10s4159q12y16vy0q9bqyn].[none:Calculation_2973572063509094403:nk]' value='false' />
+            <format attr='text-align' field='[federated.0ukehl10s4159q12y16vy0q9bqyn].[:Measure Names]' value='center' />
+            <format attr='text-orientation' field='[federated.0ukehl10s4159q12y16vy0q9bqyn].[:Measure Names]' value='0' />
+            <format attr='vertical-align' field='[federated.0ukehl10s4159q12y16vy0q9bqyn].[:Measure Names]' value='center' />
+            <format attr='wrap' field='[federated.0ukehl10s4159q12y16vy0q9bqyn].[:Measure Names]' value='on' />
+            <format attr='color' field='[federated.0ukehl10s4159q12y16vy0q9bqyn].[:Measure Names]' value='#ffffff' />
+            <format attr='text-align' scope='rows' value='left' />
+            <format attr='font-size' field='[federated.0ukehl10s4159q12y16vy0q9bqyn].[:Measure Names]' value='11' />
+          </style-rule>
+          <style-rule element='pane'>
+            <format attr='band-color' scope='cols' value='#00000000' />
+            <format attr='band-color' scope='rows' value='#00000000' />
+            <format attr='border-style' scope='rows' value='solid' />
+            <format attr='border-width' data-class='total' scope='rows' value='0' />
+            <format attr='border-style' data-class='total' scope='rows' value='none' />
+          </style-rule>
+          <style-rule element='table'>
+            <format attr='band-size' scope='rows' value='1' />
+            <format attr='band-size' scope='cols' value='1' />
+          </style-rule>
+          <style-rule element='worksheet'>
+            <format attr='display-field-labels' scope='rows' value='false' />
+            <format attr='font-weight' value='bold' />
+          </style-rule>
+          <style-rule element='gridline'>
+            <format attr='stroke-size' scope='rows' value='0' />
+            <format attr='line-visibility' scope='rows' value='off' />
+          </style-rule>
+          <style-rule element='zeroline'>
+            <format attr='stroke-size' scope='rows' value='0' />
+            <format attr='line-visibility' scope='rows' value='off' />
+          </style-rule>
+          <style-rule element='table-div'>
+            <format attr='line-visibility' scope='cols' value='on' />
+            <format attr='line-pattern-only' scope='cols' value='solid' />
+            <format attr='stroke-color' scope='rows' value='#000000' />
+            <format attr='line-pattern-only' scope='rows' value='solid' />
+            <format attr='stroke-size' scope='rows' value='0' />
+            <format attr='line-visibility' scope='rows' value='off' />
+          </style-rule>
+          <style-rule element='quick-filter'>
+            <format attr='title' field='[federated.0ukehl10s4159q12y16vy0q9bqyn].[none:country:nk]' value='Country' />
+            <format attr='font-weight' value='bold' />
+            <format attr='color' value='#6c5cd8' />
+            <format attr='background-color' value='#e6e6e6' />
+            <format attr='border-width' value='0' />
+            <format attr='font-size' value='12' />
+          </style-rule>
+          <style-rule element='quick-filter-title'>
+            <format attr='font-size' value='12' />
+          </style-rule>
+        </style>
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Automatic' />
+            <encodings>
+              <text column='[federated.0ukehl10s4159q12y16vy0q9bqyn].[Multiple Values]' />
+            </encodings>
+            <style>
+              <style-rule element='mark'>
+                <format attr='mark-labels-show' value='true' />
+                <format attr='mark-color' value='#a6007e' />
+              </style-rule>
+              <style-rule element='pane'>
+                <format attr='minwidth' value='-1' />
+                <format attr='maxwidth' value='-1' />
+              </style-rule>
+            </style>
+          </pane>
+        </panes>
+        <rows>(([federated.0ukehl10s4159q12y16vy0q9bqyn].[:Measure Names] / [federated.0ukehl10s4159q12y16vy0q9bqyn].[none:country:nk]) * [federated.0ukehl10s4159q12y16vy0q9bqyn].[Multiple Values])</rows>
+        <cols>([federated.0ukehl10s4159q12y16vy0q9bqyn].[none:Calculation_2973572063509094403:nk] / [federated.0ukehl10s4159q12y16vy0q9bqyn].[tmn:report_date:ok])</cols>
+      </table>
+      <simple-id uuid='{1BEB94BE-4885-45A2-A6C0-D836794C6714}' />
+    </worksheet>
+    <worksheet name='SF Compliance (Monthly)'>
+      <layout-options>
+        <title>
+          <formatted-text>
+            <run bold='true'>Monthly SF Compliance </run>
+          </formatted-text>
+        </title>
+      </layout-options>
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='Reps call and meeting' name='federated.0ukehl10s4159q12y16vy0q9bqyn' />
+          </datasources>
+          <datasource-dependencies datasource='federated.0ukehl10s4159q12y16vy0q9bqyn'>
+            <column caption='Meeting MTD' datatype='integer' name='[Calculation_4021292280045641730]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='IF DATETRUNC(&apos;month&apos;, [report_date]) = DATETRUNC(&apos;month&apos;, TODAY())&#10;   AND [report_date] &lt;= TODAY()&#10;THEN [meeting_done]&#10;ELSE 0&#10;END' />
+            </column>
+            <column caption='Call MTD' datatype='integer' name='[Calculation_4021292280045727747]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='IF DATETRUNC(&apos;month&apos;, [report_date]) = DATETRUNC(&apos;month&apos;, TODAY())&#10;   AND [report_date] &lt;= TODAY()&#10;THEN [call_done]&#10;ELSE 0&#10;END' />
+            </column>
+            <column datatype='integer' name='[call_done]' role='measure' type='quantitative' />
+            <column datatype='string' name='[country]' role='dimension' semantic-role='[Country].[ISO3166_2]' type='nominal' />
+            <column datatype='integer' name='[meeting_done]' role='measure' type='quantitative' />
+            <column-instance column='[country]' derivation='None' name='[none:country:nk]' pivot='key' type='nominal' />
+            <column datatype='date' name='[report_date]' role='dimension' type='ordinal' />
+            <column-instance column='[Calculation_4021292280045641730]' derivation='Sum' name='[sum:Calculation_4021292280045641730:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[Calculation_4021292280045727747]' derivation='Sum' name='[sum:Calculation_4021292280045727747:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[call_done]' derivation='Sum' name='[sum:call_done:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[meeting_done]' derivation='Sum' name='[sum:meeting_done:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[report_date]' derivation='Month-Trunc' name='[tmn:report_date:ok]' pivot='key' type='ordinal' />
+          </datasource-dependencies>
+          <filter class='categorical' column='[federated.0ukehl10s4159q12y16vy0q9bqyn].[:Measure Names]'>
+            <groupfilter function='union' user:op='manual'>
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.0ukehl10s4159q12y16vy0q9bqyn].[sum:meeting_done:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.0ukehl10s4159q12y16vy0q9bqyn].[sum:call_done:qk]&quot;' />
+            </groupfilter>
+          </filter>
+          <manual-sort column='[federated.0ukehl10s4159q12y16vy0q9bqyn].[:Measure Names]' direction='ASC'>
+            <dictionary>
+              <bucket>&quot;[federated.0ukehl10s4159q12y16vy0q9bqyn].[sum:Calculation_4021292280045641730:qk]&quot;</bucket>
+              <bucket>&quot;[federated.0ukehl10s4159q12y16vy0q9bqyn].[sum:meeting_done:qk]&quot;</bucket>
+              <bucket>&quot;[federated.0ukehl10s4159q12y16vy0q9bqyn].[sum:Calculation_4021292280045727747:qk]&quot;</bucket>
+            </dictionary>
+          </manual-sort>
+          <filter class='categorical' column='[federated.0ukehl10s4159q12y16vy0q9bqyn].[none:country:nk]' filter-group='4'>
+            <groupfilter function='level-members' level='[none:country:nk]' user:ui-enumeration='all' user:ui-marker='enumerate' />
+          </filter>
+          <filter class='categorical' column='[federated.0ukehl10s4159q12y16vy0q9bqyn].[tmn:report_date:ok]' filter-group='3'>
+            <groupfilter function='level-members' level='[tmn:report_date:ok]' user:ui-enumeration='all' user:ui-marker='enumerate' />
+          </filter>
+          <slices>
+            <column>[federated.0ukehl10s4159q12y16vy0q9bqyn].[:Measure Names]</column>
+            <column>[federated.0ukehl10s4159q12y16vy0q9bqyn].[tmn:report_date:ok]</column>
+            <column>[federated.0ukehl10s4159q12y16vy0q9bqyn].[none:country:nk]</column>
+          </slices>
+          <aggregation value='true' />
+        </view>
+        <style>
+          <style-rule element='axis'>
+            <format attr='stroke-color' value='#000000' />
+            <format attr='line-visibility' value='on' />
+            <format attr='line-pattern-only' value='solid' />
+            <format attr='tick-color' value='#000000' />
+          </style-rule>
+          <style-rule element='cell'>
+            <format attr='width' value='164' />
+            <format attr='width' field='[federated.0ukehl10s4159q12y16vy0q9bqyn].[:Measure Names]' value='131' />
+            <format attr='text-format' field='[federated.0ukehl10s4159q12y16vy0q9bqyn].[Multiple Values]' value='N' />
+            <format attr='font-weight' field='[federated.0ukehl10s4159q12y16vy0q9bqyn].[:Measure Names]' value='normal' />
+            <format attr='font-size' field='[federated.0ukehl10s4159q12y16vy0q9bqyn].[:Measure Names]' value='18' />
+            <format attr='text-align' field='[federated.0ukehl10s4159q12y16vy0q9bqyn].[:Measure Names]' value='center' />
+            <format attr='font-size' field='[federated.0ukehl10s4159q12y16vy0q9bqyn].[Multiple Values]' value='12' />
+            <format attr='text-align' field='[federated.0ukehl10s4159q12y16vy0q9bqyn].[Multiple Values]' value='center' />
+            <format attr='text-align' value='right' />
+            <format attr='border-width' value='0' />
+            <format attr='border-style' value='none' />
+            <format attr='border-width' scope='cols' value='1' />
+            <format attr='border-style' scope='cols' value='solid' />
+            <format attr='font-weight' value='normal' />
+            <format attr='border-width' scope='rows' value='1' />
+            <format attr='border-style' scope='rows' value='solid' />
+          </style-rule>
+          <style-rule element='header'>
+            <format attr='width' field='[federated.0ukehl10s4159q12y16vy0q9bqyn].[none:country:nk]' value='168' />
+            <format attr='height' field='[federated.0ukehl10s4159q12y16vy0q9bqyn].[:Measure Names]' value='56' />
+            <format attr='width' field='[federated.0ukehl10s4159q12y16vy0q9bqyn].[:Measure Names]' value='176' />
+            <format attr='font-weight' data-class='subtotal' field='[federated.0ukehl10s4159q12y16vy0q9bqyn].[:Measure Names]' value='bold' />
+            <format attr='font-size' data-class='subtotal' field='[federated.0ukehl10s4159q12y16vy0q9bqyn].[:Measure Names]' value='12' />
+            <format attr='text-orientation' data-class='subtotal' field='[federated.0ukehl10s4159q12y16vy0q9bqyn].[:Measure Names]' value='0' />
+            <format attr='wrap' data-class='subtotal' field='[federated.0ukehl10s4159q12y16vy0q9bqyn].[:Measure Names]' value='on' />
+            <format attr='background-color' scope='rows' value='#00000000' />
+            <format attr='background-color' field='[federated.0ukehl10s4159q12y16vy0q9bqyn].[:Measure Names]' value='#a6007e' />
+            <format attr='band-color' scope='rows' value='#00000000' />
+            <format attr='band-color' scope='cols' value='#00000000' />
+            <format attr='border-style' scope='rows' value='solid' />
+            <format attr='background-color' field='[federated.0ukehl10s4159q12y16vy0q9bqyn].[tmn:report_date:ok]' value='#e6e6e6' />
+          </style-rule>
+          <style-rule element='field-labels-decoration'>
+            <format attr='text-align' value='right' />
+          </style-rule>
+          <style-rule element='label'>
+            <format attr='display' field='[federated.0ukehl10s4159q12y16vy0q9bqyn].[:Measure Names]' value='true' />
+            <format attr='text-align' field='[federated.0ukehl10s4159q12y16vy0q9bqyn].[:Measure Names]' value='center' />
+            <format attr='text-orientation' field='[federated.0ukehl10s4159q12y16vy0q9bqyn].[:Measure Names]' value='0' />
+            <format attr='vertical-align' field='[federated.0ukehl10s4159q12y16vy0q9bqyn].[:Measure Names]' value='center' />
+            <format attr='wrap' field='[federated.0ukehl10s4159q12y16vy0q9bqyn].[:Measure Names]' value='on' />
+            <format attr='color' field='[federated.0ukehl10s4159q12y16vy0q9bqyn].[:Measure Names]' value='#ffffff' />
+            <format attr='text-align' scope='rows' value='left' />
+            <format attr='font-size' field='[federated.0ukehl10s4159q12y16vy0q9bqyn].[:Measure Names]' value='11' />
+            <format attr='text-format' field='[federated.0ukehl10s4159q12y16vy0q9bqyn].[tmn:report_date:ok]' value='*MMM YY' />
+          </style-rule>
+          <style-rule element='mark'>
+            <encoding attr='color' field='[federated.0ukehl10s4159q12y16vy0q9bqyn].[sum:Calculation_4021292280045641730:qk]' max='0' min='0' type='custom-interpolated'>
+              <color-palette custom='true' name='' type='ordered-sequential'>
+                <color>#f1f1f1</color>
+                <color>#f0f0f0</color>
+                <color>#efefef</color>
+                <color>#efefef</color>
+                <color>#eeeeee</color>
+                <color>#eeeeee</color>
+                <color>#ededed</color>
+                <color>#ececec</color>
+                <color>#ececec</color>
+                <color>#ebebeb</color>
+                <color>#ebebeb</color>
+              </color-palette>
+            </encoding>
+            <encoding attr='color' field='[federated.0ukehl10s4159q12y16vy0q9bqyn].[sum:Calculation_4021292280045727747:qk]' max='0' min='0' type='custom-interpolated'>
+              <color-palette custom='true' name='' type='ordered-sequential'>
+                <color>#f1f1f1</color>
+                <color>#f2f2f2</color>
+                <color>#f3f3f3</color>
+                <color>#f5f5f5</color>
+                <color>#f6f6f6</color>
+                <color>#f8f8f8</color>
+                <color>#f9f9f9</color>
+                <color>#fafafa</color>
+                <color>#fcfcfc</color>
+                <color>#fdfdfd</color>
+                <color>#ffffff</color>
+              </color-palette>
+            </encoding>
+          </style-rule>
+          <style-rule element='pane'>
+            <format attr='band-color' scope='cols' value='#00000000' />
+            <format attr='band-color' scope='rows' value='#00000000' />
+            <format attr='border-style' scope='rows' value='solid' />
+          </style-rule>
+          <style-rule element='table'>
+            <format attr='band-size' scope='rows' value='1' />
+            <format attr='band-size' scope='cols' value='1' />
+          </style-rule>
+          <style-rule element='worksheet'>
+            <format attr='display-field-labels' scope='rows' value='false' />
+            <format attr='font-weight' value='bold' />
+          </style-rule>
+          <style-rule element='gridline'>
+            <format attr='stroke-color' scope='rows' value='#000000' />
+            <format attr='line-visibility' scope='rows' value='on' />
+            <format attr='line-pattern-only' scope='rows' value='solid' />
+            <format attr='stroke-color' scope='cols' value='#000000' />
+            <format attr='line-visibility' scope='cols' value='on' />
+            <format attr='line-pattern-only' scope='cols' value='solid' />
+          </style-rule>
+          <style-rule element='zeroline'>
+            <format attr='stroke-color' value='#000000' />
+          </style-rule>
+          <style-rule element='table-div'>
+            <format attr='line-visibility' scope='cols' value='on' />
+            <format attr='line-pattern-only' scope='cols' value='solid' />
+            <format attr='stroke-color' scope='rows' value='#1b1b1b' />
+            <format attr='stroke-size' scope='rows' value='2' />
+          </style-rule>
+          <style-rule element='title'>
+            <format attr='background-color' value='#e4e4e4' />
+          </style-rule>
+          <style-rule element='quick-filter'>
+            <format attr='title' field='[federated.0ukehl10s4159q12y16vy0q9bqyn].[none:country:nk]' value='Country' />
+            <format attr='title' field='[federated.0ukehl10s4159q12y16vy0q9bqyn].[tmn:report_date:ok]' value='Month of report_date' />
+            <format attr='font-weight' value='bold' />
+            <format attr='color' value='#6c5cd8' />
+            <format attr='background-color' value='#e6e6e6' />
+            <format attr='border-width' value='0' />
+            <format attr='font-size' value='12' />
+          </style-rule>
+          <style-rule element='quick-filter-title'>
+            <format attr='font-size' value='12' />
+          </style-rule>
+        </style>
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Automatic' />
+            <encodings>
+              <text column='[federated.0ukehl10s4159q12y16vy0q9bqyn].[Multiple Values]' />
+            </encodings>
+            <customized-label>
+              <formatted-text>
+                <run>&lt;</run>
+                <run>[federated.0ukehl10s4159q12y16vy0q9bqyn].[Multiple Values]</run>
+                <run>&gt;</run>
+              </formatted-text>
+            </customized-label>
+            <style>
+              <style-rule element='mark'>
+                <format attr='mark-labels-show' value='true' />
+              </style-rule>
+              <style-rule element='pane'>
+                <format attr='minwidth' value='-1' />
+                <format attr='maxwidth' value='-1' />
+              </style-rule>
+            </style>
+          </pane>
+        </panes>
+        <rows>([federated.0ukehl10s4159q12y16vy0q9bqyn].[:Measure Names] / [federated.0ukehl10s4159q12y16vy0q9bqyn].[none:country:nk])</rows>
+        <cols>[federated.0ukehl10s4159q12y16vy0q9bqyn].[tmn:report_date:ok]</cols>
+      </table>
+      <simple-id uuid='{D57FB518-ADEB-42CC-A87E-DF7924989BC9}' />
+    </worksheet>
+  </worksheets>
+  <dashboards>
+    <dashboard _.fcp.AccessibleZoneTabOrder.true...enable-sort-zone-taborder='true' name='Monthly Overview'>
+      <repository-location id='MonthlyOverview' path='/t/Foodora/workbooks/PDSalesforceComplianceMonthlyDRAFT' revision='' site='Foodora' />
+      <style />
+      <size maxheight='800' maxwidth='1900' minheight='800' minwidth='1900' sizing-mode='fixed' />
+      <datasources>
+        <datasource caption='Reps call and meeting' name='federated.0ukehl10s4159q12y16vy0q9bqyn' />
+      </datasources>
+      <datasource-dependencies datasource='federated.0ukehl10s4159q12y16vy0q9bqyn'>
+        <column datatype='string' name='[country]' role='dimension' semantic-role='[Country].[ISO3166_2]' type='nominal' />
+        <column-instance column='[country]' derivation='None' name='[none:country:nk]' pivot='key' type='nominal' />
+        <column datatype='date' name='[report_date]' role='dimension' type='ordinal' />
+        <column-instance column='[report_date]' derivation='Month-Trunc' name='[tmn:report_date:ok]' pivot='key' type='ordinal' />
+      </datasource-dependencies>
+      <zones>
+        <zone h='100000' id='4' type-v2='layout-basic' w='100000' x='0' y='0'>
+          <zone h='98000' id='17' param='horz' type-v2='layout-flow' w='99158' x='421' y='1000'>
+            <zone h='98000' id='5' param='horz' type-v2='layout-flow' w='90737' x='421' y='1000'>
+              <zone fixed-size='873' h='98000' id='3' is-fixed='true' name='SF Compliance (Monthly)' w='46368' x='421' y='1000'>
+                <layout-cache fixed-size-h='866' type-h='fixed' type-w='cell' />
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+              <zone fixed-size='716' h='98000' id='6' is-fixed='true' name='SF Compliance (MoM)' w='38105' x='46789' y='1000'>
+                <layout-cache type-h='fixed' type-w='cell' />
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+              <zone h='98000' id='10' param='vert' type-v2='layout-flow' w='6264' x='84894' y='1000'>
+                <zone fixed-size='74' h='10250' id='11' is-fixed='true' type-v2='empty' w='6264' x='84894' y='1000'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                  </zone-style>
+                </zone>
+                <zone h='87750' id='7' name='SF Compliance (MoM) (2)' show-title='false' w='6264' x='84894' y='11250'>
+                  <layout-cache minheight='3401' type-h='scalable' type-w='cell' />
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                  </zone-style>
+                </zone>
+              </zone>
+            </zone>
+            <zone fixed-size='160' h='98000' id='16' is-fixed='true' param='vert' type-v2='layout-flow' w='8421' x='91158' y='1000'>
+              <zone h='7125' id='18' mode='checkdropdown' name='SF Compliance (Monthly)' param='[federated.0ukehl10s4159q12y16vy0q9bqyn].[tmn:report_date:ok]' show-apply='true' type-v2='filter' values='database' w='8421' x='91158' y='1000'>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+              <zone h='7125' id='29' mode='checkdropdown' name='SF Compliance (Monthly)' param='[federated.0ukehl10s4159q12y16vy0q9bqyn].[none:country:nk]' show-apply='true' type-v2='filter' values='database' w='8421' x='91158' y='8125'>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+            </zone>
+          </zone>
+          <zone-style>
+            <format attr='border-color' value='#000000' />
+            <format attr='border-style' value='none' />
+            <format attr='border-width' value='0' />
+            <format attr='margin' value='8' />
+          </zone-style>
+        </zone>
+      </zones>
+      <devicelayouts>
+        <devicelayout auto-generated='true' name='Phone'>
+          <size maxheight='1000' minheight='1000' sizing-mode='vscroll' />
+          <zones>
+            <zone h='100000' id='31' type-v2='layout-basic' w='100000' x='0' y='0'>
+              <zone h='98000' id='30' param='vert' type-v2='layout-flow' w='99158' x='421' y='1000'>
+                <zone h='7125' id='18' mode='checkdropdown' name='SF Compliance (Monthly)' param='[federated.0ukehl10s4159q12y16vy0q9bqyn].[tmn:report_date:ok]' show-apply='true' type-v2='filter' values='database' w='8421' x='91158' y='1000'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone h='7125' id='29' mode='checkdropdown' name='SF Compliance (Monthly)' param='[federated.0ukehl10s4159q12y16vy0q9bqyn].[none:country:nk]' show-apply='true' type-v2='filter' values='database' w='8421' x='91158' y='8125'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone fixed-size='280' h='98000' id='3' is-fixed='true' name='SF Compliance (Monthly)' w='46368' x='421' y='1000'>
+                  <layout-cache fixed-size-h='866' type-h='fixed' type-w='cell' />
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone fixed-size='280' h='98000' id='6' is-fixed='true' name='SF Compliance (MoM)' w='38105' x='46789' y='1000'>
+                  <layout-cache type-h='fixed' type-w='cell' />
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone fixed-size='280' h='87750' id='7' is-fixed='true' name='SF Compliance (MoM) (2)' show-title='false' w='6264' x='84894' y='11250'>
+                  <layout-cache minheight='3401' type-h='scalable' type-w='cell' />
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+              </zone>
+              <zone-style>
+                <format attr='border-color' value='#000000' />
+                <format attr='border-style' value='none' />
+                <format attr='border-width' value='0' />
+                <format attr='margin' value='8' />
+              </zone-style>
+            </zone>
+          </zones>
+        </devicelayout>
+      </devicelayouts>
+      <simple-id uuid='{C66A2CB3-87F9-4444-86BF-C9C4AAD93439}' />
+    </dashboard>
+  </dashboards>
+  <windows source-height='30'>
+    <window class='worksheet' name='SF Compliance (Monthly)'>
+      <cards>
+        <edge name='left'>
+          <strip size='300'>
+            <card type='pages' />
+            <card type='filters' />
+            <card type='marks' />
+            <card type='measures' />
+          </strip>
+        </edge>
+        <edge name='top'>
+          <strip size='2147483647'>
+            <card type='columns' />
+          </strip>
+          <strip size='2147483647'>
+            <card type='rows' />
+          </strip>
+          <strip size='31'>
+            <card type='title' />
+          </strip>
+        </edge>
+      </cards>
+      <viewpoint>
+        <highlight>
+          <color-one-way>
+            <field>[federated.0ukehl10s4159q12y16vy0q9bqyn].[:Measure Names]</field>
+            <field>[federated.0ukehl10s4159q12y16vy0q9bqyn].[none:Calculation_1746622628366393344:nk]</field>
+            <field>[federated.0ukehl10s4159q12y16vy0q9bqyn].[none:country:nk]</field>
+            <field>[federated.0ukehl10s4159q12y16vy0q9bqyn].[none:reps_name:nk]</field>
+            <field>[federated.0ukehl10s4159q12y16vy0q9bqyn].[yr:report_date:ok]</field>
+          </color-one-way>
+        </highlight>
+      </viewpoint>
+      <simple-id uuid='{CCE1B593-E0CF-41B5-8554-D26EA9E438B8}' />
+    </window>
+    <window class='worksheet' name='SF Compliance (MoM)'>
+      <cards>
+        <edge name='left'>
+          <strip size='300'>
+            <card type='pages' />
+            <card type='filters' />
+            <card type='marks' />
+            <card type='measures' />
+          </strip>
+        </edge>
+        <edge name='top'>
+          <strip size='2147483647'>
+            <card type='columns' />
+          </strip>
+          <strip size='2147483647'>
+            <card type='rows' />
+          </strip>
+          <strip size='31'>
+            <card type='title' />
+          </strip>
+        </edge>
+        <edge name='right'>
+          <strip size='160'>
+            <card pane-specification-id='0' param='[federated.0ukehl10s4159q12y16vy0q9bqyn].[Multiple Values]' type='color' />
+          </strip>
+        </edge>
+      </cards>
+      <viewpoint>
+        <highlight>
+          <color-one-way>
+            <field>[federated.0ukehl10s4159q12y16vy0q9bqyn].[:Measure Names]</field>
+            <field>[federated.0ukehl10s4159q12y16vy0q9bqyn].[none:Calculation_1746622628366393344:nk]</field>
+            <field>[federated.0ukehl10s4159q12y16vy0q9bqyn].[none:country:nk]</field>
+            <field>[federated.0ukehl10s4159q12y16vy0q9bqyn].[none:reps_name:nk]</field>
+            <field>[federated.0ukehl10s4159q12y16vy0q9bqyn].[yr:report_date:ok]</field>
+          </color-one-way>
+        </highlight>
+      </viewpoint>
+      <simple-id uuid='{845B869D-93B3-4537-ACD1-BEE0B2CB7417}' />
+    </window>
+    <window class='worksheet' name='SF Compliance (MoM) (2)'>
+      <cards>
+        <edge name='left'>
+          <strip size='300'>
+            <card type='pages' />
+            <card type='filters' />
+            <card type='marks' />
+            <card type='measures' />
+          </strip>
+        </edge>
+        <edge name='top'>
+          <strip size='2147483647'>
+            <card type='columns' />
+          </strip>
+          <strip size='2147483647'>
+            <card type='rows' />
+          </strip>
+          <strip size='31'>
+            <card type='title' />
+          </strip>
+        </edge>
+      </cards>
+      <viewpoint>
+        <highlight>
+          <color-one-way>
+            <field>[federated.0ukehl10s4159q12y16vy0q9bqyn].[:Measure Names]</field>
+            <field>[federated.0ukehl10s4159q12y16vy0q9bqyn].[none:Calculation_1746622628366393344:nk]</field>
+            <field>[federated.0ukehl10s4159q12y16vy0q9bqyn].[none:Calculation_2973572063509094403:nk]</field>
+            <field>[federated.0ukehl10s4159q12y16vy0q9bqyn].[none:country:nk]</field>
+            <field>[federated.0ukehl10s4159q12y16vy0q9bqyn].[none:reps_name:nk]</field>
+            <field>[federated.0ukehl10s4159q12y16vy0q9bqyn].[yr:report_date:ok]</field>
+          </color-one-way>
+        </highlight>
+      </viewpoint>
+      <simple-id uuid='{308CB9E7-746A-422C-9B6A-274CFD856FB7}' />
+    </window>
+    <window class='dashboard' maximized='true' name='Monthly Overview'>
+      <viewpoints>
+        <viewpoint name='SF Compliance (MoM)'>
+          <zoom type='entire-view' />
+        </viewpoint>
+        <viewpoint name='SF Compliance (MoM) (2)'>
+          <zoom type='entire-view' />
+        </viewpoint>
+        <viewpoint name='SF Compliance (Monthly)'>
+          <zoom type='entire-view' />
+        </viewpoint>
+      </viewpoints>
+      <active id='29' />
+      <simple-id uuid='{5689D76F-30B9-4BC8-A835-40E9D89338F8}' />
+    </window>
+  </windows>
+</workbook>
