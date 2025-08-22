@@ -1,0 +1,2434 @@
+<?xml version='1.0' encoding='utf-8' ?>
+
+<!-- build 20221.22.1108.1355                               -->
+<workbook original-version='18.1' source-build='2021.4.4 (20214.22.0213.1102)' source-platform='mac' version='18.1' xml:base='https://tableau.deliveryhero.net' xmlns:user='http://www.tableausoftware.com/xml/user'>
+  <document-format-change-manifest>
+    <_.fcp.AccessibleZoneTabOrder.true...AccessibleZoneTabOrder />
+    <_.fcp.AnimationOnByDefault.true...AnimationOnByDefault />
+    <AutoCreateAndUpdateDSDPhoneLayouts />
+    <MapboxVectorStylesAndLayers />
+    <_.fcp.MarkAnimation.true...MarkAnimation />
+    <_.fcp.ObjectModelEncapsulateLegacy.true...ObjectModelEncapsulateLegacy />
+    <_.fcp.ObjectModelExtractV2.true...ObjectModelExtractV2 />
+    <_.fcp.ObjectModelTableType.true...ObjectModelTableType />
+    <_.fcp.SchemaViewerObjectModel.true...SchemaViewerObjectModel />
+    <SetMembershipControl />
+    <SheetIdentifierTracking />
+    <SortTagCleanup />
+    <WindowsPersistSimpleIdentifiers />
+    <ZoneBackgroundTransparency />
+  </document-format-change-manifest>
+  <repository-location derived-from='https://tableau.deliveryhero.net/t/GlobalStandardReporting/workbooks/App-Engagement?rev=1.0' id='App-Engagement' path='/t/GlobalStandardReporting/workbooks' revision='1.1' site='GlobalStandardReporting' />
+  <preferences>
+    <preference name='ui.encoding.shelf.height' value='24' />
+    <preference name='ui.shelf.height' value='26' />
+  </preferences>
+  <_.fcp.AnimationOnByDefault.false...style>
+    <_.fcp.AnimationOnByDefault.false..._.fcp.MarkAnimation.true...style-rule element='animation'>
+      <_.fcp.AnimationOnByDefault.false...format attr='animation-on' value='ao-on' />
+    </_.fcp.AnimationOnByDefault.false..._.fcp.MarkAnimation.true...style-rule>
+  </_.fcp.AnimationOnByDefault.false...style>
+  <datasources>
+    <datasource hasconnection='false' inline='true' name='Parameters' version='18.1'>
+      <aliases enabled='yes' />
+      <column alias='Week' caption='Period Granularity' datatype='string' name='[Entity Granularity (copy)_4563061250205417472]' param-domain-type='list' role='measure' type='nominal' value='&quot;week&quot;'>
+        <calculation class='tableau' formula='&quot;week&quot;' />
+        <aliases>
+          <alias key='&quot;month&quot;' value='Month' />
+          <alias key='&quot;quarter&quot;' value='Quarter' />
+          <alias key='&quot;week&quot;' value='Week' />
+        </aliases>
+        <members>
+          <member alias='Week' value='&quot;week&quot;' />
+          <member alias='Month' value='&quot;month&quot;' />
+          <member alias='Quarter' value='&quot;quarter&quot;' />
+        </members>
+      </column>
+      <column caption='Entity Granularity' datatype='string' name='[Parameter 1]' param-domain-type='list' role='measure' type='nominal' value='&quot;Country&quot;'>
+        <calculation class='tableau' formula='&quot;Country&quot;' />
+        <members>
+          <member value='&quot;Brand&quot;' />
+          <member value='&quot;Country&quot;' />
+        </members>
+      </column>
+    </datasource>
+    <datasource caption='app_engagement_push' inline='true' name='federated.1jk2zku11a8th31dgnxoy1hfr4xk' version='18.1'>
+      <connection class='federated'>
+        <named-connections>
+          <named-connection caption='BigQuery' name='bigquery.0k0qc0i0ure5f41ckw1871ly0sqk'>
+            <connection CATALOG='fulfillment-dwh-production' EXECCATALOG='dhub-sales-revenue' authentication='oauth' bq-dataset-fetch-rows='' bq-fetch-rows='' bq-fetch-tasks='' bq-large-fetch-rows='' bq-project-fetch-rows='' bq-response-rows='' class='bigquery' connection-dialect='google-sql' project='fulfillment-dwh-production' schema='rl_sales_revenue' server-oauth='' username='dilys.ong@foodpanda.com' workgroup-auth-mode='prompt' />
+          </named-connection>
+        </named-connections>
+        <_.fcp.ObjectModelEncapsulateLegacy.false...relation connection='bigquery.0k0qc0i0ure5f41ckw1871ly0sqk' name='Custom SQL Query' type='text'><![CDATA[WITH 
+entity AS (
+    SELECT 
+        management_entity
+        ,segment
+        ,global_entity_id
+        ,brand
+        ,country_name
+    FROM `fulfillment-dwh-production.curated_data_shared_central_dwh.global_entities`
+)
+,sessions AS (
+    SELECT 
+    fielddate
+    ,user_id
+    ,session_id
+    ,info.global_entity_id
+    ,COUNT(*) ct
+    FROM dhh-ncr-live.dbt_sales_revenue_report.vp_sessions
+    LEFT JOIN UNNEST(vendors_info) info
+    WHERE fielddate >>= '2023-03-20'
+    AND fielddate >>= DATE_SUB(DATE_TRUNC(CURRENT_DATE(),QUARTER),INTERVAL 5 QUARTER)
+    AND fielddate <<= CURRENT_DATE()
+    AND user_id IS NOT NULL
+    AND device_platform IN ('IOS','ANDROID')
+    GROUP BY 1,2,3,4
+)
+,events AS (
+  SELECT 
+  fielddate
+  ,user_id
+  ,user_pseudo_id
+  ,device_platform
+  ,device_category
+  ,event_name
+  ,session_id
+  ,COUNT(*) hits
+  FROM dhh-ncr-live.dbt_sales_revenue_report.vp_events
+  WHERE fielddate >>= '2023-03-20'
+  AND fielddate >>= DATE_SUB(DATE_TRUNC(CURRENT_DATE(),QUARTER),INTERVAL 5 QUARTER)
+  AND fielddate <<= CURRENT_DATE()
+  AND user_id IS NOT NULL
+  AND device_platform IN ('IOS','ANDROID')
+  AND event_name IN ('pushnotification_enabled','pushnotification_disabled','pushnotification_tap','pushnotification_display')
+  GROUP BY 1,2,3,4,5,6,7
+)
+,raw AS (
+    SELECT 
+    events.fielddate
+    ,sessions.global_entity_id
+    ,events.user_id
+    ,events.user_pseudo_id
+    ,events.device_platform
+    ,events.event_name
+    ,events.session_id
+    ,events.hits
+    FROM events 
+    JOIN sessions 
+    ON events.session_id = sessions.session_id
+    AND events.fielddate = sessions.fielddate
+) 
+,daily AS (
+    SELECT 
+    'day' time_granularity
+    ,FORMAT_DATE('%Y-%m-%d',raw.fielddate) time_period
+    ,raw.global_entity_id
+    ,device_platform
+    ,MAX(fielddate) max_date
+    ,COUNT(CASE WHEN event_name IN ('pushnotification_enabled','pushnotification_disabled') THEN user_pseudo_id END) devices
+    ,COUNT(CASE WHEN event_name IN ('pushnotification_enabled') THEN user_pseudo_id END) enabled_devices
+    ,COUNT(CASE WHEN event_name iN ('pushnotification_disabled') THEN user_pseudo_id END) disabled_devices
+    ,SUM(CASE WHEN event_name IN ('pushnotification_display') THEN hits END) displayed_notifications
+    ,SUM(CASE WHEN event_name IN ('pushnotification_tap') THEN hits END) tapped_notifications
+    ,COUNT(CASE WHEN event_name IN ('pushnotification_display') THEN user_pseudo_id END) displayed_devices
+    ,COUNT(CASE WHEN event_name iN ('pushnotification_tap') THEN user_pseudo_id END) tapped_devices
+    FROM raw 
+    WHERE raw.fielddate >>= DATE_SUB(DATE_TRUNC(CURRENT_DATE(),QUARTER),INTERVAL 5 QUARTER) 
+    GROUP BY 1,2,3,4
+)
+,weekly AS (
+    SELECT 
+    'week' time_granularity
+    ,FORMAT_DATE('%Y-W%W',DATE_TRUNC(raw.fielddate,WEEK(MONDAY))) time_period
+    ,global_entity_id
+    ,device_platform
+    ,MAX(fielddate) max_date
+    ,COUNT(CASE WHEN event_name IN ('pushnotification_enabled','pushnotification_disabled') THEN user_pseudo_id END) devices
+    ,COUNT(CASE WHEN event_name IN ('pushnotification_enabled') THEN user_pseudo_id END) enabled_devices
+    ,COUNT(CASE WHEN event_name iN ('pushnotification_disabled') THEN user_pseudo_id END) disabled_devices
+    ,COUNT(CASE WHEN event_name IN ('pushnotification_display') THEN session_id END) displayed_notifications
+    ,COUNT(CASE WHEN event_name IN ('pushnotification_tap') THEN session_id END) tapped_notifications
+    ,COUNT(CASE WHEN event_name IN ('pushnotification_display') THEN user_pseudo_id END) displayed_devices
+    ,COUNT(CASE WHEN event_name iN ('pushnotification_tap') THEN user_pseudo_id END) tapped_devices
+    FROM raw 
+    WHERE raw.fielddate >>= DATE_SUB(DATE_TRUNC(CURRENT_DATE(),WEEK(MONDAY)),INTERVAL 5 WEEK) 
+    GROUP BY 1,2,3,4
+)
+,monthly AS (
+    SELECT 
+    'month' time_granularity
+    ,FORMAT_DATE('%Y-%m',DATE_TRUNC(raw.fielddate,MONTH)) time_period
+    ,global_entity_id
+    ,device_platform
+    ,MAX(fielddate) max_date
+    ,COUNT(CASE WHEN event_name IN ('pushnotification_enabled','pushnotification_disabled') THEN user_pseudo_id END) devices
+    ,COUNT(CASE WHEN event_name IN ('pushnotification_enabled') THEN user_pseudo_id END) enabled_devices
+    ,COUNT(CASE WHEN event_name iN ('pushnotification_disabled') THEN user_pseudo_id END) disabled_devices
+    ,COUNT(CASE WHEN event_name IN ('pushnotification_display') THEN session_id END) displayed_notifications
+    ,COUNT(CASE WHEN event_name IN ('pushnotification_tap') THEN session_id END) tapped_notifications
+    ,COUNT(CASE WHEN event_name IN ('pushnotification_display') THEN user_pseudo_id END) displayed_devices
+    ,COUNT(CASE WHEN event_name iN ('pushnotification_tap') THEN user_pseudo_id END) tapped_devices
+    FROM raw 
+    WHERE fielddate >>= DATE_SUB(DATE_TRUNC(CURRENT_DATE(),MONTH),INTERVAL 5 MONTH) 
+    GROUP BY 1,2,3,4
+)
+,quarterly AS (
+    SELECT 
+    'quarter' time_granularity
+    ,FORMAT_DATE('%Y-Q%Q',DATE_TRUNC(fielddate,QUARTER)) time_period
+    ,global_entity_id
+    ,device_platform
+    ,MAX(fielddate) max_date
+    ,COUNT(CASE WHEN event_name IN ('pushnotification_enabled','pushnotification_disabled') THEN user_pseudo_id END) devices
+    ,COUNT(CASE WHEN event_name IN ('pushnotification_enabled') THEN user_pseudo_id END) enabled_devices
+    ,COUNT(CASE WHEN event_name iN ('pushnotification_disabled') THEN user_pseudo_id END) disabled_devices
+    ,COUNT(CASE WHEN event_name IN ('pushnotification_display') THEN session_id END) displayed_notifications
+    ,COUNT(CASE WHEN event_name IN ('pushnotification_tap') THEN session_id END) tapped_notifications
+    ,COUNT(CASE WHEN event_name IN ('pushnotification_display') THEN user_pseudo_id END) displayed_devices
+    ,COUNT(CASE WHEN event_name iN ('pushnotification_tap') THEN user_pseudo_id END) tapped_devices
+    FROM raw 
+    WHERE fielddate >>= DATE_SUB(DATE_TRUNC(CURRENT_DATE(),QUARTER),INTERVAL 5 QUARTER) 
+    GROUP BY 1,2,3,4
+)
+
+
+SELECT 
+agg.time_granularity
+,agg.time_period
+,agg.max_date
+,entity.management_entity
+,entity.segment
+,entity.global_entity_id
+,entity.brand
+,entity.country_name
+,agg.device_platform
+,agg.devices
+,agg.enabled_devices
+,agg.disabled_devices
+,agg.displayed_notifications
+,agg.tapped_notifications
+,agg.displayed_devices
+,agg.tapped_devices
+FROM (
+    SELECT * FROM daily
+    UNION ALL 
+    SELECT * FROM weekly 
+    UNION ALL 
+    SELECT * FROM monthly 
+    UNION ALL
+    SELECT * FROM quarterly
+) agg 
+JOIN entity 
+ON agg.global_entity_id = entity.global_entity_id]]></_.fcp.ObjectModelEncapsulateLegacy.false...relation>
+        <_.fcp.ObjectModelEncapsulateLegacy.true...relation connection='bigquery.0k0qc0i0ure5f41ckw1871ly0sqk' name='Custom SQL Query' type='text'><![CDATA[WITH 
+entity AS (
+    SELECT 
+        management_entity
+        ,segment
+        ,global_entity_id
+        ,brand
+        ,country_name
+    FROM `fulfillment-dwh-production.curated_data_shared_central_dwh.global_entities`
+)
+,sessions AS (
+    SELECT 
+    fielddate
+    ,user_id
+    ,session_id
+    ,info.global_entity_id
+    ,COUNT(*) ct
+    FROM dhh-ncr-live.dbt_sales_revenue_report.vp_sessions
+    LEFT JOIN UNNEST(vendors_info) info
+    WHERE fielddate >>= '2023-03-20'
+    AND fielddate >>= DATE_SUB(DATE_TRUNC(CURRENT_DATE(),QUARTER),INTERVAL 5 QUARTER)
+    AND fielddate <<= CURRENT_DATE()
+    AND user_id IS NOT NULL
+    AND device_platform IN ('IOS','ANDROID')
+    GROUP BY 1,2,3,4
+)
+,events AS (
+  SELECT 
+  fielddate
+  ,user_id
+  ,user_pseudo_id
+  ,device_platform
+  ,device_category
+  ,event_name
+  ,session_id
+  ,COUNT(*) hits
+  FROM dhh-ncr-live.dbt_sales_revenue_report.vp_events
+  WHERE fielddate >>= '2023-03-20'
+  AND fielddate >>= DATE_SUB(DATE_TRUNC(CURRENT_DATE(),QUARTER),INTERVAL 5 QUARTER)
+  AND fielddate <<= CURRENT_DATE()
+  AND user_id IS NOT NULL
+  AND device_platform IN ('IOS','ANDROID')
+  AND event_name IN ('pushnotification_enabled','pushnotification_disabled','pushnotification_tap','pushnotification_display')
+  GROUP BY 1,2,3,4,5,6,7
+)
+,raw AS (
+    SELECT 
+    events.fielddate
+    ,sessions.global_entity_id
+    ,events.user_id
+    ,events.user_pseudo_id
+    ,events.device_platform
+    ,events.event_name
+    ,events.session_id
+    ,events.hits
+    FROM events 
+    JOIN sessions 
+    ON events.session_id = sessions.session_id
+    AND events.fielddate = sessions.fielddate
+) 
+,daily AS (
+    SELECT 
+    'day' time_granularity
+    ,FORMAT_DATE('%Y-%m-%d',raw.fielddate) time_period
+    ,raw.global_entity_id
+    ,device_platform
+    ,MAX(fielddate) max_date
+    ,COUNT(CASE WHEN event_name IN ('pushnotification_enabled','pushnotification_disabled') THEN user_pseudo_id END) devices
+    ,COUNT(CASE WHEN event_name IN ('pushnotification_enabled') THEN user_pseudo_id END) enabled_devices
+    ,COUNT(CASE WHEN event_name iN ('pushnotification_disabled') THEN user_pseudo_id END) disabled_devices
+    ,SUM(CASE WHEN event_name IN ('pushnotification_display') THEN hits END) displayed_notifications
+    ,SUM(CASE WHEN event_name IN ('pushnotification_tap') THEN hits END) tapped_notifications
+    ,COUNT(CASE WHEN event_name IN ('pushnotification_display') THEN user_pseudo_id END) displayed_devices
+    ,COUNT(CASE WHEN event_name iN ('pushnotification_tap') THEN user_pseudo_id END) tapped_devices
+    FROM raw 
+    WHERE raw.fielddate >>= DATE_SUB(DATE_TRUNC(CURRENT_DATE(),QUARTER),INTERVAL 5 QUARTER) 
+    GROUP BY 1,2,3,4
+)
+,weekly AS (
+    SELECT 
+    'week' time_granularity
+    ,FORMAT_DATE('%Y-W%W',DATE_TRUNC(raw.fielddate,WEEK(MONDAY))) time_period
+    ,global_entity_id
+    ,device_platform
+    ,MAX(fielddate) max_date
+    ,COUNT(CASE WHEN event_name IN ('pushnotification_enabled','pushnotification_disabled') THEN user_pseudo_id END) devices
+    ,COUNT(CASE WHEN event_name IN ('pushnotification_enabled') THEN user_pseudo_id END) enabled_devices
+    ,COUNT(CASE WHEN event_name iN ('pushnotification_disabled') THEN user_pseudo_id END) disabled_devices
+    ,COUNT(CASE WHEN event_name IN ('pushnotification_display') THEN session_id END) displayed_notifications
+    ,COUNT(CASE WHEN event_name IN ('pushnotification_tap') THEN session_id END) tapped_notifications
+    ,COUNT(CASE WHEN event_name IN ('pushnotification_display') THEN user_pseudo_id END) displayed_devices
+    ,COUNT(CASE WHEN event_name iN ('pushnotification_tap') THEN user_pseudo_id END) tapped_devices
+    FROM raw 
+    WHERE raw.fielddate >>= DATE_SUB(DATE_TRUNC(CURRENT_DATE(),WEEK(MONDAY)),INTERVAL 5 WEEK) 
+    GROUP BY 1,2,3,4
+)
+,monthly AS (
+    SELECT 
+    'month' time_granularity
+    ,FORMAT_DATE('%Y-%m',DATE_TRUNC(raw.fielddate,MONTH)) time_period
+    ,global_entity_id
+    ,device_platform
+    ,MAX(fielddate) max_date
+    ,COUNT(CASE WHEN event_name IN ('pushnotification_enabled','pushnotification_disabled') THEN user_pseudo_id END) devices
+    ,COUNT(CASE WHEN event_name IN ('pushnotification_enabled') THEN user_pseudo_id END) enabled_devices
+    ,COUNT(CASE WHEN event_name iN ('pushnotification_disabled') THEN user_pseudo_id END) disabled_devices
+    ,COUNT(CASE WHEN event_name IN ('pushnotification_display') THEN session_id END) displayed_notifications
+    ,COUNT(CASE WHEN event_name IN ('pushnotification_tap') THEN session_id END) tapped_notifications
+    ,COUNT(CASE WHEN event_name IN ('pushnotification_display') THEN user_pseudo_id END) displayed_devices
+    ,COUNT(CASE WHEN event_name iN ('pushnotification_tap') THEN user_pseudo_id END) tapped_devices
+    FROM raw 
+    WHERE fielddate >>= DATE_SUB(DATE_TRUNC(CURRENT_DATE(),MONTH),INTERVAL 5 MONTH) 
+    GROUP BY 1,2,3,4
+)
+,quarterly AS (
+    SELECT 
+    'quarter' time_granularity
+    ,FORMAT_DATE('%Y-Q%Q',DATE_TRUNC(fielddate,QUARTER)) time_period
+    ,global_entity_id
+    ,device_platform
+    ,MAX(fielddate) max_date
+    ,COUNT(CASE WHEN event_name IN ('pushnotification_enabled','pushnotification_disabled') THEN user_pseudo_id END) devices
+    ,COUNT(CASE WHEN event_name IN ('pushnotification_enabled') THEN user_pseudo_id END) enabled_devices
+    ,COUNT(CASE WHEN event_name iN ('pushnotification_disabled') THEN user_pseudo_id END) disabled_devices
+    ,COUNT(CASE WHEN event_name IN ('pushnotification_display') THEN session_id END) displayed_notifications
+    ,COUNT(CASE WHEN event_name IN ('pushnotification_tap') THEN session_id END) tapped_notifications
+    ,COUNT(CASE WHEN event_name IN ('pushnotification_display') THEN user_pseudo_id END) displayed_devices
+    ,COUNT(CASE WHEN event_name iN ('pushnotification_tap') THEN user_pseudo_id END) tapped_devices
+    FROM raw 
+    WHERE fielddate >>= DATE_SUB(DATE_TRUNC(CURRENT_DATE(),QUARTER),INTERVAL 5 QUARTER) 
+    GROUP BY 1,2,3,4
+)
+
+
+SELECT 
+agg.time_granularity
+,agg.time_period
+,agg.max_date
+,entity.management_entity
+,entity.segment
+,entity.global_entity_id
+,entity.brand
+,entity.country_name
+,agg.device_platform
+,agg.devices
+,agg.enabled_devices
+,agg.disabled_devices
+,agg.displayed_notifications
+,agg.tapped_notifications
+,agg.displayed_devices
+,agg.tapped_devices
+FROM (
+    SELECT * FROM daily
+    UNION ALL 
+    SELECT * FROM weekly 
+    UNION ALL 
+    SELECT * FROM monthly 
+    UNION ALL
+    SELECT * FROM quarterly
+) agg 
+JOIN entity 
+ON agg.global_entity_id = entity.global_entity_id]]></_.fcp.ObjectModelEncapsulateLegacy.true...relation>
+        <metadata-records>
+          <metadata-record class='column'>
+            <remote-name>time_granularity</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[time_granularity]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>time_granularity</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_32FEE8416D554AA6991DDBC9A3BDA765]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>time_period</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[time_period]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>time_period</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_32FEE8416D554AA6991DDBC9A3BDA765]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>max_date</remote-name>
+            <remote-type>7</remote-type>
+            <local-name>[max_date]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>max_date</remote-alias>
+            <local-type>date</local-type>
+            <aggregation>Year</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_32FEE8416D554AA6991DDBC9A3BDA765]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>management_entity</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[management_entity]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>management_entity</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_32FEE8416D554AA6991DDBC9A3BDA765]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>segment</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[segment]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>segment</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_32FEE8416D554AA6991DDBC9A3BDA765]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>global_entity_id</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[global_entity_id]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>global_entity_id</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_32FEE8416D554AA6991DDBC9A3BDA765]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>brand</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[brand]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>brand</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_32FEE8416D554AA6991DDBC9A3BDA765]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>country_name</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[country_name]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>country_name</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_32FEE8416D554AA6991DDBC9A3BDA765]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>device_platform</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[device_platform]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>device_platform</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_32FEE8416D554AA6991DDBC9A3BDA765]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>devices</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[devices]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>devices</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_32FEE8416D554AA6991DDBC9A3BDA765]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>enabled_devices</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[enabled_devices]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>enabled_devices</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_32FEE8416D554AA6991DDBC9A3BDA765]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>disabled_devices</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[disabled_devices]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>disabled_devices</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_32FEE8416D554AA6991DDBC9A3BDA765]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>displayed_notifications</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[displayed_notifications]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>displayed_notifications</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_32FEE8416D554AA6991DDBC9A3BDA765]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>tapped_notifications</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[tapped_notifications]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>tapped_notifications</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_32FEE8416D554AA6991DDBC9A3BDA765]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>displayed_devices</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[displayed_devices]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>displayed_devices</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_32FEE8416D554AA6991DDBC9A3BDA765]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>tapped_devices</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[tapped_devices]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>tapped_devices</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_32FEE8416D554AA6991DDBC9A3BDA765]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+        </metadata-records>
+      </connection>
+      <aliases enabled='yes' />
+      <column caption='% Push Clickthrough (Android Only)' datatype='real' name='[% Disabled Devices (copy)_4563061250208174083]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='SUM(IF [device_platform] = &apos;ANDROID&apos; THEN [tapped_notifications] END)/SUM(IF [device_platform] = &apos;ANDROID&apos; THEN [displayed_notifications] END)' />
+      </column>
+      <column caption='Entity Selector' datatype='string' name='[Calculation_4563061250206396417]' role='dimension' type='nominal'>
+        <calculation class='tableau' formula='IF [Parameters].[Parameter 1] = &apos;Segment&apos; THEN [segment]&#10;ELSEIF [Parameters].[Parameter 1] = &apos;Management Entity&apos; THEN [management_entity]&#10;ELSEIF [Parameters].[Parameter 1] = &apos;Country&apos; THEN [country_name]&#10;ELSEIF [Parameters].[Parameter 1] = &apos;Brand&apos; THEN [brand]&#10;END' />
+      </column>
+      <column caption='% Disabled Devices' datatype='real' name='[Calculation_4563061250207838210]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='SUM([disabled_devices])/SUM([devices])' />
+      </column>
+      <column caption='Date' datatype='date' name='[Calculation_4563061250244452357]' role='dimension' type='ordinal'>
+        <calculation class='tableau' formula='DATE(IF NOT ISNULL( DATEPARSE ( &quot;yyyy-MM-dd&quot;, [time_period] )  ) THEN DATEPARSE ( &quot;yyyy-MM-dd&quot;, [time_period] )   ELSEIF NOT ISNULL ( DATEPARSE ( &quot;yyyy-&apos;W&apos;MM&quot;, [time_period] )  ) THEN DATEPARSE ( &quot;yyyy-&apos;W&apos;MM&quot;, [time_period] )   END)' />
+      </column>
+      <column caption='Date Filter' datatype='boolean' name='[Calculation_4563061250244833286]' role='dimension' type='nominal'>
+        <calculation class='tableau' formula='IF[Calculation_4563061250244452357]&gt; [Calculation_4563061250244902919] THEN TRUE ELSE FALSE END' />
+      </column>
+      <column caption='Start Date' datatype='datetime' name='[Calculation_4563061250244902919]' role='dimension' type='ordinal'>
+        <calculation class='tableau' formula='IF [Parameters].[Entity Granularity (copy)_4563061250205417472] = &apos;week&apos; THEN DATEADD(&apos;week&apos;,-6,DATETRUNC(&apos;week&apos;,TODAY(),&apos;monday&apos;))&#10;ELSEIF [Parameters].[Entity Granularity (copy)_4563061250205417472] = &apos;month&apos; THEN DATEADD(&apos;month&apos;,-6,DATETRUNC(&apos;month&apos;,TODAY(),&apos;monday&apos;))&#10;ELSEIF [Parameters].[Entity Granularity (copy)_4563061250205417472] = &apos;quarter&apos; THEN DATEADD(&apos;quarter&apos;,-6,DATETRUNC(&apos;quarter&apos;,TODAY(),&apos;monday&apos;))&#10;END' />
+      </column>
+      <column caption='Report Date' datatype='date' name='[Calculation_4563061250253824008]' role='measure' type='ordinal'>
+        <calculation class='tableau' formula='MAX([max_date])' />
+      </column>
+      <_.fcp.ObjectModelTableType.true...column caption='Custom SQL Query' datatype='table' name='[__tableau_internal_object_id__].[_32FEE8416D554AA6991DDBC9A3BDA765]' role='measure' type='quantitative' />
+      <column caption='Brand' datatype='string' name='[brand]' role='dimension' type='nominal' />
+      <column caption='Country' datatype='string' name='[country_name]' role='dimension' semantic-role='[Country].[ISO3166_2]' type='nominal' />
+      <column caption='Total Devices' datatype='integer' name='[devices]' role='measure' type='quantitative' />
+      <column caption='Disabled Devices' datatype='integer' name='[disabled_devices]' role='measure' type='quantitative' />
+      <column datatype='integer' hidden='true' name='[displayed_devices]' role='measure' type='quantitative' />
+      <column caption='Received Pushes' datatype='integer' name='[displayed_notifications]' role='measure' type='quantitative' />
+      <column caption='Enabled Devices' datatype='integer' name='[enabled_devices]' role='measure' type='quantitative' />
+      <column caption='Global Entity Id' datatype='string' name='[global_entity_id]' role='dimension' type='nominal' />
+      <column caption='Management Entity' datatype='string' name='[management_entity]' role='dimension' type='nominal' />
+      <column caption='Segment' datatype='string' name='[segment]' role='dimension' type='nominal' />
+      <column datatype='integer' hidden='true' name='[tapped_devices]' role='measure' type='quantitative' />
+      <column caption='Opened Pushes' datatype='integer' name='[tapped_notifications]' role='measure' type='quantitative' />
+      <column-instance column='[devices]' derivation='Sum' name='[sum:devices:qk]' pivot='key' type='quantitative' />
+      <column-instance column='[displayed_notifications]' derivation='Sum' name='[sum:displayed_notifications:qk]' pivot='key' type='quantitative' />
+      <column-instance column='[% Disabled Devices (copy)_4563061250208174083]' derivation='User' name='[usr:% Disabled Devices (copy)_4563061250208174083:qk]' pivot='key' type='quantitative' />
+      <column-instance column='[Calculation_4563061250207838210]' derivation='User' name='[usr:Calculation_4563061250207838210:qk]' pivot='key' type='quantitative' />
+      <_.fcp.SchemaViewerObjectModel.false...folder name='Calculated Fields' role='measures'>
+        <folder-item name='[% Disabled Devices (copy)_4563061250208174083]' type='field' />
+        <folder-item name='[Calculation_4563061250207838210]' type='field' />
+      </_.fcp.SchemaViewerObjectModel.false...folder>
+      <_.fcp.SchemaViewerObjectModel.false...folder name='Dimensions' role='dimensions'>
+        <folder-item name='[Calculation_4563061250206396417]' type='field' />
+        <folder-item name='[Calculation_4563061250244452357]' type='field' />
+        <folder-item name='[Calculation_4563061250244833286]' type='field' />
+        <folder-item name='[Calculation_4563061250244902919]' type='field' />
+        <folder-item name='[brand]' type='field' />
+        <folder-item name='[country_name]' type='field' />
+        <folder-item name='[device_platform]' type='field' />
+        <folder-item name='[global_entity_id]' type='field' />
+        <folder-item name='[management_entity]' type='field' />
+        <folder-item name='[max_date]' type='field' />
+        <folder-item name='[segment]' type='field' />
+        <folder-item name='[time_granularity]' type='field' />
+        <folder-item name='[time_period]' type='field' />
+      </_.fcp.SchemaViewerObjectModel.false...folder>
+      <_.fcp.SchemaViewerObjectModel.false...folder name='Dimensions' role='measures'>
+        <folder-item name='[Calculation_4563061250253824008]' type='field' />
+      </_.fcp.SchemaViewerObjectModel.false...folder>
+      <_.fcp.SchemaViewerObjectModel.true...folders-common>
+        <folder name='Calculated Fields'>
+          <folder-item name='[% Disabled Devices (copy)_4563061250208174083]' type='field' />
+          <folder-item name='[Calculation_4563061250207838210]' type='field' />
+        </folder>
+        <folder name='Dimensions'>
+          <folder-item name='[Calculation_4563061250206396417]' type='field' />
+          <folder-item name='[Calculation_4563061250244452357]' type='field' />
+          <folder-item name='[Calculation_4563061250244833286]' type='field' />
+          <folder-item name='[Calculation_4563061250244902919]' type='field' />
+          <folder-item name='[Calculation_4563061250253824008]' type='field' />
+          <folder-item name='[brand]' type='field' />
+          <folder-item name='[country_name]' type='field' />
+          <folder-item name='[device_platform]' type='field' />
+          <folder-item name='[global_entity_id]' type='field' />
+          <folder-item name='[management_entity]' type='field' />
+          <folder-item name='[max_date]' type='field' />
+          <folder-item name='[segment]' type='field' />
+          <folder-item name='[time_granularity]' type='field' />
+          <folder-item name='[time_period]' type='field' />
+        </folder>
+      </_.fcp.SchemaViewerObjectModel.true...folders-common>
+      <extract _.fcp.ObjectModelExtractV2.true...object-id='' count='-1' enabled='true' units='records'>
+        <connection class='hyper' dbname='extract/ef/fa/{83E38137-12E2-48D5-9905-A9BAC3A45793}/federated_1jk2zku11a8th31dgnxoy1.hyper' default-settings='yes' extract-engine='true' schema='Extract' tablename='Extract' update-time='06/07/2023 07:32:56 AM'>
+          <_.fcp.ObjectModelEncapsulateLegacy.false...relation name='Extract' table='[Extract].[Extract]' type='table' />
+          <_.fcp.ObjectModelEncapsulateLegacy.true...relation name='Extract' table='[Extract].[Extract]' type='table' />
+          <refresh>
+            <refresh-event add-from-file-path='app_engagement_push' increment-value='%null%' refresh-type='create' rows-inserted='435' timestamp-start='2023-06-07 07:32:30.252' />
+          </refresh>
+          <metadata-records>
+            <metadata-record class='column'>
+              <remote-name>time_granularity</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[time_granularity]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>time_granularity</remote-alias>
+              <ordinal>0</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>4</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>time_period</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[time_period]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>time_period</remote-alias>
+              <ordinal>1</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>77</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>max_date</remote-name>
+              <remote-type>133</remote-type>
+              <local-name>[max_date]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>max_date</remote-alias>
+              <ordinal>2</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>date</local-type>
+              <aggregation>Year</aggregation>
+              <approx-count>65</approx-count>
+              <contains-null>true</contains-null>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>management_entity</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[management_entity]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>management_entity</remote-alias>
+              <ordinal>3</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>1</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>segment</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[segment]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>segment</remote-alias>
+              <ordinal>4</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>1</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>global_entity_id</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[global_entity_id]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>global_entity_id</remote-alias>
+              <ordinal>5</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>10</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>brand</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[brand]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>brand</remote-alias>
+              <ordinal>6</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>1</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>country_name</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[country_name]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>country_name</remote-alias>
+              <ordinal>7</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>10</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>device_platform</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[device_platform]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>device_platform</remote-alias>
+              <ordinal>8</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>2</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>devices</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[devices]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>devices</remote-alias>
+              <ordinal>9</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>128</approx-count>
+              <contains-null>true</contains-null>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>enabled_devices</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[enabled_devices]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>enabled_devices</remote-alias>
+              <ordinal>10</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>116</approx-count>
+              <contains-null>true</contains-null>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>disabled_devices</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[disabled_devices]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>disabled_devices</remote-alias>
+              <ordinal>11</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>72</approx-count>
+              <contains-null>true</contains-null>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>displayed_notifications</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[displayed_notifications]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>displayed_notifications</remote-alias>
+              <ordinal>12</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>53</approx-count>
+              <contains-null>true</contains-null>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>tapped_notifications</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[tapped_notifications]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>tapped_notifications</remote-alias>
+              <ordinal>13</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>21</approx-count>
+              <contains-null>true</contains-null>
+            </metadata-record>
+          </metadata-records>
+        </connection>
+      </extract>
+      <layout _.fcp.SchemaViewerObjectModel.false...dim-percentage='0.5' _.fcp.SchemaViewerObjectModel.false...measure-percentage='0.4' _.fcp.SchemaViewerObjectModel.true...common-percentage='0.903448' _.fcp.SchemaViewerObjectModel.true...user-set-layout-v2='true' dim-ordering='alphabetic' measure-ordering='alphabetic' parameter-percentage='0.0965517' show-hidden-fields='true' show-structure='false' />
+      <style>
+        <style-rule element='mark'>
+          <encoding attr='color' field='[:Measure Names]' type='palette'>
+            <map to='#ae123a'>
+              <bucket>&quot;[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[sum:devices:qk]&quot;</bucket>
+            </map>
+            <map to='#ae123a'>
+              <bucket>&quot;[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[sum:displayed_notifications:qk]&quot;</bucket>
+            </map>
+            <map to='#ae123a'>
+              <bucket>&quot;[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[usr:Calculation_4563061250211729412:qk]&quot;</bucket>
+            </map>
+            <map to='#f9b665'>
+              <bucket>&quot;[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[usr:\% Disabled Devices (copy)_4563061250208174083:qk]&quot;</bucket>
+            </map>
+            <map to='#f9b665'>
+              <bucket>&quot;[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[usr:Calculation_4563061250207838210:qk]&quot;</bucket>
+            </map>
+          </encoding>
+        </style-rule>
+      </style>
+      <semantic-values>
+        <semantic-value key='[Country].[Name]' value='&quot;United States&quot;' />
+      </semantic-values>
+      <datasource-dependencies datasource='Parameters'>
+        <column alias='Week' caption='Period Granularity' datatype='string' name='[Entity Granularity (copy)_4563061250205417472]' param-domain-type='list' role='measure' type='nominal' value='&quot;week&quot;'>
+          <calculation class='tableau' formula='&quot;week&quot;' />
+          <aliases>
+            <alias key='&quot;month&quot;' value='Month' />
+            <alias key='&quot;quarter&quot;' value='Quarter' />
+            <alias key='&quot;week&quot;' value='Week' />
+          </aliases>
+        </column>
+        <column caption='Entity Granularity' datatype='string' name='[Parameter 1]' param-domain-type='list' role='measure' type='nominal' value='&quot;Country&quot;'>
+          <calculation class='tableau' formula='&quot;Country&quot;' />
+        </column>
+      </datasource-dependencies>
+      <_.fcp.ObjectModelEncapsulateLegacy.true...object-graph>
+        <objects>
+          <object caption='Custom SQL Query' id='_32FEE8416D554AA6991DDBC9A3BDA765'>
+            <properties context=''>
+              <relation connection='bigquery.0k0qc0i0ure5f41ckw1871ly0sqk' name='Custom SQL Query' type='text'><![CDATA[WITH 
+entity AS (
+    SELECT 
+        management_entity
+        ,segment
+        ,global_entity_id
+        ,brand
+        ,country_name
+    FROM `fulfillment-dwh-production.curated_data_shared_central_dwh.global_entities`
+)
+,sessions AS (
+    SELECT 
+    fielddate
+    ,user_id
+    ,session_id
+    ,info.global_entity_id
+    ,COUNT(*) ct
+    FROM dhh-ncr-live.dbt_sales_revenue_report.vp_sessions
+    LEFT JOIN UNNEST(vendors_info) info
+    WHERE fielddate >>= '2023-03-20'
+    AND fielddate >>= DATE_SUB(DATE_TRUNC(CURRENT_DATE(),QUARTER),INTERVAL 5 QUARTER)
+    AND fielddate <<= CURRENT_DATE()
+    AND user_id IS NOT NULL
+    AND device_platform IN ('IOS','ANDROID')
+    GROUP BY 1,2,3,4
+)
+,events AS (
+  SELECT 
+  fielddate
+  ,user_id
+  ,user_pseudo_id
+  ,device_platform
+  ,device_category
+  ,event_name
+  ,session_id
+  ,COUNT(*) hits
+  FROM dhh-ncr-live.dbt_sales_revenue_report.vp_events
+  WHERE fielddate >>= '2023-03-20'
+  AND fielddate >>= DATE_SUB(DATE_TRUNC(CURRENT_DATE(),QUARTER),INTERVAL 5 QUARTER)
+  AND fielddate <<= CURRENT_DATE()
+  AND user_id IS NOT NULL
+  AND device_platform IN ('IOS','ANDROID')
+  AND event_name IN ('pushnotification_enabled','pushnotification_disabled','pushnotification_tap','pushnotification_display')
+  GROUP BY 1,2,3,4,5,6,7
+)
+,raw AS (
+    SELECT 
+    events.fielddate
+    ,sessions.global_entity_id
+    ,events.user_id
+    ,events.user_pseudo_id
+    ,events.device_platform
+    ,events.event_name
+    ,events.session_id
+    ,events.hits
+    FROM events 
+    JOIN sessions 
+    ON events.session_id = sessions.session_id
+    AND events.fielddate = sessions.fielddate
+) 
+,daily AS (
+    SELECT 
+    'day' time_granularity
+    ,FORMAT_DATE('%Y-%m-%d',raw.fielddate) time_period
+    ,raw.global_entity_id
+    ,device_platform
+    ,MAX(fielddate) max_date
+    ,COUNT(CASE WHEN event_name IN ('pushnotification_enabled','pushnotification_disabled') THEN user_pseudo_id END) devices
+    ,COUNT(CASE WHEN event_name IN ('pushnotification_enabled') THEN user_pseudo_id END) enabled_devices
+    ,COUNT(CASE WHEN event_name iN ('pushnotification_disabled') THEN user_pseudo_id END) disabled_devices
+    ,SUM(CASE WHEN event_name IN ('pushnotification_display') THEN hits END) displayed_notifications
+    ,SUM(CASE WHEN event_name IN ('pushnotification_tap') THEN hits END) tapped_notifications
+    ,COUNT(CASE WHEN event_name IN ('pushnotification_display') THEN user_pseudo_id END) displayed_devices
+    ,COUNT(CASE WHEN event_name iN ('pushnotification_tap') THEN user_pseudo_id END) tapped_devices
+    FROM raw 
+    WHERE raw.fielddate >>= DATE_SUB(DATE_TRUNC(CURRENT_DATE(),QUARTER),INTERVAL 5 QUARTER) 
+    GROUP BY 1,2,3,4
+)
+,weekly AS (
+    SELECT 
+    'week' time_granularity
+    ,FORMAT_DATE('%Y-W%W',DATE_TRUNC(raw.fielddate,WEEK(MONDAY))) time_period
+    ,global_entity_id
+    ,device_platform
+    ,MAX(fielddate) max_date
+    ,COUNT(CASE WHEN event_name IN ('pushnotification_enabled','pushnotification_disabled') THEN user_pseudo_id END) devices
+    ,COUNT(CASE WHEN event_name IN ('pushnotification_enabled') THEN user_pseudo_id END) enabled_devices
+    ,COUNT(CASE WHEN event_name iN ('pushnotification_disabled') THEN user_pseudo_id END) disabled_devices
+    ,COUNT(CASE WHEN event_name IN ('pushnotification_display') THEN session_id END) displayed_notifications
+    ,COUNT(CASE WHEN event_name IN ('pushnotification_tap') THEN session_id END) tapped_notifications
+    ,COUNT(CASE WHEN event_name IN ('pushnotification_display') THEN user_pseudo_id END) displayed_devices
+    ,COUNT(CASE WHEN event_name iN ('pushnotification_tap') THEN user_pseudo_id END) tapped_devices
+    FROM raw 
+    WHERE raw.fielddate >>= DATE_SUB(DATE_TRUNC(CURRENT_DATE(),WEEK(MONDAY)),INTERVAL 5 WEEK) 
+    GROUP BY 1,2,3,4
+)
+,monthly AS (
+    SELECT 
+    'month' time_granularity
+    ,FORMAT_DATE('%Y-%m',DATE_TRUNC(raw.fielddate,MONTH)) time_period
+    ,global_entity_id
+    ,device_platform
+    ,MAX(fielddate) max_date
+    ,COUNT(CASE WHEN event_name IN ('pushnotification_enabled','pushnotification_disabled') THEN user_pseudo_id END) devices
+    ,COUNT(CASE WHEN event_name IN ('pushnotification_enabled') THEN user_pseudo_id END) enabled_devices
+    ,COUNT(CASE WHEN event_name iN ('pushnotification_disabled') THEN user_pseudo_id END) disabled_devices
+    ,COUNT(CASE WHEN event_name IN ('pushnotification_display') THEN session_id END) displayed_notifications
+    ,COUNT(CASE WHEN event_name IN ('pushnotification_tap') THEN session_id END) tapped_notifications
+    ,COUNT(CASE WHEN event_name IN ('pushnotification_display') THEN user_pseudo_id END) displayed_devices
+    ,COUNT(CASE WHEN event_name iN ('pushnotification_tap') THEN user_pseudo_id END) tapped_devices
+    FROM raw 
+    WHERE fielddate >>= DATE_SUB(DATE_TRUNC(CURRENT_DATE(),MONTH),INTERVAL 5 MONTH) 
+    GROUP BY 1,2,3,4
+)
+,quarterly AS (
+    SELECT 
+    'quarter' time_granularity
+    ,FORMAT_DATE('%Y-Q%Q',DATE_TRUNC(fielddate,QUARTER)) time_period
+    ,global_entity_id
+    ,device_platform
+    ,MAX(fielddate) max_date
+    ,COUNT(CASE WHEN event_name IN ('pushnotification_enabled','pushnotification_disabled') THEN user_pseudo_id END) devices
+    ,COUNT(CASE WHEN event_name IN ('pushnotification_enabled') THEN user_pseudo_id END) enabled_devices
+    ,COUNT(CASE WHEN event_name iN ('pushnotification_disabled') THEN user_pseudo_id END) disabled_devices
+    ,COUNT(CASE WHEN event_name IN ('pushnotification_display') THEN session_id END) displayed_notifications
+    ,COUNT(CASE WHEN event_name IN ('pushnotification_tap') THEN session_id END) tapped_notifications
+    ,COUNT(CASE WHEN event_name IN ('pushnotification_display') THEN user_pseudo_id END) displayed_devices
+    ,COUNT(CASE WHEN event_name iN ('pushnotification_tap') THEN user_pseudo_id END) tapped_devices
+    FROM raw 
+    WHERE fielddate >>= DATE_SUB(DATE_TRUNC(CURRENT_DATE(),QUARTER),INTERVAL 5 QUARTER) 
+    GROUP BY 1,2,3,4
+)
+
+
+SELECT 
+agg.time_granularity
+,agg.time_period
+,agg.max_date
+,entity.management_entity
+,entity.segment
+,entity.global_entity_id
+,entity.brand
+,entity.country_name
+,agg.device_platform
+,agg.devices
+,agg.enabled_devices
+,agg.disabled_devices
+,agg.displayed_notifications
+,agg.tapped_notifications
+,agg.displayed_devices
+,agg.tapped_devices
+FROM (
+    SELECT * FROM daily
+    UNION ALL 
+    SELECT * FROM weekly 
+    UNION ALL 
+    SELECT * FROM monthly 
+    UNION ALL
+    SELECT * FROM quarterly
+) agg 
+JOIN entity 
+ON agg.global_entity_id = entity.global_entity_id]]></relation>
+            </properties>
+            <properties context='extract'>
+              <relation name='Extract' table='[Extract].[Extract]' type='table' />
+            </properties>
+          </object>
+        </objects>
+      </_.fcp.ObjectModelEncapsulateLegacy.true...object-graph>
+    </datasource>
+  </datasources>
+  <mapsources>
+    <mapsource name='Tableau' />
+  </mapsources>
+  <worksheets>
+    <worksheet name='Push - % Disabled Devices'>
+      <layout-options>
+        <title>
+          <formatted-text>
+            <run bold='true' fontsize='11'>% Disabled Devices</run>
+          </formatted-text>
+        </title>
+      </layout-options>
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='app_engagement_push' name='federated.1jk2zku11a8th31dgnxoy1hfr4xk' />
+            <datasource name='Parameters' />
+          </datasources>
+          <mapsources>
+            <mapsource name='Tableau' />
+          </mapsources>
+          <datasource-dependencies datasource='Parameters'>
+            <column alias='Week' caption='Period Granularity' datatype='string' name='[Entity Granularity (copy)_4563061250205417472]' param-domain-type='list' role='measure' type='nominal' value='&quot;week&quot;'>
+              <calculation class='tableau' formula='&quot;week&quot;' />
+              <aliases>
+                <alias key='&quot;month&quot;' value='Month' />
+                <alias key='&quot;quarter&quot;' value='Quarter' />
+                <alias key='&quot;week&quot;' value='Week' />
+              </aliases>
+            </column>
+          </datasource-dependencies>
+          <datasource-dependencies datasource='federated.1jk2zku11a8th31dgnxoy1hfr4xk'>
+            <column caption='% Disabled Devices' datatype='real' name='[Calculation_4563061250207838210]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='SUM([disabled_devices])/SUM([devices])' />
+            </column>
+            <column caption='Brand' datatype='string' name='[brand]' role='dimension' type='nominal' />
+            <column caption='Country' datatype='string' name='[country_name]' role='dimension' semantic-role='[Country].[ISO3166_2]' type='nominal' />
+            <column datatype='string' name='[device_platform]' role='dimension' type='nominal' />
+            <column caption='Total Devices' datatype='integer' name='[devices]' role='measure' type='quantitative' />
+            <column caption='Disabled Devices' datatype='integer' name='[disabled_devices]' role='measure' type='quantitative' />
+            <column caption='Received Pushes' datatype='integer' name='[displayed_notifications]' role='measure' type='quantitative' />
+            <column caption='Enabled Devices' datatype='integer' name='[enabled_devices]' role='measure' type='quantitative' />
+            <column-instance column='[brand]' derivation='None' name='[none:brand:nk]' pivot='key' type='nominal' />
+            <column-instance column='[country_name]' derivation='None' name='[none:country_name:nk]' pivot='key' type='nominal' />
+            <column-instance column='[device_platform]' derivation='None' name='[none:device_platform:nk]' pivot='key' type='nominal' />
+            <column-instance column='[time_granularity]' derivation='None' name='[none:time_granularity:nk]' pivot='key' type='nominal' />
+            <column-instance column='[time_period]' derivation='None' name='[none:time_period:nk]' pivot='key' type='nominal' />
+            <column-instance column='[devices]' derivation='Sum' name='[sum:devices:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[disabled_devices]' derivation='Sum' name='[sum:disabled_devices:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[displayed_notifications]' derivation='Sum' name='[sum:displayed_notifications:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[enabled_devices]' derivation='Sum' name='[sum:enabled_devices:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[tapped_notifications]' derivation='Sum' name='[sum:tapped_notifications:qk]' pivot='key' type='quantitative' />
+            <column caption='Opened Pushes' datatype='integer' name='[tapped_notifications]' role='measure' type='quantitative' />
+            <column datatype='string' name='[time_granularity]' role='dimension' type='nominal' />
+            <column datatype='string' name='[time_period]' role='dimension' type='nominal' />
+            <column-instance column='[Calculation_4563061250207838210]' derivation='User' name='[usr:Calculation_4563061250207838210:qk]' pivot='key' type='quantitative' />
+          </datasource-dependencies>
+          <filter class='categorical' column='[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[:Measure Names]'>
+            <groupfilter function='union' user:op='manual'>
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[usr:Calculation_4563061250207838210:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[sum:disabled_devices:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[sum:enabled_devices:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[sum:tapped_notifications:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[sum:displayed_notifications:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[sum:devices:qk]&quot;' />
+            </groupfilter>
+          </filter>
+          <filter class='categorical' column='[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[none:brand:nk]'>
+            <groupfilter function='level-members' level='[none:brand:nk]' user:ui-enumeration='all' user:ui-marker='enumerate' />
+          </filter>
+          <filter class='categorical' column='[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[none:country_name:nk]'>
+            <groupfilter function='level-members' level='[none:country_name:nk]' user:ui-enumeration='all' user:ui-marker='enumerate' />
+          </filter>
+          <filter class='categorical' column='[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[none:device_platform:nk]'>
+            <groupfilter function='level-members' level='[none:device_platform:nk]' user:ui-enumeration='all' user:ui-marker='enumerate' />
+          </filter>
+          <filter class='categorical' column='[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[none:time_granularity:nk]'>
+            <groupfilter expression='[Parameters].[Entity Granularity (copy)_4563061250205417472]=[time_granularity]' function='filter' user:ui-marker='filter-by'>
+              <groupfilter function='level-members' level='[none:time_granularity:nk]' user:ui-enumeration='all' user:ui-marker='enumerate' />
+            </groupfilter>
+          </filter>
+          <slices>
+            <column>[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[none:brand:nk]</column>
+            <column>[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[none:country_name:nk]</column>
+            <column>[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[none:time_granularity:nk]</column>
+            <column>[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[none:device_platform:nk]</column>
+            <column>[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[:Measure Names]</column>
+          </slices>
+          <aggregation value='true' />
+        </view>
+        <style>
+          <style-rule element='axis'>
+            <encoding attr='space' class='0' field='[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[usr:Calculation_4563061250207838210:qk]' field-type='quantitative' fold='true' max='1.0' min='0.0' range-type='fixed' scope='rows' type='space' />
+          </style-rule>
+          <style-rule element='cell'>
+            <format attr='text-format' field='[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[usr:Calculation_4563061250207838210:qk]' value='p0%' />
+          </style-rule>
+          <style-rule element='header'>
+            <format attr='width' field='[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[:Measure Names]' value='252' />
+          </style-rule>
+          <style-rule element='label'>
+            <format attr='text-orientation' field='[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[none:time_period:nk]' value='0' />
+            <format attr='text-format' field='[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[usr:Calculation_4563061250207838210:qk]' value='p0%' />
+          </style-rule>
+          <style-rule element='worksheet'>
+            <format attr='display-field-labels' scope='cols' value='false' />
+          </style-rule>
+          <style-rule element='map'>
+            <format attr='washout' value='0.0' />
+          </style-rule>
+        </style>
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Automatic' />
+            <encodings>
+              <color column='[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[:Measure Names]' />
+            </encodings>
+            <style>
+              <style-rule element='mark'>
+                <format attr='mark-labels-cull' value='true' />
+                <format attr='mark-labels-show' value='false' />
+              </style-rule>
+            </style>
+          </pane>
+          <pane id='1' selection-relaxation-option='selection-relaxation-allow' y-axis-name='[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[usr:Calculation_4563061250207838210:qk]'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Line' />
+            <encodings>
+              <color column='[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[:Measure Names]' />
+            </encodings>
+            <style>
+              <style-rule element='mark'>
+                <format attr='mark-labels-cull' value='true' />
+                <format attr='mark-labels-show' value='false' />
+              </style-rule>
+            </style>
+          </pane>
+          <pane id='2' selection-relaxation-option='selection-relaxation-allow' y-axis-name='[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[sum:devices:qk]'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Bar' />
+            <encodings>
+              <color column='[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[:Measure Names]' />
+            </encodings>
+            <style>
+              <style-rule element='mark'>
+                <format attr='mark-labels-cull' value='true' />
+                <format attr='mark-labels-show' value='false' />
+              </style-rule>
+            </style>
+          </pane>
+        </panes>
+        <rows>([federated.1jk2zku11a8th31dgnxoy1hfr4xk].[sum:devices:qk] + [federated.1jk2zku11a8th31dgnxoy1hfr4xk].[usr:Calculation_4563061250207838210:qk])</rows>
+        <cols>[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[none:time_period:nk]</cols>
+      </table>
+      <simple-id uuid='{4FC4C05A-E84D-4E57-A321-C192F91EB67D}' />
+    </worksheet>
+    <worksheet name='Push - Clickthrough'>
+      <layout-options>
+        <title>
+          <formatted-text>
+            <run bold='true' fontsize='12'>% Clickthrough Rate</run>
+          </formatted-text>
+        </title>
+      </layout-options>
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='app_engagement_push' name='federated.1jk2zku11a8th31dgnxoy1hfr4xk' />
+            <datasource name='Parameters' />
+          </datasources>
+          <mapsources>
+            <mapsource name='Tableau' />
+          </mapsources>
+          <datasource-dependencies datasource='Parameters'>
+            <column alias='Week' caption='Period Granularity' datatype='string' name='[Entity Granularity (copy)_4563061250205417472]' param-domain-type='list' role='measure' type='nominal' value='&quot;week&quot;'>
+              <calculation class='tableau' formula='&quot;week&quot;' />
+              <aliases>
+                <alias key='&quot;month&quot;' value='Month' />
+                <alias key='&quot;quarter&quot;' value='Quarter' />
+                <alias key='&quot;week&quot;' value='Week' />
+              </aliases>
+            </column>
+          </datasource-dependencies>
+          <datasource-dependencies datasource='federated.1jk2zku11a8th31dgnxoy1hfr4xk'>
+            <column caption='% Push Clickthrough (Android Only)' datatype='real' name='[% Disabled Devices (copy)_4563061250208174083]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='SUM(IF [device_platform] = &apos;ANDROID&apos; THEN [tapped_notifications] END)/SUM(IF [device_platform] = &apos;ANDROID&apos; THEN [displayed_notifications] END)' />
+            </column>
+            <column caption='% Disabled Devices' datatype='real' name='[Calculation_4563061250207838210]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='SUM([disabled_devices])/SUM([devices])' />
+            </column>
+            <column caption='Brand' datatype='string' name='[brand]' role='dimension' type='nominal' />
+            <column caption='Country' datatype='string' name='[country_name]' role='dimension' semantic-role='[Country].[ISO3166_2]' type='nominal' />
+            <column datatype='string' name='[device_platform]' role='dimension' type='nominal' />
+            <column caption='Total Devices' datatype='integer' name='[devices]' role='measure' type='quantitative' />
+            <column caption='Disabled Devices' datatype='integer' name='[disabled_devices]' role='measure' type='quantitative' />
+            <column caption='Received Pushes' datatype='integer' name='[displayed_notifications]' role='measure' type='quantitative' />
+            <column caption='Enabled Devices' datatype='integer' name='[enabled_devices]' role='measure' type='quantitative' />
+            <column-instance column='[brand]' derivation='None' name='[none:brand:nk]' pivot='key' type='nominal' />
+            <column-instance column='[country_name]' derivation='None' name='[none:country_name:nk]' pivot='key' type='nominal' />
+            <column-instance column='[device_platform]' derivation='None' name='[none:device_platform:nk]' pivot='key' type='nominal' />
+            <column-instance column='[time_granularity]' derivation='None' name='[none:time_granularity:nk]' pivot='key' type='nominal' />
+            <column-instance column='[time_period]' derivation='None' name='[none:time_period:nk]' pivot='key' type='nominal' />
+            <column-instance column='[devices]' derivation='Sum' name='[sum:devices:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[disabled_devices]' derivation='Sum' name='[sum:disabled_devices:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[displayed_notifications]' derivation='Sum' name='[sum:displayed_notifications:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[enabled_devices]' derivation='Sum' name='[sum:enabled_devices:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[tapped_notifications]' derivation='Sum' name='[sum:tapped_notifications:qk]' pivot='key' type='quantitative' />
+            <column caption='Opened Pushes' datatype='integer' name='[tapped_notifications]' role='measure' type='quantitative' />
+            <column datatype='string' name='[time_granularity]' role='dimension' type='nominal' />
+            <column datatype='string' name='[time_period]' role='dimension' type='nominal' />
+            <column-instance column='[% Disabled Devices (copy)_4563061250208174083]' derivation='User' name='[usr:% Disabled Devices (copy)_4563061250208174083:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[Calculation_4563061250207838210]' derivation='User' name='[usr:Calculation_4563061250207838210:qk]' pivot='key' type='quantitative' />
+          </datasource-dependencies>
+          <filter class='categorical' column='[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[:Measure Names]'>
+            <groupfilter function='union' user:op='manual'>
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[usr:Calculation_4563061250207838210:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[sum:disabled_devices:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[sum:enabled_devices:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[sum:tapped_notifications:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[sum:displayed_notifications:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[sum:devices:qk]&quot;' />
+            </groupfilter>
+          </filter>
+          <filter class='categorical' column='[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[none:brand:nk]'>
+            <groupfilter function='level-members' level='[none:brand:nk]' user:ui-enumeration='all' user:ui-marker='enumerate' />
+          </filter>
+          <filter class='categorical' column='[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[none:country_name:nk]'>
+            <groupfilter function='level-members' level='[none:country_name:nk]' user:ui-enumeration='all' user:ui-marker='enumerate' />
+          </filter>
+          <filter class='categorical' column='[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[none:device_platform:nk]'>
+            <groupfilter function='level-members' level='[none:device_platform:nk]' user:ui-enumeration='all' user:ui-marker='enumerate' />
+          </filter>
+          <filter class='categorical' column='[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[none:time_granularity:nk]'>
+            <groupfilter expression='[Parameters].[Entity Granularity (copy)_4563061250205417472]=[time_granularity]' function='filter' user:ui-marker='filter-by'>
+              <groupfilter function='level-members' level='[none:time_granularity:nk]' user:ui-enumeration='all' user:ui-marker='enumerate' />
+            </groupfilter>
+          </filter>
+          <slices>
+            <column>[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[none:brand:nk]</column>
+            <column>[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[none:country_name:nk]</column>
+            <column>[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[none:time_granularity:nk]</column>
+            <column>[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[none:device_platform:nk]</column>
+            <column>[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[:Measure Names]</column>
+          </slices>
+          <aggregation value='true' />
+        </view>
+        <style>
+          <style-rule element='axis'>
+            <encoding attr='space' class='0' field='[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[usr:% Disabled Devices (copy)_4563061250208174083:qk]' field-type='quantitative' fold='true' max='1.0' min='0.0' range-type='fixed' scope='rows' type='space' />
+          </style-rule>
+          <style-rule element='cell'>
+            <format attr='text-format' field='[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[usr:Calculation_4563061250207838210:qk]' value='p0%' />
+            <format attr='text-format' field='[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[usr:% Disabled Devices (copy)_4563061250208174083:qk]' value='p0.0%' />
+          </style-rule>
+          <style-rule element='header'>
+            <format attr='width' field='[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[:Measure Names]' value='252' />
+          </style-rule>
+          <style-rule element='label'>
+            <format attr='text-format' field='[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[usr:% Disabled Devices (copy)_4563061250208174083:qk]' value='p0.0%' />
+            <format attr='text-orientation' field='[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[none:time_period:nk]' value='0' />
+          </style-rule>
+          <style-rule element='worksheet'>
+            <format attr='display-field-labels' scope='cols' value='false' />
+          </style-rule>
+          <style-rule element='map'>
+            <format attr='washout' value='0.0' />
+          </style-rule>
+        </style>
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Automatic' />
+            <encodings>
+              <color column='[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[:Measure Names]' />
+            </encodings>
+            <style>
+              <style-rule element='mark'>
+                <format attr='mark-labels-cull' value='true' />
+                <format attr='mark-labels-show' value='false' />
+              </style-rule>
+            </style>
+          </pane>
+          <pane id='1' selection-relaxation-option='selection-relaxation-allow' y-axis-name='[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[usr:% Disabled Devices (copy)_4563061250208174083:qk]'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Line' />
+            <encodings>
+              <color column='[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[:Measure Names]' />
+            </encodings>
+            <style>
+              <style-rule element='mark'>
+                <format attr='mark-labels-cull' value='true' />
+                <format attr='mark-labels-show' value='false' />
+              </style-rule>
+            </style>
+          </pane>
+          <pane id='2' selection-relaxation-option='selection-relaxation-allow' y-axis-name='[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[sum:displayed_notifications:qk]'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Bar' />
+            <encodings>
+              <color column='[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[:Measure Names]' />
+            </encodings>
+            <style>
+              <style-rule element='mark'>
+                <format attr='mark-labels-cull' value='true' />
+                <format attr='mark-labels-show' value='false' />
+              </style-rule>
+            </style>
+          </pane>
+        </panes>
+        <rows>([federated.1jk2zku11a8th31dgnxoy1hfr4xk].[sum:displayed_notifications:qk] + [federated.1jk2zku11a8th31dgnxoy1hfr4xk].[usr:% Disabled Devices (copy)_4563061250208174083:qk])</rows>
+        <cols>[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[none:time_period:nk]</cols>
+      </table>
+      <simple-id uuid='{6F2AAD27-6514-469B-83CE-91ED0B8944F0}' />
+    </worksheet>
+    <worksheet name='Push - Clickthrough Daily'>
+      <layout-options>
+        <title>
+          <formatted-text>
+            <run bold='true' fontsize='12'>% Daily Clickthrough Rate</run>
+          </formatted-text>
+        </title>
+      </layout-options>
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='app_engagement_push' name='federated.1jk2zku11a8th31dgnxoy1hfr4xk' />
+          </datasources>
+          <mapsources>
+            <mapsource name='Tableau' />
+          </mapsources>
+          <datasource-dependencies datasource='federated.1jk2zku11a8th31dgnxoy1hfr4xk'>
+            <column caption='% Push Clickthrough (Android Only)' datatype='real' name='[% Disabled Devices (copy)_4563061250208174083]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='SUM(IF [device_platform] = &apos;ANDROID&apos; THEN [tapped_notifications] END)/SUM(IF [device_platform] = &apos;ANDROID&apos; THEN [displayed_notifications] END)' />
+            </column>
+            <column caption='% Disabled Devices' datatype='real' name='[Calculation_4563061250207838210]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='SUM([disabled_devices])/SUM([devices])' />
+            </column>
+            <column caption='Date' datatype='date' name='[Calculation_4563061250244452357]' role='dimension' type='ordinal'>
+              <calculation class='tableau' formula='DATE(IF NOT ISNULL( DATEPARSE ( &quot;yyyy-MM-dd&quot;, [time_period] )  ) THEN DATEPARSE ( &quot;yyyy-MM-dd&quot;, [time_period] )   ELSEIF NOT ISNULL ( DATEPARSE ( &quot;yyyy-&apos;W&apos;MM&quot;, [time_period] )  ) THEN DATEPARSE ( &quot;yyyy-&apos;W&apos;MM&quot;, [time_period] )   END)' />
+            </column>
+            <column caption='Brand' datatype='string' name='[brand]' role='dimension' type='nominal' />
+            <column caption='Country' datatype='string' name='[country_name]' role='dimension' semantic-role='[Country].[ISO3166_2]' type='nominal' />
+            <column datatype='string' name='[device_platform]' role='dimension' type='nominal' />
+            <column caption='Total Devices' datatype='integer' name='[devices]' role='measure' type='quantitative' />
+            <column caption='Disabled Devices' datatype='integer' name='[disabled_devices]' role='measure' type='quantitative' />
+            <column caption='Received Pushes' datatype='integer' name='[displayed_notifications]' role='measure' type='quantitative' />
+            <column caption='Enabled Devices' datatype='integer' name='[enabled_devices]' role='measure' type='quantitative' />
+            <column-instance column='[brand]' derivation='None' name='[none:brand:nk]' pivot='key' type='nominal' />
+            <column-instance column='[country_name]' derivation='None' name='[none:country_name:nk]' pivot='key' type='nominal' />
+            <column-instance column='[device_platform]' derivation='None' name='[none:device_platform:nk]' pivot='key' type='nominal' />
+            <column-instance column='[time_granularity]' derivation='None' name='[none:time_granularity:nk]' pivot='key' type='nominal' />
+            <column-instance column='[devices]' derivation='Sum' name='[sum:devices:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[disabled_devices]' derivation='Sum' name='[sum:disabled_devices:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[displayed_notifications]' derivation='Sum' name='[sum:displayed_notifications:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[enabled_devices]' derivation='Sum' name='[sum:enabled_devices:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[tapped_notifications]' derivation='Sum' name='[sum:tapped_notifications:qk]' pivot='key' type='quantitative' />
+            <column caption='Opened Pushes' datatype='integer' name='[tapped_notifications]' role='measure' type='quantitative' />
+            <column-instance column='[Calculation_4563061250244452357]' derivation='Day-Trunc' name='[tdy:Calculation_4563061250244452357:qk]' pivot='key' type='quantitative' />
+            <column datatype='string' name='[time_granularity]' role='dimension' type='nominal' />
+            <column datatype='string' name='[time_period]' role='dimension' type='nominal' />
+            <column-instance column='[% Disabled Devices (copy)_4563061250208174083]' derivation='User' name='[usr:% Disabled Devices (copy)_4563061250208174083:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[Calculation_4563061250207838210]' derivation='User' name='[usr:Calculation_4563061250207838210:qk]' pivot='key' type='quantitative' />
+          </datasource-dependencies>
+          <filter class='categorical' column='[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[:Measure Names]'>
+            <groupfilter function='union' user:op='manual'>
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[usr:Calculation_4563061250207838210:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[sum:disabled_devices:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[sum:enabled_devices:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[sum:tapped_notifications:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[sum:displayed_notifications:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[sum:devices:qk]&quot;' />
+            </groupfilter>
+          </filter>
+          <filter class='categorical' column='[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[none:brand:nk]'>
+            <groupfilter function='level-members' level='[none:brand:nk]' user:ui-enumeration='all' user:ui-marker='enumerate' />
+          </filter>
+          <filter class='categorical' column='[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[none:country_name:nk]'>
+            <groupfilter function='level-members' level='[none:country_name:nk]' user:ui-enumeration='all' user:ui-marker='enumerate' />
+          </filter>
+          <filter class='categorical' column='[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[none:device_platform:nk]'>
+            <groupfilter function='level-members' level='[none:device_platform:nk]' user:ui-enumeration='all' user:ui-marker='enumerate' />
+          </filter>
+          <filter class='categorical' column='[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[none:time_granularity:nk]'>
+            <groupfilter function='member' level='[none:time_granularity:nk]' member='&quot;day&quot;' user:ui-domain='relevant' user:ui-enumeration='inclusive' user:ui-marker='enumerate' />
+          </filter>
+          <slices>
+            <column>[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[none:brand:nk]</column>
+            <column>[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[none:country_name:nk]</column>
+            <column>[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[none:time_granularity:nk]</column>
+            <column>[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[none:device_platform:nk]</column>
+            <column>[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[:Measure Names]</column>
+          </slices>
+          <aggregation value='true' />
+        </view>
+        <style>
+          <style-rule element='axis'>
+            <encoding attr='space' class='0' field='[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[usr:% Disabled Devices (copy)_4563061250208174083:qk]' field-type='quantitative' fold='true' max='1.0' min='0.0' range-type='fixed' scope='rows' type='space' />
+            <format attr='height' field='[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[tdy:Calculation_4563061250244452357:qk]' value='24' />
+          </style-rule>
+          <style-rule element='cell'>
+            <format attr='text-format' field='[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[usr:Calculation_4563061250207838210:qk]' value='p0%' />
+            <format attr='text-format' field='[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[usr:% Disabled Devices (copy)_4563061250208174083:qk]' value='p0.0%' />
+          </style-rule>
+          <style-rule element='header'>
+            <format attr='width' field='[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[:Measure Names]' value='252' />
+            <format attr='height-header' value='10' />
+          </style-rule>
+          <style-rule element='label'>
+            <format attr='text-format' field='[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[usr:% Disabled Devices (copy)_4563061250208174083:qk]' value='p0.0%' />
+          </style-rule>
+          <style-rule element='map'>
+            <format attr='washout' value='0.0' />
+          </style-rule>
+        </style>
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Automatic' />
+            <encodings>
+              <color column='[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[:Measure Names]' />
+            </encodings>
+            <style>
+              <style-rule element='mark'>
+                <format attr='mark-labels-cull' value='true' />
+                <format attr='mark-labels-show' value='false' />
+              </style-rule>
+            </style>
+          </pane>
+          <pane id='1' selection-relaxation-option='selection-relaxation-allow' y-axis-name='[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[usr:% Disabled Devices (copy)_4563061250208174083:qk]'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Line' />
+            <encodings>
+              <color column='[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[:Measure Names]' />
+            </encodings>
+            <style>
+              <style-rule element='mark'>
+                <format attr='mark-labels-cull' value='true' />
+                <format attr='mark-labels-show' value='false' />
+              </style-rule>
+            </style>
+          </pane>
+          <pane id='2' selection-relaxation-option='selection-relaxation-allow' y-axis-name='[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[sum:displayed_notifications:qk]'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Bar' />
+            <mark-sizing custom-mark-size-in-axis-units='1.0' mark-alignment='mark-alignment-left' mark-sizing-setting='marks-scaling-on' use-custom-mark-size='false' />
+            <encodings>
+              <color column='[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[:Measure Names]' />
+            </encodings>
+            <style>
+              <style-rule element='mark'>
+                <format attr='mark-labels-cull' value='true' />
+                <format attr='mark-labels-show' value='false' />
+              </style-rule>
+            </style>
+          </pane>
+        </panes>
+        <rows>([federated.1jk2zku11a8th31dgnxoy1hfr4xk].[sum:displayed_notifications:qk] + [federated.1jk2zku11a8th31dgnxoy1hfr4xk].[usr:% Disabled Devices (copy)_4563061250208174083:qk])</rows>
+        <cols>[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[tdy:Calculation_4563061250244452357:qk]</cols>
+      </table>
+      <simple-id uuid='{B424A970-EAF7-46DC-86E5-768680999983}' />
+    </worksheet>
+    <worksheet name='Pushes - Max Report Date'>
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='app_engagement_push' name='federated.1jk2zku11a8th31dgnxoy1hfr4xk' />
+            <datasource name='Parameters' />
+          </datasources>
+          <mapsources>
+            <mapsource name='Tableau' />
+          </mapsources>
+          <datasource-dependencies datasource='Parameters'>
+            <column alias='Week' caption='Period Granularity' datatype='string' name='[Entity Granularity (copy)_4563061250205417472]' param-domain-type='list' role='measure' type='nominal' value='&quot;week&quot;'>
+              <calculation class='tableau' formula='&quot;week&quot;' />
+              <aliases>
+                <alias key='&quot;month&quot;' value='Month' />
+                <alias key='&quot;quarter&quot;' value='Quarter' />
+                <alias key='&quot;week&quot;' value='Week' />
+              </aliases>
+            </column>
+          </datasource-dependencies>
+          <datasource-dependencies datasource='federated.1jk2zku11a8th31dgnxoy1hfr4xk'>
+            <column caption='% Push Clickthrough (Android Only)' datatype='real' name='[% Disabled Devices (copy)_4563061250208174083]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='SUM(IF [device_platform] = &apos;ANDROID&apos; THEN [tapped_notifications] END)/SUM(IF [device_platform] = &apos;ANDROID&apos; THEN [displayed_notifications] END)' />
+            </column>
+            <column caption='% Disabled Devices' datatype='real' name='[Calculation_4563061250207838210]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='SUM([disabled_devices])/SUM([devices])' />
+            </column>
+            <column caption='Report Date' datatype='date' name='[Calculation_4563061250253824008]' role='measure' type='ordinal'>
+              <calculation class='tableau' formula='MAX([max_date])' />
+            </column>
+            <column caption='Brand' datatype='string' name='[brand]' role='dimension' type='nominal' />
+            <column caption='Country' datatype='string' name='[country_name]' role='dimension' semantic-role='[Country].[ISO3166_2]' type='nominal' />
+            <column datatype='string' name='[device_platform]' role='dimension' type='nominal' />
+            <column caption='Total Devices' datatype='integer' name='[devices]' role='measure' type='quantitative' />
+            <column caption='Disabled Devices' datatype='integer' name='[disabled_devices]' role='measure' type='quantitative' />
+            <column caption='Received Pushes' datatype='integer' name='[displayed_notifications]' role='measure' type='quantitative' />
+            <column caption='Enabled Devices' datatype='integer' name='[enabled_devices]' role='measure' type='quantitative' />
+            <column datatype='date' name='[max_date]' role='dimension' type='ordinal' />
+            <column-instance column='[brand]' derivation='None' name='[none:brand:nk]' pivot='key' type='nominal' />
+            <column-instance column='[country_name]' derivation='None' name='[none:country_name:nk]' pivot='key' type='nominal' />
+            <column-instance column='[device_platform]' derivation='None' name='[none:device_platform:nk]' pivot='key' type='nominal' />
+            <column-instance column='[time_granularity]' derivation='None' name='[none:time_granularity:nk]' pivot='key' type='nominal' />
+            <column-instance column='[devices]' derivation='Sum' name='[sum:devices:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[disabled_devices]' derivation='Sum' name='[sum:disabled_devices:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[displayed_notifications]' derivation='Sum' name='[sum:displayed_notifications:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[enabled_devices]' derivation='Sum' name='[sum:enabled_devices:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[tapped_notifications]' derivation='Sum' name='[sum:tapped_notifications:qk]' pivot='key' type='quantitative' />
+            <column caption='Opened Pushes' datatype='integer' name='[tapped_notifications]' role='measure' type='quantitative' />
+            <column datatype='string' name='[time_granularity]' role='dimension' type='nominal' />
+            <column-instance column='[% Disabled Devices (copy)_4563061250208174083]' derivation='User' name='[usr:% Disabled Devices (copy)_4563061250208174083:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[Calculation_4563061250207838210]' derivation='User' name='[usr:Calculation_4563061250207838210:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[Calculation_4563061250253824008]' derivation='User' name='[usr:Calculation_4563061250253824008:qk]' pivot='key' type='quantitative' />
+          </datasource-dependencies>
+          <filter class='categorical' column='[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[:Measure Names]'>
+            <groupfilter function='union' user:op='manual'>
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[usr:Calculation_4563061250207838210:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[usr:\% Disabled Devices (copy)_4563061250208174083:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[sum:disabled_devices:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[sum:enabled_devices:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[sum:tapped_notifications:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[sum:displayed_notifications:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[sum:devices:qk]&quot;' />
+            </groupfilter>
+          </filter>
+          <filter class='categorical' column='[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[none:brand:nk]'>
+            <groupfilter function='level-members' level='[none:brand:nk]' user:ui-enumeration='all' user:ui-marker='enumerate' />
+          </filter>
+          <filter class='categorical' column='[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[none:country_name:nk]'>
+            <groupfilter function='level-members' level='[none:country_name:nk]' user:ui-enumeration='all' user:ui-marker='enumerate' />
+          </filter>
+          <filter class='categorical' column='[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[none:device_platform:nk]'>
+            <groupfilter function='level-members' level='[none:device_platform:nk]' user:ui-enumeration='all' user:ui-marker='enumerate' />
+          </filter>
+          <filter class='categorical' column='[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[none:time_granularity:nk]'>
+            <groupfilter expression='[Parameters].[Entity Granularity (copy)_4563061250205417472]=[time_granularity]' function='filter' user:ui-marker='filter-by'>
+              <groupfilter function='level-members' level='[none:time_granularity:nk]' user:ui-enumeration='all' user:ui-marker='enumerate' />
+            </groupfilter>
+          </filter>
+          <slices>
+            <column>[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[none:brand:nk]</column>
+            <column>[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[none:country_name:nk]</column>
+            <column>[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[none:time_granularity:nk]</column>
+            <column>[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[none:device_platform:nk]</column>
+            <column>[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[:Measure Names]</column>
+          </slices>
+          <aggregation value='true' />
+        </view>
+        <style>
+          <style-rule element='cell'>
+            <format attr='height' value='178' />
+            <format attr='width' value='285' />
+            <format attr='text-format' field='[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[usr:Calculation_4563061250207838210:qk]' value='p0%' />
+            <format attr='text-format' field='[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[usr:% Disabled Devices (copy)_4563061250208174083:qk]' value='p0.0%' />
+            <format attr='text-format' field='[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[usr:Calculation_4563061250253824008:qk]' value='*YYYY-MM-DD' />
+            <format attr='text-align' value='center' />
+          </style-rule>
+          <style-rule element='header'>
+            <format attr='width' field='[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[:Measure Names]' value='252' />
+          </style-rule>
+          <style-rule element='map'>
+            <format attr='washout' value='0.0' />
+          </style-rule>
+        </style>
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Automatic' />
+            <encodings>
+              <text column='[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[usr:Calculation_4563061250253824008:qk]' />
+            </encodings>
+            <customized-label>
+              <formatted-text>
+                <run fontsize='11'>Report as of</run>
+                <run>Æ&#10;</run>
+                <run bold='true' fontsize='12'><![CDATA[<[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[usr:Calculation_4563061250253824008:qk]>]]></run>
+              </formatted-text>
+            </customized-label>
+            <style>
+              <style-rule element='mark'>
+                <format attr='mark-labels-show' value='true' />
+                <format attr='mark-labels-cull' value='true' />
+              </style-rule>
+              <style-rule element='pane'>
+                <format attr='minheight' value='-1' />
+                <format attr='maxheight' value='-1' />
+                <format attr='minwidth' value='-1' />
+                <format attr='maxwidth' value='-1' />
+              </style-rule>
+            </style>
+          </pane>
+        </panes>
+        <rows />
+        <cols />
+      </table>
+      <simple-id uuid='{A80A91C1-1A52-4F20-AEF5-E79A01348A2B}' />
+    </worksheet>
+    <worksheet name='Pushes - Summary'>
+      <layout-options>
+        <title>
+          <formatted-text>
+            <run bold='true' fontalignment='1' fontsize='11'>Summary</run>
+          </formatted-text>
+        </title>
+      </layout-options>
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='app_engagement_push' name='federated.1jk2zku11a8th31dgnxoy1hfr4xk' />
+            <datasource name='Parameters' />
+          </datasources>
+          <mapsources>
+            <mapsource name='Tableau' />
+          </mapsources>
+          <datasource-dependencies datasource='Parameters'>
+            <column alias='Week' caption='Period Granularity' datatype='string' name='[Entity Granularity (copy)_4563061250205417472]' param-domain-type='list' role='measure' type='nominal' value='&quot;week&quot;'>
+              <calculation class='tableau' formula='&quot;week&quot;' />
+              <aliases>
+                <alias key='&quot;month&quot;' value='Month' />
+                <alias key='&quot;quarter&quot;' value='Quarter' />
+                <alias key='&quot;week&quot;' value='Week' />
+              </aliases>
+            </column>
+            <column caption='Entity Granularity' datatype='string' name='[Parameter 1]' param-domain-type='list' role='measure' type='nominal' value='&quot;Country&quot;'>
+              <calculation class='tableau' formula='&quot;Country&quot;' />
+            </column>
+          </datasource-dependencies>
+          <datasource-dependencies datasource='federated.1jk2zku11a8th31dgnxoy1hfr4xk'>
+            <column caption='% Push Clickthrough (Android Only)' datatype='real' name='[% Disabled Devices (copy)_4563061250208174083]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='SUM(IF [device_platform] = &apos;ANDROID&apos; THEN [tapped_notifications] END)/SUM(IF [device_platform] = &apos;ANDROID&apos; THEN [displayed_notifications] END)' />
+            </column>
+            <column caption='Entity Selector' datatype='string' name='[Calculation_4563061250206396417]' role='dimension' type='nominal'>
+              <calculation class='tableau' formula='IF [Parameters].[Parameter 1] = &apos;Segment&apos; THEN [segment]&#10;ELSEIF [Parameters].[Parameter 1] = &apos;Management Entity&apos; THEN [management_entity]&#10;ELSEIF [Parameters].[Parameter 1] = &apos;Country&apos; THEN [country_name]&#10;ELSEIF [Parameters].[Parameter 1] = &apos;Brand&apos; THEN [brand]&#10;END' />
+            </column>
+            <column caption='% Disabled Devices' datatype='real' name='[Calculation_4563061250207838210]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='SUM([disabled_devices])/SUM([devices])' />
+            </column>
+            <column caption='Brand' datatype='string' name='[brand]' role='dimension' type='nominal' />
+            <column caption='Country' datatype='string' name='[country_name]' role='dimension' semantic-role='[Country].[ISO3166_2]' type='nominal' />
+            <column datatype='string' name='[device_platform]' role='dimension' type='nominal' />
+            <column caption='Total Devices' datatype='integer' name='[devices]' role='measure' type='quantitative' />
+            <column caption='Disabled Devices' datatype='integer' name='[disabled_devices]' role='measure' type='quantitative' />
+            <column caption='Received Pushes' datatype='integer' name='[displayed_notifications]' role='measure' type='quantitative' />
+            <column caption='Enabled Devices' datatype='integer' name='[enabled_devices]' role='measure' type='quantitative' />
+            <column caption='Management Entity' datatype='string' name='[management_entity]' role='dimension' type='nominal' />
+            <column-instance column='[Calculation_4563061250206396417]' derivation='None' name='[none:Calculation_4563061250206396417:nk]' pivot='key' type='nominal' />
+            <column-instance column='[brand]' derivation='None' name='[none:brand:nk]' pivot='key' type='nominal' />
+            <column-instance column='[country_name]' derivation='None' name='[none:country_name:nk]' pivot='key' type='nominal' />
+            <column-instance column='[device_platform]' derivation='None' name='[none:device_platform:nk]' pivot='key' type='nominal' />
+            <column-instance column='[time_granularity]' derivation='None' name='[none:time_granularity:nk]' pivot='key' type='nominal' />
+            <column-instance column='[time_period]' derivation='None' name='[none:time_period:nk]' pivot='key' type='nominal' />
+            <column caption='Segment' datatype='string' name='[segment]' role='dimension' type='nominal' />
+            <column-instance column='[devices]' derivation='Sum' name='[sum:devices:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[disabled_devices]' derivation='Sum' name='[sum:disabled_devices:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[displayed_notifications]' derivation='Sum' name='[sum:displayed_notifications:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[enabled_devices]' derivation='Sum' name='[sum:enabled_devices:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[tapped_notifications]' derivation='Sum' name='[sum:tapped_notifications:qk]' pivot='key' type='quantitative' />
+            <column caption='Opened Pushes' datatype='integer' name='[tapped_notifications]' role='measure' type='quantitative' />
+            <column datatype='string' name='[time_granularity]' role='dimension' type='nominal' />
+            <column datatype='string' name='[time_period]' role='dimension' type='nominal' />
+            <column-instance column='[% Disabled Devices (copy)_4563061250208174083]' derivation='User' name='[usr:% Disabled Devices (copy)_4563061250208174083:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[Calculation_4563061250207838210]' derivation='User' name='[usr:Calculation_4563061250207838210:qk]' pivot='key' type='quantitative' />
+          </datasource-dependencies>
+          <filter class='categorical' column='[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[:Measure Names]'>
+            <groupfilter function='union' user:op='manual'>
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[usr:Calculation_4563061250207838210:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[sum:devices:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[sum:disabled_devices:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[sum:enabled_devices:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[usr:\% Disabled Devices (copy)_4563061250208174083:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[sum:displayed_notifications:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[sum:tapped_notifications:qk]&quot;' />
+            </groupfilter>
+          </filter>
+          <manual-sort column='[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[:Measure Names]' direction='ASC'>
+            <dictionary>
+              <bucket>&quot;[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[usr:Calculation_4563061250207838210:qk]&quot;</bucket>
+              <bucket>&quot;[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[sum:devices:qk]&quot;</bucket>
+              <bucket>&quot;[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[sum:disabled_devices:qk]&quot;</bucket>
+              <bucket>&quot;[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[sum:enabled_devices:qk]&quot;</bucket>
+              <bucket>&quot;[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[usr:\% Disabled Devices (copy)_4563061250208174083:qk]&quot;</bucket>
+              <bucket>&quot;[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[sum:displayed_notifications:qk]&quot;</bucket>
+              <bucket>&quot;[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[sum:tapped_notifications:qk]&quot;</bucket>
+              <bucket>&quot;[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[usr:Calculation_4563061250211729412:qk]&quot;</bucket>
+            </dictionary>
+          </manual-sort>
+          <filter class='categorical' column='[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[none:brand:nk]'>
+            <groupfilter function='member' level='[none:brand:nk]' member='&quot;Foodpanda&quot;' user:ui-domain='relevant' user:ui-enumeration='inclusive' user:ui-marker='enumerate' />
+          </filter>
+          <filter class='categorical' column='[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[none:country_name:nk]'>
+            <groupfilter function='union' user:ui-domain='relevant' user:ui-enumeration='inclusive' user:ui-marker='enumerate'>
+              <groupfilter function='member' level='[none:country_name:nk]' member='&quot;Philippines&quot;' />
+              <groupfilter function='member' level='[none:country_name:nk]' member='&quot;Singapore&quot;' />
+            </groupfilter>
+          </filter>
+          <filter class='categorical' column='[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[none:device_platform:nk]'>
+            <groupfilter function='level-members' level='[none:device_platform:nk]' user:ui-enumeration='all' user:ui-marker='enumerate' />
+          </filter>
+          <filter class='categorical' column='[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[none:time_granularity:nk]'>
+            <groupfilter expression='[Parameters].[Entity Granularity (copy)_4563061250205417472]=[time_granularity]' function='filter' user:ui-marker='filter-by'>
+              <groupfilter function='level-members' level='[none:time_granularity:nk]' user:ui-enumeration='all' user:ui-marker='enumerate' />
+            </groupfilter>
+          </filter>
+          <slices>
+            <column>[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[none:brand:nk]</column>
+            <column>[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[none:country_name:nk]</column>
+            <column>[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[none:time_granularity:nk]</column>
+            <column>[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[none:device_platform:nk]</column>
+            <column>[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[:Measure Names]</column>
+          </slices>
+          <aggregation value='true' />
+        </view>
+        <style>
+          <style-rule element='cell'>
+            <format attr='text-format' field='[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[usr:Calculation_4563061250207838210:qk]' value='p0%' />
+            <format attr='text-format' field='[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[usr:% Disabled Devices (copy)_4563061250208174083:qk]' value='p0.0%' />
+          </style-rule>
+          <style-rule element='header'>
+            <format attr='width' field='[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[:Measure Names]' value='252' />
+            <format attr='total-label' data-class='total' field='[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[none:brand:nk]' value='Overall' />
+          </style-rule>
+          <style-rule element='worksheet'>
+            <format attr='display-field-labels' scope='cols' value='false' />
+          </style-rule>
+          <style-rule element='map'>
+            <format attr='washout' value='0.0' />
+          </style-rule>
+        </style>
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Automatic' />
+            <encodings>
+              <text column='[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[Multiple Values]' />
+            </encodings>
+            <style>
+              <style-rule element='mark'>
+                <format attr='mark-labels-show' value='true' />
+                <format attr='mark-labels-cull' value='true' />
+              </style-rule>
+            </style>
+          </pane>
+        </panes>
+        <rows total='true'>([federated.1jk2zku11a8th31dgnxoy1hfr4xk].[none:brand:nk] / ([federated.1jk2zku11a8th31dgnxoy1hfr4xk].[none:Calculation_4563061250206396417:nk] / [federated.1jk2zku11a8th31dgnxoy1hfr4xk].[:Measure Names]))</rows>
+        <cols>[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[none:time_period:nk]</cols>
+      </table>
+      <simple-id uuid='{29B157DC-0C00-4F95-B1B4-A499E52AEB93}' />
+    </worksheet>
+  </worksheets>
+  <dashboards>
+    <dashboard _.fcp.AccessibleZoneTabOrder.true...enable-sort-zone-taborder='true' name='App - Push Notifications'>
+      <repository-location id='App-PushNotifications' path='/t/GlobalStandardReporting/workbooks/App-Engagement' revision='' site='GlobalStandardReporting' />
+      <style />
+      <size maxheight='1050' maxwidth='1280' minheight='1050' minwidth='1280' preset-index='2' sizing-mode='fixed' />
+      <datasources>
+        <datasource name='Parameters' />
+        <datasource caption='app_engagement_push' name='federated.1jk2zku11a8th31dgnxoy1hfr4xk' />
+      </datasources>
+      <datasource-dependencies datasource='Parameters'>
+        <column alias='Week' caption='Period Granularity' datatype='string' name='[Entity Granularity (copy)_4563061250205417472]' param-domain-type='list' role='measure' type='nominal' value='&quot;week&quot;'>
+          <calculation class='tableau' formula='&quot;week&quot;' />
+          <aliases>
+            <alias key='&quot;month&quot;' value='Month' />
+            <alias key='&quot;quarter&quot;' value='Quarter' />
+            <alias key='&quot;week&quot;' value='Week' />
+          </aliases>
+          <members>
+            <member alias='Week' value='&quot;week&quot;' />
+            <member alias='Month' value='&quot;month&quot;' />
+            <member alias='Quarter' value='&quot;quarter&quot;' />
+          </members>
+        </column>
+        <column caption='Entity Granularity' datatype='string' name='[Parameter 1]' param-domain-type='list' role='measure' type='nominal' value='&quot;Country&quot;'>
+          <calculation class='tableau' formula='&quot;Country&quot;' />
+          <members>
+            <member value='&quot;Brand&quot;' />
+            <member value='&quot;Country&quot;' />
+          </members>
+        </column>
+      </datasource-dependencies>
+      <datasource-dependencies datasource='federated.1jk2zku11a8th31dgnxoy1hfr4xk'>
+        <column caption='Brand' datatype='string' name='[brand]' role='dimension' type='nominal' />
+        <column caption='Country' datatype='string' name='[country_name]' role='dimension' semantic-role='[Country].[ISO3166_2]' type='nominal' />
+        <column datatype='string' name='[device_platform]' role='dimension' type='nominal' />
+        <column-instance column='[brand]' derivation='None' name='[none:brand:nk]' pivot='key' type='nominal' />
+        <column-instance column='[country_name]' derivation='None' name='[none:country_name:nk]' pivot='key' type='nominal' />
+        <column-instance column='[device_platform]' derivation='None' name='[none:device_platform:nk]' pivot='key' type='nominal' />
+      </datasource-dependencies>
+      <zones>
+        <zone h='100000' id='4' type-v2='layout-basic' w='100000' x='0' y='0'>
+          <zone h='98476' id='31' param='horz' type-v2='layout-flow' w='98750' x='625' y='762'>
+            <zone h='98476' id='5' type-v2='layout-basic' w='98750' x='625' y='762'>
+              <zone h='11206' id='3' name='Pushes - Max Report Date' show-title='false' w='11791' x='625' y='762'>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='solid' />
+                  <format attr='border-width' value='1' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+              <zone forceUpdate='true' h='5619' id='10' type-v2='text' w='86959' x='12416' y='762'>
+                <formatted-text>
+                  <run bold='true' fontalignment='1' fontcolor='#ffffff' fontsize='20'>VENDOR PORTAL - ENGAGEMENT</run>
+                </formatted-text>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                  <format attr='background-color' value='#b4000f' />
+                </zone-style>
+              </zone>
+              <zone h='7475' id='9' mode='list' param='[Parameters].[Parameter 1]' type-v2='paramctrl' w='11791' x='625' y='21477'>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+              <zone h='27428' id='14' name='Push - Clickthrough' w='48517' x='50858' y='46286'>
+                <zone-style>
+                  <format attr='border-color' value='#b4000f' />
+                  <format attr='border-style' value='solid' />
+                  <format attr='border-width' value='1' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+              <zone h='25524' id='18' name='Push - Clickthrough Daily' w='48517' x='50858' y='73714'>
+                <zone-style>
+                  <format attr='border-color' value='#b4000f' />
+                  <format attr='border-style' value='solid' />
+                  <format attr='border-width' value='1' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+              <zone h='52952' id='19' name='Push - % Disabled Devices' w='38442' x='12416' y='46286'>
+                <zone-style>
+                  <format attr='border-color' value='#b4000f' />
+                  <format attr='border-style' value='solid' />
+                  <format attr='border-width' value='1' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+              <zone h='9509' id='24' mode='list' param='[Parameters].[Entity Granularity (copy)_4563061250205417472]' type-v2='paramctrl' w='11791' x='625' y='11968'>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+              <zone h='8572' id='34' name='Pushes - Summary' param='[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[none:device_platform:nk]' type-v2='filter' values='database' w='11791' x='625' y='28952'>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+              <zone h='7333' id='32' name='Pushes - Summary' param='[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[none:brand:nk]' type-v2='filter' values='database' w='11791' x='625' y='37524'>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+              <zone h='54381' id='33' mode='checkdropdown' name='Pushes - Summary' param='[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[none:country_name:nk]' type-v2='filter' values='relevant' w='11791' x='625' y='44857'>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+              <zone h='39905' id='38' param='vert' type-v2='layout-flow' w='86959' x='12416' y='6381'>
+                <zone fixed-size='24' h='3048' id='27' is-fixed='true' mode='checkdropdown' name='Pushes - Summary' param='[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[:Measure Names]' type-v2='filter' values='database' w='86803' x='12494' y='6476'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                  </zone-style>
+                </zone>
+                <zone fixed-size='24' forceUpdate='true' h='3048' id='35' is-fixed='true' type-v2='text' w='86803' x='12494' y='9524'>
+                  <formatted-text>
+                    <run bold='true'>Note: Due to tracking limitation for Received Pushes on iOS, both metrics for Received Pushes &amp; % Push Clickthrough will only be available for Android.</run>
+                  </formatted-text>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                  </zone-style>
+                </zone>
+                <zone fixed-size='339' h='33048' id='13' is-fixed='true' name='Pushes - Summary' w='86803' x='12494' y='12572'>
+                  <layout-cache cell-count-w='5' non-cell-size-w='430' type-h='fixed' type-w='cell' />
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                  </zone-style>
+                </zone>
+                <zone-style>
+                  <format attr='border-color' value='#b4000f' />
+                  <format attr='border-style' value='solid' />
+                  <format attr='border-width' value='1' />
+                </zone-style>
+              </zone>
+            </zone>
+          </zone>
+          <zone-style>
+            <format attr='border-color' value='#000000' />
+            <format attr='border-style' value='none' />
+            <format attr='border-width' value='0' />
+            <format attr='margin' value='8' />
+          </zone-style>
+        </zone>
+      </zones>
+      <devicelayouts>
+        <devicelayout auto-generated='true' name='Phone'>
+          <size maxheight='1750' minheight='1750' sizing-mode='vscroll' />
+          <zones>
+            <zone h='100000' id='58' type-v2='layout-basic' w='100000' x='0' y='0'>
+              <zone h='98476' id='57' param='vert' type-v2='layout-flow' w='98750' x='625' y='762'>
+                <zone fixed-size='108' h='11206' id='3' is-fixed='true' name='Pushes - Max Report Date' show-title='false' w='11791' x='625' y='762'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='solid' />
+                    <format attr='border-width' value='1' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone forceUpdate='true' h='5619' id='10' type-v2='text' w='86959' x='12416' y='762'>
+                  <formatted-text>
+                    <run bold='true' fontalignment='1' fontcolor='#ffffff' fontsize='20'>VENDOR PORTAL - ENGAGEMENT</run>
+                  </formatted-text>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                    <format attr='background-color' value='#b4000f' />
+                  </zone-style>
+                </zone>
+                <zone fixed-size='24' forceUpdate='true' h='3048' id='35' type-v2='text' w='86803' x='12494' y='9524'>
+                  <formatted-text>
+                    <run bold='true'>Note: Due to tracking limitation for Received Pushes on iOS, both metrics for Received Pushes &amp; % Push Clickthrough will only be available for Android.</run>
+                  </formatted-text>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone h='9509' id='24' mode='list' param='[Parameters].[Entity Granularity (copy)_4563061250205417472]' type-v2='paramctrl' w='11791' x='625' y='11968'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone h='8572' id='34' mode='checkdropdown' name='Pushes - Summary' param='[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[none:device_platform:nk]' type-v2='filter' values='database' w='11791' x='625' y='28952'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone h='7333' id='32' mode='checkdropdown' name='Pushes - Summary' param='[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[none:brand:nk]' type-v2='filter' values='database' w='11791' x='625' y='37524'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone h='54381' id='33' mode='checkdropdown' name='Pushes - Summary' param='[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[none:country_name:nk]' type-v2='filter' values='relevant' w='11791' x='625' y='44857'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone fixed-size='24' h='3048' id='27' mode='checkdropdown' name='Pushes - Summary' param='[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[:Measure Names]' type-v2='filter' values='database' w='86803' x='12494' y='6476'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone fixed-size='280' h='33048' id='13' is-fixed='true' name='Pushes - Summary' w='86803' x='12494' y='12572'>
+                  <layout-cache cell-count-w='5' non-cell-size-w='430' type-h='fixed' type-w='cell' />
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone h='7475' id='9' mode='list' param='[Parameters].[Parameter 1]' type-v2='paramctrl' w='11791' x='625' y='21477'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone fixed-size='280' h='52952' id='19' is-fixed='true' name='Push - % Disabled Devices' w='38442' x='12416' y='46286'>
+                  <zone-style>
+                    <format attr='border-color' value='#b4000f' />
+                    <format attr='border-style' value='solid' />
+                    <format attr='border-width' value='1' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone fixed-size='278' h='27428' id='14' is-fixed='true' name='Push - Clickthrough' w='48517' x='50858' y='46286'>
+                  <zone-style>
+                    <format attr='border-color' value='#b4000f' />
+                    <format attr='border-style' value='solid' />
+                    <format attr='border-width' value='1' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone fixed-size='258' h='25524' id='18' is-fixed='true' name='Push - Clickthrough Daily' w='48517' x='50858' y='73714'>
+                  <zone-style>
+                    <format attr='border-color' value='#b4000f' />
+                    <format attr='border-style' value='solid' />
+                    <format attr='border-width' value='1' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+              </zone>
+              <zone-style>
+                <format attr='border-color' value='#000000' />
+                <format attr='border-style' value='none' />
+                <format attr='border-width' value='0' />
+                <format attr='margin' value='8' />
+              </zone-style>
+            </zone>
+          </zones>
+        </devicelayout>
+      </devicelayouts>
+      <simple-id uuid='{1B7E7377-210E-43A8-AE63-D437F9FD7C32}' />
+    </dashboard>
+  </dashboards>
+  <windows source-height='30'>
+    <window class='dashboard' maximized='true' name='App - Push Notifications'>
+      <viewpoints>
+        <viewpoint name='Push - % Disabled Devices'>
+          <zoom type='entire-view' />
+        </viewpoint>
+        <viewpoint name='Push - Clickthrough'>
+          <zoom type='entire-view' />
+          <highlight>
+            <color-one-way>
+              <field>[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[:Measure Names]</field>
+            </color-one-way>
+          </highlight>
+        </viewpoint>
+        <viewpoint name='Push - Clickthrough Daily'>
+          <zoom type='entire-view' />
+        </viewpoint>
+        <viewpoint name='Pushes - Max Report Date'>
+          <zoom type='entire-view' />
+        </viewpoint>
+        <viewpoint name='Pushes - Summary'>
+          <zoom type='fit-width' />
+          <selection-collection>
+            <node-selection select-tuples='false'>
+              <oriented-node-reference orientation='vertical'>
+                <node-reference>
+                  <fields>
+                    <field>[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[none:brand:nk]</field>
+                  </fields>
+                  <multibucket>
+                    <bucket>&quot;Foodpanda&quot;</bucket>
+                  </multibucket>
+                </node-reference>
+                <page-reference />
+              </oriented-node-reference>
+            </node-selection>
+          </selection-collection>
+        </viewpoint>
+      </viewpoints>
+      <active id='13' />
+      <simple-id uuid='{A640A9DA-329D-4B9F-A404-4002ABCC44E1}' />
+    </window>
+    <window class='worksheet' hidden='true' name='Push - % Disabled Devices'>
+      <cards>
+        <edge name='left'>
+          <strip size='160'>
+            <card type='pages' />
+            <card type='filters' />
+            <card type='marks' />
+          </strip>
+        </edge>
+        <edge name='top'>
+          <strip size='2147483647'>
+            <card type='columns' />
+          </strip>
+          <strip size='2147483647'>
+            <card type='rows' />
+          </strip>
+          <strip size='31'>
+            <card type='title' />
+          </strip>
+        </edge>
+        <edge name='right'>
+          <strip size='160'>
+            <card mode='compact' param='[Parameters].[Entity Granularity (copy)_4563061250205417472]' type='parameter' />
+            <card mode='compact' param='[Parameters].[Parameter 1]' type='parameter' />
+            <card pane-specification-id='2' param='[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[:Measure Names]' type='color' />
+          </strip>
+        </edge>
+      </cards>
+      <viewpoint>
+        <highlight>
+          <color-one-way>
+            <field>[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[:Measure Names]</field>
+            <field>[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[none:Calculation_4563061250206396417:nk]</field>
+            <field>[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[none:brand:nk]</field>
+            <field>[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[none:country_name:nk]</field>
+            <field>[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[none:device_platform:nk]</field>
+            <field>[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[none:device_system:nk]</field>
+            <field>[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[none:time_granularity:nk]</field>
+            <field>[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[none:time_period:nk]</field>
+          </color-one-way>
+        </highlight>
+      </viewpoint>
+      <simple-id uuid='{619108C0-269C-4BE5-BCA1-52DEEEDC6A88}' />
+    </window>
+    <window class='worksheet' hidden='true' name='Push - Clickthrough'>
+      <cards>
+        <edge name='left'>
+          <strip size='160'>
+            <card type='pages' />
+            <card type='filters' />
+            <card type='marks' />
+          </strip>
+        </edge>
+        <edge name='top'>
+          <strip size='2147483647'>
+            <card type='columns' />
+          </strip>
+          <strip size='2147483647'>
+            <card type='rows' />
+          </strip>
+          <strip size='31'>
+            <card type='title' />
+          </strip>
+        </edge>
+        <edge name='right'>
+          <strip size='160'>
+            <card mode='compact' param='[Parameters].[Entity Granularity (copy)_4563061250205417472]' type='parameter' />
+            <card mode='compact' param='[Parameters].[Parameter 1]' type='parameter' />
+            <card pane-specification-id='2' param='[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[:Measure Names]' type='color' />
+          </strip>
+        </edge>
+      </cards>
+      <viewpoint>
+        <highlight>
+          <color-one-way>
+            <field>[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[:Measure Names]</field>
+            <field>[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[none:Calculation_4563061250206396417:nk]</field>
+            <field>[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[none:brand:nk]</field>
+            <field>[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[none:country_name:nk]</field>
+            <field>[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[none:device_platform:nk]</field>
+            <field>[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[none:device_system:nk]</field>
+            <field>[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[none:time_granularity:nk]</field>
+            <field>[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[none:time_period:nk]</field>
+          </color-one-way>
+        </highlight>
+      </viewpoint>
+      <simple-id uuid='{12FB6BAE-74D4-4757-98BF-1C6CDAE13DA4}' />
+    </window>
+    <window class='worksheet' hidden='true' name='Push - Clickthrough Daily'>
+      <cards>
+        <edge name='left'>
+          <strip size='160'>
+            <card type='pages' />
+            <card type='filters' />
+            <card type='marks' />
+          </strip>
+        </edge>
+        <edge name='top'>
+          <strip size='2147483647'>
+            <card type='columns' />
+          </strip>
+          <strip size='2147483647'>
+            <card type='rows' />
+          </strip>
+          <strip size='31'>
+            <card type='title' />
+          </strip>
+        </edge>
+        <edge name='right'>
+          <strip size='160'>
+            <card mode='compact' param='[Parameters].[Entity Granularity (copy)_4563061250205417472]' type='parameter' />
+            <card mode='compact' param='[Parameters].[Parameter 1]' type='parameter' />
+            <card pane-specification-id='2' param='[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[:Measure Names]' type='color' />
+          </strip>
+        </edge>
+      </cards>
+      <viewpoint>
+        <highlight>
+          <color-one-way>
+            <field>[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[:Measure Names]</field>
+            <field>[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[none:Calculation_4563061250206396417:nk]</field>
+            <field>[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[none:brand:nk]</field>
+            <field>[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[none:country_name:nk]</field>
+            <field>[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[none:device_platform:nk]</field>
+            <field>[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[none:device_system:nk]</field>
+            <field>[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[none:time_granularity:nk]</field>
+            <field>[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[none:time_period:nk]</field>
+            <field>[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[yr:Calculation_4563061250244452357:ok]</field>
+          </color-one-way>
+        </highlight>
+      </viewpoint>
+      <simple-id uuid='{624101AB-DEA4-4B06-BF34-B268A593BDC2}' />
+    </window>
+    <window class='worksheet' hidden='true' name='Pushes - Max Report Date'>
+      <cards>
+        <edge name='left'>
+          <strip size='160'>
+            <card type='pages' />
+            <card type='filters' />
+            <card type='marks' />
+          </strip>
+        </edge>
+        <edge name='top'>
+          <strip size='2147483647'>
+            <card type='columns' />
+          </strip>
+          <strip size='2147483647'>
+            <card type='rows' />
+          </strip>
+          <strip size='31'>
+            <card type='title' />
+          </strip>
+        </edge>
+        <edge name='right'>
+          <strip size='160'>
+            <card mode='compact' param='[Parameters].[Entity Granularity (copy)_4563061250205417472]' type='parameter' />
+            <card mode='compact' param='[Parameters].[Parameter 1]' type='parameter' />
+          </strip>
+        </edge>
+      </cards>
+      <viewpoint>
+        <selection-collection>
+          <tuple-selection>
+            <tuple-reference>
+              <tuple-descriptor>
+                <pane-descriptor>
+                  <x-fields />
+                  <y-fields />
+                </pane-descriptor>
+                <columns>
+                  <field>[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[usr:Calculation_4563061250253824008:qk]</field>
+                </columns>
+              </tuple-descriptor>
+              <tuple>
+                <value>#2023-06-04#</value>
+              </tuple>
+            </tuple-reference>
+          </tuple-selection>
+        </selection-collection>
+        <highlight>
+          <color-one-way>
+            <field>[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[:Measure Names]</field>
+            <field>[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[none:Calculation_4563061250206396417:nk]</field>
+            <field>[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[none:brand:nk]</field>
+            <field>[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[none:country_name:nk]</field>
+            <field>[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[none:device_platform:nk]</field>
+            <field>[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[none:device_system:nk]</field>
+            <field>[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[none:time_granularity:nk]</field>
+            <field>[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[none:time_period:nk]</field>
+            <field>[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[usr:Calculation_4563061250253824008:ok]</field>
+            <field>[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[yr:max_date:ok]</field>
+          </color-one-way>
+        </highlight>
+      </viewpoint>
+      <simple-id uuid='{0DAD1900-955C-4BCF-A7E5-E220723E0CAB}' />
+    </window>
+    <window class='worksheet' hidden='true' name='Pushes - Summary'>
+      <cards>
+        <edge name='left'>
+          <strip size='160'>
+            <card type='pages' />
+            <card type='filters' />
+            <card type='marks' />
+            <card type='measures' />
+          </strip>
+        </edge>
+        <edge name='top'>
+          <strip size='2147483647'>
+            <card type='columns' />
+          </strip>
+          <strip size='2147483647'>
+            <card type='rows' />
+          </strip>
+          <strip size='31'>
+            <card type='title' />
+          </strip>
+        </edge>
+        <edge name='right'>
+          <strip size='160'>
+            <card mode='compact' param='[Parameters].[Entity Granularity (copy)_4563061250205417472]' size='27' type='parameter' />
+            <card mode='compact' param='[Parameters].[Parameter 1]' size='27' type='parameter' />
+          </strip>
+        </edge>
+      </cards>
+      <viewpoint>
+        <highlight>
+          <color-one-way>
+            <field>[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[:Measure Names]</field>
+            <field>[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[none:Calculation_4563061250206396417:nk]</field>
+            <field>[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[none:brand:nk]</field>
+            <field>[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[none:country_name:nk]</field>
+            <field>[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[none:device_platform:nk]</field>
+            <field>[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[none:device_system:nk]</field>
+            <field>[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[none:time_granularity:nk]</field>
+            <field>[federated.1jk2zku11a8th31dgnxoy1hfr4xk].[none:time_period:nk]</field>
+          </color-one-way>
+        </highlight>
+      </viewpoint>
+      <simple-id uuid='{816C00B7-26CB-40A6-A88B-1EE71A010617}' />
+    </window>
+  </windows>
+</workbook>

@@ -1,0 +1,1742 @@
+<?xml version='1.0' encoding='utf-8' ?>
+
+<!-- build 20221.22.1108.1355                               -->
+<workbook original-version='18.1' source-build='2022.1.9 (20221.22.1108.1355)' source-platform='mac' version='18.1' xml:base='https://tableau.deliveryhero.net' xmlns:user='http://www.tableausoftware.com/xml/user'>
+  <document-format-change-manifest>
+    <_.fcp.AccessibleZoneTabOrder.true...AccessibleZoneTabOrder />
+    <_.fcp.AnimationOnByDefault.true...AnimationOnByDefault />
+    <AutoCreateAndUpdateDSDPhoneLayouts />
+    <_.fcp.MarkAnimation.true...MarkAnimation />
+    <_.fcp.ObjectModelEncapsulateLegacy.true...ObjectModelEncapsulateLegacy />
+    <_.fcp.ObjectModelExtractV2.true...ObjectModelExtractV2 />
+    <_.fcp.ObjectModelTableType.true...ObjectModelTableType />
+    <_.fcp.SchemaViewerObjectModel.true...SchemaViewerObjectModel />
+    <SetMembershipControl />
+    <SheetIdentifierTracking />
+    <SortTagCleanup />
+    <WindowsPersistSimpleIdentifiers />
+    <ZoneBackgroundTransparency />
+  </document-format-change-manifest>
+  <repository-location derived-from='https://tableau.deliveryhero.net/t/GlobalStandardReporting/workbooks/DHPriorityFeeRevenue?rev=2.0' id='DHPriorityFeeRevenue' path='/t/GlobalStandardReporting/workbooks' revision='2.1' site='GlobalStandardReporting' />
+  <preferences>
+    <preference name='ui.encoding.shelf.height' value='24' />
+    <preference name='ui.shelf.height' value='26' />
+  </preferences>
+  <_.fcp.AnimationOnByDefault.false...style>
+    <_.fcp.AnimationOnByDefault.false..._.fcp.MarkAnimation.true...style-rule element='animation'>
+      <_.fcp.AnimationOnByDefault.false...format attr='animation-on' value='ao-on' />
+    </_.fcp.AnimationOnByDefault.false..._.fcp.MarkAnimation.true...style-rule>
+  </_.fcp.AnimationOnByDefault.false...style>
+  <datasources>
+    <datasource hasconnection='false' inline='true' name='Parameters' version='18.1'>
+      <aliases enabled='yes' />
+      <column caption='Detail' datatype='string' name='[Parameter 1]' param-domain-type='list' role='measure' type='nominal' value='&quot;Zone&quot;'>
+        <calculation class='tableau' formula='&quot;Zone&quot;' />
+        <members>
+          <member value='&quot;Entity&quot;' />
+          <member value='&quot;Zone&quot;' />
+        </members>
+      </column>
+    </datasource>
+    <datasource caption='Prio Fee Revenue' inline='true' name='federated.16jy5590b5tn4x1gt9ett0a89exg' version='18.1'>
+      <connection class='federated'>
+        <named-connections>
+          <named-connection caption='BigQuery' name='bigquery.1eyx7vq077llrp1am644w05zpb98'>
+            <connection CATALOG='logistics-data-storage-staging' EXECCATALOG='logistics-customer-staging' authentication='oauth' bq-dataset-fetch-rows='' bq-fetch-rows='' bq-fetch-tasks='' bq-large-fetch-rows='' bq-project-fetch-rows='' bq-response-rows='' class='bigquery' connection-dialect='google-sql' project='logistics-data-storage-staging' schema='long_term_pricing' server-oauth='' username='martin.fourcade@deliveryhero.com' workgroup-auth-mode='prompt' />
+          </named-connection>
+        </named-connections>
+        <_.fcp.ObjectModelEncapsulateLegacy.false...relation connection='bigquery.1eyx7vq077llrp1am644w05zpb98' name='Custom SQL Query' type='text'><![CDATA[WITH total_orders AS (
+  SELECT
+    o.entity.id AS entity_id,
+    DATE_TRUNC(o.created_date, ISOWEEK) week,
+    zone.zone_name,
+    COUNT(DISTINCT CASE WHEN is_user_plus = 1 AND tags IN ('PRIORITIZE_DELIVERY') and o.entity_id in ('PY_AR', 'PY_CL', 'PY_PE', 'PY_EC') THEN order_code else null END) AS subs_prio_orders,
+    COUNT(DISTINCT case when is_user_plus = 1 and o.entity_id in ('PY_AR', 'PY_CL', 'PY_PE', 'PY_EC') THEN order_code else null END) as total_subs_orders,
+    COUNT(DISTINCT CASE WHEN is_user_plus = 0 AND tags IN ('PRIORITIZE_DELIVERY') THEN order_code END) AS normal_prio_orders,
+    COUNT(DISTINCT case when is_user_plus = 0 THEN order_code END) as total_normal_orders,
+    COUNT(DISTINCT case when is_user_plus = 1 THEN user.id END) as total_subs_users,
+    COUNT(DISTINCT case when is_user_plus = 0 THEN user.id END) as total_normal_users,
+    COUNT(DISTINCT order_code) AS total_orders
+  FROM `fulfillment-dwh-production.cl.orders_v2` o, UNNEST(rider.tags) AS tags
+  LEFT JOIN `peya-bi-tools-pro.il_logistics.fact_logistic_orders` l ON o.order_code = l.platform_order_code
+  LEFT JOIN  `peya-bi-tools-pro.il_core.fact_orders` fo ON LOWER(l.country_code) = LOWER(fo.country.country_code) AND CAST(fo.order_id AS STRING) = l.platform_order_code
+  WHERE o.entity.id IN ('PY_AR', 'PY_BO', 'PY_HN', 'PY_NI', 'AP_PA', 'PY_CR', 'PY_PY', 'PY_SV', 'PY_CL', 'PY_PE', 'PY_EC')
+    AND o.created_date >>= DATE_TRUNC('2023-01-01', ISOWEEK)
+    AND o.created_date << DATE_TRUNC(CURRENT_DATE(), ISOWEEK)
+    AND fo.registered_date >>= DATE_TRUNC('2023-01-01', ISOWEEK)
+    AND fo.registered_date << DATE_TRUNC(CURRENT_DATE(), ISOWEEK)
+    AND fo.order_status = 'CONFIRMED'
+    AND fo.delivery_type = 'Own Delivery'
+    and fo.pickup = false
+  GROUP BY 1, 2, 3
+),
+prio_orders AS (
+  SELECT
+    o.entity.id AS entity_id,
+    zone.zone_name,
+    DATE_TRUNC(o.created_date, ISOWEEK) week,
+    SUM(CASE
+        WHEN o.entity.id = 'PY_AR' AND o.created_date BETWEEN "2023-01-01" AND "2023-07-24" THEN 60 / d.fx_rate_eur
+        WHEN o.entity.id = 'PY_AR' AND o.created_date BETWEEN "2023-07-24" AND "2023-10-23" THEN 99 / d.fx_rate_eur
+        WHEN o.entity.id = 'PY_AR' AND o.created_date >> "2023-10-23" THEN 149 / d.fx_rate_eur
+        WHEN o.entity.id = 'PY_BO' THEN 4 / d.fx_rate_eur
+        when o.entity.id = 'PY_HN' then 10/ d.fx_rate_eur
+        when o.entity.id = 'PY_NI' then 12/ d.fx_rate_eur
+        when o.entity.id = 'AP_PA' then 0.25/ d.fx_rate_eur
+        when o.entity.id = 'PY_CR' then 200/ d.fx_rate_eur
+        when o.entity.id = 'PY_PY' then 3000/d.fx_rate_eur
+        when o.entity.id = 'PY_SV' then 0.25/d.fx_rate_eur
+        when o.entity.id = 'PY_CL' then 290/d.fx_rate_eur
+        when o.entity.id = 'PY_PE' then 1/d.fx_rate_eur
+        when o.entity.id = 'PY_EC' then 0.30/d.fx_rate_eur
+        when o.entity.id = 'PY_UY' then 49/d.fx_rate_eur
+        ELSE 0
+      END) AS prio_fee_eur,
+    COUNT(*) AS prio_orders
+  FROM `fulfillment-dwh-production.cl.orders_v2` o, UNNEST(rider.tags) AS tags
+  LEFT JOIN `peya-bi-tools-pro.il_logistics.fact_logistic_orders` l ON o.order_code = l.platform_order_code
+  LEFT JOIN `fulfillment-dwh-production.curated_data_shared_coredata.global_entities` e ON e.global_entity_id = o.entity.id
+  LEFT JOIN `fulfillment-dwh-production.curated_data_shared_coredata.fx_rates` d ON d.currency_code = e.currency_iso_code AND d.fx_rate_date = l.created_date
+  LEFT JOIN `peya-bi-tools-pro.il_core.fact_orders` fo ON LOWER(l.country_code) = LOWER(fo.country.country_code) AND CAST(fo.order_id AS STRING) = l.platform_order_code
+  WHERE o.created_date >>= DATE_TRUNC('2023-01-01', ISOWEEK)
+    AND o.created_date << DATE_TRUNC(CURRENT_DATE(), ISOWEEK)
+    AND fo.registered_date >>= DATE_TRUNC('2023-01-01', ISOWEEK)
+    AND fo.registered_date << DATE_TRUNC(CURRENT_DATE(), ISOWEEK)
+    AND tags IN ('PRIORITIZE_DELIVERY')
+    AND fo.order_status = 'CONFIRMED'
+    AND is_user_plus = 0
+    AND fo.delivery_type = 'Own Delivery'
+    and fo.pickup = false
+  GROUP BY 1, 2, 3
+  ORDER BY 1,2 ASC, 2 DESC),
+
+dps_orders AS (
+with prio as (
+SELECT
+  entity_id,
+   case when components.priority_fee_id IS NOT NULL then zone_name else null end as zone_name
+  , date_trunc(created_date, isoweek) week
+  , components.priority_fee_id IS NOT NULL AS has_dps_pf_component
+  , COALESCE(priority_fee_eur,0) != 0 AS has_backend_pf
+  , count(*) as orders
+  , count(case when components.priority_fee_id IS NOT NULL and has_subscription is true then platform_order_code else null end) as subs_prio_orders
+  , count(case when components.priority_fee_id IS NOT NULL and has_subscription is false then platform_order_code else null end) as normal_prio_orders
+  , sum(priority_fee_eur) as prio_fee_eur
+  , sum(dps_priority_fee_eur) as dps_prio_fee_eur
+FROM `fulfillment-dwh-production.cl.dps_sessions_mapped_to_orders_perseus` 
+WHERE created_date >>= date_trunc('2023-01-01', isoweek)
+  AND created_date << date_trunc(CURRENT_DATE(), isoweek)
+  AND is_sent
+  AND region is not null
+  AND is_own_delivery
+  and priority_fee_local is not null
+GROUP By 1,2,3,4,5
+ORDER by 1 asc, 2 desc)
+
+ SELECT
+o.entity_id
+, p.zone_name
+, date_trunc(created_date, isoweek) week
+, prio_fee_eur
+, p.orders as prio_orders
+, p.subs_prio_orders as subs_prio_orders
+, p.normal_prio_orders
+, count(distinct case when has_subscription is true then platform_order_code end) as total_subs_orders
+, count(distinct case when has_subscription is true then customer_account_id end) as total_subs_users
+, count(distinct case when has_subscription is false then platform_order_code end) as total_normal_orders
+, count(distinct case when has_subscription is false then customer_account_id end) as total_normal_users
+, count(distinct platform_order_code) as orders
+FROM `fulfillment-dwh-production.cl.dps_sessions_mapped_to_orders_perseus` o
+LEFT join prio p on o.entity_id = p.entity_id and date_trunc(o.created_date, isoweek) = p.week and o.zone_name = p.zone_name
+WHERE created_date >>= date_trunc('2023-01-01', isoweek)
+  AND created_date << date_trunc(CURRENT_DATE(), isoweek)
+  AND is_sent
+  AND region is not null
+  AND has_dps_pf_component is true
+  and has_backend_pf is true
+  and p.zone_name is not null
+GROUP by 1,2,3,4,5,6,7
+ORDER by 1 asc, 2 desc
+)
+ SELECT
+  t.entity_id,
+  t.zone_name,
+  t.week,
+  t.subs_prio_orders,
+  t.total_subs_orders,
+  t.total_subs_users,
+  t.normal_prio_orders,
+  t.total_normal_orders,
+  t.total_normal_users,
+  t.total_orders,
+  p.prio_fee_eur,
+  p.prio_orders,
+FROM total_orders t
+LEFT JOIN prio_orders p ON t.week = p.week AND t.entity_id = p.entity_id and p.zone_name = t.zone_name
+where prio_orders is not null
+UNION ALL
+
+SELECT
+  d.entity_id,
+  d.zone_name,
+  d.week,
+  d.subs_prio_orders,
+  d.total_subs_orders,
+  d.total_subs_users,
+  d.normal_prio_orders,
+  d.total_normal_orders,
+  d.total_normal_users,
+  d.orders as total_orders,  -- Agregamos columnas con valor 0 para total_orders y prio_orders
+  d.prio_fee_eur prio_fee_eur,
+  d.prio_orders prio_orders
+FROM dps_orders d
+ORDER BY entity_id ASC, week DESC]]></_.fcp.ObjectModelEncapsulateLegacy.false...relation>
+        <_.fcp.ObjectModelEncapsulateLegacy.true...relation type='collection'>
+          <relation connection='bigquery.1eyx7vq077llrp1am644w05zpb98' name='Custom SQL Query' type='text'><![CDATA[WITH total_orders AS (
+  SELECT
+    o.entity.id AS entity_id,
+    DATE_TRUNC(o.created_date, ISOWEEK) week,
+    zone.zone_name,
+    COUNT(DISTINCT CASE WHEN is_user_plus = 1 AND tags IN ('PRIORITIZE_DELIVERY') and o.entity_id in ('PY_AR', 'PY_CL', 'PY_PE', 'PY_EC') THEN order_code else null END) AS subs_prio_orders,
+    COUNT(DISTINCT case when is_user_plus = 1 and o.entity_id in ('PY_AR', 'PY_CL', 'PY_PE', 'PY_EC') THEN order_code else null END) as total_subs_orders,
+    COUNT(DISTINCT CASE WHEN is_user_plus = 0 AND tags IN ('PRIORITIZE_DELIVERY') THEN order_code END) AS normal_prio_orders,
+    COUNT(DISTINCT case when is_user_plus = 0 THEN order_code END) as total_normal_orders,
+    COUNT(DISTINCT case when is_user_plus = 1 THEN user.id END) as total_subs_users,
+    COUNT(DISTINCT case when is_user_plus = 0 THEN user.id END) as total_normal_users,
+    COUNT(DISTINCT order_code) AS total_orders
+  FROM `fulfillment-dwh-production.cl.orders_v2` o, UNNEST(rider.tags) AS tags
+  LEFT JOIN `peya-bi-tools-pro.il_logistics.fact_logistic_orders` l ON o.order_code = l.platform_order_code
+  LEFT JOIN  `peya-bi-tools-pro.il_core.fact_orders` fo ON LOWER(l.country_code) = LOWER(fo.country.country_code) AND CAST(fo.order_id AS STRING) = l.platform_order_code
+  WHERE o.entity.id IN ('PY_AR', 'PY_BO', 'PY_HN', 'PY_NI', 'AP_PA', 'PY_CR', 'PY_PY', 'PY_SV', 'PY_CL', 'PY_PE', 'PY_EC')
+    AND o.created_date >>= DATE_TRUNC('2023-01-01', ISOWEEK)
+    AND o.created_date << DATE_TRUNC(CURRENT_DATE(), ISOWEEK)
+    AND fo.registered_date >>= DATE_TRUNC('2023-01-01', ISOWEEK)
+    AND fo.registered_date << DATE_TRUNC(CURRENT_DATE(), ISOWEEK)
+    AND fo.order_status = 'CONFIRMED'
+    AND fo.delivery_type = 'Own Delivery'
+    and fo.pickup = false
+  GROUP BY 1, 2, 3
+),
+prio_orders AS (
+  SELECT
+    o.entity.id AS entity_id,
+    zone.zone_name,
+    DATE_TRUNC(o.created_date, ISOWEEK) week,
+    SUM(CASE
+        WHEN o.entity.id = 'PY_AR' AND o.created_date BETWEEN "2023-01-01" AND "2023-07-24" THEN 60 / d.fx_rate_eur
+        WHEN o.entity.id = 'PY_AR' AND o.created_date BETWEEN "2023-07-24" AND "2023-10-23" THEN 99 / d.fx_rate_eur
+        WHEN o.entity.id = 'PY_AR' AND o.created_date >> "2023-10-23" THEN 149 / d.fx_rate_eur
+        WHEN o.entity.id = 'PY_BO' THEN 4 / d.fx_rate_eur
+        when o.entity.id = 'PY_HN' then 10/ d.fx_rate_eur
+        when o.entity.id = 'PY_NI' then 12/ d.fx_rate_eur
+        when o.entity.id = 'AP_PA' then 0.25/ d.fx_rate_eur
+        when o.entity.id = 'PY_CR' then 200/ d.fx_rate_eur
+        when o.entity.id = 'PY_PY' then 3000/d.fx_rate_eur
+        when o.entity.id = 'PY_SV' then 0.25/d.fx_rate_eur
+        when o.entity.id = 'PY_CL' then 290/d.fx_rate_eur
+        when o.entity.id = 'PY_PE' then 1/d.fx_rate_eur
+        when o.entity.id = 'PY_EC' then 0.30/d.fx_rate_eur
+        when o.entity.id = 'PY_UY' then 49/d.fx_rate_eur
+        ELSE 0
+      END) AS prio_fee_eur,
+    COUNT(*) AS prio_orders
+  FROM `fulfillment-dwh-production.cl.orders_v2` o, UNNEST(rider.tags) AS tags
+  LEFT JOIN `peya-bi-tools-pro.il_logistics.fact_logistic_orders` l ON o.order_code = l.platform_order_code
+  LEFT JOIN `fulfillment-dwh-production.curated_data_shared_coredata.global_entities` e ON e.global_entity_id = o.entity.id
+  LEFT JOIN `fulfillment-dwh-production.curated_data_shared_coredata.fx_rates` d ON d.currency_code = e.currency_iso_code AND d.fx_rate_date = l.created_date
+  LEFT JOIN `peya-bi-tools-pro.il_core.fact_orders` fo ON LOWER(l.country_code) = LOWER(fo.country.country_code) AND CAST(fo.order_id AS STRING) = l.platform_order_code
+  WHERE o.created_date >>= DATE_TRUNC('2023-01-01', ISOWEEK)
+    AND o.created_date << DATE_TRUNC(CURRENT_DATE(), ISOWEEK)
+    AND fo.registered_date >>= DATE_TRUNC('2023-01-01', ISOWEEK)
+    AND fo.registered_date << DATE_TRUNC(CURRENT_DATE(), ISOWEEK)
+    AND tags IN ('PRIORITIZE_DELIVERY')
+    AND fo.order_status = 'CONFIRMED'
+    AND is_user_plus = 0
+    AND fo.delivery_type = 'Own Delivery'
+    and fo.pickup = false
+  GROUP BY 1, 2, 3
+  ORDER BY 1,2 ASC, 2 DESC),
+
+dps_orders AS (
+with prio as (
+SELECT
+  entity_id,
+   case when components.priority_fee_id IS NOT NULL then zone_name else null end as zone_name
+  , date_trunc(created_date, isoweek) week
+  , components.priority_fee_id IS NOT NULL AS has_dps_pf_component
+  , COALESCE(priority_fee_eur,0) != 0 AS has_backend_pf
+  , count(*) as orders
+  , count(case when components.priority_fee_id IS NOT NULL and has_subscription is true then platform_order_code else null end) as subs_prio_orders
+  , count(case when components.priority_fee_id IS NOT NULL and has_subscription is false then platform_order_code else null end) as normal_prio_orders
+  , sum(priority_fee_eur) as prio_fee_eur
+  , sum(dps_priority_fee_eur) as dps_prio_fee_eur
+FROM `fulfillment-dwh-production.cl.dps_sessions_mapped_to_orders_perseus` 
+WHERE created_date >>= date_trunc('2023-01-01', isoweek)
+  AND created_date << date_trunc(CURRENT_DATE(), isoweek)
+  AND is_sent
+  AND region is not null
+  AND is_own_delivery
+  and priority_fee_local is not null
+GROUP By 1,2,3,4,5
+ORDER by 1 asc, 2 desc)
+
+ SELECT
+o.entity_id
+, p.zone_name
+, date_trunc(created_date, isoweek) week
+, prio_fee_eur
+, p.orders as prio_orders
+, p.subs_prio_orders as subs_prio_orders
+, p.normal_prio_orders
+, count(distinct case when has_subscription is true then platform_order_code end) as total_subs_orders
+, count(distinct case when has_subscription is true then customer_account_id end) as total_subs_users
+, count(distinct case when has_subscription is false then platform_order_code end) as total_normal_orders
+, count(distinct case when has_subscription is false then customer_account_id end) as total_normal_users
+, count(distinct platform_order_code) as orders
+FROM `fulfillment-dwh-production.cl.dps_sessions_mapped_to_orders_perseus` o
+LEFT join prio p on o.entity_id = p.entity_id and date_trunc(o.created_date, isoweek) = p.week and o.zone_name = p.zone_name
+WHERE created_date >>= date_trunc('2023-01-01', isoweek)
+  AND created_date << date_trunc(CURRENT_DATE(), isoweek)
+  AND is_sent
+  AND region is not null
+  AND has_dps_pf_component is true
+  and has_backend_pf is true
+  and p.zone_name is not null
+GROUP by 1,2,3,4,5,6,7
+ORDER by 1 asc, 2 desc
+)
+ SELECT
+  t.entity_id,
+  t.zone_name,
+  t.week,
+  t.subs_prio_orders,
+  t.total_subs_orders,
+  t.total_subs_users,
+  t.normal_prio_orders,
+  t.total_normal_orders,
+  t.total_normal_users,
+  t.total_orders,
+  p.prio_fee_eur,
+  p.prio_orders,
+FROM total_orders t
+LEFT JOIN prio_orders p ON t.week = p.week AND t.entity_id = p.entity_id and p.zone_name = t.zone_name
+where prio_orders is not null
+UNION ALL
+
+SELECT
+  d.entity_id,
+  d.zone_name,
+  d.week,
+  d.subs_prio_orders,
+  d.total_subs_orders,
+  d.total_subs_users,
+  d.normal_prio_orders,
+  d.total_normal_orders,
+  d.total_normal_users,
+  d.orders as total_orders,  -- Agregamos columnas con valor 0 para total_orders y prio_orders
+  d.prio_fee_eur prio_fee_eur,
+  d.prio_orders prio_orders
+FROM dps_orders d
+ORDER BY entity_id ASC, week DESC]]></relation>
+          <relation connection='bigquery.1eyx7vq077llrp1am644w05zpb98' name='Custom SQL Query1' type='text'><![CDATA[SELECT
+    entity_id
+  , date_trunc(created_date, isoweek) week
+  , count(distinct platform_order_code) total_entity_orders
+FROM `fulfillment-dwh-production.cl.dps_sessions_mapped_to_orders_perseus` 
+WHERE created_date >>= date_trunc('2023-01-01', isoweek)
+  AND created_date << date_trunc(CURRENT_DATE(), isoweek)
+  AND is_sent
+  AND region is not null
+  AND is_own_delivery
+  GROUP BY 1,2]]></relation>
+        </_.fcp.ObjectModelEncapsulateLegacy.true...relation>
+        <cols>
+          <map key='[entity_id (Custom SQL Query1)]' value='[Custom SQL Query1].[entity_id]' />
+          <map key='[entity_id]' value='[Custom SQL Query].[entity_id]' />
+          <map key='[normal_prio_orders]' value='[Custom SQL Query].[normal_prio_orders]' />
+          <map key='[prio_fee_eur]' value='[Custom SQL Query].[prio_fee_eur]' />
+          <map key='[prio_orders]' value='[Custom SQL Query].[prio_orders]' />
+          <map key='[subs_prio_orders]' value='[Custom SQL Query].[subs_prio_orders]' />
+          <map key='[total_entity_orders (Custom SQL Query1)]' value='[Custom SQL Query1].[total_entity_orders]' />
+          <map key='[total_normal_orders]' value='[Custom SQL Query].[total_normal_orders]' />
+          <map key='[total_normal_users]' value='[Custom SQL Query].[total_normal_users]' />
+          <map key='[total_orders]' value='[Custom SQL Query].[total_orders]' />
+          <map key='[total_subs_orders]' value='[Custom SQL Query].[total_subs_orders]' />
+          <map key='[total_subs_users]' value='[Custom SQL Query].[total_subs_users]' />
+          <map key='[week (Custom SQL Query1)]' value='[Custom SQL Query1].[week]' />
+          <map key='[week]' value='[Custom SQL Query].[week]' />
+          <map key='[zone_name]' value='[Custom SQL Query].[zone_name]' />
+        </cols>
+        <metadata-records>
+          <metadata-record class='column'>
+            <remote-name>entity_id</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[entity_id]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>entity_id</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_8BE81DC4B68C4422AFA6A7EE9206D032]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>zone_name</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[zone_name]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>zone_name</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_8BE81DC4B68C4422AFA6A7EE9206D032]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>week</remote-name>
+            <remote-type>7</remote-type>
+            <local-name>[week]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>week</remote-alias>
+            <local-type>date</local-type>
+            <aggregation>Year</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_8BE81DC4B68C4422AFA6A7EE9206D032]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>subs_prio_orders</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[subs_prio_orders]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>subs_prio_orders</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_8BE81DC4B68C4422AFA6A7EE9206D032]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>total_subs_orders</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[total_subs_orders]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>total_subs_orders</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_8BE81DC4B68C4422AFA6A7EE9206D032]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>total_subs_users</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[total_subs_users]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>total_subs_users</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_8BE81DC4B68C4422AFA6A7EE9206D032]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>normal_prio_orders</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[normal_prio_orders]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>normal_prio_orders</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_8BE81DC4B68C4422AFA6A7EE9206D032]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>total_normal_orders</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[total_normal_orders]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>total_normal_orders</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_8BE81DC4B68C4422AFA6A7EE9206D032]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>total_normal_users</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[total_normal_users]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>total_normal_users</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_8BE81DC4B68C4422AFA6A7EE9206D032]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>total_orders</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[total_orders]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>total_orders</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_8BE81DC4B68C4422AFA6A7EE9206D032]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>prio_fee_eur</remote-name>
+            <remote-type>5</remote-type>
+            <local-name>[prio_fee_eur]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>prio_fee_eur</remote-alias>
+            <local-type>real</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_8BE81DC4B68C4422AFA6A7EE9206D032]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>prio_orders</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[prio_orders]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>prio_orders</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_8BE81DC4B68C4422AFA6A7EE9206D032]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>entity_id</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[entity_id (Custom SQL Query1)]</local-name>
+            <parent-name>[Custom SQL Query1]</parent-name>
+            <remote-alias>entity_id</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_D52C5BE9B0294FE4951F725CA5F270E7]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>week</remote-name>
+            <remote-type>7</remote-type>
+            <local-name>[week (Custom SQL Query1)]</local-name>
+            <parent-name>[Custom SQL Query1]</parent-name>
+            <remote-alias>week</remote-alias>
+            <local-type>date</local-type>
+            <aggregation>Year</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_D52C5BE9B0294FE4951F725CA5F270E7]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>total_entity_orders</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[total_entity_orders (Custom SQL Query1)]</local-name>
+            <parent-name>[Custom SQL Query1]</parent-name>
+            <remote-alias>total_entity_orders</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_D52C5BE9B0294FE4951F725CA5F270E7]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+        </metadata-records>
+      </connection>
+      <aliases enabled='yes' />
+      <column datatype='string' name='[:Measure Names]' role='dimension' type='nominal'>
+        <aliases>
+          <alias key='&quot;[federated.16jy5590b5tn4x1gt9ett0a89exg].[avg:Calculation_456200591998971904:qk]&quot;' value='Adoption' />
+          <alias key='&quot;[federated.16jy5590b5tn4x1gt9ett0a89exg].[avg:Calculation_456200591999098881:vtavg:qk]&quot;' value='Subscribers Adoption' />
+          <alias key='&quot;[federated.16jy5590b5tn4x1gt9ett0a89exg].[avg:total_entity_orders:vtsum:qk]&quot;' value='Total Entity Orders' />
+        </aliases>
+      </column>
+      <column caption='Entity Adoption' datatype='real' default-format='p0.0%' name='[Adoption (copy)_456200593091162118]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='sum([prio_orders]+[subs_prio_orders])/sum([total_entity_orders (Custom SQL Query1)])' />
+      </column>
+      <column caption='Adoption' datatype='real' default-format='p0.0%' name='[Calculation_456200591998971904]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='sum([prio_orders]+[subs_prio_orders])/sum([total_orders])' />
+      </column>
+      <column caption='Subscribers Adoption' datatype='real' default-format='p0.0%' name='[Calculation_456200591999098881]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='sum([subs_prio_orders])/sum([total_subs_orders])' />
+      </column>
+      <column caption='Total Adoption' datatype='real' default-format='p0.0%' name='[Calculation_456200593425903624]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='IF &#10;[Parameters].[Parameter 1] = &apos;Entity&apos; then [Adoption (copy)_456200593091162118]&#10;else [Calculation_456200591998971904]&#10;end' />
+      </column>
+      <column caption='Non-Subs Users Prio Frequency' datatype='real' default-format='n#,##0.00;-#,##0.00' name='[Calculation_6964324270982561792]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='sum([normal_prio_orders])/sum([total_normal_users])' />
+      </column>
+      <column caption='Subs Users Prio Frequency ' datatype='real' default-format='n#,##0.00;-#,##0.00' name='[Normal Users Prio Frequency (copy)_6964324270983028737]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='sum([subs_prio_orders])/sum([total_subs_users])' />
+      </column>
+      <column caption='Non-Subs Adoption' datatype='real' default-format='p0.0%' name='[Subscribers Adoption (copy)_6483565009994444800]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='sum([normal_prio_orders])/sum([total_normal_orders])' />
+      </column>
+      <column caption='Orders' datatype='integer' name='[Total Adoption (copy)_456200593426538505]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='IF &#10;[Parameters].[Parameter 1] = &apos;Entity&apos; then sum([total_entity_orders (Custom SQL Query1)])&#10;else sum([total_orders])&#10;end' />
+      </column>
+      <column caption='Week (W-Y)' datatype='string' name='[Week (copy) (copy)_5291166637767462915]' role='dimension' type='nominal'>
+        <calculation class='tableau' formula='STR(WEEK([week])) + &quot;-&quot; + STR(DATEPART(&apos;year&apos;, [week]))' />
+      </column>
+      <_.fcp.ObjectModelTableType.true...column caption='Prio Fee Revenue' datatype='table' name='[__tableau_internal_object_id__].[_8BE81DC4B68C4422AFA6A7EE9206D032]' role='measure' type='quantitative' />
+      <_.fcp.ObjectModelTableType.true...column caption='Entity Orders' datatype='table' name='[__tableau_internal_object_id__].[_D52C5BE9B0294FE4951F725CA5F270E7]' role='measure' type='quantitative' />
+      <column caption='Entity Id' datatype='string' name='[entity_id]' role='dimension' type='nominal' />
+      <column caption='Non-Subs Prio Orders' datatype='integer' name='[normal_prio_orders]' role='measure' type='quantitative' />
+      <column caption='Priority Fee Eur' datatype='real' default-format='c&quot;€&quot;#,##0.0;-&quot;€&quot;#,##0.0' name='[prio_fee_eur]' role='measure' type='quantitative' />
+      <column caption='Priority Orders' datatype='integer' name='[prio_orders]' role='measure' type='quantitative' />
+      <column caption='Subscribers Prio Orders' datatype='integer' name='[subs_prio_orders]' role='measure' type='quantitative' />
+      <column caption='Total Entity Orders' datatype='integer' name='[total_entity_orders (Custom SQL Query1)]' role='measure' type='quantitative' />
+      <column caption='Total Normal Orders' datatype='integer' name='[total_normal_orders]' role='measure' type='quantitative' />
+      <column caption='Total Normal Users' datatype='integer' name='[total_normal_users]' role='measure' type='quantitative' />
+      <column caption='Total Orders' datatype='integer' name='[total_orders]' role='measure' type='quantitative' />
+      <column caption='Subscribers Orders' datatype='integer' name='[total_subs_orders]' role='measure' type='quantitative' />
+      <column caption='Total Subs Users' datatype='integer' name='[total_subs_users]' role='measure' type='quantitative' />
+      <column caption='week (copy)' datatype='integer' name='[week (copy)_5291166637784588292]' role='dimension' type='ordinal'>
+        <calculation class='tableau' formula='week([week])' />
+      </column>
+      <column datatype='date' name='[week]' role='dimension' type='ordinal' />
+      <column caption='Zone Name' datatype='string' name='[zone_name]' role='dimension' type='nominal' />
+      <column-instance column='[Calculation_456200591998971904]' derivation='Avg' name='[avg:Calculation_456200591998971904:qk]' pivot='key' type='quantitative' />
+      <column-instance column='[Calculation_456200591999098881]' derivation='Avg' name='[avg:Calculation_456200591999098881:vtavg:qk]' pivot='key' type='quantitative' visual-totals='Avg' />
+      <column-instance column='[Week (copy) (copy)_5291166637767462915]' derivation='None' name='[none:Week (copy) (copy)_5291166637767462915:nk]' pivot='key' type='nominal' />
+      <column-instance column='[entity_id]' derivation='None' name='[none:entity_id:nk]' pivot='key' type='nominal' />
+      <column-instance column='[week]' derivation='None' name='[none:week:ok]' pivot='key' type='ordinal' />
+      <drill-paths>
+        <drill-path name='Entity Id, zone_name'>
+          <field>[entity_id]</field>
+          <field>[zone_name]</field>
+        </drill-path>
+      </drill-paths>
+      <extract _.fcp.ObjectModelExtractV2.true...object-id='' count='-1' enabled='true' units='records'>
+        <connection class='hyper' dbname='extract/09/e0/{003A5CB6-AAA7-476A-A8D2-8CADE74CA9FE}/federated_16jy5590b5tn4x1gt9ett0.hyper' default-settings='yes' extract-engine='true' schema='Extract' tablename='Extract' update-time='12/01/2023 04:19:02 PM'>
+          <_.fcp.ObjectModelEncapsulateLegacy.false...relation name='_8BE81DC4B68C4422AFA6A7EE9206D032' table='[Extract].[_8BE81DC4B68C4422AFA6A7EE9206D032]' type='table' />
+          <_.fcp.ObjectModelEncapsulateLegacy.true...relation type='collection'>
+            <relation name='_8BE81DC4B68C4422AFA6A7EE9206D032' table='[Extract].[_8BE81DC4B68C4422AFA6A7EE9206D032]' type='table' />
+            <relation name='_D52C5BE9B0294FE4951F725CA5F270E7' table='[Extract].[_D52C5BE9B0294FE4951F725CA5F270E7]' type='table' />
+          </_.fcp.ObjectModelEncapsulateLegacy.true...relation>
+          <cols>
+            <map key='[entity_id (Custom SQL Query1)]' value='[_D52C5BE9B0294FE4951F725CA5F270E7].[entity_id]' />
+            <map key='[entity_id]' value='[_8BE81DC4B68C4422AFA6A7EE9206D032].[entity_id]' />
+            <map key='[normal_prio_orders]' value='[_8BE81DC4B68C4422AFA6A7EE9206D032].[normal_prio_orders]' />
+            <map key='[prio_fee_eur]' value='[_8BE81DC4B68C4422AFA6A7EE9206D032].[prio_fee_eur]' />
+            <map key='[prio_orders]' value='[_8BE81DC4B68C4422AFA6A7EE9206D032].[prio_orders]' />
+            <map key='[subs_prio_orders]' value='[_8BE81DC4B68C4422AFA6A7EE9206D032].[subs_prio_orders]' />
+            <map key='[total_entity_orders (Custom SQL Query1)]' value='[_D52C5BE9B0294FE4951F725CA5F270E7].[total_entity_orders]' />
+            <map key='[total_normal_orders]' value='[_8BE81DC4B68C4422AFA6A7EE9206D032].[total_normal_orders]' />
+            <map key='[total_normal_users]' value='[_8BE81DC4B68C4422AFA6A7EE9206D032].[total_normal_users]' />
+            <map key='[total_orders]' value='[_8BE81DC4B68C4422AFA6A7EE9206D032].[total_orders]' />
+            <map key='[total_subs_orders]' value='[_8BE81DC4B68C4422AFA6A7EE9206D032].[total_subs_orders]' />
+            <map key='[total_subs_users]' value='[_8BE81DC4B68C4422AFA6A7EE9206D032].[total_subs_users]' />
+            <map key='[week (Custom SQL Query1)]' value='[_D52C5BE9B0294FE4951F725CA5F270E7].[week]' />
+            <map key='[week]' value='[_8BE81DC4B68C4422AFA6A7EE9206D032].[week]' />
+            <map key='[zone_name]' value='[_8BE81DC4B68C4422AFA6A7EE9206D032].[zone_name]' />
+          </cols>
+          <refresh>
+            <refresh-event add-from-file-path='Prio Fee Revenue' increment-value='%null%' refresh-type='create' rows-inserted='7275' timestamp-start='2023-12-01 16:17:19.050' />
+          </refresh>
+          <metadata-records>
+            <metadata-record class='column'>
+              <remote-name>entity_id</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[entity_id]</local-name>
+              <parent-name>[_8BE81DC4B68C4422AFA6A7EE9206D032]</parent-name>
+              <remote-alias>entity_id</remote-alias>
+              <ordinal>0</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>16</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_8BE81DC4B68C4422AFA6A7EE9206D032]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>zone_name</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[zone_name]</local-name>
+              <parent-name>[_8BE81DC4B68C4422AFA6A7EE9206D032]</parent-name>
+              <remote-alias>zone_name</remote-alias>
+              <ordinal>1</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>834</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_8BE81DC4B68C4422AFA6A7EE9206D032]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>week</remote-name>
+              <remote-type>133</remote-type>
+              <local-name>[week]</local-name>
+              <parent-name>[_8BE81DC4B68C4422AFA6A7EE9206D032]</parent-name>
+              <remote-alias>week</remote-alias>
+              <ordinal>2</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>date</local-type>
+              <aggregation>Year</aggregation>
+              <approx-count>53</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_8BE81DC4B68C4422AFA6A7EE9206D032]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>subs_prio_orders</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[subs_prio_orders]</local-name>
+              <parent-name>[_8BE81DC4B68C4422AFA6A7EE9206D032]</parent-name>
+              <remote-alias>subs_prio_orders</remote-alias>
+              <ordinal>3</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>477</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_8BE81DC4B68C4422AFA6A7EE9206D032]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>total_subs_orders</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[total_subs_orders]</local-name>
+              <parent-name>[_8BE81DC4B68C4422AFA6A7EE9206D032]</parent-name>
+              <remote-alias>total_subs_orders</remote-alias>
+              <ordinal>4</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>1581</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_8BE81DC4B68C4422AFA6A7EE9206D032]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>total_subs_users</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[total_subs_users]</local-name>
+              <parent-name>[_8BE81DC4B68C4422AFA6A7EE9206D032]</parent-name>
+              <remote-alias>total_subs_users</remote-alias>
+              <ordinal>5</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>1276</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_8BE81DC4B68C4422AFA6A7EE9206D032]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>normal_prio_orders</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[normal_prio_orders]</local-name>
+              <parent-name>[_8BE81DC4B68C4422AFA6A7EE9206D032]</parent-name>
+              <remote-alias>normal_prio_orders</remote-alias>
+              <ordinal>6</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>878</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_8BE81DC4B68C4422AFA6A7EE9206D032]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>total_normal_orders</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[total_normal_orders]</local-name>
+              <parent-name>[_8BE81DC4B68C4422AFA6A7EE9206D032]</parent-name>
+              <remote-alias>total_normal_orders</remote-alias>
+              <ordinal>7</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>2770</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_8BE81DC4B68C4422AFA6A7EE9206D032]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>total_normal_users</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[total_normal_users]</local-name>
+              <parent-name>[_8BE81DC4B68C4422AFA6A7EE9206D032]</parent-name>
+              <remote-alias>total_normal_users</remote-alias>
+              <ordinal>8</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>2526</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_8BE81DC4B68C4422AFA6A7EE9206D032]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>total_orders</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[total_orders]</local-name>
+              <parent-name>[_8BE81DC4B68C4422AFA6A7EE9206D032]</parent-name>
+              <remote-alias>total_orders</remote-alias>
+              <ordinal>9</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>2894</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_8BE81DC4B68C4422AFA6A7EE9206D032]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>prio_fee_eur</remote-name>
+              <remote-type>5</remote-type>
+              <local-name>[prio_fee_eur]</local-name>
+              <parent-name>[_8BE81DC4B68C4422AFA6A7EE9206D032]</parent-name>
+              <remote-alias>prio_fee_eur</remote-alias>
+              <ordinal>10</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>real</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>3304</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_8BE81DC4B68C4422AFA6A7EE9206D032]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>prio_orders</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[prio_orders]</local-name>
+              <parent-name>[_8BE81DC4B68C4422AFA6A7EE9206D032]</parent-name>
+              <remote-alias>prio_orders</remote-alias>
+              <ordinal>11</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>895</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_8BE81DC4B68C4422AFA6A7EE9206D032]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>entity_id</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[entity_id (Custom SQL Query1)]</local-name>
+              <parent-name>[_D52C5BE9B0294FE4951F725CA5F270E7]</parent-name>
+              <remote-alias>entity_id</remote-alias>
+              <ordinal>12</ordinal>
+              <family>Custom SQL Query1</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>51</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_D52C5BE9B0294FE4951F725CA5F270E7]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>week</remote-name>
+              <remote-type>133</remote-type>
+              <local-name>[week (Custom SQL Query1)]</local-name>
+              <parent-name>[_D52C5BE9B0294FE4951F725CA5F270E7]</parent-name>
+              <remote-alias>week</remote-alias>
+              <ordinal>13</ordinal>
+              <family>Custom SQL Query1</family>
+              <local-type>date</local-type>
+              <aggregation>Year</aggregation>
+              <approx-count>26</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_D52C5BE9B0294FE4951F725CA5F270E7]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>total_entity_orders</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[total_entity_orders (Custom SQL Query1)]</local-name>
+              <parent-name>[_D52C5BE9B0294FE4951F725CA5F270E7]</parent-name>
+              <remote-alias>total_entity_orders</remote-alias>
+              <ordinal>14</ordinal>
+              <family>Custom SQL Query1</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>1217</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_D52C5BE9B0294FE4951F725CA5F270E7]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+          </metadata-records>
+        </connection>
+      </extract>
+      <layout _.fcp.SchemaViewerObjectModel.false...dim-percentage='0.5' _.fcp.SchemaViewerObjectModel.false...measure-percentage='0.4' dim-ordering='alphabetic' measure-ordering='alphabetic' show-structure='true' />
+      <style>
+        <style-rule element='mark'>
+          <encoding attr='color' field='[none:entity_id:nk]' type='palette'>
+            <map to='#499894'>
+              <bucket>&quot;PY_CL&quot;</bucket>
+            </map>
+            <map to='#4e79a7'>
+              <bucket>&quot;AP_PA&quot;</bucket>
+            </map>
+            <map to='#59a14f'>
+              <bucket>&quot;FP_PH&quot;</bucket>
+            </map>
+            <map to='#79706e'>
+              <bucket>&quot;PY_NI&quot;</bucket>
+            </map>
+            <map to='#86bcb6'>
+              <bucket>&quot;PY_CR&quot;</bucket>
+            </map>
+            <map to='#8cd17d'>
+              <bucket>&quot;FP_SG&quot;</bucket>
+            </map>
+            <map to='#a0cbe8'>
+              <bucket>&quot;DJ_CZ&quot;</bucket>
+            </map>
+            <map to='#b07aa1'>
+              <bucket>&quot;PY_UY&quot;</bucket>
+            </map>
+            <map to='#b6992d'>
+              <bucket>&quot;PY_AR&quot;</bucket>
+            </map>
+            <map to='#bab0ac'>
+              <bucket>&quot;PY_PE&quot;</bucket>
+            </map>
+            <map to='#d37295'>
+              <bucket>&quot;PY_PY&quot;</bucket>
+            </map>
+            <map to='#e15759'>
+              <bucket>&quot;PY_EC&quot;</bucket>
+            </map>
+            <map to='#f1ce63'>
+              <bucket>&quot;PY_BO&quot;</bucket>
+            </map>
+            <map to='#f28e2b'>
+              <bucket>&quot;FO_NO&quot;</bucket>
+            </map>
+            <map to='#fabfd2'>
+              <bucket>&quot;PY_SV&quot;</bucket>
+            </map>
+            <map to='#ff9d9a'>
+              <bucket>&quot;PY_HN&quot;</bucket>
+            </map>
+            <map to='#ffbe7d'>
+              <bucket>&quot;FP_MY&quot;</bucket>
+            </map>
+          </encoding>
+        </style-rule>
+      </style>
+      <semantic-values>
+        <semantic-value key='[Country].[Name]' value='&quot;United States&quot;' />
+      </semantic-values>
+      <date-options start-of-week='monday' />
+      <default-sorts>
+        <natural-sort column='[none:Week (copy) (copy)_5291166637767462915:nk]' direction='DESC' />
+        <manual-sort column='[none:week:ok]' direction='ASC'>
+          <dictionary>
+            <bucket>#2023-11-13#</bucket>
+            <bucket>#2023-11-06#</bucket>
+            <bucket>#2023-10-30#</bucket>
+            <bucket>#2023-10-23#</bucket>
+            <bucket>#2023-10-16#</bucket>
+            <bucket>#2023-10-09#</bucket>
+            <bucket>#2023-10-02#</bucket>
+            <bucket>#2023-09-25#</bucket>
+            <bucket>#2023-09-18#</bucket>
+            <bucket>#2023-09-11#</bucket>
+            <bucket>#2023-09-04#</bucket>
+            <bucket>#2023-08-28#</bucket>
+            <bucket>#2023-08-21#</bucket>
+            <bucket>#2023-08-14#</bucket>
+            <bucket>#2023-08-07#</bucket>
+            <bucket>#2023-07-31#</bucket>
+            <bucket>#2023-07-24#</bucket>
+            <bucket>#2023-07-17#</bucket>
+            <bucket>#2023-07-10#</bucket>
+            <bucket>#2023-07-03#</bucket>
+            <bucket>#2023-06-26#</bucket>
+            <bucket>#2023-06-19#</bucket>
+            <bucket>#2023-06-12#</bucket>
+            <bucket>#2023-06-05#</bucket>
+            <bucket>#2023-05-29#</bucket>
+            <bucket>#2023-05-22#</bucket>
+            <bucket>#2023-05-15#</bucket>
+            <bucket>#2023-05-08#</bucket>
+            <bucket>#2023-05-01#</bucket>
+            <bucket>#2023-04-24#</bucket>
+            <bucket>#2023-04-17#</bucket>
+            <bucket>#2023-04-10#</bucket>
+            <bucket>#2023-04-03#</bucket>
+            <bucket>#2023-03-27#</bucket>
+            <bucket>#2023-03-20#</bucket>
+            <bucket>#2023-03-13#</bucket>
+            <bucket>#2023-03-06#</bucket>
+            <bucket>#2023-02-27#</bucket>
+            <bucket>#2023-02-20#</bucket>
+            <bucket>#2023-02-13#</bucket>
+            <bucket>#2023-02-06#</bucket>
+            <bucket>#2023-01-30#</bucket>
+            <bucket>#2023-01-23#</bucket>
+            <bucket>#2023-01-16#</bucket>
+            <bucket>#2023-01-09#</bucket>
+            <bucket>#2023-01-02#</bucket>
+            <bucket>#2022-12-26#</bucket>
+          </dictionary>
+        </manual-sort>
+      </default-sorts>
+      <datasource-dependencies datasource='Parameters'>
+        <column caption='Detail' datatype='string' name='[Parameter 1]' param-domain-type='list' role='measure' type='nominal' value='&quot;Zone&quot;'>
+          <calculation class='tableau' formula='&quot;Zone&quot;' />
+        </column>
+      </datasource-dependencies>
+      <filter class='categorical' column='[Week (copy) (copy)_5291166637767462915]' filter-group='2'>
+        <groupfilter function='except' user:ui-domain='database' user:ui-enumeration='exclusive' user:ui-marker='enumerate'>
+          <groupfilter function='level-members' level='[Week (copy) (copy)_5291166637767462915]' />
+          <groupfilter function='member' level='[Week (copy) (copy)_5291166637767462915]' member='&quot;53-2022&quot;' />
+        </groupfilter>
+      </filter>
+      <_.fcp.ObjectModelEncapsulateLegacy.true...object-graph>
+        <objects>
+          <object caption='Prio Fee Revenue' id='_8BE81DC4B68C4422AFA6A7EE9206D032'>
+            <properties context=''>
+              <relation connection='bigquery.1eyx7vq077llrp1am644w05zpb98' name='Custom SQL Query' type='text'><![CDATA[WITH total_orders AS (
+  SELECT
+    o.entity.id AS entity_id,
+    DATE_TRUNC(o.created_date, ISOWEEK) week,
+    zone.zone_name,
+    COUNT(DISTINCT CASE WHEN is_user_plus = 1 AND tags IN ('PRIORITIZE_DELIVERY') and o.entity_id in ('PY_AR', 'PY_CL', 'PY_PE', 'PY_EC') THEN order_code else null END) AS subs_prio_orders,
+    COUNT(DISTINCT case when is_user_plus = 1 and o.entity_id in ('PY_AR', 'PY_CL', 'PY_PE', 'PY_EC') THEN order_code else null END) as total_subs_orders,
+    COUNT(DISTINCT CASE WHEN is_user_plus = 0 AND tags IN ('PRIORITIZE_DELIVERY') THEN order_code END) AS normal_prio_orders,
+    COUNT(DISTINCT case when is_user_plus = 0 THEN order_code END) as total_normal_orders,
+    COUNT(DISTINCT case when is_user_plus = 1 THEN user.id END) as total_subs_users,
+    COUNT(DISTINCT case when is_user_plus = 0 THEN user.id END) as total_normal_users,
+    COUNT(DISTINCT order_code) AS total_orders
+  FROM `fulfillment-dwh-production.cl.orders_v2` o, UNNEST(rider.tags) AS tags
+  LEFT JOIN `peya-bi-tools-pro.il_logistics.fact_logistic_orders` l ON o.order_code = l.platform_order_code
+  LEFT JOIN  `peya-bi-tools-pro.il_core.fact_orders` fo ON LOWER(l.country_code) = LOWER(fo.country.country_code) AND CAST(fo.order_id AS STRING) = l.platform_order_code
+  WHERE o.entity.id IN ('PY_AR', 'PY_BO', 'PY_HN', 'PY_NI', 'AP_PA', 'PY_CR', 'PY_PY', 'PY_SV', 'PY_CL', 'PY_PE', 'PY_EC')
+    AND o.created_date >>= DATE_TRUNC('2023-01-01', ISOWEEK)
+    AND o.created_date << DATE_TRUNC(CURRENT_DATE(), ISOWEEK)
+    AND fo.registered_date >>= DATE_TRUNC('2023-01-01', ISOWEEK)
+    AND fo.registered_date << DATE_TRUNC(CURRENT_DATE(), ISOWEEK)
+    AND fo.order_status = 'CONFIRMED'
+    AND fo.delivery_type = 'Own Delivery'
+    and fo.pickup = false
+  GROUP BY 1, 2, 3
+),
+prio_orders AS (
+  SELECT
+    o.entity.id AS entity_id,
+    zone.zone_name,
+    DATE_TRUNC(o.created_date, ISOWEEK) week,
+    SUM(CASE
+        WHEN o.entity.id = 'PY_AR' AND o.created_date BETWEEN "2023-01-01" AND "2023-07-24" THEN 60 / d.fx_rate_eur
+        WHEN o.entity.id = 'PY_AR' AND o.created_date BETWEEN "2023-07-24" AND "2023-10-23" THEN 99 / d.fx_rate_eur
+        WHEN o.entity.id = 'PY_AR' AND o.created_date >> "2023-10-23" THEN 149 / d.fx_rate_eur
+        WHEN o.entity.id = 'PY_BO' THEN 4 / d.fx_rate_eur
+        when o.entity.id = 'PY_HN' then 10/ d.fx_rate_eur
+        when o.entity.id = 'PY_NI' then 12/ d.fx_rate_eur
+        when o.entity.id = 'AP_PA' then 0.25/ d.fx_rate_eur
+        when o.entity.id = 'PY_CR' then 200/ d.fx_rate_eur
+        when o.entity.id = 'PY_PY' then 3000/d.fx_rate_eur
+        when o.entity.id = 'PY_SV' then 0.25/d.fx_rate_eur
+        when o.entity.id = 'PY_CL' then 290/d.fx_rate_eur
+        when o.entity.id = 'PY_PE' then 1/d.fx_rate_eur
+        when o.entity.id = 'PY_EC' then 0.30/d.fx_rate_eur
+        when o.entity.id = 'PY_UY' then 49/d.fx_rate_eur
+        ELSE 0
+      END) AS prio_fee_eur,
+    COUNT(*) AS prio_orders
+  FROM `fulfillment-dwh-production.cl.orders_v2` o, UNNEST(rider.tags) AS tags
+  LEFT JOIN `peya-bi-tools-pro.il_logistics.fact_logistic_orders` l ON o.order_code = l.platform_order_code
+  LEFT JOIN `fulfillment-dwh-production.curated_data_shared_coredata.global_entities` e ON e.global_entity_id = o.entity.id
+  LEFT JOIN `fulfillment-dwh-production.curated_data_shared_coredata.fx_rates` d ON d.currency_code = e.currency_iso_code AND d.fx_rate_date = l.created_date
+  LEFT JOIN `peya-bi-tools-pro.il_core.fact_orders` fo ON LOWER(l.country_code) = LOWER(fo.country.country_code) AND CAST(fo.order_id AS STRING) = l.platform_order_code
+  WHERE o.created_date >>= DATE_TRUNC('2023-01-01', ISOWEEK)
+    AND o.created_date << DATE_TRUNC(CURRENT_DATE(), ISOWEEK)
+    AND fo.registered_date >>= DATE_TRUNC('2023-01-01', ISOWEEK)
+    AND fo.registered_date << DATE_TRUNC(CURRENT_DATE(), ISOWEEK)
+    AND tags IN ('PRIORITIZE_DELIVERY')
+    AND fo.order_status = 'CONFIRMED'
+    AND is_user_plus = 0
+    AND fo.delivery_type = 'Own Delivery'
+    and fo.pickup = false
+  GROUP BY 1, 2, 3
+  ORDER BY 1,2 ASC, 2 DESC),
+
+dps_orders AS (
+with prio as (
+SELECT
+  entity_id,
+   case when components.priority_fee_id IS NOT NULL then zone_name else null end as zone_name
+  , date_trunc(created_date, isoweek) week
+  , components.priority_fee_id IS NOT NULL AS has_dps_pf_component
+  , COALESCE(priority_fee_eur,0) != 0 AS has_backend_pf
+  , count(*) as orders
+  , count(case when components.priority_fee_id IS NOT NULL and has_subscription is true then platform_order_code else null end) as subs_prio_orders
+  , count(case when components.priority_fee_id IS NOT NULL and has_subscription is false then platform_order_code else null end) as normal_prio_orders
+  , sum(priority_fee_eur) as prio_fee_eur
+  , sum(dps_priority_fee_eur) as dps_prio_fee_eur
+FROM `fulfillment-dwh-production.cl.dps_sessions_mapped_to_orders_perseus` 
+WHERE created_date >>= date_trunc('2023-01-01', isoweek)
+  AND created_date << date_trunc(CURRENT_DATE(), isoweek)
+  AND is_sent
+  AND region is not null
+  AND is_own_delivery
+  and priority_fee_local is not null
+GROUP By 1,2,3,4,5
+ORDER by 1 asc, 2 desc)
+
+ SELECT
+o.entity_id
+, p.zone_name
+, date_trunc(created_date, isoweek) week
+, prio_fee_eur
+, p.orders as prio_orders
+, p.subs_prio_orders as subs_prio_orders
+, p.normal_prio_orders
+, count(distinct case when has_subscription is true then platform_order_code end) as total_subs_orders
+, count(distinct case when has_subscription is true then customer_account_id end) as total_subs_users
+, count(distinct case when has_subscription is false then platform_order_code end) as total_normal_orders
+, count(distinct case when has_subscription is false then customer_account_id end) as total_normal_users
+, count(distinct platform_order_code) as orders
+FROM `fulfillment-dwh-production.cl.dps_sessions_mapped_to_orders_perseus` o
+LEFT join prio p on o.entity_id = p.entity_id and date_trunc(o.created_date, isoweek) = p.week and o.zone_name = p.zone_name
+WHERE created_date >>= date_trunc('2023-01-01', isoweek)
+  AND created_date << date_trunc(CURRENT_DATE(), isoweek)
+  AND is_sent
+  AND region is not null
+  AND has_dps_pf_component is true
+  and has_backend_pf is true
+  and p.zone_name is not null
+GROUP by 1,2,3,4,5,6,7
+ORDER by 1 asc, 2 desc
+)
+ SELECT
+  t.entity_id,
+  t.zone_name,
+  t.week,
+  t.subs_prio_orders,
+  t.total_subs_orders,
+  t.total_subs_users,
+  t.normal_prio_orders,
+  t.total_normal_orders,
+  t.total_normal_users,
+  t.total_orders,
+  p.prio_fee_eur,
+  p.prio_orders,
+FROM total_orders t
+LEFT JOIN prio_orders p ON t.week = p.week AND t.entity_id = p.entity_id and p.zone_name = t.zone_name
+where prio_orders is not null
+UNION ALL
+
+SELECT
+  d.entity_id,
+  d.zone_name,
+  d.week,
+  d.subs_prio_orders,
+  d.total_subs_orders,
+  d.total_subs_users,
+  d.normal_prio_orders,
+  d.total_normal_orders,
+  d.total_normal_users,
+  d.orders as total_orders,  -- Agregamos columnas con valor 0 para total_orders y prio_orders
+  d.prio_fee_eur prio_fee_eur,
+  d.prio_orders prio_orders
+FROM dps_orders d
+ORDER BY entity_id ASC, week DESC]]></relation>
+            </properties>
+            <properties context='extract'>
+              <relation name='_8BE81DC4B68C4422AFA6A7EE9206D032' table='[Extract].[_8BE81DC4B68C4422AFA6A7EE9206D032]' type='table' />
+            </properties>
+          </object>
+          <object caption='Entity Orders' id='_D52C5BE9B0294FE4951F725CA5F270E7'>
+            <properties context=''>
+              <relation connection='bigquery.1eyx7vq077llrp1am644w05zpb98' name='Custom SQL Query1' type='text'><![CDATA[SELECT
+    entity_id
+  , date_trunc(created_date, isoweek) week
+  , count(distinct platform_order_code) total_entity_orders
+FROM `fulfillment-dwh-production.cl.dps_sessions_mapped_to_orders_perseus` 
+WHERE created_date >>= date_trunc('2023-01-01', isoweek)
+  AND created_date << date_trunc(CURRENT_DATE(), isoweek)
+  AND is_sent
+  AND region is not null
+  AND is_own_delivery
+  GROUP BY 1,2]]></relation>
+            </properties>
+            <properties context='extract'>
+              <relation name='_D52C5BE9B0294FE4951F725CA5F270E7' table='[Extract].[_D52C5BE9B0294FE4951F725CA5F270E7]' type='table' />
+            </properties>
+          </object>
+        </objects>
+        <relationships>
+          <relationship>
+            <expression op='AND'>
+              <expression op='='>
+                <expression op='[entity_id]' />
+                <expression op='[entity_id (Custom SQL Query1)]' />
+              </expression>
+              <expression op='='>
+                <expression op='[week]' />
+                <expression op='[week (Custom SQL Query1)]' />
+              </expression>
+            </expression>
+            <first-end-point object-id='_8BE81DC4B68C4422AFA6A7EE9206D032' />
+            <second-end-point object-id='_D52C5BE9B0294FE4951F725CA5F270E7' />
+          </relationship>
+        </relationships>
+      </_.fcp.ObjectModelEncapsulateLegacy.true...object-graph>
+    </datasource>
+  </datasources>
+  <actions>
+    <action caption='Highlight 1 (generated)' name='[Action1_D2B64159825E49CE8C46A9F61EC96E39]'>
+      <activation auto-clear='true' type='on-select' />
+      <source type='sheet' worksheet='Evolution' />
+      <command command='tsc:brush'>
+        <param name='field-captions' value='Entity Id' />
+        <param name='target' value='Evolution' />
+      </command>
+    </action>
+    <action caption='Highlight 2 (generated)' name='[Action2_49E1A1D32B30446B89A21C451CB9E817]'>
+      <activation auto-clear='true' type='on-select' />
+      <source dashboard='DH Priority Fee Revenue' type='sheet' />
+      <command command='tsc:brush'>
+        <param name='field-captions' value='Entity Id' />
+        <param name='target' value='DH Priority Fee Revenue' />
+      </command>
+    </action>
+  </actions>
+  <worksheets>
+    <worksheet name='Evolution'>
+      <layout-options>
+        <title>
+          <formatted-text>
+            <run bold='true' fontcolor='#ef1333'>&lt;Sheet Name&gt;</run>
+          </formatted-text>
+        </title>
+      </layout-options>
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='Prio Fee Revenue' name='federated.16jy5590b5tn4x1gt9ett0a89exg' />
+          </datasources>
+          <datasource-dependencies datasource='federated.16jy5590b5tn4x1gt9ett0a89exg'>
+            <column caption='Entity Id' datatype='string' name='[entity_id]' role='dimension' type='nominal' />
+            <column-instance column='[entity_id]' derivation='None' name='[none:entity_id:nk]' pivot='key' type='nominal' />
+            <column caption='Priority Fee Eur' datatype='real' default-format='c&quot;€&quot;#,##0.0;-&quot;€&quot;#,##0.0' name='[prio_fee_eur]' role='measure' type='quantitative' />
+            <column-instance column='[prio_fee_eur]' derivation='Sum' name='[sum:prio_fee_eur:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[week]' derivation='Week-Trunc' name='[twk:week:ok]' pivot='key' type='ordinal' />
+            <column datatype='date' name='[week]' role='dimension' type='ordinal' />
+          </datasource-dependencies>
+          <filter class='categorical' column='[federated.16jy5590b5tn4x1gt9ett0a89exg].[none:entity_id:nk]' filter-group='3'>
+            <groupfilter from='&quot;AP_PA&quot;' function='range' level='[none:entity_id:nk]' to='&quot;PY_SV&quot;' user:ui-domain='database' user:ui-enumeration='inclusive' user:ui-marker='enumerate' />
+          </filter>
+          <slices>
+            <column>[federated.16jy5590b5tn4x1gt9ett0a89exg].[none:entity_id:nk]</column>
+          </slices>
+          <aggregation value='true' />
+        </view>
+        <style>
+          <style-rule element='label'>
+            <format attr='text-orientation' field='[federated.16jy5590b5tn4x1gt9ett0a89exg].[twk:week:ok]' value='-90' />
+          </style-rule>
+          <style-rule element='table'>
+            <format attr='show-null-value-warning' value='false' />
+          </style-rule>
+          <style-rule element='worksheet'>
+            <format attr='display-field-labels' scope='cols' value='false' />
+          </style-rule>
+        </style>
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Bar' />
+            <encodings>
+              <color column='[federated.16jy5590b5tn4x1gt9ett0a89exg].[none:entity_id:nk]' />
+            </encodings>
+          </pane>
+        </panes>
+        <rows>[federated.16jy5590b5tn4x1gt9ett0a89exg].[sum:prio_fee_eur:qk]</rows>
+        <cols>[federated.16jy5590b5tn4x1gt9ett0a89exg].[twk:week:ok]</cols>
+      </table>
+      <simple-id uuid='{C514A454-3437-416F-9EA9-6663D8BA2F59}' />
+    </worksheet>
+    <worksheet name='Weekly Economics'>
+      <layout-options>
+        <title>
+          <formatted-text>
+            <run bold='true' fontcolor='#ef1333'>&lt;Sheet Name&gt;</run>
+          </formatted-text>
+        </title>
+      </layout-options>
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='Prio Fee Revenue' name='federated.16jy5590b5tn4x1gt9ett0a89exg' />
+            <datasource name='Parameters' />
+          </datasources>
+          <datasource-dependencies datasource='Parameters'>
+            <column caption='Detail' datatype='string' name='[Parameter 1]' param-domain-type='list' role='measure' type='nominal' value='&quot;Zone&quot;'>
+              <calculation class='tableau' formula='&quot;Zone&quot;' />
+            </column>
+          </datasource-dependencies>
+          <datasource-dependencies datasource='federated.16jy5590b5tn4x1gt9ett0a89exg'>
+            <column caption='Entity Adoption' datatype='real' default-format='p0.0%' name='[Adoption (copy)_456200593091162118]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='sum([prio_orders]+[subs_prio_orders])/sum([total_entity_orders (Custom SQL Query1)])' />
+            </column>
+            <column caption='Adoption' datatype='real' default-format='p0.0%' name='[Calculation_456200591998971904]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='sum([prio_orders]+[subs_prio_orders])/sum([total_orders])' />
+            </column>
+            <column caption='Subscribers Adoption' datatype='real' default-format='p0.0%' name='[Calculation_456200591999098881]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='sum([subs_prio_orders])/sum([total_subs_orders])' />
+            </column>
+            <column caption='Total Adoption' datatype='real' default-format='p0.0%' name='[Calculation_456200593425903624]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='IF &#10;[Parameters].[Parameter 1] = &apos;Entity&apos; then [Adoption (copy)_456200593091162118]&#10;else [Calculation_456200591998971904]&#10;end' />
+            </column>
+            <column caption='Non-Subs Users Prio Frequency' datatype='real' default-format='n#,##0.00;-#,##0.00' name='[Calculation_6964324270982561792]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='sum([normal_prio_orders])/sum([total_normal_users])' />
+            </column>
+            <column caption='Subs Users Prio Frequency ' datatype='real' default-format='n#,##0.00;-#,##0.00' name='[Normal Users Prio Frequency (copy)_6964324270983028737]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='sum([subs_prio_orders])/sum([total_subs_users])' />
+            </column>
+            <column caption='Non-Subs Adoption' datatype='real' default-format='p0.0%' name='[Subscribers Adoption (copy)_6483565009994444800]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='sum([normal_prio_orders])/sum([total_normal_orders])' />
+            </column>
+            <column caption='Orders' datatype='integer' name='[Total Adoption (copy)_456200593426538505]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='IF &#10;[Parameters].[Parameter 1] = &apos;Entity&apos; then sum([total_entity_orders (Custom SQL Query1)])&#10;else sum([total_orders])&#10;end' />
+            </column>
+            <column caption='Week (W-Y)' datatype='string' name='[Week (copy) (copy)_5291166637767462915]' role='dimension' type='nominal'>
+              <calculation class='tableau' formula='STR(WEEK([week])) + &quot;-&quot; + STR(DATEPART(&apos;year&apos;, [week]))' />
+            </column>
+            <column caption='Entity Id' datatype='string' name='[entity_id]' role='dimension' type='nominal' />
+            <column-instance column='[Week (copy) (copy)_5291166637767462915]' derivation='None' name='[none:Week (copy) (copy)_5291166637767462915:nk]' pivot='key' type='nominal' />
+            <column-instance column='[entity_id]' derivation='None' name='[none:entity_id:nk]' pivot='key' type='nominal' />
+            <column caption='Non-Subs Prio Orders' datatype='integer' name='[normal_prio_orders]' role='measure' type='quantitative' />
+            <column caption='Priority Fee Eur' datatype='real' default-format='c&quot;€&quot;#,##0.0;-&quot;€&quot;#,##0.0' name='[prio_fee_eur]' role='measure' type='quantitative' />
+            <column caption='Priority Orders' datatype='integer' name='[prio_orders]' role='measure' type='quantitative' />
+            <column caption='Subscribers Prio Orders' datatype='integer' name='[subs_prio_orders]' role='measure' type='quantitative' />
+            <column-instance column='[normal_prio_orders]' derivation='Sum' name='[sum:normal_prio_orders:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[prio_fee_eur]' derivation='Sum' name='[sum:prio_fee_eur:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[prio_orders]' derivation='Sum' name='[sum:prio_orders:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[subs_prio_orders]' derivation='Sum' name='[sum:subs_prio_orders:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[total_normal_users]' derivation='Sum' name='[sum:total_normal_users:qk]' pivot='key' type='quantitative' />
+            <column caption='Total Entity Orders' datatype='integer' name='[total_entity_orders (Custom SQL Query1)]' role='measure' type='quantitative' />
+            <column caption='Total Normal Orders' datatype='integer' name='[total_normal_orders]' role='measure' type='quantitative' />
+            <column caption='Total Normal Users' datatype='integer' name='[total_normal_users]' role='measure' type='quantitative' />
+            <column caption='Total Orders' datatype='integer' name='[total_orders]' role='measure' type='quantitative' />
+            <column caption='Subscribers Orders' datatype='integer' name='[total_subs_orders]' role='measure' type='quantitative' />
+            <column caption='Total Subs Users' datatype='integer' name='[total_subs_users]' role='measure' type='quantitative' />
+            <column-instance column='[Calculation_456200591999098881]' derivation='User' name='[usr:Calculation_456200591999098881:vtavg:qk]' pivot='key' type='quantitative' visual-totals='Avg' />
+            <column-instance column='[Calculation_456200593425903624]' derivation='User' name='[usr:Calculation_456200593425903624:vtavg:qk]' pivot='key' type='quantitative' visual-totals='Avg' />
+            <column-instance column='[Calculation_6964324270982561792]' derivation='User' name='[usr:Calculation_6964324270982561792:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[Normal Users Prio Frequency (copy)_6964324270983028737]' derivation='User' name='[usr:Normal Users Prio Frequency (copy)_6964324270983028737:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[Subscribers Adoption (copy)_6483565009994444800]' derivation='User' name='[usr:Subscribers Adoption (copy)_6483565009994444800:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[Total Adoption (copy)_456200593426538505]' derivation='User' name='[usr:Total Adoption (copy)_456200593426538505:qk]' pivot='key' type='quantitative' />
+            <column datatype='date' name='[week]' role='dimension' type='ordinal' />
+          </datasource-dependencies>
+          <filter class='categorical' column='[federated.16jy5590b5tn4x1gt9ett0a89exg].[:Measure Names]'>
+            <groupfilter function='union' user:op='manual'>
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.16jy5590b5tn4x1gt9ett0a89exg].[usr:Total Adoption (copy)_456200593426538505:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.16jy5590b5tn4x1gt9ett0a89exg].[sum:subs_prio_orders:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.16jy5590b5tn4x1gt9ett0a89exg].[sum:normal_prio_orders:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.16jy5590b5tn4x1gt9ett0a89exg].[sum:prio_orders:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.16jy5590b5tn4x1gt9ett0a89exg].[usr:Normal Users Prio Frequency (copy)_6964324270983028737:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.16jy5590b5tn4x1gt9ett0a89exg].[usr:Calculation_6964324270982561792:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.16jy5590b5tn4x1gt9ett0a89exg].[usr:Calculation_456200591999098881:vtavg:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.16jy5590b5tn4x1gt9ett0a89exg].[usr:Subscribers Adoption (copy)_6483565009994444800:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.16jy5590b5tn4x1gt9ett0a89exg].[usr:Calculation_456200593425903624:vtavg:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.16jy5590b5tn4x1gt9ett0a89exg].[sum:prio_fee_eur:qk]&quot;' />
+            </groupfilter>
+          </filter>
+          <manual-sort column='[federated.16jy5590b5tn4x1gt9ett0a89exg].[:Measure Names]' direction='ASC'>
+            <dictionary>
+              <bucket>&quot;[federated.16jy5590b5tn4x1gt9ett0a89exg].[usr:Total Adoption (copy)_456200593426538505:qk]&quot;</bucket>
+              <bucket>&quot;[federated.16jy5590b5tn4x1gt9ett0a89exg].[sum:subs_prio_orders:qk]&quot;</bucket>
+              <bucket>&quot;[federated.16jy5590b5tn4x1gt9ett0a89exg].[sum:normal_prio_orders:qk]&quot;</bucket>
+              <bucket>&quot;[federated.16jy5590b5tn4x1gt9ett0a89exg].[sum:total_normal_users:qk]&quot;</bucket>
+              <bucket>&quot;[federated.16jy5590b5tn4x1gt9ett0a89exg].[sum:prio_orders:qk]&quot;</bucket>
+              <bucket>&quot;[federated.16jy5590b5tn4x1gt9ett0a89exg].[usr:Normal Users Prio Frequency (copy)_6964324270983028737:qk]&quot;</bucket>
+              <bucket>&quot;[federated.16jy5590b5tn4x1gt9ett0a89exg].[usr:Calculation_6964324270982561792:qk]&quot;</bucket>
+              <bucket>&quot;[federated.16jy5590b5tn4x1gt9ett0a89exg].[usr:Calculation_456200591999098881:vtavg:qk]&quot;</bucket>
+              <bucket>&quot;[federated.16jy5590b5tn4x1gt9ett0a89exg].[usr:Subscribers Adoption (copy)_6483565009994444800:qk]&quot;</bucket>
+              <bucket>&quot;[federated.16jy5590b5tn4x1gt9ett0a89exg].[usr:Calculation_456200593425903624:vtavg:qk]&quot;</bucket>
+              <bucket>&quot;[federated.16jy5590b5tn4x1gt9ett0a89exg].[sum:prio_fee_eur:qk]&quot;</bucket>
+            </dictionary>
+          </manual-sort>
+          <filter class='categorical' column='[federated.16jy5590b5tn4x1gt9ett0a89exg].[none:Week (copy) (copy)_5291166637767462915:nk]'>
+            <groupfilter function='member' level='[none:Week (copy) (copy)_5291166637767462915:nk]' member='&quot;47-2023&quot;' user:ui-domain='database' user:ui-enumeration='inclusive' user:ui-marker='enumerate' />
+          </filter>
+          <filter class='categorical' column='[federated.16jy5590b5tn4x1gt9ett0a89exg].[none:entity_id:nk]' filter-group='3'>
+            <groupfilter from='&quot;AP_PA&quot;' function='range' level='[none:entity_id:nk]' to='&quot;PY_SV&quot;' user:ui-domain='database' user:ui-enumeration='inclusive' user:ui-marker='enumerate' />
+          </filter>
+          <slices>
+            <column>[federated.16jy5590b5tn4x1gt9ett0a89exg].[none:entity_id:nk]</column>
+            <column>[federated.16jy5590b5tn4x1gt9ett0a89exg].[:Measure Names]</column>
+            <column>[federated.16jy5590b5tn4x1gt9ett0a89exg].[none:Week (copy) (copy)_5291166637767462915:nk]</column>
+          </slices>
+          <aggregation value='true' />
+        </view>
+        <style>
+          <style-rule element='cell'>
+            <format attr='width' field='[federated.16jy5590b5tn4x1gt9ett0a89exg].[:Measure Names]' value='114' />
+          </style-rule>
+          <style-rule element='header'>
+            <format attr='height' field='[federated.16jy5590b5tn4x1gt9ett0a89exg].[:Measure Names]' value='53' />
+          </style-rule>
+          <style-rule element='quick-filter'>
+            <format attr='title' field='[federated.16jy5590b5tn4x1gt9ett0a89exg].[none:Week (copy) (copy)_5291166637767462915:nk]' value='Week Selector'>
+              <formatted-text>
+                <run>Week Selector</run>
+              </formatted-text>
+            </format>
+          </style-rule>
+        </style>
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Automatic' />
+            <encodings>
+              <text column='[federated.16jy5590b5tn4x1gt9ett0a89exg].[Multiple Values]' />
+            </encodings>
+            <style>
+              <style-rule element='mark'>
+                <format attr='mark-labels-show' value='true' />
+                <format attr='mark-labels-cull' value='true' />
+              </style-rule>
+              <style-rule element='pane'>
+                <format attr='minwidth' value='-1' />
+                <format attr='maxwidth' value='-1' />
+              </style-rule>
+            </style>
+          </pane>
+        </panes>
+        <rows total='true'>[federated.16jy5590b5tn4x1gt9ett0a89exg].[none:entity_id:nk]</rows>
+        <cols>[federated.16jy5590b5tn4x1gt9ett0a89exg].[:Measure Names]</cols>
+      </table>
+      <simple-id uuid='{1441F04F-C3A4-4C69-BDFD-F091E3DD0CBC}' />
+    </worksheet>
+  </worksheets>
+  <dashboards>
+    <dashboard _.fcp.AccessibleZoneTabOrder.true...enable-sort-zone-taborder='true' name='DH Priority Fee Revenue'>
+      <repository-location id='DHPriorityFeeRevenue' path='/t/GlobalStandardReporting/workbooks/DHPriorityFeeRevenue' revision='' site='GlobalStandardReporting' />
+      <style />
+      <size maxheight='1000' maxwidth='1000' minheight='1000' minwidth='1000' sizing-mode='fixed' />
+      <datasources>
+        <datasource name='Parameters' />
+        <datasource caption='Prio Fee Revenue' name='federated.16jy5590b5tn4x1gt9ett0a89exg' />
+      </datasources>
+      <datasource-dependencies datasource='Parameters'>
+        <column caption='Detail' datatype='string' name='[Parameter 1]' param-domain-type='list' role='measure' type='nominal' value='&quot;Zone&quot;'>
+          <calculation class='tableau' formula='&quot;Zone&quot;' />
+          <members>
+            <member value='&quot;Entity&quot;' />
+            <member value='&quot;Zone&quot;' />
+          </members>
+        </column>
+      </datasource-dependencies>
+      <datasource-dependencies datasource='federated.16jy5590b5tn4x1gt9ett0a89exg'>
+        <column caption='Week (W-Y)' datatype='string' name='[Week (copy) (copy)_5291166637767462915]' role='dimension' type='nominal'>
+          <calculation class='tableau' formula='STR(WEEK([week])) + &quot;-&quot; + STR(DATEPART(&apos;year&apos;, [week]))' />
+        </column>
+        <column caption='Entity Id' datatype='string' name='[entity_id]' role='dimension' type='nominal' />
+        <column-instance column='[Week (copy) (copy)_5291166637767462915]' derivation='None' name='[none:Week (copy) (copy)_5291166637767462915:nk]' pivot='key' type='nominal' />
+        <column-instance column='[entity_id]' derivation='None' name='[none:entity_id:nk]' pivot='key' type='nominal' />
+      </datasource-dependencies>
+      <zones>
+        <zone h='100000' id='4' type-v2='layout-basic' w='100000' x='0' y='0'>
+          <zone h='98400' id='8' param='horz' type-v2='layout-flow' w='98400' x='800' y='800'>
+            <zone h='98400' id='3' param='vert' type-v2='layout-flow' w='85875' x='800' y='800'>
+              <zone h='3500' id='10' type-v2='text' w='85875' x='800' y='800'>
+                <formatted-text>
+                  <run bold='true' fontalignment='1' fontcolor='#ef1333' fontname='Tableau Semibold' fontsize='15'>DH Priority Fee Revenue</run>
+                </formatted-text>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+              <zone h='42500' id='5' name='Weekly Economics' w='85875' x='800' y='4300'>
+                <layout-cache fixed-size-h='417' type-h='fixed' type-w='cell' />
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+              <zone forceUpdate='true' h='9300' id='58' type-v2='text' w='85875' x='800' y='46800'>
+                <formatted-text>
+                  <run>* Subscribers orders and subscribers Prio orders are the amount of orders made by subscriber users within the logistics zones where we have rolled out priority fee feature.
+** Detail Parameter changes Orders KPI and Total Adoption, when &apos;Entity&apos; is selected it calculates the total orders for the whole entity for that week and thus Total adoption is the ratio of prio orders/total entity orders (for the selected week[s]). If &apos;Zone&apos; is selected then it calculates the weekly orders for the zones where priority fee feature is rolled out.</run>
+                </formatted-text>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+              <zone h='43100' id='6' name='Evolution' w='85875' x='800' y='56100'>
+                <layout-cache minheight='283' type-h='scalable' type-w='cell' />
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+            </zone>
+            <zone fixed-size='125' h='98400' id='14' is-fixed='true' type-v2='layout-basic' w='12500' x='86675' y='800'>
+              <zone h='55300' id='7' param='vert' type-v2='layout-flow' w='12500' x='86675' y='800'>
+                <zone h='5200' id='11' mode='checkdropdown' name='Weekly Economics' param='[federated.16jy5590b5tn4x1gt9ett0a89exg].[none:entity_id:nk]' show-apply='true' type-v2='filter' values='database' w='12500' x='86675' y='800'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                  </zone-style>
+                </zone>
+                <zone h='5200' id='40' mode='compact' param='[Parameters].[Parameter 1]' type-v2='paramctrl' w='12500' x='86675' y='6000'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                  </zone-style>
+                </zone>
+                <zone h='5200' id='53' mode='checkdropdown' name='Weekly Economics' param='[federated.16jy5590b5tn4x1gt9ett0a89exg].[none:Week (copy) (copy)_5291166637767462915:nk]' show-apply='true' type-v2='filter' values='database' w='12500' x='86675' y='11200'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                  </zone-style>
+                </zone>
+                <zone forceUpdate='true' h='4200' id='59' type-v2='text' w='12500' x='86675' y='16400'>
+                  <formatted-text>
+                    <run>Data is updated weekly on Tuesdays</run>
+                  </formatted-text>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                  </zone-style>
+                </zone>
+                <zone fixed-size='33' h='4100' id='13' is-fixed='true' type-v2='empty' w='12500' x='86675' y='20600'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                  </zone-style>
+                </zone>
+              </zone>
+              <zone h='43100' id='15' param='vert' type-v2='layout-flow' w='12500' x='86675' y='56100'>
+                <zone h='34600' id='9' name='Evolution' pane-specification-id='0' param='[federated.16jy5590b5tn4x1gt9ett0a89exg].[none:entity_id:nk]' type-v2='color' w='12500' x='86675' y='56100'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                  </zone-style>
+                </zone>
+              </zone>
+            </zone>
+          </zone>
+          <zone-style>
+            <format attr='border-color' value='#000000' />
+            <format attr='border-style' value='none' />
+            <format attr='border-width' value='0' />
+            <format attr='margin' value='8' />
+          </zone-style>
+        </zone>
+      </zones>
+      <devicelayouts>
+        <devicelayout auto-generated='true' name='Phone'>
+          <size maxheight='1050' minheight='1050' sizing-mode='vscroll' />
+          <zones>
+            <zone h='100000' id='101' type-v2='layout-basic' w='100000' x='0' y='0'>
+              <zone h='98400' id='100' param='vert' type-v2='layout-flow' w='98400' x='800' y='800'>
+                <zone h='3500' id='10' type-v2='text' w='85875' x='800' y='800'>
+                  <formatted-text>
+                    <run bold='true' fontalignment='1' fontcolor='#ef1333' fontname='Tableau Semibold' fontsize='15'>DH Priority Fee Revenue</run>
+                  </formatted-text>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone h='5200' id='11' mode='checkdropdown' name='Weekly Economics' param='[federated.16jy5590b5tn4x1gt9ett0a89exg].[none:entity_id:nk]' show-apply='true' type-v2='filter' values='database' w='12500' x='86675' y='800'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone h='5200' id='53' mode='checkdropdown' name='Weekly Economics' param='[federated.16jy5590b5tn4x1gt9ett0a89exg].[none:Week (copy) (copy)_5291166637767462915:nk]' show-apply='true' type-v2='filter' values='database' w='12500' x='86675' y='11200'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone fixed-size='280' h='42500' id='5' is-fixed='true' name='Weekly Economics' w='85875' x='800' y='4300'>
+                  <layout-cache fixed-size-h='417' type-h='fixed' type-w='cell' />
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone h='5200' id='40' mode='compact' param='[Parameters].[Parameter 1]' type-v2='paramctrl' w='12500' x='86675' y='6000'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone forceUpdate='true' h='4200' id='59' type-v2='text' w='12500' x='86675' y='16400'>
+                  <formatted-text>
+                    <run>Data is updated weekly on Tuesdays</run>
+                  </formatted-text>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone forceUpdate='true' h='9300' id='58' type-v2='text' w='85875' x='800' y='46800'>
+                  <formatted-text>
+                    <run>* Subscribers orders and subscribers Prio orders are the amount of orders made by subscriber users within the logistics zones where we have rolled out priority fee feature.
+** Detail Parameter changes Orders KPI and Total Adoption, when &apos;Entity&apos; is selected it calculates the total orders for the whole entity for that week and thus Total adoption is the ratio of prio orders/total entity orders (for the selected week[s]). If &apos;Zone&apos; is selected then it calculates the weekly orders for the zones where priority fee feature is rolled out.</run>
+                  </formatted-text>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone fixed-size='280' h='43100' id='6' is-fixed='true' name='Evolution' w='85875' x='800' y='56100'>
+                  <layout-cache minheight='283' type-h='scalable' type-w='cell' />
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone h='34600' id='9' name='Evolution' pane-specification-id='0' param='[federated.16jy5590b5tn4x1gt9ett0a89exg].[none:entity_id:nk]' type-v2='color' w='12500' x='86675' y='56100'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+              </zone>
+              <zone-style>
+                <format attr='border-color' value='#000000' />
+                <format attr='border-style' value='none' />
+                <format attr='border-width' value='0' />
+                <format attr='margin' value='8' />
+              </zone-style>
+            </zone>
+          </zones>
+        </devicelayout>
+      </devicelayouts>
+      <simple-id uuid='{AF0C48D8-AC49-4C8E-9742-0C460D4A43A1}' />
+    </dashboard>
+  </dashboards>
+  <windows source-height='30'>
+    <window class='worksheet' name='Weekly Economics'>
+      <cards>
+        <edge name='left'>
+          <strip size='160'>
+            <card type='pages' />
+            <card type='filters' />
+            <card type='marks' />
+            <card type='measures' />
+          </strip>
+        </edge>
+        <edge name='top'>
+          <strip size='2147483647'>
+            <card type='columns' />
+          </strip>
+          <strip size='2147483647'>
+            <card type='rows' />
+          </strip>
+          <strip size='31'>
+            <card type='title' />
+          </strip>
+        </edge>
+        <edge name='right'>
+          <strip size='160'>
+            <card mode='compact' param='[Parameters].[Parameter 1]' type='parameter' />
+          </strip>
+        </edge>
+      </cards>
+      <viewpoint>
+        <highlight>
+          <color-one-way>
+            <field>[federated.16jy5590b5tn4x1gt9ett0a89exg].[md:week:ok]</field>
+            <field>[federated.16jy5590b5tn4x1gt9ett0a89exg].[none:Calculation_5291166637762023424:ok]</field>
+            <field>[federated.16jy5590b5tn4x1gt9ett0a89exg].[none:Week (copy) (copy)_5291166637767462915:nk]</field>
+            <field>[federated.16jy5590b5tn4x1gt9ett0a89exg].[none:Week (copy) (copy)_5291166637767462915:ok]</field>
+            <field>[federated.16jy5590b5tn4x1gt9ett0a89exg].[wk:Calculation_5291166637762023424:ok]</field>
+            <field>[federated.16jy5590b5tn4x1gt9ett0a89exg].[wk:week:ok]</field>
+          </color-one-way>
+        </highlight>
+      </viewpoint>
+      <simple-id uuid='{4224D1DD-2CBC-46FF-B008-2423E38F95D2}' />
+    </window>
+    <window class='worksheet' name='Evolution'>
+      <cards>
+        <edge name='left'>
+          <strip size='160'>
+            <card type='pages' />
+            <card type='filters' />
+            <card type='marks' />
+          </strip>
+        </edge>
+        <edge name='top'>
+          <strip size='2147483647'>
+            <card type='columns' />
+          </strip>
+          <strip size='2147483647'>
+            <card type='rows' />
+          </strip>
+          <strip size='31'>
+            <card type='title' />
+          </strip>
+        </edge>
+        <edge name='right'>
+          <strip size='160'>
+            <card pane-specification-id='0' param='[federated.16jy5590b5tn4x1gt9ett0a89exg].[none:entity_id:nk]' type='color' />
+          </strip>
+        </edge>
+      </cards>
+      <viewpoint>
+        <highlight field='[federated.16jy5590b5tn4x1gt9ett0a89exg].[none:entity_id:nk]'>
+          <bucket-selection>
+            <bucket>&quot;PY_AR&quot;</bucket>
+          </bucket-selection>
+        </highlight>
+      </viewpoint>
+      <simple-id uuid='{91B454D2-0F4E-4CD5-8813-FAF890F3BA6A}' />
+    </window>
+    <window class='dashboard' maximized='true' name='DH Priority Fee Revenue'>
+      <viewpoints>
+        <viewpoint name='Evolution'>
+          <zoom type='entire-view' />
+          <highlight field='[federated.16jy5590b5tn4x1gt9ett0a89exg].[none:entity_id:nk]'>
+            <bucket-selection />
+          </highlight>
+        </viewpoint>
+        <viewpoint name='Weekly Economics'>
+          <zoom type='fit-width' />
+        </viewpoint>
+      </viewpoints>
+      <active id='-1' />
+      <simple-id uuid='{70983919-05EC-4126-AE5B-0FECCCB50EDF}' />
+    </window>
+  </windows>
+</workbook>
