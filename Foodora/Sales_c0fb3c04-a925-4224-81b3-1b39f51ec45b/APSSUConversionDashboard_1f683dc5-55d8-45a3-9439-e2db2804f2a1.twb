@@ -1,0 +1,3305 @@
+<?xml version='1.0' encoding='utf-8' ?>
+
+<!-- build 20233.25.0106.1650                               -->
+<workbook source-build='2023.3.14 (20233.25.0106.1650)' version='18.1' xml:base='https://tableau.deliveryhero.net' xmlns:user='http://www.tableausoftware.com/xml/user'>
+  <document-format-change-manifest>
+    <_.fcp.AccessibleZoneTabOrder.true...AccessibleZoneTabOrder />
+    <_.fcp.AnimationOnByDefault.true...AnimationOnByDefault />
+    <AutoCreateAndUpdateDSDPhoneLayouts />
+    <_.fcp.MarkAnimation.true...MarkAnimation />
+    <_.fcp.ObjectModelEncapsulateLegacy.true...ObjectModelEncapsulateLegacy />
+    <_.fcp.ObjectModelExtractV2.true...ObjectModelExtractV2 />
+    <_.fcp.ObjectModelTableType.true...ObjectModelTableType />
+    <_.fcp.SchemaViewerObjectModel.true...SchemaViewerObjectModel />
+    <SetMembershipControl />
+    <SheetIdentifierTracking />
+    <WindowsPersistSimpleIdentifiers />
+    <ZoneBackgroundTransparency />
+  </document-format-change-manifest>
+  <repository-location derived-from='https://tableau.deliveryhero.net/t/Foodora/workbooks/APSSUConversionDashboard?rev=1.3' id='APSSUConversionDashboard' path='/t/Foodora/workbooks' revision='1.4' site='Foodora' />
+  <preferences />
+  <_.fcp.AnimationOnByDefault.false...style>
+    <_.fcp.AnimationOnByDefault.false..._.fcp.MarkAnimation.true...style-rule element='animation'>
+      <_.fcp.AnimationOnByDefault.false...format attr='animation-on' value='ao-on' />
+    </_.fcp.AnimationOnByDefault.false..._.fcp.MarkAnimation.true...style-rule>
+  </_.fcp.AnimationOnByDefault.false...style>
+  <datasources>
+    <datasource caption='okr1 perc' inline='true' name='federated.0gete9g134nm0o10enpjv1nnprum' version='18.1'>
+      <connection class='federated'>
+        <named-connections>
+          <named-connection caption='BigQuery' name='bigquery.08ayewh1jpy7aa1bz3mkp125f4sb'>
+            <connection CATALOG='fulfillment-dwh-production' EXECCATALOG='pd-data--adhoc' authentication='oauth' bq-dataset-fetch-rows='' bq-fetch-rows='' bq-fetch-tasks='' bq-large-fetch-rows='' bq-project-fetch-rows='' bq-response-rows='' class='bigquery' connection-dialect='google-sql' project='fulfillment-dwh-production' schema='pandata_report' server-oauth='' username='theeranop.wongtitirote@foodpanda.co.th' workgroup-auth-mode='prompt' />
+          </named-connection>
+        </named-connections>
+        <_.fcp.ObjectModelEncapsulateLegacy.false...relation connection='bigquery.08ayewh1jpy7aa1bz3mkp125f4sb' name='Custom SQL Query' type='text'><![CDATA[WITH report_month AS (
+  SELECT report_date
+  FROM UNNEST(GENERATE_DATE_ARRAY(
+    DATE('2024-01-01'),
+    CURRENT_DATE(),
+    INTERVAL 1 MONTH
+  )) AS report_date
+),
+
+sf_user AS (
+  SELECT DISTINCT
+    id AS sf_user_id,
+    TRIM(COALESCE(firstname, "") || " " || COALESCE(lastname, "")) AS owner_name,
+    isactive AS is_owner_active,
+    email,
+    central_job_role__c,
+    title,
+    job_role_vertical__c,
+    isactive,
+    ROW_NUMBER() OVER (PARTITION BY id ORDER BY DATETIME(lastmodifieddate) DESC) = 1 AS is_latest
+  FROM `fulfillment-dwh-production.curated_data_shared_salesforce.user`
+),
+base_data AS (
+  SELECT 
+    TIMESTAMP_TRUNC(TIMESTAMP(opp_history.createddate), MONTH) AS month,
+    opp.global_entity_id,
+    leads.id AS lead_id,
+    leads.createdbyid AS leads_created_by_id,
+    leads.mark_for_testing_training__c AS leads_mark_fortesting_training,
+    acc.grid__c,
+    opp.id AS opp_id,
+    sf_user.owner_name AS opp_owner_full_name,
+    opp.closedate,
+    opp.createddate AS opp_createddate,
+    opp.vertical__c,
+    opp.isclosed,
+    opp_history.newvalue,
+    opp_history.oldvalue,
+    opp_history.createddate AS opp_history_createddate
+  FROM `fulfillment-dwh-production.curated_data_shared_salesforce.opportunity` AS opp
+  LEFT JOIN `fulfillment-dwh-production.curated_data_shared_salesforce.account` AS acc
+         ON opp.global_entity_id = acc.global_entity_id 
+        AND opp.accountid = acc.id
+  LEFT JOIN `fulfillment-dwh-production.curated_data_shared_salesforce.lead` AS leads
+         ON acc.id = leads.convertedaccountid
+        AND acc.grid__c = leads.grid__c      
+  LEFT JOIN `fulfillment-dwh-production.curated_data_shared_salesforce.opportunityfieldhistory` AS opp_history
+         ON opp.global_entity_id = opp_history.global_entity_id
+        AND opp.id = opp_history.opportunityid
+  LEFT JOIN sf_user
+         ON sf_user.sf_user_id = opp.ownerid
+        AND sf_user.is_latest     
+  WHERE leads.createdbyid IN ("0056900000AVz3YAAT", "0056900000BRoR1AAL", "0056900000BSL0IAAX", 
+                              "0056900000BUli5AAD", "0056900000BV0qnAAD", "0056900000CRtp2AAD")
+    AND acc.vertical__c = "Restaurant"
+    AND opp.createddate >>= "2024-01-01"
+    AND opp_history.field = "Owner"
+    AND opp_history.newvalue LIKE "0%"
+),
+expanded_months AS (
+  SELECT 
+    d1.month AS target_month,
+    d2.newvalue,
+    d2.global_entity_id,
+    d2.lead_id,
+    d2.leads_created_by_id,
+    d2.leads_mark_fortesting_training,
+    d2.grid__c,
+    d2.opp_id,
+    d2.opp_owner_full_name,
+    d2.closedate,
+    d2.opp_createddate,
+    d2.vertical__c,
+    d2.isclosed
+  FROM base_data d1
+  JOIN base_data d2
+    ON d2.opp_history_createddate <<= TIMESTAMP(DATE_ADD(DATE(d1.month), INTERVAL 1 MONTH))
+    AND d2.opp_history_createddate >> TIMESTAMP(DATE_SUB(DATE(d1.month), INTERVAL 1 MONTH))
+),
+cumulative_counts AS (
+  SELECT 
+    target_month AS month,
+    global_entity_id,
+    lead_id,
+    leads_created_by_id,
+    leads_mark_fortesting_training,
+    grid__c,
+    opp_id,
+    opp_owner_full_name,
+    closedate,
+    opp_createddate,
+    vertical__c,
+    isclosed,
+    COUNT(DISTINCT newvalue) AS cumulative_count
+  FROM expanded_months
+  GROUP BY 
+    target_month, 
+    global_entity_id, 
+    lead_id, 
+    leads_created_by_id, 
+    leads_mark_fortesting_training, 
+    grid__c, 
+    opp_id, 
+    opp_owner_full_name, 
+    closedate, 
+    opp_createddate, 
+    vertical__c, 
+    isclosed
+),
+
+agg_final AS (SELECT 
+  month AS assigned_opp_month,
+  cumulative_counts.global_entity_id,
+  lead_id,
+  leads_created_by_id,
+  leads_mark_fortesting_training,
+  grid__c,
+  opp_id AS opportunity_id,
+  opp_owner_full_name,
+  CASE 
+    WHEN lao.user_type IS NULL THEN "null"
+    ELSE lao.user_type
+  END AS user_type,
+  closedate AS opp_closedate,
+  opp_createddate AS opportunity_created_date,
+  vertical__c,
+  isclosed,
+  cumulative_count
+FROM cumulative_counts
+LEFT JOIN `fulfillment-dwh-production.pandata_report.sales_lead_account_opp_aggregated` AS lao
+       ON cumulative_counts.global_entity_id = lao.global_entity_id
+      AND cumulative_counts.opp_id = lao.sf_opportunity_id),
+
+combined AS (
+SELECT 
+account.country_code, 
+account,platform__c, 
+account.global_entity_id, 
+account.id AS account_id, 
+account.grid__c, 
+account.createddate, 
+accountsource, 
+account.mark_for_testing_training__c, 
+account.type, 
+account.vertical__c,
+account.vendor_grade__c,
+account.self_setup__c,
+account.createdbyid,
+account.revenue_model__c,
+sf_user.owner_name AS opp_owner_full_name,
+sf_user.email,
+sf_user.central_job_role__c,
+sf_user.job_role_vertical__c,
+sf_user.title,
+sf_user.isactive,
+opp.ownerid,
+opp.name,
+opp.business_type__c,
+opp.stagename,
+opp.closedate,
+opp.isclosed,
+opp.id AS opportunity_id,
+opp.createddate AS opportunity_created_date,
+account.vertical_segment__c, 
+account.key_vip_account__c, 
+account.key_account_sub_category__c,
+opp.iswon,
+opp.assigned_to__c,
+opp.probability,
+opp.leadsource,
+opp.createdbyid AS opp_created_by
+FROM `fulfillment-dwh-production.curated_data_shared_salesforce.account`  AS account
+LEFT JOIN `fulfillment-dwh-production.curated_data_shared_salesforce.opportunity` AS opp
+ON account.id = opp.accountid
+LEFT JOIN sf_user
+       ON sf_user.sf_user_id = opp.ownerid
+      AND sf_user.is_latest
+WHERE account.createddate >>= '2022-01-01'), 
+
+
+
+final AS (SELECT 
+combined.country_code,
+combined.platform__c, 
+combined.global_entity_id, 
+combined.account_id, 
+combined.grid__c, 
+combined.createddate, 
+combined.accountsource, 
+combined.mark_for_testing_training__c, 
+combined.type, 
+combined.vertical__c,
+combined.vendor_grade__c, 
+combined.self_setup__c,
+combined.createdbyid,
+combined.email,
+lao.user_type,
+combined.central_job_role__c,
+combined.title,
+combined.job_role_vertical__c,
+combined.isactive,
+combined.opp_owner_full_name,
+combined.ownerid,
+combined.name,
+combined.business_type__c,
+combined.stagename,
+combined.closedate,
+combined.isclosed,
+combined.opportunity_id,
+combined.vertical_segment__c, 
+combined.key_vip_account__c, 
+combined.key_account_sub_category__c,
+combined.revenue_model__c,
+combined.opportunity_created_date,
+combined.iswon,
+combined.assigned_to__c,
+combined.probability,
+combined.leadsource,
+combined.opp_created_by,
+leads.id AS lead_id,
+leads.createdbyid AS leads_created_by_id, 
+leads.mark_for_testing_training__c AS leads_mark_fortesting_training, 
+leads.vertical__c AS leads_vertical, 
+leads.recordtypeid AS leads_recordtype_id,
+leads.company AS company_name
+FROM combined
+LEFT JOIN `fulfillment-dwh-production.curated_data_shared_salesforce.lead` As leads
+       ON combined.account_id = leads.convertedaccountid
+      AND combined.grid__c = leads.grid__c
+LEFT JOIN `fulfillment-dwh-production.pandata_report.sales_lead_account_opp_aggregated` AS lao
+       ON combined.global_entity_id = lao.global_entity_id
+      AND combined.opportunity_id = lao.sf_opportunity_id
+      AND combined.email = lao.email_internal_non_pii
+WHERE business_type__c = "New Business" 
+AND NOT leads.mark_for_testing_training__c 
+AND NOT combined.mark_for_testing_training__c
+AND combined.stagename = "Closed Won"
+AND leads.createdbyid IN ("0056900000AVz3YAAT", "0056900000BRoR1AAL", "0056900000BSL0IAAX", 
+                              "0056900000BUli5AAD", "0056900000BV0qnAAD", "0056900000CRtp2AAD")
+AND combined.closedate >>= "2024-01-01"
+AND combined.vertical__c = "Restaurant"         
+),
+
+agg_final_closed_won AS (
+SELECT
+"" AS assigned_opp_month,
+global_entity_id,
+lead_id,
+leads_created_by_id,
+leads_mark_fortesting_training,
+grid__c,
+opportunity_id,
+opp_owner_full_name,
+  CASE 
+    WHEN user_type IS NULL THEN "null"
+    ELSE user_type
+  END AS user_type,
+closedate AS opp_closedate,
+opportunity_created_date,
+vertical__c,
+isclosed,
+"" AS cumulative_count
+FROM final),
+
+
+agg_closed_won AS (
+SELECT report_date,
+global_entity_id,
+user_type,
+COUNT(DISTINCT(grid__c)) AS count_grid
+FROM report_month 
+LEFT JOIN agg_final_closed_won
+ON report_month.report_date = DATE_TRUNC(agg_final_closed_won.opp_closedate, MONTH)
+
+GROUP BY 1,2,3),      
+
+agg_ssu_oppt_owned AS (SELECT 
+report_date,
+global_entity_id,
+user_type,
+SUM(cumulative_count) AS sum_cumulative_count
+FROM report_month      
+LEFT JOIN agg_final
+       ON report_month.report_date = DATE(agg_final.assigned_opp_month)   
+GROUP BY 1,2,3)
+
+SELECT 
+agg_ssu_oppt_owned.report_date,
+agg_ssu_oppt_owned.global_entity_id,
+agg_ssu_oppt_owned.user_type,
+agg_ssu_oppt_owned.sum_cumulative_count,
+agg_closed_won.count_grid
+FROM agg_ssu_oppt_owned
+LEFT JOIN agg_closed_won
+    ON  agg_ssu_oppt_owned.report_date = agg_closed_won.report_date
+   AND  agg_ssu_oppt_owned.global_entity_id = agg_closed_won.global_entity_id
+   AND  agg_ssu_oppt_owned.user_type = agg_closed_won.user_type]]></_.fcp.ObjectModelEncapsulateLegacy.false...relation>
+        <_.fcp.ObjectModelEncapsulateLegacy.true...relation connection='bigquery.08ayewh1jpy7aa1bz3mkp125f4sb' name='Custom SQL Query' type='text'><![CDATA[WITH report_month AS (
+  SELECT report_date
+  FROM UNNEST(GENERATE_DATE_ARRAY(
+    DATE('2024-01-01'),
+    CURRENT_DATE(),
+    INTERVAL 1 MONTH
+  )) AS report_date
+),
+
+sf_user AS (
+  SELECT DISTINCT
+    id AS sf_user_id,
+    TRIM(COALESCE(firstname, "") || " " || COALESCE(lastname, "")) AS owner_name,
+    isactive AS is_owner_active,
+    email,
+    central_job_role__c,
+    title,
+    job_role_vertical__c,
+    isactive,
+    ROW_NUMBER() OVER (PARTITION BY id ORDER BY DATETIME(lastmodifieddate) DESC) = 1 AS is_latest
+  FROM `fulfillment-dwh-production.curated_data_shared_salesforce.user`
+),
+base_data AS (
+  SELECT 
+    TIMESTAMP_TRUNC(TIMESTAMP(opp_history.createddate), MONTH) AS month,
+    opp.global_entity_id,
+    leads.id AS lead_id,
+    leads.createdbyid AS leads_created_by_id,
+    leads.mark_for_testing_training__c AS leads_mark_fortesting_training,
+    acc.grid__c,
+    opp.id AS opp_id,
+    sf_user.owner_name AS opp_owner_full_name,
+    opp.closedate,
+    opp.createddate AS opp_createddate,
+    opp.vertical__c,
+    opp.isclosed,
+    opp_history.newvalue,
+    opp_history.oldvalue,
+    opp_history.createddate AS opp_history_createddate
+  FROM `fulfillment-dwh-production.curated_data_shared_salesforce.opportunity` AS opp
+  LEFT JOIN `fulfillment-dwh-production.curated_data_shared_salesforce.account` AS acc
+         ON opp.global_entity_id = acc.global_entity_id 
+        AND opp.accountid = acc.id
+  LEFT JOIN `fulfillment-dwh-production.curated_data_shared_salesforce.lead` AS leads
+         ON acc.id = leads.convertedaccountid
+        AND acc.grid__c = leads.grid__c      
+  LEFT JOIN `fulfillment-dwh-production.curated_data_shared_salesforce.opportunityfieldhistory` AS opp_history
+         ON opp.global_entity_id = opp_history.global_entity_id
+        AND opp.id = opp_history.opportunityid
+  LEFT JOIN sf_user
+         ON sf_user.sf_user_id = opp.ownerid
+        AND sf_user.is_latest     
+  WHERE leads.createdbyid IN ("0056900000AVz3YAAT", "0056900000BRoR1AAL", "0056900000BSL0IAAX", 
+                              "0056900000BUli5AAD", "0056900000BV0qnAAD", "0056900000CRtp2AAD")
+    AND acc.vertical__c = "Restaurant"
+    AND opp.createddate >>= "2024-01-01"
+    AND opp_history.field = "Owner"
+    AND opp_history.newvalue LIKE "0%"
+),
+expanded_months AS (
+  SELECT 
+    d1.month AS target_month,
+    d2.newvalue,
+    d2.global_entity_id,
+    d2.lead_id,
+    d2.leads_created_by_id,
+    d2.leads_mark_fortesting_training,
+    d2.grid__c,
+    d2.opp_id,
+    d2.opp_owner_full_name,
+    d2.closedate,
+    d2.opp_createddate,
+    d2.vertical__c,
+    d2.isclosed
+  FROM base_data d1
+  JOIN base_data d2
+    ON d2.opp_history_createddate <<= TIMESTAMP(DATE_ADD(DATE(d1.month), INTERVAL 1 MONTH))
+    AND d2.opp_history_createddate >> TIMESTAMP(DATE_SUB(DATE(d1.month), INTERVAL 1 MONTH))
+),
+cumulative_counts AS (
+  SELECT 
+    target_month AS month,
+    global_entity_id,
+    lead_id,
+    leads_created_by_id,
+    leads_mark_fortesting_training,
+    grid__c,
+    opp_id,
+    opp_owner_full_name,
+    closedate,
+    opp_createddate,
+    vertical__c,
+    isclosed,
+    COUNT(DISTINCT newvalue) AS cumulative_count
+  FROM expanded_months
+  GROUP BY 
+    target_month, 
+    global_entity_id, 
+    lead_id, 
+    leads_created_by_id, 
+    leads_mark_fortesting_training, 
+    grid__c, 
+    opp_id, 
+    opp_owner_full_name, 
+    closedate, 
+    opp_createddate, 
+    vertical__c, 
+    isclosed
+),
+
+agg_final AS (SELECT 
+  month AS assigned_opp_month,
+  cumulative_counts.global_entity_id,
+  lead_id,
+  leads_created_by_id,
+  leads_mark_fortesting_training,
+  grid__c,
+  opp_id AS opportunity_id,
+  opp_owner_full_name,
+  CASE 
+    WHEN lao.user_type IS NULL THEN "null"
+    ELSE lao.user_type
+  END AS user_type,
+  closedate AS opp_closedate,
+  opp_createddate AS opportunity_created_date,
+  vertical__c,
+  isclosed,
+  cumulative_count
+FROM cumulative_counts
+LEFT JOIN `fulfillment-dwh-production.pandata_report.sales_lead_account_opp_aggregated` AS lao
+       ON cumulative_counts.global_entity_id = lao.global_entity_id
+      AND cumulative_counts.opp_id = lao.sf_opportunity_id),
+
+combined AS (
+SELECT 
+account.country_code, 
+account,platform__c, 
+account.global_entity_id, 
+account.id AS account_id, 
+account.grid__c, 
+account.createddate, 
+accountsource, 
+account.mark_for_testing_training__c, 
+account.type, 
+account.vertical__c,
+account.vendor_grade__c,
+account.self_setup__c,
+account.createdbyid,
+account.revenue_model__c,
+sf_user.owner_name AS opp_owner_full_name,
+sf_user.email,
+sf_user.central_job_role__c,
+sf_user.job_role_vertical__c,
+sf_user.title,
+sf_user.isactive,
+opp.ownerid,
+opp.name,
+opp.business_type__c,
+opp.stagename,
+opp.closedate,
+opp.isclosed,
+opp.id AS opportunity_id,
+opp.createddate AS opportunity_created_date,
+account.vertical_segment__c, 
+account.key_vip_account__c, 
+account.key_account_sub_category__c,
+opp.iswon,
+opp.assigned_to__c,
+opp.probability,
+opp.leadsource,
+opp.createdbyid AS opp_created_by
+FROM `fulfillment-dwh-production.curated_data_shared_salesforce.account`  AS account
+LEFT JOIN `fulfillment-dwh-production.curated_data_shared_salesforce.opportunity` AS opp
+ON account.id = opp.accountid
+LEFT JOIN sf_user
+       ON sf_user.sf_user_id = opp.ownerid
+      AND sf_user.is_latest
+WHERE account.createddate >>= '2022-01-01'), 
+
+
+
+final AS (SELECT 
+combined.country_code,
+combined.platform__c, 
+combined.global_entity_id, 
+combined.account_id, 
+combined.grid__c, 
+combined.createddate, 
+combined.accountsource, 
+combined.mark_for_testing_training__c, 
+combined.type, 
+combined.vertical__c,
+combined.vendor_grade__c, 
+combined.self_setup__c,
+combined.createdbyid,
+combined.email,
+lao.user_type,
+combined.central_job_role__c,
+combined.title,
+combined.job_role_vertical__c,
+combined.isactive,
+combined.opp_owner_full_name,
+combined.ownerid,
+combined.name,
+combined.business_type__c,
+combined.stagename,
+combined.closedate,
+combined.isclosed,
+combined.opportunity_id,
+combined.vertical_segment__c, 
+combined.key_vip_account__c, 
+combined.key_account_sub_category__c,
+combined.revenue_model__c,
+combined.opportunity_created_date,
+combined.iswon,
+combined.assigned_to__c,
+combined.probability,
+combined.leadsource,
+combined.opp_created_by,
+leads.id AS lead_id,
+leads.createdbyid AS leads_created_by_id, 
+leads.mark_for_testing_training__c AS leads_mark_fortesting_training, 
+leads.vertical__c AS leads_vertical, 
+leads.recordtypeid AS leads_recordtype_id,
+leads.company AS company_name
+FROM combined
+LEFT JOIN `fulfillment-dwh-production.curated_data_shared_salesforce.lead` As leads
+       ON combined.account_id = leads.convertedaccountid
+      AND combined.grid__c = leads.grid__c
+LEFT JOIN `fulfillment-dwh-production.pandata_report.sales_lead_account_opp_aggregated` AS lao
+       ON combined.global_entity_id = lao.global_entity_id
+      AND combined.opportunity_id = lao.sf_opportunity_id
+      AND combined.email = lao.email_internal_non_pii
+WHERE business_type__c = "New Business" 
+AND NOT leads.mark_for_testing_training__c 
+AND NOT combined.mark_for_testing_training__c
+AND combined.stagename = "Closed Won"
+AND leads.createdbyid IN ("0056900000AVz3YAAT", "0056900000BRoR1AAL", "0056900000BSL0IAAX", 
+                              "0056900000BUli5AAD", "0056900000BV0qnAAD", "0056900000CRtp2AAD")
+AND combined.closedate >>= "2024-01-01"
+AND combined.vertical__c = "Restaurant"         
+),
+
+agg_final_closed_won AS (
+SELECT
+"" AS assigned_opp_month,
+global_entity_id,
+lead_id,
+leads_created_by_id,
+leads_mark_fortesting_training,
+grid__c,
+opportunity_id,
+opp_owner_full_name,
+  CASE 
+    WHEN user_type IS NULL THEN "null"
+    ELSE user_type
+  END AS user_type,
+closedate AS opp_closedate,
+opportunity_created_date,
+vertical__c,
+isclosed,
+"" AS cumulative_count
+FROM final),
+
+
+agg_closed_won AS (
+SELECT report_date,
+global_entity_id,
+user_type,
+COUNT(DISTINCT(grid__c)) AS count_grid
+FROM report_month 
+LEFT JOIN agg_final_closed_won
+ON report_month.report_date = DATE_TRUNC(agg_final_closed_won.opp_closedate, MONTH)
+
+GROUP BY 1,2,3),      
+
+agg_ssu_oppt_owned AS (SELECT 
+report_date,
+global_entity_id,
+user_type,
+SUM(cumulative_count) AS sum_cumulative_count
+FROM report_month      
+LEFT JOIN agg_final
+       ON report_month.report_date = DATE(agg_final.assigned_opp_month)   
+GROUP BY 1,2,3)
+
+SELECT 
+agg_ssu_oppt_owned.report_date,
+agg_ssu_oppt_owned.global_entity_id,
+agg_ssu_oppt_owned.user_type,
+agg_ssu_oppt_owned.sum_cumulative_count,
+agg_closed_won.count_grid
+FROM agg_ssu_oppt_owned
+LEFT JOIN agg_closed_won
+    ON  agg_ssu_oppt_owned.report_date = agg_closed_won.report_date
+   AND  agg_ssu_oppt_owned.global_entity_id = agg_closed_won.global_entity_id
+   AND  agg_ssu_oppt_owned.user_type = agg_closed_won.user_type]]></_.fcp.ObjectModelEncapsulateLegacy.true...relation>
+        <metadata-records>
+          <metadata-record class='column'>
+            <remote-name>report_date</remote-name>
+            <remote-type>7</remote-type>
+            <local-name>[report_date]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>report_date</remote-alias>
+            <local-type>date</local-type>
+            <aggregation>Year</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_EFAD668DC20F4914B5F15ED2415F3DC2]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>global_entity_id</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[global_entity_id]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>global_entity_id</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_EFAD668DC20F4914B5F15ED2415F3DC2]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>user_type</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[user_type]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>user_type</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_EFAD668DC20F4914B5F15ED2415F3DC2]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>sum_cumulative_count</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[sum_cumulative_count]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>sum_cumulative_count</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_EFAD668DC20F4914B5F15ED2415F3DC2]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>count_grid</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[count_grid]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>count_grid</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_EFAD668DC20F4914B5F15ED2415F3DC2]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+        </metadata-records>
+      </connection>
+      <aliases enabled='yes' />
+      <column caption='%  Conversion Rate of SSU Opportunity' datatype='real' name='[Calculation_5477362343120756736]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='SUM([count_grid])/SUM([sum_cumulative_count])' />
+      </column>
+      <_.fcp.ObjectModelTableType.true...column caption='Custom SQL Query' datatype='table' name='[__tableau_internal_object_id__].[_EFAD668DC20F4914B5F15ED2415F3DC2]' role='measure' type='quantitative' />
+      <extract _.fcp.ObjectModelExtractV2.true...object-id='' count='-1' enabled='true' units='records'>
+        <connection access_mode='readonly' author-locale='en_US' class='hyper' dbname='extract/e4/00/{B78D52D4-9DFF-4194-B5B8-70C4C35048D5}/federated_0gete9g134nm0o10enpjv1.hyper' extract-engine='true' schema='Extract' sslmode='' tablename='Extract' update-time='08/22/2025 02:19:40 AM'>
+          <_.fcp.ObjectModelEncapsulateLegacy.false...relation name='Extract' table='[Extract].[Extract]' type='table' />
+          <_.fcp.ObjectModelEncapsulateLegacy.true...relation name='Extract' table='[Extract].[Extract]' type='table' />
+          <metadata-records>
+            <metadata-record class='column'>
+              <remote-name>report_date</remote-name>
+              <remote-type>133</remote-type>
+              <local-name>[report_date]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>report_date</remote-alias>
+              <ordinal>0</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>date</local-type>
+              <aggregation>Year</aggregation>
+              <approx-count>20</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_EFAD668DC20F4914B5F15ED2415F3DC2]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>global_entity_id</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[global_entity_id]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>global_entity_id</remote-alias>
+              <ordinal>1</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>19</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_EFAD668DC20F4914B5F15ED2415F3DC2]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>user_type</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[user_type]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>user_type</remote-alias>
+              <ordinal>2</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>6</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_EFAD668DC20F4914B5F15ED2415F3DC2]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>sum_cumulative_count</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[sum_cumulative_count]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>sum_cumulative_count</remote-alias>
+              <ordinal>3</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>465</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_EFAD668DC20F4914B5F15ED2415F3DC2]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>count_grid</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[count_grid]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>count_grid</remote-alias>
+              <ordinal>4</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>235</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_EFAD668DC20F4914B5F15ED2415F3DC2]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+          </metadata-records>
+        </connection>
+      </extract>
+      <layout _.fcp.SchemaViewerObjectModel.false...dim-percentage='0.5' _.fcp.SchemaViewerObjectModel.false...measure-percentage='0.4' dim-ordering='alphabetic' measure-ordering='alphabetic' show-structure='true' />
+      <semantic-values>
+        <semantic-value key='[Country].[Name]' value='&quot;Singapore&quot;' />
+      </semantic-values>
+      <_.fcp.ObjectModelEncapsulateLegacy.true...object-graph>
+        <objects>
+          <object caption='Custom SQL Query' id='_EFAD668DC20F4914B5F15ED2415F3DC2'>
+            <properties context=''>
+              <relation connection='bigquery.08ayewh1jpy7aa1bz3mkp125f4sb' name='Custom SQL Query' type='text'><![CDATA[WITH report_month AS (
+  SELECT report_date
+  FROM UNNEST(GENERATE_DATE_ARRAY(
+    DATE('2024-01-01'),
+    CURRENT_DATE(),
+    INTERVAL 1 MONTH
+  )) AS report_date
+),
+
+sf_user AS (
+  SELECT DISTINCT
+    id AS sf_user_id,
+    TRIM(COALESCE(firstname, "") || " " || COALESCE(lastname, "")) AS owner_name,
+    isactive AS is_owner_active,
+    email,
+    central_job_role__c,
+    title,
+    job_role_vertical__c,
+    isactive,
+    ROW_NUMBER() OVER (PARTITION BY id ORDER BY DATETIME(lastmodifieddate) DESC) = 1 AS is_latest
+  FROM `fulfillment-dwh-production.curated_data_shared_salesforce.user`
+),
+base_data AS (
+  SELECT 
+    TIMESTAMP_TRUNC(TIMESTAMP(opp_history.createddate), MONTH) AS month,
+    opp.global_entity_id,
+    leads.id AS lead_id,
+    leads.createdbyid AS leads_created_by_id,
+    leads.mark_for_testing_training__c AS leads_mark_fortesting_training,
+    acc.grid__c,
+    opp.id AS opp_id,
+    sf_user.owner_name AS opp_owner_full_name,
+    opp.closedate,
+    opp.createddate AS opp_createddate,
+    opp.vertical__c,
+    opp.isclosed,
+    opp_history.newvalue,
+    opp_history.oldvalue,
+    opp_history.createddate AS opp_history_createddate
+  FROM `fulfillment-dwh-production.curated_data_shared_salesforce.opportunity` AS opp
+  LEFT JOIN `fulfillment-dwh-production.curated_data_shared_salesforce.account` AS acc
+         ON opp.global_entity_id = acc.global_entity_id 
+        AND opp.accountid = acc.id
+  LEFT JOIN `fulfillment-dwh-production.curated_data_shared_salesforce.lead` AS leads
+         ON acc.id = leads.convertedaccountid
+        AND acc.grid__c = leads.grid__c      
+  LEFT JOIN `fulfillment-dwh-production.curated_data_shared_salesforce.opportunityfieldhistory` AS opp_history
+         ON opp.global_entity_id = opp_history.global_entity_id
+        AND opp.id = opp_history.opportunityid
+  LEFT JOIN sf_user
+         ON sf_user.sf_user_id = opp.ownerid
+        AND sf_user.is_latest     
+  WHERE leads.createdbyid IN ("0056900000AVz3YAAT", "0056900000BRoR1AAL", "0056900000BSL0IAAX", 
+                              "0056900000BUli5AAD", "0056900000BV0qnAAD", "0056900000CRtp2AAD")
+    AND acc.vertical__c = "Restaurant"
+    AND opp.createddate >>= "2024-01-01"
+    AND opp_history.field = "Owner"
+    AND opp_history.newvalue LIKE "0%"
+),
+expanded_months AS (
+  SELECT 
+    d1.month AS target_month,
+    d2.newvalue,
+    d2.global_entity_id,
+    d2.lead_id,
+    d2.leads_created_by_id,
+    d2.leads_mark_fortesting_training,
+    d2.grid__c,
+    d2.opp_id,
+    d2.opp_owner_full_name,
+    d2.closedate,
+    d2.opp_createddate,
+    d2.vertical__c,
+    d2.isclosed
+  FROM base_data d1
+  JOIN base_data d2
+    ON d2.opp_history_createddate <<= TIMESTAMP(DATE_ADD(DATE(d1.month), INTERVAL 1 MONTH))
+    AND d2.opp_history_createddate >> TIMESTAMP(DATE_SUB(DATE(d1.month), INTERVAL 1 MONTH))
+),
+cumulative_counts AS (
+  SELECT 
+    target_month AS month,
+    global_entity_id,
+    lead_id,
+    leads_created_by_id,
+    leads_mark_fortesting_training,
+    grid__c,
+    opp_id,
+    opp_owner_full_name,
+    closedate,
+    opp_createddate,
+    vertical__c,
+    isclosed,
+    COUNT(DISTINCT newvalue) AS cumulative_count
+  FROM expanded_months
+  GROUP BY 
+    target_month, 
+    global_entity_id, 
+    lead_id, 
+    leads_created_by_id, 
+    leads_mark_fortesting_training, 
+    grid__c, 
+    opp_id, 
+    opp_owner_full_name, 
+    closedate, 
+    opp_createddate, 
+    vertical__c, 
+    isclosed
+),
+
+agg_final AS (SELECT 
+  month AS assigned_opp_month,
+  cumulative_counts.global_entity_id,
+  lead_id,
+  leads_created_by_id,
+  leads_mark_fortesting_training,
+  grid__c,
+  opp_id AS opportunity_id,
+  opp_owner_full_name,
+  CASE 
+    WHEN lao.user_type IS NULL THEN "null"
+    ELSE lao.user_type
+  END AS user_type,
+  closedate AS opp_closedate,
+  opp_createddate AS opportunity_created_date,
+  vertical__c,
+  isclosed,
+  cumulative_count
+FROM cumulative_counts
+LEFT JOIN `fulfillment-dwh-production.pandata_report.sales_lead_account_opp_aggregated` AS lao
+       ON cumulative_counts.global_entity_id = lao.global_entity_id
+      AND cumulative_counts.opp_id = lao.sf_opportunity_id),
+
+combined AS (
+SELECT 
+account.country_code, 
+account,platform__c, 
+account.global_entity_id, 
+account.id AS account_id, 
+account.grid__c, 
+account.createddate, 
+accountsource, 
+account.mark_for_testing_training__c, 
+account.type, 
+account.vertical__c,
+account.vendor_grade__c,
+account.self_setup__c,
+account.createdbyid,
+account.revenue_model__c,
+sf_user.owner_name AS opp_owner_full_name,
+sf_user.email,
+sf_user.central_job_role__c,
+sf_user.job_role_vertical__c,
+sf_user.title,
+sf_user.isactive,
+opp.ownerid,
+opp.name,
+opp.business_type__c,
+opp.stagename,
+opp.closedate,
+opp.isclosed,
+opp.id AS opportunity_id,
+opp.createddate AS opportunity_created_date,
+account.vertical_segment__c, 
+account.key_vip_account__c, 
+account.key_account_sub_category__c,
+opp.iswon,
+opp.assigned_to__c,
+opp.probability,
+opp.leadsource,
+opp.createdbyid AS opp_created_by
+FROM `fulfillment-dwh-production.curated_data_shared_salesforce.account`  AS account
+LEFT JOIN `fulfillment-dwh-production.curated_data_shared_salesforce.opportunity` AS opp
+ON account.id = opp.accountid
+LEFT JOIN sf_user
+       ON sf_user.sf_user_id = opp.ownerid
+      AND sf_user.is_latest
+WHERE account.createddate >>= '2022-01-01'), 
+
+
+
+final AS (SELECT 
+combined.country_code,
+combined.platform__c, 
+combined.global_entity_id, 
+combined.account_id, 
+combined.grid__c, 
+combined.createddate, 
+combined.accountsource, 
+combined.mark_for_testing_training__c, 
+combined.type, 
+combined.vertical__c,
+combined.vendor_grade__c, 
+combined.self_setup__c,
+combined.createdbyid,
+combined.email,
+lao.user_type,
+combined.central_job_role__c,
+combined.title,
+combined.job_role_vertical__c,
+combined.isactive,
+combined.opp_owner_full_name,
+combined.ownerid,
+combined.name,
+combined.business_type__c,
+combined.stagename,
+combined.closedate,
+combined.isclosed,
+combined.opportunity_id,
+combined.vertical_segment__c, 
+combined.key_vip_account__c, 
+combined.key_account_sub_category__c,
+combined.revenue_model__c,
+combined.opportunity_created_date,
+combined.iswon,
+combined.assigned_to__c,
+combined.probability,
+combined.leadsource,
+combined.opp_created_by,
+leads.id AS lead_id,
+leads.createdbyid AS leads_created_by_id, 
+leads.mark_for_testing_training__c AS leads_mark_fortesting_training, 
+leads.vertical__c AS leads_vertical, 
+leads.recordtypeid AS leads_recordtype_id,
+leads.company AS company_name
+FROM combined
+LEFT JOIN `fulfillment-dwh-production.curated_data_shared_salesforce.lead` As leads
+       ON combined.account_id = leads.convertedaccountid
+      AND combined.grid__c = leads.grid__c
+LEFT JOIN `fulfillment-dwh-production.pandata_report.sales_lead_account_opp_aggregated` AS lao
+       ON combined.global_entity_id = lao.global_entity_id
+      AND combined.opportunity_id = lao.sf_opportunity_id
+      AND combined.email = lao.email_internal_non_pii
+WHERE business_type__c = "New Business" 
+AND NOT leads.mark_for_testing_training__c 
+AND NOT combined.mark_for_testing_training__c
+AND combined.stagename = "Closed Won"
+AND leads.createdbyid IN ("0056900000AVz3YAAT", "0056900000BRoR1AAL", "0056900000BSL0IAAX", 
+                              "0056900000BUli5AAD", "0056900000BV0qnAAD", "0056900000CRtp2AAD")
+AND combined.closedate >>= "2024-01-01"
+AND combined.vertical__c = "Restaurant"         
+),
+
+agg_final_closed_won AS (
+SELECT
+"" AS assigned_opp_month,
+global_entity_id,
+lead_id,
+leads_created_by_id,
+leads_mark_fortesting_training,
+grid__c,
+opportunity_id,
+opp_owner_full_name,
+  CASE 
+    WHEN user_type IS NULL THEN "null"
+    ELSE user_type
+  END AS user_type,
+closedate AS opp_closedate,
+opportunity_created_date,
+vertical__c,
+isclosed,
+"" AS cumulative_count
+FROM final),
+
+
+agg_closed_won AS (
+SELECT report_date,
+global_entity_id,
+user_type,
+COUNT(DISTINCT(grid__c)) AS count_grid
+FROM report_month 
+LEFT JOIN agg_final_closed_won
+ON report_month.report_date = DATE_TRUNC(agg_final_closed_won.opp_closedate, MONTH)
+
+GROUP BY 1,2,3),      
+
+agg_ssu_oppt_owned AS (SELECT 
+report_date,
+global_entity_id,
+user_type,
+SUM(cumulative_count) AS sum_cumulative_count
+FROM report_month      
+LEFT JOIN agg_final
+       ON report_month.report_date = DATE(agg_final.assigned_opp_month)   
+GROUP BY 1,2,3)
+
+SELECT 
+agg_ssu_oppt_owned.report_date,
+agg_ssu_oppt_owned.global_entity_id,
+agg_ssu_oppt_owned.user_type,
+agg_ssu_oppt_owned.sum_cumulative_count,
+agg_closed_won.count_grid
+FROM agg_ssu_oppt_owned
+LEFT JOIN agg_closed_won
+    ON  agg_ssu_oppt_owned.report_date = agg_closed_won.report_date
+   AND  agg_ssu_oppt_owned.global_entity_id = agg_closed_won.global_entity_id
+   AND  agg_ssu_oppt_owned.user_type = agg_closed_won.user_type]]></relation>
+            </properties>
+            <properties context='extract'>
+              <relation name='Extract' table='[Extract].[Extract]' type='table' />
+            </properties>
+          </object>
+        </objects>
+      </_.fcp.ObjectModelEncapsulateLegacy.true...object-graph>
+    </datasource>
+    <datasource caption='okr2 closedwon ssu oppty' inline='true' name='federated.1jflxsd14etanh11w1ipl0hjd0h2' version='18.1'>
+      <connection class='federated'>
+        <named-connections>
+          <named-connection caption='BigQuery' name='bigquery.17guwjg1sv2h2719p8r2b1w2jkd6'>
+            <connection CATALOG='fulfillment-dwh-production' EXECCATALOG='pd-data--adhoc' authentication='oauth' bq-dataset-fetch-rows='' bq-fetch-rows='' bq-fetch-tasks='' bq-large-fetch-rows='' bq-project-fetch-rows='' bq-response-rows='' class='bigquery' connection-dialect='google-sql' project='fulfillment-dwh-production' schema='pandata_report' server-oauth='' username='theeranop.wongtitirote@foodpanda.co.th' workgroup-auth-mode='prompt' />
+          </named-connection>
+        </named-connections>
+        <_.fcp.ObjectModelEncapsulateLegacy.false...relation connection='bigquery.17guwjg1sv2h2719p8r2b1w2jkd6' name='Custom SQL Query' type='text'>WITH sf_user AS (
+  SELECT DISTINCT
+    id AS sf_user_id,
+    TRIM(COALESCE(firstname, &quot;&quot;) || &quot; &quot; || COALESCE(lastname, &quot;&quot;)) AS owner_name,
+    isactive AS is_owner_active,
+    email,
+    central_job_role__c,
+    title,
+    job_role_vertical__c,
+    isactive,
+    COALESCE(ROW_NUMBER() OVER (PARTITION BY id ORDER BY DATETIME(lastmodifieddate) DESC) = 1) AS is_latest
+  FROM `fulfillment-dwh-production.curated_data_shared_salesforce.user`
+),
+
+combined AS (
+SELECT 
+account.country_code, 
+account,platform__c, 
+account.global_entity_id, 
+account.id AS account_id, 
+account.grid__c, 
+account.createddate, 
+accountsource, 
+account.mark_for_testing_training__c, 
+account.type, 
+account.vertical__c,
+account.vendor_grade__c,
+account.self_setup__c,
+account.createdbyid,
+account.revenue_model__c,
+sf_user.owner_name AS opp_owner_full_name,
+sf_user.email,
+sf_user.central_job_role__c,
+sf_user.job_role_vertical__c,
+sf_user.title,
+sf_user.isactive,
+opp.ownerid,
+opp.name,
+opp.business_type__c,
+opp.stagename,
+opp.closedate,
+opp.isclosed,
+opp.id AS opportunity_id,
+opp.createddate AS opportunity_created_date,
+account.vertical_segment__c, 
+account.key_vip_account__c, 
+account.key_account_sub_category__c,
+opp.iswon,
+opp.assigned_to__c,
+opp.probability,
+opp.leadsource,
+opp.createdbyid AS opp_created_by
+FROM `fulfillment-dwh-production.curated_data_shared_salesforce.account`  AS account
+LEFT JOIN `fulfillment-dwh-production.curated_data_shared_salesforce.opportunity` AS opp
+ON account.id = opp.accountid
+LEFT JOIN sf_user
+       ON sf_user.sf_user_id = opp.ownerid
+      AND sf_user.is_latest
+WHERE account.createddate &gt;&gt;= &apos;2022-01-01&apos;), 
+
+
+
+final AS (SELECT 
+combined.country_code,
+combined.platform__c, 
+combined.global_entity_id, 
+combined.account_id, 
+combined.grid__c, 
+combined.createddate, 
+combined.accountsource, 
+combined.mark_for_testing_training__c, 
+combined.type, 
+combined.vertical__c,
+combined.vendor_grade__c, 
+combined.self_setup__c,
+combined.createdbyid,
+combined.email,
+lao.user_type,
+combined.central_job_role__c,
+combined.title,
+combined.job_role_vertical__c,
+combined.isactive,
+combined.opp_owner_full_name,
+combined.ownerid,
+combined.name,
+combined.business_type__c,
+combined.stagename,
+combined.closedate,
+combined.isclosed,
+combined.opportunity_id,
+combined.vertical_segment__c, 
+combined.key_vip_account__c, 
+combined.key_account_sub_category__c,
+combined.revenue_model__c,
+combined.opportunity_created_date,
+combined.iswon,
+combined.assigned_to__c,
+combined.probability,
+combined.leadsource,
+combined.opp_created_by,
+leads.id AS lead_id,
+leads.createdbyid AS leads_created_by_id, 
+leads.mark_for_testing_training__c AS leads_mark_fortesting_training, 
+leads.vertical__c AS leads_vertical, 
+leads.recordtypeid AS leads_recordtype_id,
+leads.company AS company_name
+FROM combined
+LEFT JOIN `fulfillment-dwh-production.curated_data_shared_salesforce.lead` As leads
+       ON combined.account_id = leads.convertedaccountid
+      AND combined.grid__c = leads.grid__c
+LEFT JOIN `fulfillment-dwh-production.pandata_report.sales_lead_account_opp_aggregated` AS lao
+       ON combined.global_entity_id = lao.global_entity_id
+      AND combined.opportunity_id = lao.sf_opportunity_id
+      AND combined.email = lao.email_internal_non_pii
+WHERE business_type__c = &quot;New Business&quot; 
+AND NOT leads.mark_for_testing_training__c 
+AND NOT combined.mark_for_testing_training__c
+AND combined.stagename = &quot;Closed Won&quot;
+AND leads.createdbyid IN (&quot;0056900000AVz3YAAT&quot;, &quot;0056900000BRoR1AAL&quot;, &quot;0056900000BSL0IAAX&quot;, 
+                              &quot;0056900000BUli5AAD&quot;, &quot;0056900000BV0qnAAD&quot;, &quot;0056900000CRtp2AAD&quot;)
+AND combined.closedate &gt;&gt;= &quot;2024-01-01&quot;
+AND combined.vertical__c = &quot;Restaurant&quot;         
+)
+
+SELECT
+&quot;&quot; AS assigned_opp_month,
+global_entity_id,
+lead_id,
+leads_created_by_id,
+leads_mark_fortesting_training,
+grid__c,
+opportunity_id,
+opp_owner_full_name,
+user_type,
+closedate AS opp_closedate,
+opportunity_created_date,
+vertical__c,
+isclosed,
+&quot;&quot; AS cumulative_count
+FROM final</_.fcp.ObjectModelEncapsulateLegacy.false...relation>
+        <_.fcp.ObjectModelEncapsulateLegacy.true...relation connection='bigquery.17guwjg1sv2h2719p8r2b1w2jkd6' name='Custom SQL Query' type='text'>WITH sf_user AS (
+  SELECT DISTINCT
+    id AS sf_user_id,
+    TRIM(COALESCE(firstname, &quot;&quot;) || &quot; &quot; || COALESCE(lastname, &quot;&quot;)) AS owner_name,
+    isactive AS is_owner_active,
+    email,
+    central_job_role__c,
+    title,
+    job_role_vertical__c,
+    isactive,
+    COALESCE(ROW_NUMBER() OVER (PARTITION BY id ORDER BY DATETIME(lastmodifieddate) DESC) = 1) AS is_latest
+  FROM `fulfillment-dwh-production.curated_data_shared_salesforce.user`
+),
+
+combined AS (
+SELECT 
+account.country_code, 
+account,platform__c, 
+account.global_entity_id, 
+account.id AS account_id, 
+account.grid__c, 
+account.createddate, 
+accountsource, 
+account.mark_for_testing_training__c, 
+account.type, 
+account.vertical__c,
+account.vendor_grade__c,
+account.self_setup__c,
+account.createdbyid,
+account.revenue_model__c,
+sf_user.owner_name AS opp_owner_full_name,
+sf_user.email,
+sf_user.central_job_role__c,
+sf_user.job_role_vertical__c,
+sf_user.title,
+sf_user.isactive,
+opp.ownerid,
+opp.name,
+opp.business_type__c,
+opp.stagename,
+opp.closedate,
+opp.isclosed,
+opp.id AS opportunity_id,
+opp.createddate AS opportunity_created_date,
+account.vertical_segment__c, 
+account.key_vip_account__c, 
+account.key_account_sub_category__c,
+opp.iswon,
+opp.assigned_to__c,
+opp.probability,
+opp.leadsource,
+opp.createdbyid AS opp_created_by
+FROM `fulfillment-dwh-production.curated_data_shared_salesforce.account`  AS account
+LEFT JOIN `fulfillment-dwh-production.curated_data_shared_salesforce.opportunity` AS opp
+ON account.id = opp.accountid
+LEFT JOIN sf_user
+       ON sf_user.sf_user_id = opp.ownerid
+      AND sf_user.is_latest
+WHERE account.createddate &gt;&gt;= &apos;2022-01-01&apos;), 
+
+
+
+final AS (SELECT 
+combined.country_code,
+combined.platform__c, 
+combined.global_entity_id, 
+combined.account_id, 
+combined.grid__c, 
+combined.createddate, 
+combined.accountsource, 
+combined.mark_for_testing_training__c, 
+combined.type, 
+combined.vertical__c,
+combined.vendor_grade__c, 
+combined.self_setup__c,
+combined.createdbyid,
+combined.email,
+lao.user_type,
+combined.central_job_role__c,
+combined.title,
+combined.job_role_vertical__c,
+combined.isactive,
+combined.opp_owner_full_name,
+combined.ownerid,
+combined.name,
+combined.business_type__c,
+combined.stagename,
+combined.closedate,
+combined.isclosed,
+combined.opportunity_id,
+combined.vertical_segment__c, 
+combined.key_vip_account__c, 
+combined.key_account_sub_category__c,
+combined.revenue_model__c,
+combined.opportunity_created_date,
+combined.iswon,
+combined.assigned_to__c,
+combined.probability,
+combined.leadsource,
+combined.opp_created_by,
+leads.id AS lead_id,
+leads.createdbyid AS leads_created_by_id, 
+leads.mark_for_testing_training__c AS leads_mark_fortesting_training, 
+leads.vertical__c AS leads_vertical, 
+leads.recordtypeid AS leads_recordtype_id,
+leads.company AS company_name
+FROM combined
+LEFT JOIN `fulfillment-dwh-production.curated_data_shared_salesforce.lead` As leads
+       ON combined.account_id = leads.convertedaccountid
+      AND combined.grid__c = leads.grid__c
+LEFT JOIN `fulfillment-dwh-production.pandata_report.sales_lead_account_opp_aggregated` AS lao
+       ON combined.global_entity_id = lao.global_entity_id
+      AND combined.opportunity_id = lao.sf_opportunity_id
+      AND combined.email = lao.email_internal_non_pii
+WHERE business_type__c = &quot;New Business&quot; 
+AND NOT leads.mark_for_testing_training__c 
+AND NOT combined.mark_for_testing_training__c
+AND combined.stagename = &quot;Closed Won&quot;
+AND leads.createdbyid IN (&quot;0056900000AVz3YAAT&quot;, &quot;0056900000BRoR1AAL&quot;, &quot;0056900000BSL0IAAX&quot;, 
+                              &quot;0056900000BUli5AAD&quot;, &quot;0056900000BV0qnAAD&quot;, &quot;0056900000CRtp2AAD&quot;)
+AND combined.closedate &gt;&gt;= &quot;2024-01-01&quot;
+AND combined.vertical__c = &quot;Restaurant&quot;         
+)
+
+SELECT
+&quot;&quot; AS assigned_opp_month,
+global_entity_id,
+lead_id,
+leads_created_by_id,
+leads_mark_fortesting_training,
+grid__c,
+opportunity_id,
+opp_owner_full_name,
+user_type,
+closedate AS opp_closedate,
+opportunity_created_date,
+vertical__c,
+isclosed,
+&quot;&quot; AS cumulative_count
+FROM final</_.fcp.ObjectModelEncapsulateLegacy.true...relation>
+        <metadata-records>
+          <metadata-record class='column'>
+            <remote-name>assigned_opp_month</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[assigned_opp_month]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>assigned_opp_month</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_EDAED738775B4D3DA21B719FBFCF3D19]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>global_entity_id</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[global_entity_id]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>global_entity_id</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_EDAED738775B4D3DA21B719FBFCF3D19]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>lead_id</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[lead_id]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>lead_id</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_EDAED738775B4D3DA21B719FBFCF3D19]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>leads_created_by_id</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[leads_created_by_id]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>leads_created_by_id</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_EDAED738775B4D3DA21B719FBFCF3D19]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>leads_mark_fortesting_training</remote-name>
+            <remote-type>11</remote-type>
+            <local-name>[leads_mark_fortesting_training]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>leads_mark_fortesting_training</remote-alias>
+            <local-type>boolean</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_EDAED738775B4D3DA21B719FBFCF3D19]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>grid__c</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[grid__c]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>grid__c</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_EDAED738775B4D3DA21B719FBFCF3D19]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>opportunity_id</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[opportunity_id]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>opportunity_id</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_EDAED738775B4D3DA21B719FBFCF3D19]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>opp_owner_full_name</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[opp_owner_full_name]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>opp_owner_full_name</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_EDAED738775B4D3DA21B719FBFCF3D19]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>user_type</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[user_type]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>user_type</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_EDAED738775B4D3DA21B719FBFCF3D19]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>opp_closedate</remote-name>
+            <remote-type>7</remote-type>
+            <local-name>[opp_closedate]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>opp_closedate</remote-alias>
+            <local-type>date</local-type>
+            <aggregation>Year</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_EDAED738775B4D3DA21B719FBFCF3D19]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>opportunity_created_date</remote-name>
+            <remote-type>7</remote-type>
+            <local-name>[opportunity_created_date]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>opportunity_created_date</remote-alias>
+            <local-type>datetime</local-type>
+            <aggregation>Year</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_EDAED738775B4D3DA21B719FBFCF3D19]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>vertical__c</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[vertical__c]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>vertical__c</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_EDAED738775B4D3DA21B719FBFCF3D19]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>isclosed</remote-name>
+            <remote-type>11</remote-type>
+            <local-name>[isclosed]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>isclosed</remote-alias>
+            <local-type>boolean</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_EDAED738775B4D3DA21B719FBFCF3D19]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>cumulative_count</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[cumulative_count]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>cumulative_count</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_EDAED738775B4D3DA21B719FBFCF3D19]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+        </metadata-records>
+      </connection>
+      <aliases enabled='yes' />
+      <_.fcp.ObjectModelTableType.true...column caption='Custom SQL Query' datatype='table' name='[__tableau_internal_object_id__].[_EDAED738775B4D3DA21B719FBFCF3D19]' role='measure' type='quantitative' />
+      <column aggregation='CountD' datatype='string' default-role='measure' default-type='quantitative' name='[grid__c]' role='dimension' type='nominal' />
+      <extract _.fcp.ObjectModelExtractV2.true...object-id='' count='-1' enabled='true' units='records'>
+        <connection access_mode='readonly' author-locale='en_US' class='hyper' dbname='extract/e4/00/{B78D52D4-9DFF-4194-B5B8-70C4C35048D5}/federated_1jflxsd14etanh11w1ipl0.hyper' extract-engine='true' schema='Extract' sslmode='' tablename='Extract' update-time='08/22/2025 02:19:54 AM'>
+          <_.fcp.ObjectModelEncapsulateLegacy.false...relation name='Extract' table='[Extract].[Extract]' type='table' />
+          <_.fcp.ObjectModelEncapsulateLegacy.true...relation name='Extract' table='[Extract].[Extract]' type='table' />
+          <metadata-records>
+            <metadata-record class='column'>
+              <remote-name>assigned_opp_month</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[assigned_opp_month]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>assigned_opp_month</remote-alias>
+              <ordinal>0</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>1</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_EDAED738775B4D3DA21B719FBFCF3D19]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>global_entity_id</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[global_entity_id]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>global_entity_id</remote-alias>
+              <ordinal>1</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>40</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_EDAED738775B4D3DA21B719FBFCF3D19]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>lead_id</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[lead_id]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>lead_id</remote-alias>
+              <ordinal>2</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>122548</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_EDAED738775B4D3DA21B719FBFCF3D19]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>leads_created_by_id</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[leads_created_by_id]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>leads_created_by_id</remote-alias>
+              <ordinal>3</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>5</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_EDAED738775B4D3DA21B719FBFCF3D19]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>leads_mark_fortesting_training</remote-name>
+              <remote-type>11</remote-type>
+              <local-name>[leads_mark_fortesting_training]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>leads_mark_fortesting_training</remote-alias>
+              <ordinal>4</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>boolean</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>1</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_EDAED738775B4D3DA21B719FBFCF3D19]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>grid__c</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[grid__c]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>grid__c</remote-alias>
+              <ordinal>5</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>122548</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_EDAED738775B4D3DA21B719FBFCF3D19]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>opportunity_id</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[opportunity_id]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>opportunity_id</remote-alias>
+              <ordinal>6</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>122548</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_EDAED738775B4D3DA21B719FBFCF3D19]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>opp_owner_full_name</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[opp_owner_full_name]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>opp_owner_full_name</remote-alias>
+              <ordinal>7</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>1218</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_EDAED738775B4D3DA21B719FBFCF3D19]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>user_type</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[user_type]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>user_type</remote-alias>
+              <ordinal>8</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>6</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_EDAED738775B4D3DA21B719FBFCF3D19]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>opp_closedate</remote-name>
+              <remote-type>133</remote-type>
+              <local-name>[opp_closedate]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>opp_closedate</remote-alias>
+              <ordinal>9</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>date</local-type>
+              <aggregation>Year</aggregation>
+              <approx-count>1919</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_EDAED738775B4D3DA21B719FBFCF3D19]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>opportunity_created_date</remote-name>
+              <remote-type>135</remote-type>
+              <local-name>[opportunity_created_date]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>opportunity_created_date</remote-alias>
+              <ordinal>10</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>datetime</local-type>
+              <aggregation>Year</aggregation>
+              <approx-count>116082</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_EDAED738775B4D3DA21B719FBFCF3D19]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>vertical__c</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[vertical__c]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>vertical__c</remote-alias>
+              <ordinal>11</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>1</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_EDAED738775B4D3DA21B719FBFCF3D19]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>isclosed</remote-name>
+              <remote-type>11</remote-type>
+              <local-name>[isclosed]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>isclosed</remote-alias>
+              <ordinal>12</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>boolean</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>1</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_EDAED738775B4D3DA21B719FBFCF3D19]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>cumulative_count</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[cumulative_count]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>cumulative_count</remote-alias>
+              <ordinal>13</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>1</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_EDAED738775B4D3DA21B719FBFCF3D19]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+          </metadata-records>
+        </connection>
+      </extract>
+      <layout _.fcp.SchemaViewerObjectModel.false...dim-percentage='0.5' _.fcp.SchemaViewerObjectModel.false...measure-percentage='0.4' dim-ordering='alphabetic' measure-ordering='alphabetic' show-structure='true' />
+      <semantic-values>
+        <semantic-value key='[Country].[Name]' value='&quot;Singapore&quot;' />
+      </semantic-values>
+      <_.fcp.ObjectModelEncapsulateLegacy.true...object-graph>
+        <objects>
+          <object caption='Custom SQL Query' id='_EDAED738775B4D3DA21B719FBFCF3D19'>
+            <properties context=''>
+              <relation connection='bigquery.17guwjg1sv2h2719p8r2b1w2jkd6' name='Custom SQL Query' type='text'>WITH sf_user AS (
+  SELECT DISTINCT
+    id AS sf_user_id,
+    TRIM(COALESCE(firstname, &quot;&quot;) || &quot; &quot; || COALESCE(lastname, &quot;&quot;)) AS owner_name,
+    isactive AS is_owner_active,
+    email,
+    central_job_role__c,
+    title,
+    job_role_vertical__c,
+    isactive,
+    COALESCE(ROW_NUMBER() OVER (PARTITION BY id ORDER BY DATETIME(lastmodifieddate) DESC) = 1) AS is_latest
+  FROM `fulfillment-dwh-production.curated_data_shared_salesforce.user`
+),
+
+combined AS (
+SELECT 
+account.country_code, 
+account,platform__c, 
+account.global_entity_id, 
+account.id AS account_id, 
+account.grid__c, 
+account.createddate, 
+accountsource, 
+account.mark_for_testing_training__c, 
+account.type, 
+account.vertical__c,
+account.vendor_grade__c,
+account.self_setup__c,
+account.createdbyid,
+account.revenue_model__c,
+sf_user.owner_name AS opp_owner_full_name,
+sf_user.email,
+sf_user.central_job_role__c,
+sf_user.job_role_vertical__c,
+sf_user.title,
+sf_user.isactive,
+opp.ownerid,
+opp.name,
+opp.business_type__c,
+opp.stagename,
+opp.closedate,
+opp.isclosed,
+opp.id AS opportunity_id,
+opp.createddate AS opportunity_created_date,
+account.vertical_segment__c, 
+account.key_vip_account__c, 
+account.key_account_sub_category__c,
+opp.iswon,
+opp.assigned_to__c,
+opp.probability,
+opp.leadsource,
+opp.createdbyid AS opp_created_by
+FROM `fulfillment-dwh-production.curated_data_shared_salesforce.account`  AS account
+LEFT JOIN `fulfillment-dwh-production.curated_data_shared_salesforce.opportunity` AS opp
+ON account.id = opp.accountid
+LEFT JOIN sf_user
+       ON sf_user.sf_user_id = opp.ownerid
+      AND sf_user.is_latest
+WHERE account.createddate &gt;&gt;= &apos;2022-01-01&apos;), 
+
+
+
+final AS (SELECT 
+combined.country_code,
+combined.platform__c, 
+combined.global_entity_id, 
+combined.account_id, 
+combined.grid__c, 
+combined.createddate, 
+combined.accountsource, 
+combined.mark_for_testing_training__c, 
+combined.type, 
+combined.vertical__c,
+combined.vendor_grade__c, 
+combined.self_setup__c,
+combined.createdbyid,
+combined.email,
+lao.user_type,
+combined.central_job_role__c,
+combined.title,
+combined.job_role_vertical__c,
+combined.isactive,
+combined.opp_owner_full_name,
+combined.ownerid,
+combined.name,
+combined.business_type__c,
+combined.stagename,
+combined.closedate,
+combined.isclosed,
+combined.opportunity_id,
+combined.vertical_segment__c, 
+combined.key_vip_account__c, 
+combined.key_account_sub_category__c,
+combined.revenue_model__c,
+combined.opportunity_created_date,
+combined.iswon,
+combined.assigned_to__c,
+combined.probability,
+combined.leadsource,
+combined.opp_created_by,
+leads.id AS lead_id,
+leads.createdbyid AS leads_created_by_id, 
+leads.mark_for_testing_training__c AS leads_mark_fortesting_training, 
+leads.vertical__c AS leads_vertical, 
+leads.recordtypeid AS leads_recordtype_id,
+leads.company AS company_name
+FROM combined
+LEFT JOIN `fulfillment-dwh-production.curated_data_shared_salesforce.lead` As leads
+       ON combined.account_id = leads.convertedaccountid
+      AND combined.grid__c = leads.grid__c
+LEFT JOIN `fulfillment-dwh-production.pandata_report.sales_lead_account_opp_aggregated` AS lao
+       ON combined.global_entity_id = lao.global_entity_id
+      AND combined.opportunity_id = lao.sf_opportunity_id
+      AND combined.email = lao.email_internal_non_pii
+WHERE business_type__c = &quot;New Business&quot; 
+AND NOT leads.mark_for_testing_training__c 
+AND NOT combined.mark_for_testing_training__c
+AND combined.stagename = &quot;Closed Won&quot;
+AND leads.createdbyid IN (&quot;0056900000AVz3YAAT&quot;, &quot;0056900000BRoR1AAL&quot;, &quot;0056900000BSL0IAAX&quot;, 
+                              &quot;0056900000BUli5AAD&quot;, &quot;0056900000BV0qnAAD&quot;, &quot;0056900000CRtp2AAD&quot;)
+AND combined.closedate &gt;&gt;= &quot;2024-01-01&quot;
+AND combined.vertical__c = &quot;Restaurant&quot;         
+)
+
+SELECT
+&quot;&quot; AS assigned_opp_month,
+global_entity_id,
+lead_id,
+leads_created_by_id,
+leads_mark_fortesting_training,
+grid__c,
+opportunity_id,
+opp_owner_full_name,
+user_type,
+closedate AS opp_closedate,
+opportunity_created_date,
+vertical__c,
+isclosed,
+&quot;&quot; AS cumulative_count
+FROM final</relation>
+            </properties>
+            <properties context='extract'>
+              <relation name='Extract' table='[Extract].[Extract]' type='table' />
+            </properties>
+          </object>
+        </objects>
+      </_.fcp.ObjectModelEncapsulateLegacy.true...object-graph>
+    </datasource>
+    <datasource caption='OKR3' inline='true' name='federated.1kmkuzn1gh5zfo1h5dr4k0uaskse' version='18.1'>
+      <connection class='federated'>
+        <named-connections>
+          <named-connection caption='BigQuery' name='bigquery.04hy7d518ua49s19tra3v172mys4'>
+            <connection CATALOG='fulfillment-dwh-production' EXECCATALOG='pd-data--adhoc' authentication='oauth' bq-dataset-fetch-rows='' bq-fetch-rows='' bq-fetch-tasks='' bq-large-fetch-rows='' bq-project-fetch-rows='' bq-response-rows='' class='bigquery' connection-dialect='google-sql' project='fulfillment-dwh-production' schema='pandata_report' server-oauth='' username='theeranop.wongtitirote@foodpanda.co.th' workgroup-auth-mode='prompt' />
+          </named-connection>
+        </named-connections>
+        <_.fcp.ObjectModelEncapsulateLegacy.false...relation connection='bigquery.04hy7d518ua49s19tra3v172mys4' name='Custom SQL Query' type='text'><![CDATA[WITH sf_user AS (
+  SELECT DISTINCT
+    id AS sf_user_id,
+    TRIM(COALESCE(firstname, "") || " " || COALESCE(lastname, "")) AS owner_name,
+    isactive AS is_owner_active,
+    email,
+    central_job_role__c,
+    title,
+    job_role_vertical__c,
+    isactive,
+    ROW_NUMBER() OVER (PARTITION BY id ORDER BY DATETIME(lastmodifieddate) DESC) = 1 AS is_latest
+  FROM `fulfillment-dwh-production.curated_data_shared_salesforce.user`
+),
+base_data AS (
+  SELECT 
+    TIMESTAMP_TRUNC(TIMESTAMP(opp_history.createddate), MONTH) AS month,
+    opp.global_entity_id,
+    leads.id AS lead_id,
+    leads.createdbyid AS leads_created_by_id,
+    leads.mark_for_testing_training__c AS leads_mark_fortesting_training,
+    acc.grid__c,
+    opp.id AS opp_id,
+    sf_user.owner_name AS opp_owner_full_name,
+    opp.closedate,
+    opp.createddate AS opp_createddate,
+    opp.vertical__c,
+    opp.isclosed,
+    opp_history.newvalue,
+    opp_history.oldvalue,
+    opp_history.createddate AS opp_history_createddate
+  FROM `fulfillment-dwh-production.curated_data_shared_salesforce.opportunity` AS opp
+  LEFT JOIN `fulfillment-dwh-production.curated_data_shared_salesforce.account` AS acc
+         ON opp.global_entity_id = acc.global_entity_id 
+        AND opp.accountid = acc.id
+  LEFT JOIN `fulfillment-dwh-production.curated_data_shared_salesforce.lead` AS leads
+         ON acc.id = leads.convertedaccountid
+        AND acc.grid__c = leads.grid__c      
+  LEFT JOIN `fulfillment-dwh-production.curated_data_shared_salesforce.opportunityfieldhistory` AS opp_history
+         ON opp.global_entity_id = opp_history.global_entity_id
+        AND opp.id = opp_history.opportunityid
+  LEFT JOIN sf_user
+         ON sf_user.sf_user_id = opp.ownerid
+        AND sf_user.is_latest     
+  WHERE leads.createdbyid IN ("0056900000AVz3YAAT", "0056900000BRoR1AAL", "0056900000BSL0IAAX", 
+                              "0056900000BUli5AAD", "0056900000BV0qnAAD", "0056900000CRtp2AAD")
+    AND acc.vertical__c = "Restaurant"
+    AND opp.createddate >>= "2024-01-01"
+    AND opp_history.field = "Owner"
+    AND opp_history.newvalue LIKE "0%"
+),
+expanded_months AS (
+  SELECT 
+    d1.month AS target_month,
+    d2.newvalue,
+    d2.global_entity_id,
+    d2.lead_id,
+    d2.leads_created_by_id,
+    d2.leads_mark_fortesting_training,
+    d2.grid__c,
+    d2.opp_id,
+    d2.opp_owner_full_name,
+    d2.closedate,
+    d2.opp_createddate,
+    d2.vertical__c,
+    d2.isclosed
+  FROM base_data d1
+  JOIN base_data d2
+    ON d2.opp_history_createddate <<= TIMESTAMP(DATE_ADD(DATE(d1.month), INTERVAL 1 MONTH))
+    AND d2.opp_history_createddate >> TIMESTAMP(DATE_SUB(DATE(d1.month), INTERVAL 1 MONTH))
+),
+cumulative_counts AS (
+  SELECT 
+    target_month AS month,
+    global_entity_id,
+    lead_id,
+    leads_created_by_id,
+    leads_mark_fortesting_training,
+    grid__c,
+    opp_id,
+    opp_owner_full_name,
+    closedate,
+    opp_createddate,
+    vertical__c,
+    isclosed,
+    COUNT(DISTINCT newvalue) AS cumulative_count
+  FROM expanded_months
+  GROUP BY 
+    target_month, 
+    global_entity_id, 
+    lead_id, 
+    leads_created_by_id, 
+    leads_mark_fortesting_training, 
+    grid__c, 
+    opp_id, 
+    opp_owner_full_name, 
+    closedate, 
+    opp_createddate, 
+    vertical__c, 
+    isclosed
+)
+SELECT 
+  month AS assigned_opp_month,
+  cumulative_counts.global_entity_id,
+  lead_id,
+  leads_created_by_id,
+  leads_mark_fortesting_training,
+  grid__c,
+  opp_id AS opportunity_id,
+  opp_owner_full_name,
+  lao.user_type,
+  closedate AS opp_closedate,
+  opp_createddate AS opportunity_created_date,
+  vertical__c,
+  isclosed,
+  cumulative_count
+FROM cumulative_counts
+LEFT JOIN `fulfillment-dwh-production.pandata_report.sales_lead_account_opp_aggregated` AS lao
+       ON cumulative_counts.global_entity_id = lao.global_entity_id
+      AND cumulative_counts.opp_id = lao.sf_opportunity_id]]></_.fcp.ObjectModelEncapsulateLegacy.false...relation>
+        <_.fcp.ObjectModelEncapsulateLegacy.true...relation connection='bigquery.04hy7d518ua49s19tra3v172mys4' name='Custom SQL Query' type='text'><![CDATA[WITH sf_user AS (
+  SELECT DISTINCT
+    id AS sf_user_id,
+    TRIM(COALESCE(firstname, "") || " " || COALESCE(lastname, "")) AS owner_name,
+    isactive AS is_owner_active,
+    email,
+    central_job_role__c,
+    title,
+    job_role_vertical__c,
+    isactive,
+    ROW_NUMBER() OVER (PARTITION BY id ORDER BY DATETIME(lastmodifieddate) DESC) = 1 AS is_latest
+  FROM `fulfillment-dwh-production.curated_data_shared_salesforce.user`
+),
+base_data AS (
+  SELECT 
+    TIMESTAMP_TRUNC(TIMESTAMP(opp_history.createddate), MONTH) AS month,
+    opp.global_entity_id,
+    leads.id AS lead_id,
+    leads.createdbyid AS leads_created_by_id,
+    leads.mark_for_testing_training__c AS leads_mark_fortesting_training,
+    acc.grid__c,
+    opp.id AS opp_id,
+    sf_user.owner_name AS opp_owner_full_name,
+    opp.closedate,
+    opp.createddate AS opp_createddate,
+    opp.vertical__c,
+    opp.isclosed,
+    opp_history.newvalue,
+    opp_history.oldvalue,
+    opp_history.createddate AS opp_history_createddate
+  FROM `fulfillment-dwh-production.curated_data_shared_salesforce.opportunity` AS opp
+  LEFT JOIN `fulfillment-dwh-production.curated_data_shared_salesforce.account` AS acc
+         ON opp.global_entity_id = acc.global_entity_id 
+        AND opp.accountid = acc.id
+  LEFT JOIN `fulfillment-dwh-production.curated_data_shared_salesforce.lead` AS leads
+         ON acc.id = leads.convertedaccountid
+        AND acc.grid__c = leads.grid__c      
+  LEFT JOIN `fulfillment-dwh-production.curated_data_shared_salesforce.opportunityfieldhistory` AS opp_history
+         ON opp.global_entity_id = opp_history.global_entity_id
+        AND opp.id = opp_history.opportunityid
+  LEFT JOIN sf_user
+         ON sf_user.sf_user_id = opp.ownerid
+        AND sf_user.is_latest     
+  WHERE leads.createdbyid IN ("0056900000AVz3YAAT", "0056900000BRoR1AAL", "0056900000BSL0IAAX", 
+                              "0056900000BUli5AAD", "0056900000BV0qnAAD", "0056900000CRtp2AAD")
+    AND acc.vertical__c = "Restaurant"
+    AND opp.createddate >>= "2024-01-01"
+    AND opp_history.field = "Owner"
+    AND opp_history.newvalue LIKE "0%"
+),
+expanded_months AS (
+  SELECT 
+    d1.month AS target_month,
+    d2.newvalue,
+    d2.global_entity_id,
+    d2.lead_id,
+    d2.leads_created_by_id,
+    d2.leads_mark_fortesting_training,
+    d2.grid__c,
+    d2.opp_id,
+    d2.opp_owner_full_name,
+    d2.closedate,
+    d2.opp_createddate,
+    d2.vertical__c,
+    d2.isclosed
+  FROM base_data d1
+  JOIN base_data d2
+    ON d2.opp_history_createddate <<= TIMESTAMP(DATE_ADD(DATE(d1.month), INTERVAL 1 MONTH))
+    AND d2.opp_history_createddate >> TIMESTAMP(DATE_SUB(DATE(d1.month), INTERVAL 1 MONTH))
+),
+cumulative_counts AS (
+  SELECT 
+    target_month AS month,
+    global_entity_id,
+    lead_id,
+    leads_created_by_id,
+    leads_mark_fortesting_training,
+    grid__c,
+    opp_id,
+    opp_owner_full_name,
+    closedate,
+    opp_createddate,
+    vertical__c,
+    isclosed,
+    COUNT(DISTINCT newvalue) AS cumulative_count
+  FROM expanded_months
+  GROUP BY 
+    target_month, 
+    global_entity_id, 
+    lead_id, 
+    leads_created_by_id, 
+    leads_mark_fortesting_training, 
+    grid__c, 
+    opp_id, 
+    opp_owner_full_name, 
+    closedate, 
+    opp_createddate, 
+    vertical__c, 
+    isclosed
+)
+SELECT 
+  month AS assigned_opp_month,
+  cumulative_counts.global_entity_id,
+  lead_id,
+  leads_created_by_id,
+  leads_mark_fortesting_training,
+  grid__c,
+  opp_id AS opportunity_id,
+  opp_owner_full_name,
+  lao.user_type,
+  closedate AS opp_closedate,
+  opp_createddate AS opportunity_created_date,
+  vertical__c,
+  isclosed,
+  cumulative_count
+FROM cumulative_counts
+LEFT JOIN `fulfillment-dwh-production.pandata_report.sales_lead_account_opp_aggregated` AS lao
+       ON cumulative_counts.global_entity_id = lao.global_entity_id
+      AND cumulative_counts.opp_id = lao.sf_opportunity_id]]></_.fcp.ObjectModelEncapsulateLegacy.true...relation>
+        <metadata-records>
+          <metadata-record class='column'>
+            <remote-name>assigned_opp_month</remote-name>
+            <remote-type>7</remote-type>
+            <local-name>[assigned_opp_month]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>assigned_opp_month</remote-alias>
+            <local-type>datetime</local-type>
+            <aggregation>Year</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_4A2DD7B979C94ABC87672FD502B0E68A]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>global_entity_id</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[global_entity_id]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>global_entity_id</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_4A2DD7B979C94ABC87672FD502B0E68A]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>lead_id</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[lead_id]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>lead_id</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_4A2DD7B979C94ABC87672FD502B0E68A]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>leads_created_by_id</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[leads_created_by_id]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>leads_created_by_id</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_4A2DD7B979C94ABC87672FD502B0E68A]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>leads_mark_fortesting_training</remote-name>
+            <remote-type>11</remote-type>
+            <local-name>[leads_mark_fortesting_training]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>leads_mark_fortesting_training</remote-alias>
+            <local-type>boolean</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_4A2DD7B979C94ABC87672FD502B0E68A]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>grid__c</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[grid__c]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>grid__c</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_4A2DD7B979C94ABC87672FD502B0E68A]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>opportunity_id</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[opportunity_id]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>opportunity_id</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_4A2DD7B979C94ABC87672FD502B0E68A]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>opp_owner_full_name</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[opp_owner_full_name]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>opp_owner_full_name</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_4A2DD7B979C94ABC87672FD502B0E68A]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>user_type</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[user_type]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>user_type</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_4A2DD7B979C94ABC87672FD502B0E68A]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>opp_closedate</remote-name>
+            <remote-type>7</remote-type>
+            <local-name>[opp_closedate]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>opp_closedate</remote-alias>
+            <local-type>date</local-type>
+            <aggregation>Year</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_4A2DD7B979C94ABC87672FD502B0E68A]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>opportunity_created_date</remote-name>
+            <remote-type>7</remote-type>
+            <local-name>[opportunity_created_date]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>opportunity_created_date</remote-alias>
+            <local-type>datetime</local-type>
+            <aggregation>Year</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_4A2DD7B979C94ABC87672FD502B0E68A]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>vertical__c</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[vertical__c]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>vertical__c</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_4A2DD7B979C94ABC87672FD502B0E68A]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>isclosed</remote-name>
+            <remote-type>11</remote-type>
+            <local-name>[isclosed]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>isclosed</remote-alias>
+            <local-type>boolean</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_4A2DD7B979C94ABC87672FD502B0E68A]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>cumulative_count</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[cumulative_count]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>cumulative_count</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_4A2DD7B979C94ABC87672FD502B0E68A]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+        </metadata-records>
+      </connection>
+      <aliases enabled='yes' />
+      <_.fcp.ObjectModelTableType.true...column caption='Custom SQL Query' datatype='table' name='[__tableau_internal_object_id__].[_4A2DD7B979C94ABC87672FD502B0E68A]' role='measure' type='quantitative' />
+      <extract _.fcp.ObjectModelExtractV2.true...object-id='' count='-1' enabled='true' units='records'>
+        <connection access_mode='readonly' author-locale='en_US' class='hyper' dbname='extract/e4/00/{B78D52D4-9DFF-4194-B5B8-70C4C35048D5}/federated_1kmkuzn1gh5zfo1h5dr4k0.hyper' extract-engine='true' schema='Extract' sslmode='' tablename='Extract' update-time='08/22/2025 02:23:57 AM'>
+          <_.fcp.ObjectModelEncapsulateLegacy.false...relation name='Extract' table='[Extract].[Extract]' type='table' />
+          <_.fcp.ObjectModelEncapsulateLegacy.true...relation name='Extract' table='[Extract].[Extract]' type='table' />
+          <metadata-records>
+            <metadata-record class='column'>
+              <remote-name>assigned_opp_month</remote-name>
+              <remote-type>135</remote-type>
+              <local-name>[assigned_opp_month]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>assigned_opp_month</remote-alias>
+              <ordinal>0</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>datetime</local-type>
+              <aggregation>Year</aggregation>
+              <approx-count>20</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_4A2DD7B979C94ABC87672FD502B0E68A]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>global_entity_id</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[global_entity_id]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>global_entity_id</remote-alias>
+              <ordinal>1</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>15</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_4A2DD7B979C94ABC87672FD502B0E68A]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>lead_id</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[lead_id]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>lead_id</remote-alias>
+              <ordinal>2</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>345782</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_4A2DD7B979C94ABC87672FD502B0E68A]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>leads_created_by_id</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[leads_created_by_id]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>leads_created_by_id</remote-alias>
+              <ordinal>3</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>5</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_4A2DD7B979C94ABC87672FD502B0E68A]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>leads_mark_fortesting_training</remote-name>
+              <remote-type>11</remote-type>
+              <local-name>[leads_mark_fortesting_training]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>leads_mark_fortesting_training</remote-alias>
+              <ordinal>4</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>boolean</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>1</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_4A2DD7B979C94ABC87672FD502B0E68A]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>grid__c</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[grid__c]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>grid__c</remote-alias>
+              <ordinal>5</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>345782</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_4A2DD7B979C94ABC87672FD502B0E68A]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>opportunity_id</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[opportunity_id]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>opportunity_id</remote-alias>
+              <ordinal>6</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>367354</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_4A2DD7B979C94ABC87672FD502B0E68A]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>opp_owner_full_name</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[opp_owner_full_name]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>opp_owner_full_name</remote-alias>
+              <ordinal>7</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>1647</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_4A2DD7B979C94ABC87672FD502B0E68A]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>user_type</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[user_type]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>user_type</remote-alias>
+              <ordinal>8</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>6</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_4A2DD7B979C94ABC87672FD502B0E68A]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>opp_closedate</remote-name>
+              <remote-type>133</remote-type>
+              <local-name>[opp_closedate]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>opp_closedate</remote-alias>
+              <ordinal>9</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>date</local-type>
+              <aggregation>Year</aggregation>
+              <approx-count>1512</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_4A2DD7B979C94ABC87672FD502B0E68A]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>opportunity_created_date</remote-name>
+              <remote-type>135</remote-type>
+              <local-name>[opportunity_created_date]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>opportunity_created_date</remote-alias>
+              <ordinal>10</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>datetime</local-type>
+              <aggregation>Year</aggregation>
+              <approx-count>204546</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_4A2DD7B979C94ABC87672FD502B0E68A]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>vertical__c</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[vertical__c]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>vertical__c</remote-alias>
+              <ordinal>11</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>1</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_4A2DD7B979C94ABC87672FD502B0E68A]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>isclosed</remote-name>
+              <remote-type>11</remote-type>
+              <local-name>[isclosed]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>isclosed</remote-alias>
+              <ordinal>12</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>boolean</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>2</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_4A2DD7B979C94ABC87672FD502B0E68A]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>cumulative_count</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[cumulative_count]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>cumulative_count</remote-alias>
+              <ordinal>13</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>4</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_4A2DD7B979C94ABC87672FD502B0E68A]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+          </metadata-records>
+        </connection>
+      </extract>
+      <layout _.fcp.SchemaViewerObjectModel.false...dim-percentage='0.5' _.fcp.SchemaViewerObjectModel.false...measure-percentage='0.4' dim-ordering='alphabetic' measure-ordering='alphabetic' show-structure='true' />
+      <semantic-values>
+        <semantic-value key='[Country].[Name]' value='&quot;Singapore&quot;' />
+      </semantic-values>
+      <_.fcp.ObjectModelEncapsulateLegacy.true...object-graph>
+        <objects>
+          <object caption='Custom SQL Query' id='_4A2DD7B979C94ABC87672FD502B0E68A'>
+            <properties context=''>
+              <relation connection='bigquery.04hy7d518ua49s19tra3v172mys4' name='Custom SQL Query' type='text'><![CDATA[WITH sf_user AS (
+  SELECT DISTINCT
+    id AS sf_user_id,
+    TRIM(COALESCE(firstname, "") || " " || COALESCE(lastname, "")) AS owner_name,
+    isactive AS is_owner_active,
+    email,
+    central_job_role__c,
+    title,
+    job_role_vertical__c,
+    isactive,
+    ROW_NUMBER() OVER (PARTITION BY id ORDER BY DATETIME(lastmodifieddate) DESC) = 1 AS is_latest
+  FROM `fulfillment-dwh-production.curated_data_shared_salesforce.user`
+),
+base_data AS (
+  SELECT 
+    TIMESTAMP_TRUNC(TIMESTAMP(opp_history.createddate), MONTH) AS month,
+    opp.global_entity_id,
+    leads.id AS lead_id,
+    leads.createdbyid AS leads_created_by_id,
+    leads.mark_for_testing_training__c AS leads_mark_fortesting_training,
+    acc.grid__c,
+    opp.id AS opp_id,
+    sf_user.owner_name AS opp_owner_full_name,
+    opp.closedate,
+    opp.createddate AS opp_createddate,
+    opp.vertical__c,
+    opp.isclosed,
+    opp_history.newvalue,
+    opp_history.oldvalue,
+    opp_history.createddate AS opp_history_createddate
+  FROM `fulfillment-dwh-production.curated_data_shared_salesforce.opportunity` AS opp
+  LEFT JOIN `fulfillment-dwh-production.curated_data_shared_salesforce.account` AS acc
+         ON opp.global_entity_id = acc.global_entity_id 
+        AND opp.accountid = acc.id
+  LEFT JOIN `fulfillment-dwh-production.curated_data_shared_salesforce.lead` AS leads
+         ON acc.id = leads.convertedaccountid
+        AND acc.grid__c = leads.grid__c      
+  LEFT JOIN `fulfillment-dwh-production.curated_data_shared_salesforce.opportunityfieldhistory` AS opp_history
+         ON opp.global_entity_id = opp_history.global_entity_id
+        AND opp.id = opp_history.opportunityid
+  LEFT JOIN sf_user
+         ON sf_user.sf_user_id = opp.ownerid
+        AND sf_user.is_latest     
+  WHERE leads.createdbyid IN ("0056900000AVz3YAAT", "0056900000BRoR1AAL", "0056900000BSL0IAAX", 
+                              "0056900000BUli5AAD", "0056900000BV0qnAAD", "0056900000CRtp2AAD")
+    AND acc.vertical__c = "Restaurant"
+    AND opp.createddate >>= "2024-01-01"
+    AND opp_history.field = "Owner"
+    AND opp_history.newvalue LIKE "0%"
+),
+expanded_months AS (
+  SELECT 
+    d1.month AS target_month,
+    d2.newvalue,
+    d2.global_entity_id,
+    d2.lead_id,
+    d2.leads_created_by_id,
+    d2.leads_mark_fortesting_training,
+    d2.grid__c,
+    d2.opp_id,
+    d2.opp_owner_full_name,
+    d2.closedate,
+    d2.opp_createddate,
+    d2.vertical__c,
+    d2.isclosed
+  FROM base_data d1
+  JOIN base_data d2
+    ON d2.opp_history_createddate <<= TIMESTAMP(DATE_ADD(DATE(d1.month), INTERVAL 1 MONTH))
+    AND d2.opp_history_createddate >> TIMESTAMP(DATE_SUB(DATE(d1.month), INTERVAL 1 MONTH))
+),
+cumulative_counts AS (
+  SELECT 
+    target_month AS month,
+    global_entity_id,
+    lead_id,
+    leads_created_by_id,
+    leads_mark_fortesting_training,
+    grid__c,
+    opp_id,
+    opp_owner_full_name,
+    closedate,
+    opp_createddate,
+    vertical__c,
+    isclosed,
+    COUNT(DISTINCT newvalue) AS cumulative_count
+  FROM expanded_months
+  GROUP BY 
+    target_month, 
+    global_entity_id, 
+    lead_id, 
+    leads_created_by_id, 
+    leads_mark_fortesting_training, 
+    grid__c, 
+    opp_id, 
+    opp_owner_full_name, 
+    closedate, 
+    opp_createddate, 
+    vertical__c, 
+    isclosed
+)
+SELECT 
+  month AS assigned_opp_month,
+  cumulative_counts.global_entity_id,
+  lead_id,
+  leads_created_by_id,
+  leads_mark_fortesting_training,
+  grid__c,
+  opp_id AS opportunity_id,
+  opp_owner_full_name,
+  lao.user_type,
+  closedate AS opp_closedate,
+  opp_createddate AS opportunity_created_date,
+  vertical__c,
+  isclosed,
+  cumulative_count
+FROM cumulative_counts
+LEFT JOIN `fulfillment-dwh-production.pandata_report.sales_lead_account_opp_aggregated` AS lao
+       ON cumulative_counts.global_entity_id = lao.global_entity_id
+      AND cumulative_counts.opp_id = lao.sf_opportunity_id]]></relation>
+            </properties>
+            <properties context='extract'>
+              <relation name='Extract' table='[Extract].[Extract]' type='table' />
+            </properties>
+          </object>
+        </objects>
+      </_.fcp.ObjectModelEncapsulateLegacy.true...object-graph>
+    </datasource>
+  </datasources>
+  <shared-views>
+    <shared-view name='federated.0gete9g134nm0o10enpjv1nnprum'>
+      <datasources>
+        <datasource caption='okr1 perc' name='federated.0gete9g134nm0o10enpjv1nnprum' />
+      </datasources>
+      <datasource-dependencies datasource='federated.0gete9g134nm0o10enpjv1nnprum'>
+        <column-instance column='[user_type]' derivation='None' name='[none:user_type:nk]' pivot='key' type='nominal' />
+        <column datatype='string' name='[user_type]' role='dimension' type='nominal' />
+      </datasource-dependencies>
+      <datasource-dependencies datasource='federated.1jflxsd14etanh11w1ipl0hjd0h2'>
+        <column-instance column='[user_type]' derivation='None' name='[none:user_type:nk]' pivot='key' type='nominal' />
+        <column datatype='string' name='[user_type]' role='dimension' type='nominal' />
+      </datasource-dependencies>
+      <filter class='categorical' column='[federated.1jflxsd14etanh11w1ipl0hjd0h2].[none:user_type:nk]'>
+        <groupfilter function='member' level='[none:user_type:nk]' member='&quot;telesales&quot;' user:ui-domain='database' user:ui-enumeration='inclusive' user:ui-marker='enumerate' />
+        <target field='[federated.0gete9g134nm0o10enpjv1nnprum].[none:user_type:nk]' />
+      </filter>
+    </shared-view>
+    <shared-view name='federated.1jflxsd14etanh11w1ipl0hjd0h2'>
+      <datasources>
+        <datasource caption='okr2 closedwon ssu oppty' name='federated.1jflxsd14etanh11w1ipl0hjd0h2' />
+      </datasources>
+      <datasource-dependencies datasource='federated.1jflxsd14etanh11w1ipl0hjd0h2'>
+        <column-instance column='[opp_owner_full_name]' derivation='None' name='[none:opp_owner_full_name:nk]' pivot='key' type='nominal' />
+        <column-instance column='[user_type]' derivation='None' name='[none:user_type:nk]' pivot='key' type='nominal' />
+        <column datatype='string' name='[opp_owner_full_name]' role='dimension' type='nominal' />
+        <column datatype='string' name='[user_type]' role='dimension' type='nominal' />
+      </datasource-dependencies>
+      <datasource-dependencies datasource='federated.1kmkuzn1gh5zfo1h5dr4k0uaskse'>
+        <column-instance column='[opp_owner_full_name]' derivation='None' name='[none:opp_owner_full_name:nk]' pivot='key' type='nominal' />
+        <column datatype='string' name='[opp_owner_full_name]' role='dimension' type='nominal' />
+      </datasource-dependencies>
+      <filter class='categorical' column='[federated.1jflxsd14etanh11w1ipl0hjd0h2].[none:user_type:nk]'>
+        <groupfilter function='member' level='[none:user_type:nk]' member='&quot;telesales&quot;' user:ui-domain='database' user:ui-enumeration='inclusive' user:ui-marker='enumerate' />
+        <target field='[federated.1jflxsd14etanh11w1ipl0hjd0h2].[none:user_type:nk]' />
+      </filter>
+      <filter class='categorical' column='[federated.1kmkuzn1gh5zfo1h5dr4k0uaskse].[none:opp_owner_full_name:nk]'>
+        <groupfilter function='level-members' level='[none:opp_owner_full_name:nk]' user:ui-enumeration='all' user:ui-marker='enumerate' />
+        <target field='[federated.1jflxsd14etanh11w1ipl0hjd0h2].[none:opp_owner_full_name:nk]' />
+      </filter>
+    </shared-view>
+    <shared-view name='federated.1kmkuzn1gh5zfo1h5dr4k0uaskse'>
+      <datasources>
+        <datasource caption='OKR3' name='federated.1kmkuzn1gh5zfo1h5dr4k0uaskse' />
+      </datasources>
+      <datasource-dependencies datasource='federated.1jflxsd14etanh11w1ipl0hjd0h2'>
+        <column-instance column='[user_type]' derivation='None' name='[none:user_type:nk]' pivot='key' type='nominal' />
+        <column datatype='string' name='[user_type]' role='dimension' type='nominal' />
+      </datasource-dependencies>
+      <datasource-dependencies datasource='federated.1kmkuzn1gh5zfo1h5dr4k0uaskse'>
+        <column-instance column='[opp_owner_full_name]' derivation='None' name='[none:opp_owner_full_name:nk]' pivot='key' type='nominal' />
+        <column-instance column='[user_type]' derivation='None' name='[none:user_type:nk]' pivot='key' type='nominal' />
+        <column datatype='string' name='[opp_owner_full_name]' role='dimension' type='nominal' />
+        <column datatype='string' name='[user_type]' role='dimension' type='nominal' />
+      </datasource-dependencies>
+      <filter class='categorical' column='[federated.1jflxsd14etanh11w1ipl0hjd0h2].[none:user_type:nk]'>
+        <groupfilter function='member' level='[none:user_type:nk]' member='&quot;telesales&quot;' user:ui-domain='database' user:ui-enumeration='inclusive' user:ui-marker='enumerate' />
+        <target field='[federated.1kmkuzn1gh5zfo1h5dr4k0uaskse].[none:user_type:nk]' />
+      </filter>
+      <filter class='categorical' column='[federated.1kmkuzn1gh5zfo1h5dr4k0uaskse].[none:opp_owner_full_name:nk]'>
+        <groupfilter function='level-members' level='[none:opp_owner_full_name:nk]' user:ui-enumeration='all' user:ui-marker='enumerate' />
+        <target field='[federated.1kmkuzn1gh5zfo1h5dr4k0uaskse].[none:opp_owner_full_name:nk]' />
+      </filter>
+    </shared-view>
+  </shared-views>
+  <worksheets>
+    <worksheet name='Sheet 3'>
+      <layout-options>
+        <title>
+          <formatted-text>
+            <run bold='true' fontcolor='#ffffff'>1. Conversion Rate of SSU Opportunity</run>
+          </formatted-text>
+        </title>
+      </layout-options>
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='okr1 perc' name='federated.0gete9g134nm0o10enpjv1nnprum' />
+            <datasource caption='OKR3' name='federated.1kmkuzn1gh5zfo1h5dr4k0uaskse' />
+            <datasource caption='okr2 closedwon ssu oppty' name='federated.1jflxsd14etanh11w1ipl0hjd0h2' />
+          </datasources>
+          <datasource-dependencies datasource='federated.0gete9g134nm0o10enpjv1nnprum'>
+            <column caption='%  Conversion Rate of SSU Opportunity' datatype='real' name='[Calculation_5477362343120756736]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='SUM([count_grid])/SUM([sum_cumulative_count])' />
+            </column>
+            <column datatype='integer' name='[count_grid]' role='measure' type='quantitative' />
+            <column datatype='string' name='[global_entity_id]' role='dimension' type='nominal' />
+            <column-instance column='[global_entity_id]' derivation='None' name='[none:global_entity_id:nk]' pivot='key' type='nominal' />
+            <column-instance column='[user_type]' derivation='None' name='[none:user_type:nk]' pivot='key' type='nominal' />
+            <column datatype='date' name='[report_date]' role='dimension' type='ordinal' />
+            <column datatype='integer' name='[sum_cumulative_count]' role='measure' type='quantitative' />
+            <column-instance column='[report_date]' derivation='Month-Trunc' name='[tmn:report_date:ok]' pivot='key' type='ordinal' />
+            <column datatype='string' name='[user_type]' role='dimension' type='nominal' />
+            <column-instance column='[Calculation_5477362343120756736]' derivation='User' name='[usr:Calculation_5477362343120756736:qk]' pivot='key' type='quantitative' />
+          </datasource-dependencies>
+          <datasource-dependencies datasource='federated.1jflxsd14etanh11w1ipl0hjd0h2'>
+            <column datatype='string' name='[global_entity_id]' role='dimension' type='nominal' />
+            <column-instance column='[global_entity_id]' derivation='None' name='[none:global_entity_id:nk]' pivot='key' type='nominal' />
+            <column-instance column='[user_type]' derivation='None' name='[none:user_type:nk]' pivot='key' type='nominal' />
+            <column datatype='string' name='[user_type]' role='dimension' type='nominal' />
+          </datasource-dependencies>
+          <datasource-dependencies datasource='federated.1kmkuzn1gh5zfo1h5dr4k0uaskse'>
+            <column datatype='string' name='[global_entity_id]' role='dimension' type='nominal' />
+          </datasource-dependencies>
+          <slices>
+            <column>[federated.1jflxsd14etanh11w1ipl0hjd0h2].[none:user_type:nk]</column>
+          </slices>
+          <aggregation value='true' />
+        </view>
+        <style>
+          <style-rule element='cell'>
+            <format attr='text-format' field='[federated.0gete9g134nm0o10enpjv1nnprum].[usr:Calculation_5477362343120756736:qk]' value='p0.00%' />
+          </style-rule>
+          <style-rule element='label'>
+            <format attr='text-format' field='[federated.0gete9g134nm0o10enpjv1nnprum].[tmn:report_date:ok]' value='*mmm-yy' />
+          </style-rule>
+          <style-rule element='title'>
+            <format attr='background-color' value='#d2005e' />
+          </style-rule>
+        </style>
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Automatic' />
+            <encodings>
+              <text column='[federated.0gete9g134nm0o10enpjv1nnprum].[usr:Calculation_5477362343120756736:qk]' />
+            </encodings>
+            <style>
+              <style-rule element='mark'>
+                <format attr='mark-labels-show' value='true' />
+                <format attr='mark-labels-cull' value='true' />
+              </style-rule>
+            </style>
+          </pane>
+        </panes>
+        <rows total='true'>[federated.0gete9g134nm0o10enpjv1nnprum].[none:global_entity_id:nk]</rows>
+        <cols>[federated.0gete9g134nm0o10enpjv1nnprum].[tmn:report_date:ok]</cols>
+        <join-lod-exclude-overrides>
+          <column>[federated.1jflxsd14etanh11w1ipl0hjd0h2].[global_entity_id]</column>
+          <column>[federated.1kmkuzn1gh5zfo1h5dr4k0uaskse].[global_entity_id]</column>
+        </join-lod-exclude-overrides>
+      </table>
+      <simple-id uuid='{587485BB-B576-4513-8F64-CA1959756656}' />
+    </worksheet>
+    <worksheet name='okr2'>
+      <layout-options>
+        <title>
+          <formatted-text>
+            <run bold='true' fontcolor='#ffffff'>2. Closed Won SSU Opportunity</run>
+          </formatted-text>
+        </title>
+      </layout-options>
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='okr2 closedwon ssu oppty' name='federated.1jflxsd14etanh11w1ipl0hjd0h2' />
+            <datasource caption='OKR3' name='federated.1kmkuzn1gh5zfo1h5dr4k0uaskse' />
+          </datasources>
+          <datasource-dependencies datasource='federated.1jflxsd14etanh11w1ipl0hjd0h2'>
+            <column-instance column='[grid__c]' derivation='CountD' name='[ctd:grid__c:qk]' pivot='key' type='quantitative' />
+            <column datatype='string' name='[global_entity_id]' role='dimension' type='nominal' />
+            <column aggregation='CountD' datatype='string' default-role='measure' default-type='quantitative' name='[grid__c]' role='dimension' type='nominal' />
+            <column-instance column='[global_entity_id]' derivation='None' name='[none:global_entity_id:nk]' pivot='key' type='nominal' />
+            <column-instance column='[opp_owner_full_name]' derivation='None' name='[none:opp_owner_full_name:nk]' pivot='key' type='nominal' />
+            <column-instance column='[user_type]' derivation='None' name='[none:user_type:nk]' pivot='key' type='nominal' />
+            <column datatype='date' name='[opp_closedate]' role='dimension' type='ordinal' />
+            <column datatype='string' name='[opp_owner_full_name]' role='dimension' type='nominal' />
+            <column-instance column='[opp_closedate]' derivation='Month-Trunc' name='[tmn:opp_closedate:ok]' pivot='key' type='ordinal' />
+            <column datatype='string' name='[user_type]' role='dimension' type='nominal' />
+          </datasource-dependencies>
+          <datasource-dependencies datasource='federated.1kmkuzn1gh5zfo1h5dr4k0uaskse'>
+            <column-instance column='[opp_owner_full_name]' derivation='None' name='[none:opp_owner_full_name:nk]' pivot='key' type='nominal' />
+            <column datatype='string' name='[opp_owner_full_name]' role='dimension' type='nominal' />
+          </datasource-dependencies>
+          <slices>
+            <column>[federated.1jflxsd14etanh11w1ipl0hjd0h2].[none:user_type:nk]</column>
+            <column>[federated.1kmkuzn1gh5zfo1h5dr4k0uaskse].[none:opp_owner_full_name:nk]</column>
+          </slices>
+          <aggregation value='true' />
+        </view>
+        <style>
+          <style-rule element='label'>
+            <format attr='text-format' field='[federated.1jflxsd14etanh11w1ipl0hjd0h2].[tmn:opp_closedate:ok]' value='*mmm-yy' />
+          </style-rule>
+          <style-rule element='title'>
+            <format attr='background-color' value='#d2005e' />
+          </style-rule>
+        </style>
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Automatic' />
+            <encodings>
+              <text column='[federated.1jflxsd14etanh11w1ipl0hjd0h2].[ctd:grid__c:qk]' />
+            </encodings>
+            <style>
+              <style-rule element='mark'>
+                <format attr='mark-labels-show' value='true' />
+                <format attr='mark-labels-cull' value='true' />
+              </style-rule>
+            </style>
+          </pane>
+        </panes>
+        <rows total='true'>[federated.1jflxsd14etanh11w1ipl0hjd0h2].[none:global_entity_id:nk]</rows>
+        <cols>[federated.1jflxsd14etanh11w1ipl0hjd0h2].[tmn:opp_closedate:ok]</cols>
+      </table>
+      <simple-id uuid='{42F5686A-7FDE-4D60-B64A-C49FBF5E5B97}' />
+    </worksheet>
+    <worksheet name='okr3'>
+      <layout-options>
+        <title>
+          <formatted-text>
+            <run bold='true' fontcolor='#ffffff'>3. Number of Opportunity Assigned to the Sales Agent</run>
+          </formatted-text>
+        </title>
+      </layout-options>
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='OKR3' name='federated.1kmkuzn1gh5zfo1h5dr4k0uaskse' />
+            <datasource caption='okr2 closedwon ssu oppty' name='federated.1jflxsd14etanh11w1ipl0hjd0h2' />
+          </datasources>
+          <datasource-dependencies datasource='federated.1jflxsd14etanh11w1ipl0hjd0h2'>
+            <column-instance column='[user_type]' derivation='None' name='[none:user_type:nk]' pivot='key' type='nominal' />
+            <column datatype='string' name='[user_type]' role='dimension' type='nominal' />
+          </datasource-dependencies>
+          <datasource-dependencies datasource='federated.1kmkuzn1gh5zfo1h5dr4k0uaskse'>
+            <column datatype='datetime' name='[assigned_opp_month]' role='dimension' type='ordinal' />
+            <column datatype='integer' name='[cumulative_count]' role='measure' type='quantitative' />
+            <column datatype='string' name='[global_entity_id]' role='dimension' type='nominal' />
+            <column-instance column='[global_entity_id]' derivation='None' name='[none:global_entity_id:nk]' pivot='key' type='nominal' />
+            <column-instance column='[opp_owner_full_name]' derivation='None' name='[none:opp_owner_full_name:nk]' pivot='key' type='nominal' />
+            <column-instance column='[user_type]' derivation='None' name='[none:user_type:nk]' pivot='key' type='nominal' />
+            <column datatype='string' name='[opp_owner_full_name]' role='dimension' type='nominal' />
+            <column-instance column='[cumulative_count]' derivation='Sum' name='[sum:cumulative_count:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[assigned_opp_month]' derivation='Month-Trunc' name='[tmn:assigned_opp_month:ok]' pivot='key' type='ordinal' />
+            <column datatype='string' name='[user_type]' role='dimension' type='nominal' />
+          </datasource-dependencies>
+          <slices>
+            <column>[federated.1jflxsd14etanh11w1ipl0hjd0h2].[none:user_type:nk]</column>
+            <column>[federated.1kmkuzn1gh5zfo1h5dr4k0uaskse].[none:opp_owner_full_name:nk]</column>
+          </slices>
+          <aggregation value='true' />
+        </view>
+        <style>
+          <style-rule element='label'>
+            <format attr='text-format' field='[federated.1kmkuzn1gh5zfo1h5dr4k0uaskse].[tmn:assigned_opp_month:ok]' value='*mmm-yy' />
+          </style-rule>
+          <style-rule element='title'>
+            <format attr='background-color' value='#d2005e' />
+          </style-rule>
+        </style>
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Automatic' />
+            <encodings>
+              <text column='[federated.1kmkuzn1gh5zfo1h5dr4k0uaskse].[sum:cumulative_count:qk]' />
+            </encodings>
+            <style>
+              <style-rule element='mark'>
+                <format attr='mark-labels-show' value='true' />
+                <format attr='mark-labels-cull' value='true' />
+              </style-rule>
+            </style>
+          </pane>
+        </panes>
+        <rows total='true'>[federated.1kmkuzn1gh5zfo1h5dr4k0uaskse].[none:global_entity_id:nk]</rows>
+        <cols>[federated.1kmkuzn1gh5zfo1h5dr4k0uaskse].[tmn:assigned_opp_month:ok]</cols>
+      </table>
+      <simple-id uuid='{B4F95ABD-59F5-482B-86A9-E15A92217F78}' />
+    </worksheet>
+  </worksheets>
+  <dashboards>
+    <dashboard _.fcp.AccessibleZoneTabOrder.true...enable-sort-zone-taborder='true' name='ssu conversion'>
+      <repository-location derived-from='https://tableau.deliveryhero.net/t/Foodora/workbooks/APSSUConversionDashboard/ssuconversion?rev=' id='ssuconversion' path='/t/Foodora/workbooks/APSSUConversionDashboard' revision='' site='Foodora' />
+      <style />
+      <size maxheight='1600' maxwidth='1200' minheight='1600' minwidth='1200' sizing-mode='fixed' />
+      <datasources>
+        <datasource caption='okr2 closedwon ssu oppty' name='federated.1jflxsd14etanh11w1ipl0hjd0h2' />
+        <datasource caption='OKR3' name='federated.1kmkuzn1gh5zfo1h5dr4k0uaskse' />
+      </datasources>
+      <datasource-dependencies datasource='federated.1jflxsd14etanh11w1ipl0hjd0h2'>
+        <column datatype='string' name='[global_entity_id]' role='dimension' type='nominal' />
+        <column-instance column='[global_entity_id]' derivation='None' name='[none:global_entity_id:nk]' pivot='key' type='nominal' />
+        <column-instance column='[user_type]' derivation='None' name='[none:user_type:nk]' pivot='key' type='nominal' />
+        <column datatype='string' name='[user_type]' role='dimension' type='nominal' />
+      </datasource-dependencies>
+      <datasource-dependencies datasource='federated.1kmkuzn1gh5zfo1h5dr4k0uaskse'>
+        <column-instance column='[opp_owner_full_name]' derivation='None' name='[none:opp_owner_full_name:nk]' pivot='key' type='nominal' />
+        <column datatype='string' name='[opp_owner_full_name]' role='dimension' type='nominal' />
+      </datasource-dependencies>
+      <zones>
+        <zone h='100000' id='4' type-v2='layout-basic' w='100000' x='0' y='0'>
+          <zone h='91000' id='26' param='horz' type-v2='layout-flow' w='98666' x='667' y='8500'>
+            <zone h='91000' id='8' param='horz' type-v2='layout-flow' w='85333' x='667' y='8500'>
+              <zone h='91000' id='6' type-v2='layout-basic' w='85333' x='667' y='8500'>
+                <zone h='30620' id='3' name='okr2' w='85333' x='667' y='36478'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                  </zone-style>
+                </zone>
+                <zone h='32402' id='5' name='okr3' w='85333' x='667' y='67098'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                  </zone-style>
+                </zone>
+                <zone h='27978' id='18' name='Sheet 3' w='85333' x='667' y='8500'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                  </zone-style>
+                </zone>
+              </zone>
+            </zone>
+            <zone fixed-size='160' h='91000' id='34' is-fixed='true' type-v2='layout-basic' w='13333' x='86000' y='8500'>
+              <zone h='27978' id='25' param='vert' type-v2='layout-flow' w='13333' x='86000' y='8500'>
+                <zone h='1563' id='29' type-v2='text' w='13333' x='86000' y='8500'>
+                  <formatted-text>
+                    <run bold='true'>All Sections</run>
+                  </formatted-text>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='background-color' value='#e6e6e6' />
+                  </zone-style>
+                </zone>
+                <zone h='3250' id='27' mode='checkdropdown' name='Sheet 3' param='[federated.1jflxsd14etanh11w1ipl0hjd0h2].[none:global_entity_id:nk]' show-apply='true' type-v2='filter' values='database' w='13333' x='86000' y='10063'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                  </zone-style>
+                </zone>
+                <zone h='3250' id='28' mode='checkdropdown' name='Sheet 3' param='[federated.1jflxsd14etanh11w1ipl0hjd0h2].[none:user_type:nk]' show-apply='true' type-v2='filter' values='database' w='13333' x='86000' y='13313'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                  </zone-style>
+                </zone>
+                <zone h='19915' id='33' type-v2='empty' w='13333' x='86000' y='16563'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                  </zone-style>
+                </zone>
+              </zone>
+              <zone h='63022' id='35' param='vert' type-v2='layout-flow' w='13333' x='86000' y='36478'>
+                <zone forceUpdate='true' h='1563' id='32' type-v2='text' w='13333' x='86000' y='36478'>
+                  <formatted-text>
+                    <run bold='true'>Section 2 &amp; 3</run>
+                  </formatted-text>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='background-color' value='#e6e6e6' />
+                  </zone-style>
+                </zone>
+                <zone h='3250' id='39' mode='checkdropdown' name='okr3' param='[federated.1kmkuzn1gh5zfo1h5dr4k0uaskse].[none:opp_owner_full_name:nk]' show-apply='true' type-v2='filter' values='relevant' w='13333' x='86000' y='38041'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                  </zone-style>
+                </zone>
+              </zone>
+            </zone>
+          </zone>
+          <zone forceUpdate='true' h='5813' id='40' type-v2='text' w='98666' x='667' y='500'>
+            <formatted-text>
+              <run bold='true' fontalignment='1' fontcolor='#ffffff' fontsize='20'>SSU Conversion Dashboard</run>
+            </formatted-text>
+            <zone-style>
+              <format attr='border-color' value='#000000' />
+              <format attr='border-style' value='none' />
+              <format attr='border-width' value='0' />
+              <format attr='margin' value='4' />
+              <format attr='background-color' value='#d2005e' />
+            </zone-style>
+          </zone>
+          <zone h='2187' id='41' type-v2='empty' w='98666' x='667' y='6313'>
+            <zone-style>
+              <format attr='border-color' value='#000000' />
+              <format attr='border-style' value='none' />
+              <format attr='border-width' value='0' />
+              <format attr='margin' value='4' />
+            </zone-style>
+          </zone>
+          <zone-style>
+            <format attr='border-color' value='#000000' />
+            <format attr='border-style' value='none' />
+            <format attr='border-width' value='0' />
+            <format attr='margin' value='8' />
+          </zone-style>
+        </zone>
+      </zones>
+      <devicelayouts>
+        <devicelayout auto-generated='true' name='Phone'>
+          <size maxheight='1250' minheight='1250' sizing-mode='vscroll' />
+          <zones>
+            <zone h='100000' id='65' type-v2='layout-basic' w='100000' x='0' y='0'>
+              <zone h='84000' id='64' param='vert' type-v2='layout-flow' w='84000' x='8000' y='8000'>
+                <zone forceUpdate='true' h='5813' id='40' type-v2='text' w='98666' x='667' y='500'>
+                  <formatted-text>
+                    <run bold='true' fontalignment='1' fontcolor='#ffffff' fontsize='20'>SSU Conversion Dashboard</run>
+                  </formatted-text>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                    <format attr='background-color' value='#d2005e' />
+                  </zone-style>
+                </zone>
+                <zone h='3250' id='27' mode='checkdropdown' name='Sheet 3' param='[federated.1jflxsd14etanh11w1ipl0hjd0h2].[none:global_entity_id:nk]' show-apply='true' type-v2='filter' values='database' w='13333' x='86000' y='10063'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone h='3250' id='28' mode='checkdropdown' name='Sheet 3' param='[federated.1jflxsd14etanh11w1ipl0hjd0h2].[none:user_type:nk]' show-apply='true' type-v2='filter' values='database' w='13333' x='86000' y='13313'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone fixed-size='280' h='27978' id='18' is-fixed='true' name='Sheet 3' w='85333' x='667' y='8500'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone h='1563' id='29' type-v2='text' w='13333' x='86000' y='8500'>
+                  <formatted-text>
+                    <run bold='true'>All Sections</run>
+                  </formatted-text>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                    <format attr='background-color' value='#e6e6e6' />
+                  </zone-style>
+                </zone>
+                <zone fixed-size='280' h='30620' id='3' is-fixed='true' name='okr2' w='85333' x='667' y='36478'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone forceUpdate='true' h='1563' id='32' type-v2='text' w='13333' x='86000' y='36478'>
+                  <formatted-text>
+                    <run bold='true'>Section 2 &amp; 3</run>
+                  </formatted-text>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                    <format attr='background-color' value='#e6e6e6' />
+                  </zone-style>
+                </zone>
+                <zone h='3250' id='39' mode='checkdropdown' name='okr3' param='[federated.1kmkuzn1gh5zfo1h5dr4k0uaskse].[none:opp_owner_full_name:nk]' show-apply='true' type-v2='filter' values='relevant' w='13333' x='86000' y='38041'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone fixed-size='280' h='32402' id='5' is-fixed='true' name='okr3' w='85333' x='667' y='67098'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+              </zone>
+              <zone-style>
+                <format attr='border-color' value='#000000' />
+                <format attr='border-style' value='none' />
+                <format attr='border-width' value='0' />
+                <format attr='margin' value='8' />
+              </zone-style>
+            </zone>
+          </zones>
+        </devicelayout>
+      </devicelayouts>
+      <simple-id uuid='{8CF04EC0-6982-475A-BD77-2826C5A69A18}' />
+    </dashboard>
+  </dashboards>
+  <windows source-height='72'>
+    <window class='worksheet' name='okr3'>
+      <cards>
+        <edge name='left'>
+          <strip size='253'>
+            <card type='pages' />
+            <card type='filters' />
+            <card type='marks' />
+          </strip>
+        </edge>
+        <edge name='top'>
+          <strip size='2147483647'>
+            <card type='columns' />
+          </strip>
+          <strip size='2147483647'>
+            <card type='rows' />
+          </strip>
+          <strip size='31'>
+            <card type='title' />
+          </strip>
+        </edge>
+      </cards>
+      <viewpoint>
+        <highlight>
+          <color-one-way>
+            <field>[federated.1kmkuzn1gh5zfo1h5dr4k0uaskse].[none:global_entity_id:nk]</field>
+            <field>[federated.1kmkuzn1gh5zfo1h5dr4k0uaskse].[none:opp_owner_full_name:nk]</field>
+            <field>[federated.1kmkuzn1gh5zfo1h5dr4k0uaskse].[none:user_type:nk]</field>
+          </color-one-way>
+        </highlight>
+      </viewpoint>
+      <simple-id uuid='{CFB975A4-3DCC-405A-8417-62300F6A3F00}' />
+    </window>
+    <window class='worksheet' name='okr2'>
+      <cards>
+        <edge name='left'>
+          <strip size='160'>
+            <card type='pages' />
+            <card type='filters' />
+            <card type='marks' />
+          </strip>
+        </edge>
+        <edge name='top'>
+          <strip size='2147483647'>
+            <card type='columns' />
+          </strip>
+          <strip size='2147483647'>
+            <card type='rows' />
+          </strip>
+          <strip size='31'>
+            <card type='title' />
+          </strip>
+        </edge>
+      </cards>
+      <viewpoint>
+        <highlight>
+          <color-one-way>
+            <field>[federated.1jflxsd14etanh11w1ipl0hjd0h2].[none:global_entity_id:nk]</field>
+            <field>[federated.1jflxsd14etanh11w1ipl0hjd0h2].[none:isclosed:nk]</field>
+            <field>[federated.1jflxsd14etanh11w1ipl0hjd0h2].[none:user_type:nk]</field>
+            <field>[federated.1jflxsd14etanh11w1ipl0hjd0h2].[yr:opp_closedate:ok]</field>
+            <field>[federated.1kmkuzn1gh5zfo1h5dr4k0uaskse].[none:grid__c:nk]</field>
+            <field>[federated.1kmkuzn1gh5zfo1h5dr4k0uaskse].[none:isclosed:nk]</field>
+            <field>[federated.1kmkuzn1gh5zfo1h5dr4k0uaskse].[none:opp_owner_full_name:nk]</field>
+          </color-one-way>
+        </highlight>
+      </viewpoint>
+      <simple-id uuid='{2757B538-E7FC-4717-975E-D75EB9EEFA97}' />
+    </window>
+    <window class='dashboard' name='ssu conversion'>
+      <viewpoints>
+        <viewpoint name='Sheet 3'>
+          <zoom type='fit-width' />
+        </viewpoint>
+        <viewpoint name='okr2'>
+          <zoom type='fit-width' />
+        </viewpoint>
+        <viewpoint name='okr3'>
+          <zoom type='fit-width' />
+        </viewpoint>
+      </viewpoints>
+      <active id='-1' />
+      <simple-id uuid='{4908BF98-1AF7-4BF4-9C53-CE87B2337081}' />
+    </window>
+    <window class='worksheet' maximized='true' name='Sheet 3'>
+      <cards>
+        <edge name='left'>
+          <strip size='160'>
+            <card type='pages' />
+            <card type='filters' />
+            <card type='marks' />
+          </strip>
+        </edge>
+        <edge name='top'>
+          <strip size='2147483647'>
+            <card type='columns' />
+          </strip>
+          <strip size='2147483647'>
+            <card type='rows' />
+          </strip>
+          <strip size='31'>
+            <card type='title' />
+          </strip>
+        </edge>
+      </cards>
+      <viewpoint>
+        <highlight>
+          <color-one-way>
+            <field>[federated.0gete9g134nm0o10enpjv1nnprum].[none:global_entity_id:nk]</field>
+            <field>[federated.0gete9g134nm0o10enpjv1nnprum].[none:user_type:nk]</field>
+            <field>[federated.0gete9g134nm0o10enpjv1nnprum].[yr:report_date:ok]</field>
+            <field>[federated.1jflxsd14etanh11w1ipl0hjd0h2].[none:global_entity_id:nk]</field>
+            <field>[federated.1jflxsd14etanh11w1ipl0hjd0h2].[none:user_type:nk]</field>
+          </color-one-way>
+        </highlight>
+      </viewpoint>
+      <simple-id uuid='{DBC9C784-E6ED-4735-A956-F19D25B0456D}' />
+    </window>
+  </windows>
+</workbook>
