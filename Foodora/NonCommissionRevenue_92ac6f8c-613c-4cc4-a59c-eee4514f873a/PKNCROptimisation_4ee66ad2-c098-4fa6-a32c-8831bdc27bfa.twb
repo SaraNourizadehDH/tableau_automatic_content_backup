@@ -1,0 +1,927 @@
+<?xml version='1.0' encoding='utf-8' ?>
+
+<!-- build 20221.22.1108.1355                               -->
+<workbook original-version='18.1' source-build='2022.1.9 (20221.22.1108.1355)' version='18.1' xml:base='https://tableau.deliveryhero.net' xmlns:user='http://www.tableausoftware.com/xml/user'>
+  <document-format-change-manifest>
+    <_.fcp.AccessibleZoneTabOrder.true...AccessibleZoneTabOrder />
+    <_.fcp.AnimationOnByDefault.true...AnimationOnByDefault />
+    <AutoCreateAndUpdateDSDPhoneLayouts />
+    <IntuitiveSorting />
+    <IntuitiveSorting_SP2 />
+    <_.fcp.MarkAnimation.true...MarkAnimation />
+    <_.fcp.ObjectModelEncapsulateLegacy.true...ObjectModelEncapsulateLegacy />
+    <_.fcp.ObjectModelExtractV2.true...ObjectModelExtractV2 />
+    <_.fcp.ObjectModelTableType.true...ObjectModelTableType />
+    <_.fcp.SchemaViewerObjectModel.true...SchemaViewerObjectModel />
+    <SetMembershipControl />
+    <SheetIdentifierTracking />
+    <_.fcp.SingleValuePerNestSorting.true...SingleValuePerNestSorting />
+    <WindowsPersistSimpleIdentifiers />
+    <ZoneBackgroundTransparency />
+  </document-format-change-manifest>
+  <repository-location derived-from='https://tableau.deliveryhero.net/t/Foodora/workbooks/PKNCROptimisation?rev=1.0' id='PKNCROptimisation' path='/t/Foodora/workbooks' revision='1.1' site='Foodora' />
+  <preferences />
+  <_.fcp.AnimationOnByDefault.false...style>
+    <_.fcp.AnimationOnByDefault.false..._.fcp.MarkAnimation.true...style-rule element='animation'>
+      <_.fcp.AnimationOnByDefault.false...format attr='animation-on' value='ao-on' />
+    </_.fcp.AnimationOnByDefault.false..._.fcp.MarkAnimation.true...style-rule>
+  </_.fcp.AnimationOnByDefault.false...style>
+  <datasources>
+    <datasource caption='Custom SQL Query (pandata_pk)' inline='true' name='federated.16ne5sh1d1lf060zp9ebz11esm5y' version='18.1'>
+      <connection class='federated'>
+        <named-connections>
+          <named-connection caption='BigQuery' name='bigquery.03c7s8y1di51531enumu700j6hc3'>
+            <connection CATALOG='dhh---analytics-apac' EXECCATALOG='foodpanda-pk-bigquery' authentication='oauth' bq-dataset-fetch-rows='' bq-fetch-rows='' bq-fetch-tasks='' bq-large-fetch-rows='' bq-project-fetch-rows='' bq-response-rows='' class='bigquery' connection-dialect='google-sql' project='dhh---analytics-apac' schema='pandata_pk' server-oauth='' username='taha.jamal@foodpanda.pk' workgroup-auth-mode='prompt' />
+          </named-connection>
+        </named-connections>
+        <_.fcp.ObjectModelEncapsulateLegacy.false...relation connection='bigquery.03c7s8y1di51531enumu700j6hc3' name='Custom SQL Query' type='text'>WITH base_cpc AS (&#13;
+SELECT &#13;
+datelive, &#13;
+yearmonth_live,&#13;
+vendor_code,&#13;
+vendor_name,&#13;
+user,&#13;
+avg_open_hrs_per_day,&#13;
+cpc_rev_local,&#13;
+final_budget_local&#13;
+FROM `dhh---analytics-apac.pandata_ap_commercial.NCR_Tableau_CPC_updated` &#13;
+WHERE global_entity_id = &quot;FP_PK&quot;&#13;
+-- AND EXTRACT(YEAR FROM datelive) = EXTRACT(YEAR FROM CURRENT_DATE(&quot;Asia/Karachi&quot;))&#13;
+-- AND EXTRACT(MONTH FROM datelive) = EXTRACT(MONTH FROM CURRENT_DATE(&quot;Asia/Karachi&quot;))&#13;
+),&#13;
+&#13;
+acc_res AS (&#13;
+SELECT &#13;
+owner_name AS account_owner_name,&#13;
+owner_email,&#13;
+COUNT(DISTINCT(vendor_code)) AS active_res&#13;
+FROM `fulfillment-dwh-production.pandata_report.country_PK_vendor_info` &#13;
+WHERE NOT is_backend_test&#13;
+AND is_backend_active&#13;
+AND NOT is_private&#13;
+AND NOT is_sf_test&#13;
+AND vertical = &quot;restaurants&quot;&#13;
+GROUP BY 1, 2),&#13;
+&#13;
+acc_cpc AS (&#13;
+SELECT&#13;
+yearmonth_live, &#13;
+user,&#13;
+COUNT(DISTINCT(CASE WHEN cpc_rev_local &gt;&gt; 0 THEN vendor_code END)) AS cpc_res,&#13;
+SUM(cpc_rev_local) AS cpc_m &#13;
+FROM base_cpc&#13;
+GROUP BY 1, 2),&#13;
+&#13;
+base_cpp AS (&#13;
+SELECT  &#13;
+vendor_code,&#13;
+vendor_name,&#13;
+year_month,&#13;
+sold_price_local,&#13;
+user_booked&#13;
+FROM `dhh---analytics-apac.pandata_ap_commercial.ncr_report_order_level` &#13;
+WHERE global_entity_id = &quot;FP_PK&quot;&#13;
+-- AND month = FORMAT_DATETIME(&quot;%b&quot;, CURRENT_DATE(&quot;Asia/Karachi&quot;))&#13;
+-- AND LEFT(year_month, 4) = FORMAT_DATETIME(&quot;%Y&quot;, CURRENT_DATE(&quot;Asia/Karachi&quot;))&#13;
+),&#13;
+&#13;
+acc_cpp AS (&#13;
+SELECT &#13;
+year_month,&#13;
+user_booked,&#13;
+COUNT(DISTINCT(CASE WHEN sold_price_local &gt;&gt; 0 THEN vendor_code END)) AS cpp_res,&#13;
+SUM(sold_price_local) AS cpp_m&#13;
+FROM base_cpp&#13;
+GROUP BY 1, 2),&#13;
+&#13;
+acc_gfv AS (&#13;
+SELECT &#13;
+FORMAT_DATE(&quot;%Y%m&quot;, date_local) AS year_month,&#13;
+owner_email,&#13;
+SUM(gfv_local) AS total_gfv&#13;
+FROM `fulfillment-dwh-production.pandata_report.country_PK_vendor_kpis` &#13;
+WHERE date_local &gt;&gt;= &quot;2021-01-01&quot;&#13;
+AND vertical = &quot;restaurants&quot;&#13;
+GROUP BY 1, 2&#13;
+)&#13;
+&#13;
+SELECT &#13;
+IFNULL(yearmonth_live, acc_cpp.year_month) AS year_month,&#13;
+IFNULL(user, user_booked) AS user,&#13;
+cpc_res,&#13;
+cpp_res,&#13;
+active_res,&#13;
+IFNULL(cpc_res, 0) + IFNULL(cpp_res, 0) AS cpp_cpc_res,&#13;
+total_gfv,&#13;
+cpc_m,&#13;
+cpp_m,&#13;
+IFNULL(cpc_m, 0) + IFNULL(cpp_m, 0) AS cpp_cpc_m&#13;
+FROM acc_cpc&#13;
+FULL OUTER JOIN acc_cpp&#13;
+ON acc_cpc.yearmonth_live = acc_cpp.year_month&#13;
+AND acc_cpc.user = acc_cpp.user_booked&#13;
+LEFT JOIN acc_gfv&#13;
+ON acc_cpc.yearmonth_live = acc_gfv.year_month&#13;
+AND acc_cpc.user = acc_gfv.owner_email&#13;
+LEFT JOIN acc_res&#13;
+ON acc_cpc.user = acc_res.owner_email</_.fcp.ObjectModelEncapsulateLegacy.false...relation>
+        <_.fcp.ObjectModelEncapsulateLegacy.true...relation connection='bigquery.03c7s8y1di51531enumu700j6hc3' name='Custom SQL Query' type='text'>WITH base_cpc AS (&#13;
+SELECT &#13;
+datelive, &#13;
+yearmonth_live,&#13;
+vendor_code,&#13;
+vendor_name,&#13;
+user,&#13;
+avg_open_hrs_per_day,&#13;
+cpc_rev_local,&#13;
+final_budget_local&#13;
+FROM `dhh---analytics-apac.pandata_ap_commercial.NCR_Tableau_CPC_updated` &#13;
+WHERE global_entity_id = &quot;FP_PK&quot;&#13;
+-- AND EXTRACT(YEAR FROM datelive) = EXTRACT(YEAR FROM CURRENT_DATE(&quot;Asia/Karachi&quot;))&#13;
+-- AND EXTRACT(MONTH FROM datelive) = EXTRACT(MONTH FROM CURRENT_DATE(&quot;Asia/Karachi&quot;))&#13;
+),&#13;
+&#13;
+acc_res AS (&#13;
+SELECT &#13;
+owner_name AS account_owner_name,&#13;
+owner_email,&#13;
+COUNT(DISTINCT(vendor_code)) AS active_res&#13;
+FROM `fulfillment-dwh-production.pandata_report.country_PK_vendor_info` &#13;
+WHERE NOT is_backend_test&#13;
+AND is_backend_active&#13;
+AND NOT is_private&#13;
+AND NOT is_sf_test&#13;
+AND vertical = &quot;restaurants&quot;&#13;
+GROUP BY 1, 2),&#13;
+&#13;
+acc_cpc AS (&#13;
+SELECT&#13;
+yearmonth_live, &#13;
+user,&#13;
+COUNT(DISTINCT(CASE WHEN cpc_rev_local &gt;&gt; 0 THEN vendor_code END)) AS cpc_res,&#13;
+SUM(cpc_rev_local) AS cpc_m &#13;
+FROM base_cpc&#13;
+GROUP BY 1, 2),&#13;
+&#13;
+base_cpp AS (&#13;
+SELECT  &#13;
+vendor_code,&#13;
+vendor_name,&#13;
+year_month,&#13;
+sold_price_local,&#13;
+user_booked&#13;
+FROM `dhh---analytics-apac.pandata_ap_commercial.ncr_report_order_level` &#13;
+WHERE global_entity_id = &quot;FP_PK&quot;&#13;
+-- AND month = FORMAT_DATETIME(&quot;%b&quot;, CURRENT_DATE(&quot;Asia/Karachi&quot;))&#13;
+-- AND LEFT(year_month, 4) = FORMAT_DATETIME(&quot;%Y&quot;, CURRENT_DATE(&quot;Asia/Karachi&quot;))&#13;
+),&#13;
+&#13;
+acc_cpp AS (&#13;
+SELECT &#13;
+year_month,&#13;
+user_booked,&#13;
+COUNT(DISTINCT(CASE WHEN sold_price_local &gt;&gt; 0 THEN vendor_code END)) AS cpp_res,&#13;
+SUM(sold_price_local) AS cpp_m&#13;
+FROM base_cpp&#13;
+GROUP BY 1, 2),&#13;
+&#13;
+acc_gfv AS (&#13;
+SELECT &#13;
+FORMAT_DATE(&quot;%Y%m&quot;, date_local) AS year_month,&#13;
+owner_email,&#13;
+SUM(gfv_local) AS total_gfv&#13;
+FROM `fulfillment-dwh-production.pandata_report.country_PK_vendor_kpis` &#13;
+WHERE date_local &gt;&gt;= &quot;2021-01-01&quot;&#13;
+AND vertical = &quot;restaurants&quot;&#13;
+GROUP BY 1, 2&#13;
+)&#13;
+&#13;
+SELECT &#13;
+IFNULL(yearmonth_live, acc_cpp.year_month) AS year_month,&#13;
+IFNULL(user, user_booked) AS user,&#13;
+cpc_res,&#13;
+cpp_res,&#13;
+active_res,&#13;
+IFNULL(cpc_res, 0) + IFNULL(cpp_res, 0) AS cpp_cpc_res,&#13;
+total_gfv,&#13;
+cpc_m,&#13;
+cpp_m,&#13;
+IFNULL(cpc_m, 0) + IFNULL(cpp_m, 0) AS cpp_cpc_m&#13;
+FROM acc_cpc&#13;
+FULL OUTER JOIN acc_cpp&#13;
+ON acc_cpc.yearmonth_live = acc_cpp.year_month&#13;
+AND acc_cpc.user = acc_cpp.user_booked&#13;
+LEFT JOIN acc_gfv&#13;
+ON acc_cpc.yearmonth_live = acc_gfv.year_month&#13;
+AND acc_cpc.user = acc_gfv.owner_email&#13;
+LEFT JOIN acc_res&#13;
+ON acc_cpc.user = acc_res.owner_email</_.fcp.ObjectModelEncapsulateLegacy.true...relation>
+        <metadata-records>
+          <metadata-record class='column'>
+            <remote-name>year_month</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[year_month]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>year_month</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_144BE0F8B39B446CBE9E3AB076806499]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>user</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[user]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>user</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_144BE0F8B39B446CBE9E3AB076806499]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>cpc_res</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[cpc_res]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>cpc_res</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_144BE0F8B39B446CBE9E3AB076806499]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>cpp_res</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[cpp_res]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>cpp_res</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_144BE0F8B39B446CBE9E3AB076806499]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>active_res</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[active_res]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>active_res</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_144BE0F8B39B446CBE9E3AB076806499]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>cpp_cpc_res</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[cpp_cpc_res]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>cpp_cpc_res</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_144BE0F8B39B446CBE9E3AB076806499]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>total_gfv</remote-name>
+            <remote-type>5</remote-type>
+            <local-name>[total_gfv]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>total_gfv</remote-alias>
+            <local-type>real</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_144BE0F8B39B446CBE9E3AB076806499]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>cpc_m</remote-name>
+            <remote-type>5</remote-type>
+            <local-name>[cpc_m]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>cpc_m</remote-alias>
+            <local-type>real</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_144BE0F8B39B446CBE9E3AB076806499]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>cpp_m</remote-name>
+            <remote-type>5</remote-type>
+            <local-name>[cpp_m]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>cpp_m</remote-alias>
+            <local-type>real</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_144BE0F8B39B446CBE9E3AB076806499]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>cpp_cpc_m</remote-name>
+            <remote-type>5</remote-type>
+            <local-name>[cpp_cpc_m]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>cpp_cpc_m</remote-alias>
+            <local-type>real</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_144BE0F8B39B446CBE9E3AB076806499]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+        </metadata-records>
+      </connection>
+      <aliases enabled='yes' />
+      <column caption='Restaurant Penetration (%age)' datatype='real' name='[Calculation_1184728224311865344]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='ZN([cpp_cpc_res])/ZN([active_res])' />
+      </column>
+      <column caption='Revenue Weightage (%age)' datatype='real' name='[Calculation_1184728224314605569]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='ZN([cpp_cpc_m])/ZN([total_gfv])' />
+      </column>
+      <_.fcp.ObjectModelTableType.true...column caption='Custom SQL Query' datatype='table' name='[__tableau_internal_object_id__].[_144BE0F8B39B446CBE9E3AB076806499]' role='measure' type='quantitative' />
+      <column caption='Active Restaurants' datatype='integer' name='[active_res]' role='measure' type='quantitative' />
+      <column caption='CPC Revenue' datatype='real' name='[cpc_m]' role='measure' type='quantitative' />
+      <column caption='CPC Restaurants' datatype='integer' name='[cpc_res]' role='measure' type='quantitative' />
+      <column caption='CPC &amp; CPP Revenue' datatype='real' name='[cpp_cpc_m]' role='measure' type='quantitative' />
+      <column caption='CPC &amp; CPP Restaurants' datatype='integer' name='[cpp_cpc_res]' role='measure' type='quantitative' />
+      <column caption='CPP Revenue' datatype='real' name='[cpp_m]' role='measure' type='quantitative' />
+      <column caption='CPP Restaurants' datatype='integer' name='[cpp_res]' role='measure' type='quantitative' />
+      <column caption='Total GFV' datatype='real' name='[total_gfv]' role='measure' type='quantitative' />
+      <column caption='User' datatype='string' name='[user]' role='dimension' type='nominal' />
+      <extract _.fcp.ObjectModelExtractV2.true...object-id='' count='-1' enabled='true' units='records'>
+        <connection access_mode='readonly' author-locale='en_US' class='hyper' dbname='extract/7b/25/{23C01871-DF98-4988-9022-4E47F931C097}/federated_16ne5sh1d1lf060zp9ebz1.hyper' extract-engine='true' schema='Extract' sslmode='' tablename='Extract' update-time='07/20/2023 04:30:36 AM'>
+          <_.fcp.ObjectModelEncapsulateLegacy.false...relation name='Extract' table='[Extract].[Extract]' type='table' />
+          <_.fcp.ObjectModelEncapsulateLegacy.true...relation name='Extract' table='[Extract].[Extract]' type='table' />
+          <metadata-records>
+            <metadata-record class='column'>
+              <remote-name>year_month</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[year_month]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>year_month</remote-alias>
+              <ordinal>0</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>7</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_144BE0F8B39B446CBE9E3AB076806499]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>user</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[user]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>user</remote-alias>
+              <ordinal>1</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>416</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_144BE0F8B39B446CBE9E3AB076806499]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>cpc_res</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[cpc_res]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>cpc_res</remote-alias>
+              <ordinal>2</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>79</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_144BE0F8B39B446CBE9E3AB076806499]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>cpp_res</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[cpp_res]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>cpp_res</remote-alias>
+              <ordinal>3</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>26</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_144BE0F8B39B446CBE9E3AB076806499]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>active_res</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[active_res]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>active_res</remote-alias>
+              <ordinal>4</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>38</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_144BE0F8B39B446CBE9E3AB076806499]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>cpp_cpc_res</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[cpp_cpc_res]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>cpp_cpc_res</remote-alias>
+              <ordinal>5</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>82</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_144BE0F8B39B446CBE9E3AB076806499]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>total_gfv</remote-name>
+              <remote-type>5</remote-type>
+              <local-name>[total_gfv]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>total_gfv</remote-alias>
+              <ordinal>6</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>real</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>339</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_144BE0F8B39B446CBE9E3AB076806499]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>cpc_m</remote-name>
+              <remote-type>5</remote-type>
+              <local-name>[cpc_m]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>cpc_m</remote-alias>
+              <ordinal>7</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>real</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>674</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_144BE0F8B39B446CBE9E3AB076806499]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>cpp_m</remote-name>
+              <remote-type>5</remote-type>
+              <local-name>[cpp_m]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>cpp_m</remote-alias>
+              <ordinal>8</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>real</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>335</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_144BE0F8B39B446CBE9E3AB076806499]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>cpp_cpc_m</remote-name>
+              <remote-type>5</remote-type>
+              <local-name>[cpp_cpc_m]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>cpp_cpc_m</remote-alias>
+              <ordinal>9</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>real</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>741</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_144BE0F8B39B446CBE9E3AB076806499]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+          </metadata-records>
+        </connection>
+      </extract>
+      <layout _.fcp.SchemaViewerObjectModel.false...dim-percentage='0.5' _.fcp.SchemaViewerObjectModel.false...measure-percentage='0.4' dim-ordering='alphabetic' measure-ordering='alphabetic' show-structure='true' />
+      <semantic-values>
+        <semantic-value key='[Country].[Name]' value='&quot;Pakistan&quot;' />
+      </semantic-values>
+      <_.fcp.ObjectModelEncapsulateLegacy.true...object-graph>
+        <objects>
+          <object caption='Custom SQL Query' id='_144BE0F8B39B446CBE9E3AB076806499'>
+            <properties context=''>
+              <relation connection='bigquery.03c7s8y1di51531enumu700j6hc3' name='Custom SQL Query' type='text'>WITH base_cpc AS (&#13;
+SELECT &#13;
+datelive, &#13;
+yearmonth_live,&#13;
+vendor_code,&#13;
+vendor_name,&#13;
+user,&#13;
+avg_open_hrs_per_day,&#13;
+cpc_rev_local,&#13;
+final_budget_local&#13;
+FROM `dhh---analytics-apac.pandata_ap_commercial.NCR_Tableau_CPC_updated` &#13;
+WHERE global_entity_id = &quot;FP_PK&quot;&#13;
+-- AND EXTRACT(YEAR FROM datelive) = EXTRACT(YEAR FROM CURRENT_DATE(&quot;Asia/Karachi&quot;))&#13;
+-- AND EXTRACT(MONTH FROM datelive) = EXTRACT(MONTH FROM CURRENT_DATE(&quot;Asia/Karachi&quot;))&#13;
+),&#13;
+&#13;
+acc_res AS (&#13;
+SELECT &#13;
+owner_name AS account_owner_name,&#13;
+owner_email,&#13;
+COUNT(DISTINCT(vendor_code)) AS active_res&#13;
+FROM `fulfillment-dwh-production.pandata_report.country_PK_vendor_info` &#13;
+WHERE NOT is_backend_test&#13;
+AND is_backend_active&#13;
+AND NOT is_private&#13;
+AND NOT is_sf_test&#13;
+AND vertical = &quot;restaurants&quot;&#13;
+GROUP BY 1, 2),&#13;
+&#13;
+acc_cpc AS (&#13;
+SELECT&#13;
+yearmonth_live, &#13;
+user,&#13;
+COUNT(DISTINCT(CASE WHEN cpc_rev_local &gt;&gt; 0 THEN vendor_code END)) AS cpc_res,&#13;
+SUM(cpc_rev_local) AS cpc_m &#13;
+FROM base_cpc&#13;
+GROUP BY 1, 2),&#13;
+&#13;
+base_cpp AS (&#13;
+SELECT  &#13;
+vendor_code,&#13;
+vendor_name,&#13;
+year_month,&#13;
+sold_price_local,&#13;
+user_booked&#13;
+FROM `dhh---analytics-apac.pandata_ap_commercial.ncr_report_order_level` &#13;
+WHERE global_entity_id = &quot;FP_PK&quot;&#13;
+-- AND month = FORMAT_DATETIME(&quot;%b&quot;, CURRENT_DATE(&quot;Asia/Karachi&quot;))&#13;
+-- AND LEFT(year_month, 4) = FORMAT_DATETIME(&quot;%Y&quot;, CURRENT_DATE(&quot;Asia/Karachi&quot;))&#13;
+),&#13;
+&#13;
+acc_cpp AS (&#13;
+SELECT &#13;
+year_month,&#13;
+user_booked,&#13;
+COUNT(DISTINCT(CASE WHEN sold_price_local &gt;&gt; 0 THEN vendor_code END)) AS cpp_res,&#13;
+SUM(sold_price_local) AS cpp_m&#13;
+FROM base_cpp&#13;
+GROUP BY 1, 2),&#13;
+&#13;
+acc_gfv AS (&#13;
+SELECT &#13;
+FORMAT_DATE(&quot;%Y%m&quot;, date_local) AS year_month,&#13;
+owner_email,&#13;
+SUM(gfv_local) AS total_gfv&#13;
+FROM `fulfillment-dwh-production.pandata_report.country_PK_vendor_kpis` &#13;
+WHERE date_local &gt;&gt;= &quot;2021-01-01&quot;&#13;
+AND vertical = &quot;restaurants&quot;&#13;
+GROUP BY 1, 2&#13;
+)&#13;
+&#13;
+SELECT &#13;
+IFNULL(yearmonth_live, acc_cpp.year_month) AS year_month,&#13;
+IFNULL(user, user_booked) AS user,&#13;
+cpc_res,&#13;
+cpp_res,&#13;
+active_res,&#13;
+IFNULL(cpc_res, 0) + IFNULL(cpp_res, 0) AS cpp_cpc_res,&#13;
+total_gfv,&#13;
+cpc_m,&#13;
+cpp_m,&#13;
+IFNULL(cpc_m, 0) + IFNULL(cpp_m, 0) AS cpp_cpc_m&#13;
+FROM acc_cpc&#13;
+FULL OUTER JOIN acc_cpp&#13;
+ON acc_cpc.yearmonth_live = acc_cpp.year_month&#13;
+AND acc_cpc.user = acc_cpp.user_booked&#13;
+LEFT JOIN acc_gfv&#13;
+ON acc_cpc.yearmonth_live = acc_gfv.year_month&#13;
+AND acc_cpc.user = acc_gfv.owner_email&#13;
+LEFT JOIN acc_res&#13;
+ON acc_cpc.user = acc_res.owner_email</relation>
+            </properties>
+            <properties context='extract'>
+              <relation name='Extract' table='[Extract].[Extract]' type='table' />
+            </properties>
+          </object>
+        </objects>
+      </_.fcp.ObjectModelEncapsulateLegacy.true...object-graph>
+    </datasource>
+  </datasources>
+  <worksheets>
+    <worksheet name='Sheet 1'>
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='Custom SQL Query (pandata_pk)' name='federated.16ne5sh1d1lf060zp9ebz11esm5y' />
+          </datasources>
+          <datasource-dependencies datasource='federated.16ne5sh1d1lf060zp9ebz11esm5y'>
+            <column caption='Restaurant Penetration (%age)' datatype='real' name='[Calculation_1184728224311865344]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='ZN([cpp_cpc_res])/ZN([active_res])' />
+            </column>
+            <column caption='Revenue Weightage (%age)' datatype='real' name='[Calculation_1184728224314605569]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='ZN([cpp_cpc_m])/ZN([total_gfv])' />
+            </column>
+            <column caption='Active Restaurants' datatype='integer' name='[active_res]' role='measure' type='quantitative' />
+            <column caption='CPC Revenue' datatype='real' name='[cpc_m]' role='measure' type='quantitative' />
+            <column caption='CPC Restaurants' datatype='integer' name='[cpc_res]' role='measure' type='quantitative' />
+            <column caption='CPC &amp; CPP Revenue' datatype='real' name='[cpp_cpc_m]' role='measure' type='quantitative' />
+            <column caption='CPC &amp; CPP Restaurants' datatype='integer' name='[cpp_cpc_res]' role='measure' type='quantitative' />
+            <column caption='CPP Revenue' datatype='real' name='[cpp_m]' role='measure' type='quantitative' />
+            <column caption='CPP Restaurants' datatype='integer' name='[cpp_res]' role='measure' type='quantitative' />
+            <column-instance column='[user]' derivation='None' name='[none:user:nk]' pivot='key' type='nominal' />
+            <column-instance column='[year_month]' derivation='None' name='[none:year_month:nk]' pivot='key' type='nominal' />
+            <column-instance column='[Calculation_1184728224311865344]' derivation='Sum' name='[sum:Calculation_1184728224311865344:ok]' pivot='key' type='ordinal' />
+            <column-instance column='[Calculation_1184728224314605569]' derivation='Sum' name='[sum:Calculation_1184728224314605569:ok]' pivot='key' type='ordinal' />
+            <column-instance column='[active_res]' derivation='Sum' name='[sum:active_res:ok]' pivot='key' type='ordinal' />
+            <column-instance column='[cpc_m]' derivation='Sum' name='[sum:cpc_m:ok]' pivot='key' type='ordinal' />
+            <column-instance column='[cpc_res]' derivation='Sum' name='[sum:cpc_res:ok]' pivot='key' type='ordinal' />
+            <column-instance column='[cpp_cpc_m]' derivation='Sum' name='[sum:cpp_cpc_m:ok]' pivot='key' type='ordinal' />
+            <column-instance column='[cpp_cpc_res]' derivation='Sum' name='[sum:cpp_cpc_res:ok]' pivot='key' type='ordinal' />
+            <column-instance column='[cpp_m]' derivation='Sum' name='[sum:cpp_m:ok]' pivot='key' type='ordinal' />
+            <column-instance column='[cpp_res]' derivation='Sum' name='[sum:cpp_res:ok]' pivot='key' type='ordinal' />
+            <column-instance column='[total_gfv]' derivation='Sum' name='[sum:total_gfv:ok]' pivot='key' type='ordinal' />
+            <column caption='Total GFV' datatype='real' name='[total_gfv]' role='measure' type='quantitative' />
+            <column caption='User' datatype='string' name='[user]' role='dimension' type='nominal' />
+            <column datatype='string' name='[year_month]' role='dimension' type='nominal' />
+          </datasource-dependencies>
+          <filter class='categorical' column='[federated.16ne5sh1d1lf060zp9ebz11esm5y].[none:user:nk]'>
+            <groupfilter from='&quot;&quot;' function='range' level='[none:user:nk]' to='&quot;ziaulqamar88@gmail.com&quot;' user:ui-domain='relevant' user:ui-enumeration='inclusive' user:ui-marker='enumerate' />
+          </filter>
+          <filter class='categorical' column='[federated.16ne5sh1d1lf060zp9ebz11esm5y].[none:year_month:nk]'>
+            <groupfilter from='&quot;202202&quot;' function='range' level='[none:year_month:nk]' to='&quot;202206&quot;' user:ui-domain='relevant' user:ui-enumeration='inclusive' user:ui-marker='enumerate' />
+          </filter>
+          <shelf-sorts>
+            <shelf-sort-v2 dimension-to-sort='[federated.16ne5sh1d1lf060zp9ebz11esm5y].[none:user:nk]' direction='DESC' measure-to-sort-by='[federated.16ne5sh1d1lf060zp9ebz11esm5y].[sum:cpp_cpc_res:ok]' shelf='rows' />
+          </shelf-sorts>
+          <_.fcp.SingleValuePerNestSorting.true...single-value-per-nest-shelf-sorts>
+            <single-value-per-nest-shelf-sort dimension-to-sort='[federated.16ne5sh1d1lf060zp9ebz11esm5y].[none:year_month:nk]' direction='DESC' measure-to-sort-by='[federated.16ne5sh1d1lf060zp9ebz11esm5y].[none:year_month:nk]' shelf='rows' />
+          </_.fcp.SingleValuePerNestSorting.true...single-value-per-nest-shelf-sorts>
+          <slices>
+            <column>[federated.16ne5sh1d1lf060zp9ebz11esm5y].[none:year_month:nk]</column>
+            <column>[federated.16ne5sh1d1lf060zp9ebz11esm5y].[none:user:nk]</column>
+          </slices>
+          <aggregation value='true' />
+        </view>
+        <style>
+          <style-rule element='header'>
+            <format attr='height-header' value='70' />
+            <format attr='width' field='[federated.16ne5sh1d1lf060zp9ebz11esm5y].[sum:cpc_res:ok]' value='96' />
+            <format attr='width' field='[federated.16ne5sh1d1lf060zp9ebz11esm5y].[sum:cpp_res:ok]' value='96' />
+            <format attr='width' field='[federated.16ne5sh1d1lf060zp9ebz11esm5y].[sum:cpp_cpc_res:ok]' value='116' />
+            <format attr='width' field='[federated.16ne5sh1d1lf060zp9ebz11esm5y].[sum:active_res:ok]' value='96' />
+            <format attr='width' field='[federated.16ne5sh1d1lf060zp9ebz11esm5y].[sum:Calculation_1184728224311865344:ok]' value='100' />
+            <format attr='width' field='[federated.16ne5sh1d1lf060zp9ebz11esm5y].[sum:total_gfv:ok]' value='124' />
+            <format attr='width' field='[federated.16ne5sh1d1lf060zp9ebz11esm5y].[sum:Calculation_1184728224314605569:ok]' value='104' />
+            <format attr='width' field='[federated.16ne5sh1d1lf060zp9ebz11esm5y].[none:year_month:nk]' value='100' />
+            <format attr='width' field='[federated.16ne5sh1d1lf060zp9ebz11esm5y].[none:user:nk]' value='188' />
+          </style-rule>
+          <style-rule element='field-labels'>
+            <format attr='background-color' value='#e02174' />
+            <format attr='color' value='#ffffff' />
+            <format attr='font-weight' value='bold' />
+            <format attr='font-family' value='Tableau Bold' />
+          </style-rule>
+          <style-rule element='field-labels-decoration'>
+            <format attr='wrap' value='on' />
+            <format attr='vertical-align' value='center' />
+          </style-rule>
+          <style-rule element='field-labels-spanner'>
+            <format attr='background-color' scope='cols' value='#ffffff' />
+          </style-rule>
+          <style-rule element='label'>
+            <format attr='text-format' field='[federated.16ne5sh1d1lf060zp9ebz11esm5y].[sum:Calculation_1184728224311865344:ok]' value='p0.00%' />
+            <format attr='text-format' field='[federated.16ne5sh1d1lf060zp9ebz11esm5y].[sum:Calculation_1184728224314605569:ok]' value='p0.00%' />
+            <format attr='text-format' field='[federated.16ne5sh1d1lf060zp9ebz11esm5y].[sum:cpc_m:ok]' value='n#,##0;-#,##0' />
+            <format attr='text-format' field='[federated.16ne5sh1d1lf060zp9ebz11esm5y].[sum:cpp_m:ok]' value='n#,##0;-#,##0' />
+            <format attr='text-format' field='[federated.16ne5sh1d1lf060zp9ebz11esm5y].[sum:cpp_cpc_m:ok]' value='n#,##0;-#,##0' />
+            <format attr='text-format' field='[federated.16ne5sh1d1lf060zp9ebz11esm5y].[sum:total_gfv:ok]' value='n#,##0;-#,##0' />
+          </style-rule>
+          <style-rule element='quick-filter'>
+            <format attr='title' field='[federated.16ne5sh1d1lf060zp9ebz11esm5y].[none:year_month:nk]' value='Year Month'>
+              <formatted-text>
+                <run>Year Month</run>
+              </formatted-text>
+            </format>
+          </style-rule>
+        </style>
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Automatic' />
+            <style>
+              <style-rule element='mark'>
+                <format attr='mark-transparency' value='0' />
+              </style-rule>
+            </style>
+          </pane>
+        </panes>
+        <rows>([federated.16ne5sh1d1lf060zp9ebz11esm5y].[none:year_month:nk] / ([federated.16ne5sh1d1lf060zp9ebz11esm5y].[none:user:nk] / ([federated.16ne5sh1d1lf060zp9ebz11esm5y].[sum:cpc_res:ok] / ([federated.16ne5sh1d1lf060zp9ebz11esm5y].[sum:cpp_res:ok] / ([federated.16ne5sh1d1lf060zp9ebz11esm5y].[sum:cpp_cpc_res:ok] / ([federated.16ne5sh1d1lf060zp9ebz11esm5y].[sum:active_res:ok] / ([federated.16ne5sh1d1lf060zp9ebz11esm5y].[sum:Calculation_1184728224311865344:ok] / ([federated.16ne5sh1d1lf060zp9ebz11esm5y].[sum:cpc_m:ok] / ([federated.16ne5sh1d1lf060zp9ebz11esm5y].[sum:cpp_m:ok] / ([federated.16ne5sh1d1lf060zp9ebz11esm5y].[sum:cpp_cpc_m:ok] / ([federated.16ne5sh1d1lf060zp9ebz11esm5y].[sum:total_gfv:ok] / [federated.16ne5sh1d1lf060zp9ebz11esm5y].[sum:Calculation_1184728224314605569:ok])))))))))))</rows>
+        <cols />
+      </table>
+      <simple-id uuid='{A2D368AA-80AC-40D8-B725-62922AB1C390}' />
+    </worksheet>
+  </worksheets>
+  <dashboards>
+    <dashboard _.fcp.AccessibleZoneTabOrder.true...enable-sort-zone-taborder='true' name='NCR Optimisation'>
+      <repository-location derived-from='https://tableau.deliveryhero.net/t/Foodora/workbooks/PKNCROptimisation/NCROptimisation?rev=' id='NCROptimisation' path='/t/Foodora/workbooks/PKNCROptimisation' revision='' site='Foodora' />
+      <style />
+      <size maxheight='768' maxwidth='1366' minheight='768' minwidth='1366' preset-index='0' sizing-mode='fixed' />
+      <datasources>
+        <datasource caption='Custom SQL Query (pandata_pk)' name='federated.16ne5sh1d1lf060zp9ebz11esm5y' />
+      </datasources>
+      <datasource-dependencies datasource='federated.16ne5sh1d1lf060zp9ebz11esm5y'>
+        <column-instance column='[user]' derivation='None' name='[none:user:nk]' pivot='key' type='nominal' />
+        <column-instance column='[year_month]' derivation='None' name='[none:year_month:nk]' pivot='key' type='nominal' />
+        <column caption='User' datatype='string' name='[user]' role='dimension' type='nominal' />
+        <column datatype='string' name='[year_month]' role='dimension' type='nominal' />
+      </datasource-dependencies>
+      <zones>
+        <zone h='100000' id='4' type-v2='layout-basic' w='100000' x='0' y='0'>
+          <zone forceUpdate='true' h='9896' id='3' type-v2='text' w='15959' x='586' y='1042'>
+            <formatted-text>
+              <run fontcolor='#ffffff' fontname='Tableau Bold' fontsize='18'> foodpanda</run>
+            </formatted-text>
+            <zone-style>
+              <format attr='border-color' value='#000000' />
+              <format attr='border-style' value='none' />
+              <format attr='border-width' value='0' />
+              <format attr='margin' value='4' />
+              <format attr='background-color' value='#e02174' />
+            </zone-style>
+          </zone>
+          <zone forceUpdate='true' h='9896' id='5' type-v2='text' w='82869' x='16545' y='1042'>
+            <formatted-text>
+              <run fontcolor='#000000' fontname='Tableau Bold' fontsize='18'> NCR Optimisation </run>
+            </formatted-text>
+            <zone-style>
+              <format attr='border-color' value='#000000' />
+              <format attr='border-style' value='none' />
+              <format attr='border-width' value='0' />
+              <format attr='margin' value='4' />
+              <format attr='background-color' value='#d4d4d4' />
+            </zone-style>
+          </zone>
+          <zone h='8333' id='6' layout-strategy-id='distribute-evenly' param='horz' type-v2='layout-flow' w='98828' x='586' y='10938'>
+            <zone h='8333' id='10' type-v2='empty' w='24743' x='586' y='10938'>
+              <zone-style>
+                <format attr='border-color' value='#000000' />
+                <format attr='border-style' value='none' />
+                <format attr='border-width' value='0' />
+                <format attr='margin' value='4' />
+              </zone-style>
+            </zone>
+            <zone h='8333' id='8' mode='checkdropdown' name='Sheet 1' param='[federated.16ne5sh1d1lf060zp9ebz11esm5y].[none:year_month:nk]' show-apply='true' type-v2='filter' values='database' w='24744' x='25329' y='10938'>
+              <zone-style>
+                <format attr='border-color' value='#000000' />
+                <format attr='border-style' value='none' />
+                <format attr='border-width' value='0' />
+                <format attr='margin' value='4' />
+              </zone-style>
+            </zone>
+            <zone h='8333' id='9' mode='checkdropdown' name='Sheet 1' param='[federated.16ne5sh1d1lf060zp9ebz11esm5y].[none:user:nk]' show-apply='true' type-v2='filter' values='database' w='24671' x='50073' y='10938'>
+              <zone-style>
+                <format attr='border-color' value='#000000' />
+                <format attr='border-style' value='none' />
+                <format attr='border-width' value='0' />
+                <format attr='margin' value='4' />
+              </zone-style>
+            </zone>
+            <zone h='8333' id='11' type-v2='empty' w='24670' x='74744' y='10938'>
+              <zone-style>
+                <format attr='border-color' value='#000000' />
+                <format attr='border-style' value='none' />
+                <format attr='border-width' value='0' />
+                <format attr='margin' value='4' />
+              </zone-style>
+            </zone>
+          </zone>
+          <zone h='79687' id='7' name='Sheet 1' show-title='false' w='98828' x='586' y='19271'>
+            <zone-style>
+              <format attr='border-color' value='#000000' />
+              <format attr='border-style' value='none' />
+              <format attr='border-width' value='0' />
+              <format attr='margin' value='4' />
+            </zone-style>
+          </zone>
+          <zone-style>
+            <format attr='border-color' value='#000000' />
+            <format attr='border-style' value='none' />
+            <format attr='border-width' value='0' />
+            <format attr='margin' value='8' />
+          </zone-style>
+        </zone>
+      </zones>
+      <devicelayouts>
+        <devicelayout auto-generated='true' name='Phone'>
+          <size maxheight='700' minheight='700' sizing-mode='vscroll' />
+          <zones>
+            <zone h='100000' id='35' type-v2='layout-basic' w='100000' x='0' y='0'>
+              <zone h='97916' id='34' param='vert' type-v2='layout-flow' w='98828' x='586' y='1042'>
+                <zone forceUpdate='true' h='9896' id='3' type-v2='text' w='15959' x='586' y='1042'>
+                  <formatted-text>
+                    <run fontcolor='#ffffff' fontname='Tableau Bold' fontsize='18'> foodpanda</run>
+                  </formatted-text>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                    <format attr='background-color' value='#e02174' />
+                  </zone-style>
+                </zone>
+                <zone forceUpdate='true' h='9896' id='5' type-v2='text' w='82869' x='16545' y='1042'>
+                  <formatted-text>
+                    <run fontcolor='#000000' fontname='Tableau Bold' fontsize='18'> NCR Optimisation </run>
+                  </formatted-text>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                    <format attr='background-color' value='#d4d4d4' />
+                  </zone-style>
+                </zone>
+                <zone h='8333' id='8' mode='checkdropdown' name='Sheet 1' param='[federated.16ne5sh1d1lf060zp9ebz11esm5y].[none:year_month:nk]' show-apply='true' type-v2='filter' values='database' w='24744' x='25329' y='10938'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone h='8333' id='9' mode='checkdropdown' name='Sheet 1' param='[federated.16ne5sh1d1lf060zp9ebz11esm5y].[none:user:nk]' show-apply='true' type-v2='filter' values='database' w='24671' x='50073' y='10938'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone fixed-size='280' h='79687' id='7' is-fixed='true' name='Sheet 1' show-title='false' w='98828' x='586' y='19271'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+              </zone>
+              <zone-style>
+                <format attr='border-color' value='#000000' />
+                <format attr='border-style' value='none' />
+                <format attr='border-width' value='0' />
+                <format attr='margin' value='8' />
+              </zone-style>
+            </zone>
+          </zones>
+        </devicelayout>
+      </devicelayouts>
+      <simple-id uuid='{281CEC98-653F-4506-9303-21410AA89AFE}' />
+    </dashboard>
+  </dashboards>
+  <windows source-height='37'>
+    <window class='worksheet' name='Sheet 1'>
+      <cards>
+        <edge name='left'>
+          <strip size='160'>
+            <card type='pages' />
+            <card type='filters' />
+            <card type='marks' />
+          </strip>
+        </edge>
+        <edge name='top'>
+          <strip size='2147483647'>
+            <card type='columns' />
+          </strip>
+          <strip size='2147483647'>
+            <card type='rows' />
+          </strip>
+          <strip size='2147483647'>
+            <card type='title' />
+          </strip>
+        </edge>
+      </cards>
+      <viewpoint>
+        <zoom type='fit-width' />
+        <highlight>
+          <color-one-way>
+            <field>[federated.16ne5sh1d1lf060zp9ebz11esm5y].[none:user:nk]</field>
+            <field>[federated.16ne5sh1d1lf060zp9ebz11esm5y].[none:year_month:nk]</field>
+          </color-one-way>
+        </highlight>
+      </viewpoint>
+      <simple-id uuid='{7E2A2E98-DD11-438F-9564-D1D50077090D}' />
+    </window>
+    <window class='dashboard' maximized='true' name='NCR Optimisation'>
+      <viewpoints>
+        <viewpoint name='Sheet 1' />
+      </viewpoints>
+      <active id='-1' />
+      <simple-id uuid='{C3C94537-04A6-498C-969C-AC830101C192}' />
+    </window>
+  </windows>
+</workbook>
