@@ -1,0 +1,1623 @@
+<?xml version='1.0' encoding='utf-8' ?>
+
+<!-- build 20221.22.1108.1355                               -->
+<workbook original-version='18.1' source-build='2022.1.9 (20221.22.1108.1355)' source-platform='win' version='18.1' xml:base='https://tableau.deliveryhero.net' xmlns:user='http://www.tableausoftware.com/xml/user'>
+  <document-format-change-manifest>
+    <_.fcp.AnimationOnByDefault.true...AnimationOnByDefault />
+    <_.fcp.MarkAnimation.true...MarkAnimation />
+    <_.fcp.ObjectModelEncapsulateLegacy.true...ObjectModelEncapsulateLegacy />
+    <_.fcp.ObjectModelExtractV2.true...ObjectModelExtractV2 />
+    <_.fcp.ObjectModelTableType.true...ObjectModelTableType />
+    <_.fcp.SchemaViewerObjectModel.true...SchemaViewerObjectModel />
+    <SheetIdentifierTracking />
+    <SortTagCleanup />
+    <WindowsPersistSimpleIdentifiers />
+  </document-format-change-manifest>
+  <repository-location id='ContactsCREDITS' path='/t/Pedidosya/workbooks' revision='1.0' site='Pedidosya' />
+  <preferences>
+    <preference name='ui.encoding.shelf.height' value='24' />
+    <preference name='ui.shelf.height' value='26' />
+  </preferences>
+  <_.fcp.AnimationOnByDefault.false...style>
+    <_.fcp.AnimationOnByDefault.false..._.fcp.MarkAnimation.true...style-rule element='animation'>
+      <_.fcp.AnimationOnByDefault.false...format attr='animation-on' value='ao-on' />
+    </_.fcp.AnimationOnByDefault.false..._.fcp.MarkAnimation.true...style-rule>
+  </_.fcp.AnimationOnByDefault.false...style>
+  <datasources>
+    <datasource caption='Consulta SQL personalizada (da_fintech)' inline='true' name='federated.1jakakx0o5vydf1gnwr4z0rsi1f0' version='18.1'>
+      <connection class='federated'>
+        <named-connections>
+          <named-connection caption='BigQuery' name='bigquery.0jy9v271r6laqb1etagpc0xxucvb'>
+            <connection CATALOG='peya-fraud-and-fintech' EXECCATALOG='peya-fraud-and-fintech' authentication='oauth' bq-dataset-fetch-rows='' bq-fetch-rows='' bq-fetch-tasks='' bq-large-fetch-rows='' bq-project-fetch-rows='' bq-response-rows='' class='bigquery' connection-dialect='google-sql' project='peya-fraud-and-fintech' schema='da_fintech' server-oauth='' username='bruno.marchese@pedidosya.com' workgroup-auth-mode='prompt' />
+          </named-connection>
+        </named-connections>
+        <_.fcp.ObjectModelEncapsulateLegacy.false...relation connection='bigquery.0jy9v271r6laqb1etagpc0xxucvb' name='Consulta SQL personalizada' type='text'><![CDATA[WITH dates AS (
+
+    SELECT
+        DATE("2023-01-01") AS from_date
+        , CURRENT_DATE() AS to_date
+
+),
+
+credits AS (
+
+SELECT 
+    currency_code
+    , country_name
+    , partition_date
+    , COUNT(DISTINCT cre_id) AS active_credits
+    , SUM(debt_balance_amt) AS debt_balance_amt_lc
+    , COUNT(DISTINCT CASE WHEN debt_balance_defaulted_amt >> 0 THEN cre_id END) AS defaulted_and_active_credits
+    , SUM(debt_balance_defaulted_amt) AS debt_balance_defaulted_amt
+    , SUM(days_past_due) AS sum_days_past_due_for_avg
+FROM `peya-datamarts-pro.dm_fintech.partner_credits_portfolio_monthly`, dates 
+WHERE partition_date BETWEEN from_date AND to_date
+GROUP BY 1,2,3
+
+),
+
+first_credits AS (
+
+SELECT
+  clientid clientId,
+  MIN(requestDate) first_credit
+
+FROM `peya-data-origins-pro.cl_financial_services.credits`
+
+WHERE is_deleted != TRUE
+
+GROUP BY 1
+
+),
+
+main AS (
+SELECT
+  global_entity_id,
+  LAST_DAY(DATE(startTime)) partition_date,
+  node_id,
+  Abandoned,
+  CASE
+    WHEN LOWER(node_id) LIKE "finance|credits|notaccredited|%" THEN "No acreditación de fondos" -- 2.1 en árbol
+    WHEN LOWER(node_id) LIKE "finance|credits|instalmentsexpiration|%" THEN "Vencimiento de cuotas" -- 3.1 en árbol
+    WHEN LOWER(node_id) LIKE "finance|credits|instalmentspayments|%" THEN "Pago cuotas" -- 3.3 en árbol
+    WHEN LOWER(node_id) LIKE "finance|credits|paymentsissues|%" THEN "Cuota no se puede cobrar" -- 3.4 en árbol
+    WHEN LOWER(node_id) LIKE "finance|credits|banktransferissues|%" THEN "Transferencia no reflejada" -- 4.1 en árbol
+    ELSE "Others"
+  END nodo,
+  COUNT(DISTINCT caseid) cases
+  
+
+FROM `peya-data-origins-pro.cl_gcc_service.hc_events` hc, dates
+
+
+LEFT JOIN `peya-data-origins-pro.cl_salesforce.livechat_transcript` AS ct
+  ON chat_id = ct.ALAN_identifier
+
+LEFT JOIN `peya-bi-tools-pro.il_salesforce.fact_livechat_transcripts` AS ict
+  ON ct.CaseId=ict.case_id
+
+LEFT JOIN `peya-data-origins-pro.cl_financial_services.clients` c
+  ON ict.partner_id = c.partnerid
+
+LEFT JOIN first_credits fc
+  ON c.id = fc.clientId
+
+
+WHERE TRUE
+  AND hc.created_date BETWEEN from_date AND to_date
+  AND DATE(CreatedDate) BETWEEN from_date AND to_date
+  AND (LOWER(node_id) LIKE "%%finance|credits%%" AND LOWER(node_id) LIKE "%|chat")
+  --AND UPPER(global_entity_id) LIKE "%AR%"
+  AND (c.is_deleted != TRUE OR c.is_deleted IS NULL)
+  AND first_credit IS NOT NULL
+  AND DATE(first_credit) <<= DATE(startTime)
+
+
+GROUP BY 1,2,3,4,5
+    
+)
+
+SELECT 
+    c.*,
+    SUM(CASE WHEN nodo = "No acreditación de fondos" THEN cases END) AS cases_2_1,
+    SUM(CASE WHEN nodo = "Vencimiento de cuotas" THEN cases END) AS cases_3_1,
+    SUM(CASE WHEN nodo = "Pago cuotas" THEN cases END) AS cases_3_3,
+    SUM(CASE WHEN nodo = "Cuota no se puede cobrar" THEN cases END) AS cases_3_4,
+    SUM(CASE WHEN nodo = "Transferencia no reflejada" THEN cases END) AS cases_4_1,
+    SUM(cases) AS total_cases,
+    SAFE_DIVIDE(SUM(cases) , active_credits) AS ratio
+FROM credits c
+    LEFT JOIN main m
+        ON m.partition_date = c.partition_date
+        AND RIGHT(global_entity_id, 2) = c.currency_code
+WHERE nodo != "Others"
+GROUP BY 1,2,3,4,5,6,7,8]]></_.fcp.ObjectModelEncapsulateLegacy.false...relation>
+        <_.fcp.ObjectModelEncapsulateLegacy.true...relation connection='bigquery.0jy9v271r6laqb1etagpc0xxucvb' name='Consulta SQL personalizada' type='text'><![CDATA[WITH dates AS (
+
+    SELECT
+        DATE("2023-01-01") AS from_date
+        , CURRENT_DATE() AS to_date
+
+),
+
+credits AS (
+
+SELECT 
+    currency_code
+    , country_name
+    , partition_date
+    , COUNT(DISTINCT cre_id) AS active_credits
+    , SUM(debt_balance_amt) AS debt_balance_amt_lc
+    , COUNT(DISTINCT CASE WHEN debt_balance_defaulted_amt >> 0 THEN cre_id END) AS defaulted_and_active_credits
+    , SUM(debt_balance_defaulted_amt) AS debt_balance_defaulted_amt
+    , SUM(days_past_due) AS sum_days_past_due_for_avg
+FROM `peya-datamarts-pro.dm_fintech.partner_credits_portfolio_monthly`, dates 
+WHERE partition_date BETWEEN from_date AND to_date
+GROUP BY 1,2,3
+
+),
+
+first_credits AS (
+
+SELECT
+  clientid clientId,
+  MIN(requestDate) first_credit
+
+FROM `peya-data-origins-pro.cl_financial_services.credits`
+
+WHERE is_deleted != TRUE
+
+GROUP BY 1
+
+),
+
+main AS (
+SELECT
+  global_entity_id,
+  LAST_DAY(DATE(startTime)) partition_date,
+  node_id,
+  Abandoned,
+  CASE
+    WHEN LOWER(node_id) LIKE "finance|credits|notaccredited|%" THEN "No acreditación de fondos" -- 2.1 en árbol
+    WHEN LOWER(node_id) LIKE "finance|credits|instalmentsexpiration|%" THEN "Vencimiento de cuotas" -- 3.1 en árbol
+    WHEN LOWER(node_id) LIKE "finance|credits|instalmentspayments|%" THEN "Pago cuotas" -- 3.3 en árbol
+    WHEN LOWER(node_id) LIKE "finance|credits|paymentsissues|%" THEN "Cuota no se puede cobrar" -- 3.4 en árbol
+    WHEN LOWER(node_id) LIKE "finance|credits|banktransferissues|%" THEN "Transferencia no reflejada" -- 4.1 en árbol
+    ELSE "Others"
+  END nodo,
+  COUNT(DISTINCT caseid) cases
+  
+
+FROM `peya-data-origins-pro.cl_gcc_service.hc_events` hc, dates
+
+
+LEFT JOIN `peya-data-origins-pro.cl_salesforce.livechat_transcript` AS ct
+  ON chat_id = ct.ALAN_identifier
+
+LEFT JOIN `peya-bi-tools-pro.il_salesforce.fact_livechat_transcripts` AS ict
+  ON ct.CaseId=ict.case_id
+
+LEFT JOIN `peya-data-origins-pro.cl_financial_services.clients` c
+  ON ict.partner_id = c.partnerid
+
+LEFT JOIN first_credits fc
+  ON c.id = fc.clientId
+
+
+WHERE TRUE
+  AND hc.created_date BETWEEN from_date AND to_date
+  AND DATE(CreatedDate) BETWEEN from_date AND to_date
+  AND (LOWER(node_id) LIKE "%%finance|credits%%" AND LOWER(node_id) LIKE "%|chat")
+  --AND UPPER(global_entity_id) LIKE "%AR%"
+  AND (c.is_deleted != TRUE OR c.is_deleted IS NULL)
+  AND first_credit IS NOT NULL
+  AND DATE(first_credit) <<= DATE(startTime)
+
+
+GROUP BY 1,2,3,4,5
+    
+)
+
+SELECT 
+    c.*,
+    SUM(CASE WHEN nodo = "No acreditación de fondos" THEN cases END) AS cases_2_1,
+    SUM(CASE WHEN nodo = "Vencimiento de cuotas" THEN cases END) AS cases_3_1,
+    SUM(CASE WHEN nodo = "Pago cuotas" THEN cases END) AS cases_3_3,
+    SUM(CASE WHEN nodo = "Cuota no se puede cobrar" THEN cases END) AS cases_3_4,
+    SUM(CASE WHEN nodo = "Transferencia no reflejada" THEN cases END) AS cases_4_1,
+    SUM(cases) AS total_cases,
+    SAFE_DIVIDE(SUM(cases) , active_credits) AS ratio
+FROM credits c
+    LEFT JOIN main m
+        ON m.partition_date = c.partition_date
+        AND RIGHT(global_entity_id, 2) = c.currency_code
+WHERE nodo != "Others"
+GROUP BY 1,2,3,4,5,6,7,8]]></_.fcp.ObjectModelEncapsulateLegacy.true...relation>
+        <metadata-records>
+          <metadata-record class='column'>
+            <remote-name>currency_code</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[currency_code]</local-name>
+            <parent-name>[Consulta SQL personalizada]</parent-name>
+            <remote-alias>currency_code</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_171C63B446984ADDBE05F4B2C53692AF]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>country_name</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[country_name]</local-name>
+            <parent-name>[Consulta SQL personalizada]</parent-name>
+            <remote-alias>country_name</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_171C63B446984ADDBE05F4B2C53692AF]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>partition_date</remote-name>
+            <remote-type>7</remote-type>
+            <local-name>[partition_date]</local-name>
+            <parent-name>[Consulta SQL personalizada]</parent-name>
+            <remote-alias>partition_date</remote-alias>
+            <local-type>date</local-type>
+            <aggregation>Year</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_171C63B446984ADDBE05F4B2C53692AF]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>active_credits</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[active_credits]</local-name>
+            <parent-name>[Consulta SQL personalizada]</parent-name>
+            <remote-alias>active_credits</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_171C63B446984ADDBE05F4B2C53692AF]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>debt_balance_amt_lc</remote-name>
+            <remote-type>5</remote-type>
+            <local-name>[debt_balance_amt_lc]</local-name>
+            <parent-name>[Consulta SQL personalizada]</parent-name>
+            <remote-alias>debt_balance_amt_lc</remote-alias>
+            <local-type>real</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_171C63B446984ADDBE05F4B2C53692AF]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>defaulted_and_active_credits</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[defaulted_and_active_credits]</local-name>
+            <parent-name>[Consulta SQL personalizada]</parent-name>
+            <remote-alias>defaulted_and_active_credits</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_171C63B446984ADDBE05F4B2C53692AF]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>debt_balance_defaulted_amt</remote-name>
+            <remote-type>5</remote-type>
+            <local-name>[debt_balance_defaulted_amt]</local-name>
+            <parent-name>[Consulta SQL personalizada]</parent-name>
+            <remote-alias>debt_balance_defaulted_amt</remote-alias>
+            <local-type>real</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_171C63B446984ADDBE05F4B2C53692AF]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>sum_days_past_due_for_avg</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[sum_days_past_due_for_avg]</local-name>
+            <parent-name>[Consulta SQL personalizada]</parent-name>
+            <remote-alias>sum_days_past_due_for_avg</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_171C63B446984ADDBE05F4B2C53692AF]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>cases_2_1</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[cases_2_1]</local-name>
+            <parent-name>[Consulta SQL personalizada]</parent-name>
+            <remote-alias>cases_2_1</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_171C63B446984ADDBE05F4B2C53692AF]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>cases_3_1</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[cases_3_1]</local-name>
+            <parent-name>[Consulta SQL personalizada]</parent-name>
+            <remote-alias>cases_3_1</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_171C63B446984ADDBE05F4B2C53692AF]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>cases_3_3</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[cases_3_3]</local-name>
+            <parent-name>[Consulta SQL personalizada]</parent-name>
+            <remote-alias>cases_3_3</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_171C63B446984ADDBE05F4B2C53692AF]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>cases_3_4</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[cases_3_4]</local-name>
+            <parent-name>[Consulta SQL personalizada]</parent-name>
+            <remote-alias>cases_3_4</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_171C63B446984ADDBE05F4B2C53692AF]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>cases_4_1</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[cases_4_1]</local-name>
+            <parent-name>[Consulta SQL personalizada]</parent-name>
+            <remote-alias>cases_4_1</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_171C63B446984ADDBE05F4B2C53692AF]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>total_cases</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[total_cases]</local-name>
+            <parent-name>[Consulta SQL personalizada]</parent-name>
+            <remote-alias>total_cases</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_171C63B446984ADDBE05F4B2C53692AF]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>ratio</remote-name>
+            <remote-type>5</remote-type>
+            <local-name>[ratio]</local-name>
+            <parent-name>[Consulta SQL personalizada]</parent-name>
+            <remote-alias>ratio</remote-alias>
+            <local-type>real</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_171C63B446984ADDBE05F4B2C53692AF]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+        </metadata-records>
+      </connection>
+      <aliases enabled='yes' />
+      <column caption='No acreditación de fondos' datatype='real' default-format='p0.00%' name='[Calculation_1536571942677344257]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='SUM([cases_2_1]) /  SUM([total_cases])' />
+      </column>
+      <column caption='Ratio' datatype='real' default-format='n#,##0.00;-#,##0.00' name='[Calculation_1536571942723342342]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='100*(SUM([total_cases]) / SUM([active_credits]))' />
+      </column>
+      <column caption='other rate' datatype='integer' default-format='N' name='[Calculation_1536571942727041031]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='(SUM([total_cases])-SUM([cases_2_1]+[cases_3_1]+[cases_3_3]+[cases_3_4]+[cases_4_1]))' />
+      </column>
+      <column caption='Avg default days' datatype='real' name='[Calculation_1536571942743887880]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='SUM([sum_days_past_due_for_avg]) / SUM([defaulted_and_active_credits])' />
+      </column>
+      <column datatype='real' default-format='p0.00%' name='[Cálculo1]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='SUM([cases_3_1]) / TOTAL(SUM([cases_3_1]))'>
+          <table-calc ordering-field='[federated.1jakakx0o5vydf1gnwr4z0rsi1f0].[country_name]' ordering-type='Field' />
+        </calculation>
+      </column>
+      <column datatype='real' default-format='p0.00%' name='[Cálculo2]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='SUM([cases_3_3]) / TOTAL(SUM([cases_3_3]))'>
+          <table-calc ordering-field='[federated.1jakakx0o5vydf1gnwr4z0rsi1f0].[country_name]' ordering-type='Field' />
+        </calculation>
+      </column>
+      <column datatype='real' default-format='p0.00%' name='[Cálculo3]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='SUM([cases_3_4]) / TOTAL(SUM([cases_3_4]))'>
+          <table-calc ordering-type='Columns' />
+        </calculation>
+      </column>
+      <column datatype='real' default-format='p0.00%' name='[Cálculo4]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='SUM([cases_4_1]) / TOTAL(SUM([cases_4_1]))'>
+          <table-calc ordering-type='Columns' />
+        </calculation>
+      </column>
+      <_.fcp.ObjectModelTableType.true...column caption='Consulta SQL personalizada' datatype='table' name='[__tableau_internal_object_id__].[_171C63B446984ADDBE05F4B2C53692AF]' role='measure' type='quantitative' />
+      <column datatype='integer' name='[active_credits]' role='measure' type='quantitative' />
+      <column caption='Vencimiento de cuotas' datatype='real' default-format='p0.00%' name='[cases 2.1 rate (copia)_1536571942677499906]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='SUM([cases_3_1]) /  SUM([total_cases])' />
+      </column>
+      <column caption='Pago cuota' datatype='real' default-format='p0.00%' name='[cases 3.1 rate (copia)_1536571942677565443]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='SUM([cases_3_3]) /  SUM([total_cases])' />
+      </column>
+      <column caption='Cuota no se puede cobrar' datatype='real' default-format='p0.00%' name='[cases 3.3 rate (copia)_1536571942677639172]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='SUM([cases_3_4]) /  SUM([total_cases])' />
+      </column>
+      <column caption='Transferencia no reflejada' datatype='real' default-format='p0.00%' name='[cases 3.4 rate (copia)_1536571942677688325]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='SUM([cases_4_1]) /  SUM([total_cases])' />
+      </column>
+      <column datatype='integer' name='[cases_4_1]' role='measure' type='quantitative' />
+      <column datatype='string' name='[country_name]' role='dimension' semantic-role='[Country].[ISO3166_2]' type='nominal' />
+      <column datatype='real' default-format='p0.00%' name='[ratio]' role='measure' type='quantitative' />
+      <column datatype='integer' name='[total_cases]' role='measure' type='quantitative' />
+      <column-instance column='[active_credits]' derivation='Sum' name='[pcdf:sum:active_credits:qk]' pivot='key' type='quantitative'>
+        <table-calc diff-options='Relative' ordering-type='Rows' type='PctDiff'>
+          <address>
+            <value>-1</value>
+          </address>
+        </table-calc>
+      </column-instance>
+      <column-instance column='[total_cases]' derivation='Sum' name='[pcdf:sum:total_cases:qk]' pivot='key' type='quantitative'>
+        <table-calc diff-options='Relative' ordering-type='Rows' type='PctDiff'>
+          <address>
+            <value>-1</value>
+          </address>
+        </table-calc>
+      </column-instance>
+      <column-instance column='[Calculation_1536571942723342342]' derivation='User' name='[pcdf:usr:Calculation_1536571942723342342:qk]' pivot='key' type='quantitative'>
+        <table-calc diff-options='Relative' ordering-type='Rows' type='PctDiff'>
+          <address>
+            <value>-1</value>
+          </address>
+        </table-calc>
+      </column-instance>
+      <column-instance column='[active_credits]' derivation='Sum' name='[sum:active_credits:qk]' pivot='key' type='quantitative' />
+      <column-instance column='[cases_4_1]' derivation='Sum' name='[sum:cases_4_1:qk]' pivot='key' type='quantitative' />
+      <column-instance column='[total_cases]' derivation='Sum' name='[sum:total_cases:qk]' pivot='key' type='quantitative' />
+      <column-instance column='[Calculation_1536571942723342342]' derivation='User' name='[usr:Calculation_1536571942723342342:qk]' pivot='key' type='quantitative' />
+      <extract _.fcp.ObjectModelExtractV2.true...object-id='' count='-1' enabled='true' units='records'>
+        <connection class='hyper' dbname='extract/db/4d/{F9CA7732-3B60-4F90-8DB6-22F44E0CFEA3}/federated_1jakakx0o5vydf1gnwr4z0.hyper' default-settings='yes' extract-engine='true' schema='Extract' tablename='Extract' update-time='07/06/2023 09:25:18 PM'>
+          <_.fcp.ObjectModelEncapsulateLegacy.false...relation name='Extract' table='[Extract].[Extract]' type='table' />
+          <_.fcp.ObjectModelEncapsulateLegacy.true...relation name='Extract' table='[Extract].[Extract]' type='table' />
+          <refresh>
+            <refresh-event add-from-file-path='Consulta SQL personalizada (da_fintech)' increment-value='%null%' refresh-type='create' rows-inserted='22' timestamp-start='2023-07-06 21:25:14.872' />
+          </refresh>
+          <metadata-records>
+            <metadata-record class='column'>
+              <remote-name>currency_code</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[currency_code]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>currency_code</remote-alias>
+              <ordinal>0</ordinal>
+              <family>Consulta SQL personalizada</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>4</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>country_name</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[country_name]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>country_name</remote-alias>
+              <ordinal>1</ordinal>
+              <family>Consulta SQL personalizada</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>4</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>partition_date</remote-name>
+              <remote-type>133</remote-type>
+              <local-name>[partition_date]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>partition_date</remote-alias>
+              <ordinal>2</ordinal>
+              <family>Consulta SQL personalizada</family>
+              <local-type>date</local-type>
+              <aggregation>Year</aggregation>
+              <approx-count>6</approx-count>
+              <contains-null>true</contains-null>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>active_credits</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[active_credits]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>active_credits</remote-alias>
+              <ordinal>3</ordinal>
+              <family>Consulta SQL personalizada</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>22</approx-count>
+              <contains-null>true</contains-null>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>debt_balance_amt_lc</remote-name>
+              <remote-type>5</remote-type>
+              <local-name>[debt_balance_amt_lc]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>debt_balance_amt_lc</remote-alias>
+              <ordinal>4</ordinal>
+              <family>Consulta SQL personalizada</family>
+              <local-type>real</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>22</approx-count>
+              <contains-null>true</contains-null>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>defaulted_and_active_credits</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[defaulted_and_active_credits]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>defaulted_and_active_credits</remote-alias>
+              <ordinal>5</ordinal>
+              <family>Consulta SQL personalizada</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>19</approx-count>
+              <contains-null>true</contains-null>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>debt_balance_defaulted_amt</remote-name>
+              <remote-type>5</remote-type>
+              <local-name>[debt_balance_defaulted_amt]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>debt_balance_defaulted_amt</remote-alias>
+              <ordinal>6</ordinal>
+              <family>Consulta SQL personalizada</family>
+              <local-type>real</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>21</approx-count>
+              <contains-null>true</contains-null>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>sum_days_past_due_for_avg</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[sum_days_past_due_for_avg]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>sum_days_past_due_for_avg</remote-alias>
+              <ordinal>7</ordinal>
+              <family>Consulta SQL personalizada</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>22</approx-count>
+              <contains-null>true</contains-null>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>cases_2_1</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[cases_2_1]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>cases_2_1</remote-alias>
+              <ordinal>8</ordinal>
+              <family>Consulta SQL personalizada</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>12</approx-count>
+              <contains-null>true</contains-null>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>cases_3_1</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[cases_3_1]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>cases_3_1</remote-alias>
+              <ordinal>9</ordinal>
+              <family>Consulta SQL personalizada</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>9</approx-count>
+              <contains-null>true</contains-null>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>cases_3_3</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[cases_3_3]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>cases_3_3</remote-alias>
+              <ordinal>10</ordinal>
+              <family>Consulta SQL personalizada</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>11</approx-count>
+              <contains-null>true</contains-null>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>cases_3_4</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[cases_3_4]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>cases_3_4</remote-alias>
+              <ordinal>11</ordinal>
+              <family>Consulta SQL personalizada</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>7</approx-count>
+              <contains-null>true</contains-null>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>cases_4_1</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[cases_4_1]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>cases_4_1</remote-alias>
+              <ordinal>12</ordinal>
+              <family>Consulta SQL personalizada</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>10</approx-count>
+              <contains-null>true</contains-null>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>total_cases</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[total_cases]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>total_cases</remote-alias>
+              <ordinal>13</ordinal>
+              <family>Consulta SQL personalizada</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>16</approx-count>
+              <contains-null>true</contains-null>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>ratio</remote-name>
+              <remote-type>5</remote-type>
+              <local-name>[ratio]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>ratio</remote-alias>
+              <ordinal>14</ordinal>
+              <family>Consulta SQL personalizada</family>
+              <local-type>real</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>21</approx-count>
+              <contains-null>true</contains-null>
+            </metadata-record>
+          </metadata-records>
+        </connection>
+      </extract>
+      <layout _.fcp.SchemaViewerObjectModel.false...dim-percentage='0.5' _.fcp.SchemaViewerObjectModel.false...measure-percentage='0.4' dim-ordering='alphabetic' measure-ordering='alphabetic' show-structure='true' />
+      <style>
+        <style-rule element='mark'>
+          <encoding attr='color' field='[:Measure Names]' type='palette'>
+            <map to='#4e79a7'>
+              <bucket>&quot;[federated.1jakakx0o5vydf1gnwr4z0rsi1f0].[sum:cases_4_1:qk]&quot;</bucket>
+            </map>
+            <map to='#e15759'>
+              <bucket>&quot;[federated.1jakakx0o5vydf1gnwr4z0rsi1f0].[pcdf:usr:Calculation_1536571942723342342:qk]&quot;</bucket>
+            </map>
+            <map to='#e15759'>
+              <bucket>&quot;[federated.1jakakx0o5vydf1gnwr4z0rsi1f0].[usr:Calculation_1536571942723342342:qk]&quot;</bucket>
+            </map>
+            <map to='#f28e2b'>
+              <bucket>&quot;[federated.1jakakx0o5vydf1gnwr4z0rsi1f0].[pcdf:sum:total_cases:qk]&quot;</bucket>
+            </map>
+            <map to='#f28e2b'>
+              <bucket>&quot;[federated.1jakakx0o5vydf1gnwr4z0rsi1f0].[sum:total_cases:qk]&quot;</bucket>
+            </map>
+            <map to='#f7f7f7'>
+              <bucket>&quot;[federated.1jakakx0o5vydf1gnwr4z0rsi1f0].[pcdf:sum:active_credits:qk]&quot;</bucket>
+            </map>
+            <map to='#f7f7f7'>
+              <bucket>&quot;[federated.1jakakx0o5vydf1gnwr4z0rsi1f0].[sum:active_credits:qk]&quot;</bucket>
+            </map>
+          </encoding>
+        </style-rule>
+      </style>
+      <semantic-values>
+        <semantic-value key='[Country].[Name]' value='&quot;República Oriental de Uruguay&quot;' />
+      </semantic-values>
+      <date-options start-of-week='monday' />
+      <_.fcp.ObjectModelEncapsulateLegacy.true...object-graph>
+        <objects>
+          <object caption='Consulta SQL personalizada' id='_171C63B446984ADDBE05F4B2C53692AF'>
+            <properties context=''>
+              <relation connection='bigquery.0jy9v271r6laqb1etagpc0xxucvb' name='Consulta SQL personalizada' type='text'><![CDATA[WITH dates AS (
+
+    SELECT
+        DATE("2023-01-01") AS from_date
+        , CURRENT_DATE() AS to_date
+
+),
+
+credits AS (
+
+SELECT 
+    currency_code
+    , country_name
+    , partition_date
+    , COUNT(DISTINCT cre_id) AS active_credits
+    , SUM(debt_balance_amt) AS debt_balance_amt_lc
+    , COUNT(DISTINCT CASE WHEN debt_balance_defaulted_amt >> 0 THEN cre_id END) AS defaulted_and_active_credits
+    , SUM(debt_balance_defaulted_amt) AS debt_balance_defaulted_amt
+    , SUM(days_past_due) AS sum_days_past_due_for_avg
+FROM `peya-datamarts-pro.dm_fintech.partner_credits_portfolio_monthly`, dates 
+WHERE partition_date BETWEEN from_date AND to_date
+GROUP BY 1,2,3
+
+),
+
+first_credits AS (
+
+SELECT
+  clientid clientId,
+  MIN(requestDate) first_credit
+
+FROM `peya-data-origins-pro.cl_financial_services.credits`
+
+WHERE is_deleted != TRUE
+
+GROUP BY 1
+
+),
+
+main AS (
+SELECT
+  global_entity_id,
+  LAST_DAY(DATE(startTime)) partition_date,
+  node_id,
+  Abandoned,
+  CASE
+    WHEN LOWER(node_id) LIKE "finance|credits|notaccredited|%" THEN "No acreditación de fondos" -- 2.1 en árbol
+    WHEN LOWER(node_id) LIKE "finance|credits|instalmentsexpiration|%" THEN "Vencimiento de cuotas" -- 3.1 en árbol
+    WHEN LOWER(node_id) LIKE "finance|credits|instalmentspayments|%" THEN "Pago cuotas" -- 3.3 en árbol
+    WHEN LOWER(node_id) LIKE "finance|credits|paymentsissues|%" THEN "Cuota no se puede cobrar" -- 3.4 en árbol
+    WHEN LOWER(node_id) LIKE "finance|credits|banktransferissues|%" THEN "Transferencia no reflejada" -- 4.1 en árbol
+    ELSE "Others"
+  END nodo,
+  COUNT(DISTINCT caseid) cases
+  
+
+FROM `peya-data-origins-pro.cl_gcc_service.hc_events` hc, dates
+
+
+LEFT JOIN `peya-data-origins-pro.cl_salesforce.livechat_transcript` AS ct
+  ON chat_id = ct.ALAN_identifier
+
+LEFT JOIN `peya-bi-tools-pro.il_salesforce.fact_livechat_transcripts` AS ict
+  ON ct.CaseId=ict.case_id
+
+LEFT JOIN `peya-data-origins-pro.cl_financial_services.clients` c
+  ON ict.partner_id = c.partnerid
+
+LEFT JOIN first_credits fc
+  ON c.id = fc.clientId
+
+
+WHERE TRUE
+  AND hc.created_date BETWEEN from_date AND to_date
+  AND DATE(CreatedDate) BETWEEN from_date AND to_date
+  AND (LOWER(node_id) LIKE "%%finance|credits%%" AND LOWER(node_id) LIKE "%|chat")
+  --AND UPPER(global_entity_id) LIKE "%AR%"
+  AND (c.is_deleted != TRUE OR c.is_deleted IS NULL)
+  AND first_credit IS NOT NULL
+  AND DATE(first_credit) <<= DATE(startTime)
+
+
+GROUP BY 1,2,3,4,5
+    
+)
+
+SELECT 
+    c.*,
+    SUM(CASE WHEN nodo = "No acreditación de fondos" THEN cases END) AS cases_2_1,
+    SUM(CASE WHEN nodo = "Vencimiento de cuotas" THEN cases END) AS cases_3_1,
+    SUM(CASE WHEN nodo = "Pago cuotas" THEN cases END) AS cases_3_3,
+    SUM(CASE WHEN nodo = "Cuota no se puede cobrar" THEN cases END) AS cases_3_4,
+    SUM(CASE WHEN nodo = "Transferencia no reflejada" THEN cases END) AS cases_4_1,
+    SUM(cases) AS total_cases,
+    SAFE_DIVIDE(SUM(cases) , active_credits) AS ratio
+FROM credits c
+    LEFT JOIN main m
+        ON m.partition_date = c.partition_date
+        AND RIGHT(global_entity_id, 2) = c.currency_code
+WHERE nodo != "Others"
+GROUP BY 1,2,3,4,5,6,7,8]]></relation>
+            </properties>
+            <properties context='extract'>
+              <relation name='Extract' table='[Extract].[Extract]' type='table' />
+            </properties>
+          </object>
+        </objects>
+      </_.fcp.ObjectModelEncapsulateLegacy.true...object-graph>
+    </datasource>
+  </datasources>
+  <worksheets>
+    <worksheet name='Chart concatcs / 100 credits'>
+      <repository-location id='Chartconcatcs100credits' path='/t/Pedidosya/workbooks/ContactsCREDITS' revision='' site='Pedidosya' />
+      <layout-options>
+        <title>
+          <formatted-text>
+            <run>Contactos cada 100 creditos activos</run>
+          </formatted-text>
+        </title>
+      </layout-options>
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='Consulta SQL personalizada (da_fintech)' name='federated.1jakakx0o5vydf1gnwr4z0rsi1f0' />
+          </datasources>
+          <datasource-dependencies datasource='federated.1jakakx0o5vydf1gnwr4z0rsi1f0'>
+            <column caption='Ratio' datatype='real' default-format='n#,##0.00;-#,##0.00' name='[Calculation_1536571942723342342]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='100*(SUM([total_cases]) / SUM([active_credits]))' />
+            </column>
+            <column datatype='integer' name='[active_credits]' role='measure' type='quantitative' />
+            <column datatype='string' name='[country_name]' role='dimension' semantic-role='[Country].[ISO3166_2]' type='nominal' />
+            <column-instance column='[country_name]' derivation='None' name='[none:country_name:nk]' pivot='key' type='nominal' />
+            <column-instance column='[partition_date]' derivation='None' name='[none:partition_date:ok]' pivot='key' type='ordinal' />
+            <column datatype='date' name='[partition_date]' role='dimension' type='ordinal' />
+            <column-instance column='[active_credits]' derivation='Sum' name='[sum:active_credits:qk]' pivot='key' type='quantitative' />
+            <column datatype='integer' name='[total_cases]' role='measure' type='quantitative' />
+            <column-instance column='[Calculation_1536571942723342342]' derivation='User' name='[usr:Calculation_1536571942723342342:qk]' pivot='key' type='quantitative' />
+          </datasource-dependencies>
+          <filter class='categorical' column='[federated.1jakakx0o5vydf1gnwr4z0rsi1f0].[none:country_name:nk]'>
+            <groupfilter from='&quot;Argentina&quot;' function='range' level='[none:country_name:nk]' to='&quot;Perú&quot;' user:ui-domain='database' user:ui-enumeration='inclusive' user:ui-marker='enumerate' />
+          </filter>
+          <slices>
+            <column>[federated.1jakakx0o5vydf1gnwr4z0rsi1f0].[none:country_name:nk]</column>
+          </slices>
+          <aggregation value='true' />
+        </view>
+        <style>
+          <style-rule element='axis'>
+            <encoding attr='space' class='0' field='[federated.1jakakx0o5vydf1gnwr4z0rsi1f0].[usr:Calculation_1536571942723342342:qk]' field-type='quantitative' fold='true' scope='rows' type='space' />
+            <format attr='width' field='[federated.1jakakx0o5vydf1gnwr4z0rsi1f0].[sum:active_credits:qk]' value='92' />
+            <format attr='width' field='[federated.1jakakx0o5vydf1gnwr4z0rsi1f0].[usr:Calculation_1536571942723342342:qk]' value='92' />
+            <format attr='title' class='1' field='[federated.1jakakx0o5vydf1gnwr4z0rsi1f0].[usr:Calculation_1536571942723342342:qk]' scope='rows' value='Ratio by country' />
+          </style-rule>
+          <style-rule element='cell'>
+            <format attr='text-align' value='center' />
+            <format attr='color' value='#ffffff' />
+            <format attr='font-weight' value='bold' />
+            <format attr='width' field='[federated.1jakakx0o5vydf1gnwr4z0rsi1f0].[none:partition_date:ok]' value='152' />
+          </style-rule>
+          <style-rule element='label'>
+            <format attr='font-weight' field='[federated.1jakakx0o5vydf1gnwr4z0rsi1f0].[:Measure Names]' value='normal' />
+            <format attr='text-align' field='[federated.1jakakx0o5vydf1gnwr4z0rsi1f0].[:Measure Names]' value='center' />
+            <format attr='vertical-align' field='[federated.1jakakx0o5vydf1gnwr4z0rsi1f0].[:Measure Names]' value='center' />
+            <format attr='text-orientation' field='[federated.1jakakx0o5vydf1gnwr4z0rsi1f0].[:Measure Names]' value='-90' />
+          </style-rule>
+        </style>
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Automatic' />
+            <style>
+              <style-rule element='pane'>
+                <format attr='minwidth' value='-1' />
+                <format attr='maxwidth' value='-1' />
+              </style-rule>
+            </style>
+          </pane>
+          <pane id='1' selection-relaxation-option='selection-relaxation-allow' y-axis-name='[federated.1jakakx0o5vydf1gnwr4z0rsi1f0].[sum:active_credits:qk]'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Bar' />
+            <mark-sizing mark-sizing-setting='marks-scaling-off' />
+            <encodings>
+              <color column='[federated.1jakakx0o5vydf1gnwr4z0rsi1f0].[:Measure Names]' />
+            </encodings>
+            <style>
+              <style-rule element='cell'>
+                <format attr='vertical-align' value='center' />
+                <format attr='text-orientation' value='-90' />
+              </style-rule>
+              <style-rule element='datalabel'>
+                <format attr='color-mode' value='user' />
+                <format attr='font-weight' value='normal' />
+                <format attr='color' value='#100423' />
+                <format attr='font-size' value='11' />
+              </style-rule>
+              <style-rule element='mark'>
+                <format attr='has-stroke' value='true' />
+                <format attr='stroke-color' value='#e5e5e5' />
+                <format attr='mark-labels-show' value='true' />
+                <format attr='mark-labels-cull' value='true' />
+                <format attr='size' value='1' />
+              </style-rule>
+            </style>
+          </pane>
+          <pane id='3' selection-relaxation-option='selection-relaxation-allow' y-axis-name='[federated.1jakakx0o5vydf1gnwr4z0rsi1f0].[usr:Calculation_1536571942723342342:qk]'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Automatic' />
+            <mark-sizing mark-sizing-setting='marks-scaling-off' />
+            <style>
+              <style-rule element='cell'>
+                <format attr='vertical-align' value='auto' />
+                <format attr='text-align' value='auto' />
+              </style-rule>
+              <style-rule element='datalabel'>
+                <format attr='color-mode' value='user' />
+                <format attr='color' value='#fb0050' />
+                <format attr='font-weight' value='normal' />
+                <format attr='font-size' value='11' />
+              </style-rule>
+              <style-rule element='mark'>
+                <format attr='mark-color' value='#fb0050' />
+                <format attr='mark-labels-show' value='true' />
+                <format attr='mark-labels-cull' value='true' />
+                <format attr='mark-markers-mode' value='all' />
+                <format attr='size' value='1.087458610534668' />
+              </style-rule>
+            </style>
+          </pane>
+          <pane id='4' selection-relaxation-option='selection-relaxation-allow' y-axis-name='[federated.1jakakx0o5vydf1gnwr4z0rsi1f0].[usr:Calculation_1536571942723342342:qk]' y-index='1'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Automatic' />
+            <encodings>
+              <color column='[federated.1jakakx0o5vydf1gnwr4z0rsi1f0].[none:country_name:nk]' />
+            </encodings>
+            <style>
+              <style-rule element='datalabel'>
+                <format attr='color-mode' value='match' />
+                <format attr='font-weight' value='normal' />
+              </style-rule>
+              <style-rule element='mark'>
+                <format attr='mark-labels-show' value='true' />
+                <format attr='mark-labels-cull' value='true' />
+              </style-rule>
+              <style-rule element='pane'>
+                <format attr='minwidth' value='-1' />
+                <format attr='maxwidth' value='-1' />
+              </style-rule>
+            </style>
+          </pane>
+        </panes>
+        <rows>([federated.1jakakx0o5vydf1gnwr4z0rsi1f0].[sum:active_credits:qk] + ([federated.1jakakx0o5vydf1gnwr4z0rsi1f0].[usr:Calculation_1536571942723342342:qk] + [federated.1jakakx0o5vydf1gnwr4z0rsi1f0].[usr:Calculation_1536571942723342342:qk]))</rows>
+        <cols>[federated.1jakakx0o5vydf1gnwr4z0rsi1f0].[none:partition_date:ok]</cols>
+      </table>
+      <simple-id uuid='{062624E8-AD6D-4E61-BEBC-C1BDF507508A}' />
+    </worksheet>
+    <worksheet name='Contacts / 100 credits'>
+      <repository-location id='Contacts100credits' path='/t/Pedidosya/workbooks/ContactsCREDITS' revision='' site='Pedidosya' />
+      <layout-options>
+        <title>
+          <formatted-text>
+            <run>Contactos cada 100 creditos activos</run>
+          </formatted-text>
+        </title>
+      </layout-options>
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='Consulta SQL personalizada (da_fintech)' name='federated.1jakakx0o5vydf1gnwr4z0rsi1f0' />
+          </datasources>
+          <datasource-dependencies datasource='federated.1jakakx0o5vydf1gnwr4z0rsi1f0'>
+            <column caption='Ratio' datatype='real' default-format='n#,##0.00;-#,##0.00' name='[Calculation_1536571942723342342]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='100*(SUM([total_cases]) / SUM([active_credits]))' />
+            </column>
+            <column datatype='integer' name='[active_credits]' role='measure' type='quantitative' />
+            <column datatype='string' name='[country_name]' role='dimension' semantic-role='[Country].[ISO3166_2]' type='nominal' />
+            <column-instance column='[country_name]' derivation='None' name='[none:country_name:nk]' pivot='key' type='nominal' />
+            <column-instance column='[partition_date]' derivation='None' name='[none:partition_date:ok]' pivot='key' type='ordinal' />
+            <column datatype='date' name='[partition_date]' role='dimension' type='ordinal' />
+            <column-instance column='[active_credits]' derivation='Sum' name='[sum:active_credits:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[total_cases]' derivation='Sum' name='[sum:total_cases:qk]' pivot='key' type='quantitative' />
+            <column datatype='integer' name='[total_cases]' role='measure' type='quantitative' />
+            <column-instance column='[Calculation_1536571942723342342]' derivation='User' name='[usr:Calculation_1536571942723342342:qk]' pivot='key' type='quantitative' />
+          </datasource-dependencies>
+          <filter class='categorical' column='[federated.1jakakx0o5vydf1gnwr4z0rsi1f0].[:Measure Names]'>
+            <groupfilter function='union' user:op='manual'>
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.1jakakx0o5vydf1gnwr4z0rsi1f0].[usr:Calculation_1536571942723342342:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.1jakakx0o5vydf1gnwr4z0rsi1f0].[sum:active_credits:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.1jakakx0o5vydf1gnwr4z0rsi1f0].[sum:total_cases:qk]&quot;' />
+            </groupfilter>
+          </filter>
+          <slices>
+            <column>[federated.1jakakx0o5vydf1gnwr4z0rsi1f0].[:Measure Names]</column>
+          </slices>
+          <aggregation value='true' />
+        </view>
+        <style>
+          <style-rule element='cell'>
+            <format attr='width' field='[federated.1jakakx0o5vydf1gnwr4z0rsi1f0].[none:partition_date:ok]' value='102' />
+            <format attr='height' field='[federated.1jakakx0o5vydf1gnwr4z0rsi1f0].[none:country_name:nk]' value='32' />
+            <format attr='text-align' value='center' />
+            <format attr='color' value='#ffffff' />
+            <format attr='font-weight' value='bold' />
+            <format attr='border-style' value='solid' />
+            <format attr='border-color' value='#ffffff' />
+            <format attr='border-width' value='2' />
+            <format attr='height' field='[federated.1jakakx0o5vydf1gnwr4z0rsi1f0].[:Measure Names]' value='31' />
+          </style-rule>
+          <style-rule element='header'>
+            <format attr='width' field='[federated.1jakakx0o5vydf1gnwr4z0rsi1f0].[:Measure Names]' value='140' />
+            <format attr='height' field='[federated.1jakakx0o5vydf1gnwr4z0rsi1f0].[none:partition_date:ok]' value='36' />
+            <format attr='border-color' value='#100423' />
+            <format attr='border-style' value='solid' />
+          </style-rule>
+          <style-rule element='label'>
+            <format attr='font-weight' field='[federated.1jakakx0o5vydf1gnwr4z0rsi1f0].[:Measure Names]' value='normal' />
+            <format attr='text-align' field='[federated.1jakakx0o5vydf1gnwr4z0rsi1f0].[:Measure Names]' value='center' />
+            <format attr='vertical-align' field='[federated.1jakakx0o5vydf1gnwr4z0rsi1f0].[:Measure Names]' value='center' />
+            <format attr='text-orientation' field='[federated.1jakakx0o5vydf1gnwr4z0rsi1f0].[:Measure Names]' value='0' />
+          </style-rule>
+          <style-rule element='mark'>
+            <encoding attr='color' field='[federated.1jakakx0o5vydf1gnwr4z0rsi1f0].[usr:Calculation_1536571942723342342:qk]' reverse='true' type='custom-interpolated'>
+              <color-palette custom='true' name='' type='ordered-diverging'>
+                <color>#fa0050</color>
+                <color>#e9749a</color>
+                <color>#d9d9d9</color>
+                <color>#66cd94</color>
+                <color>#00c157</color>
+              </color-palette>
+            </encoding>
+          </style-rule>
+          <style-rule element='pane'>
+            <format attr='border-color' value='#100423' />
+            <format attr='border-style' value='solid' />
+          </style-rule>
+          <style-rule element='table-div'>
+            <format attr='stroke-color' scope='rows' value='#100423' />
+            <format attr='stroke-color' scope='cols' value='#100423' />
+          </style-rule>
+        </style>
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Square' />
+            <encodings>
+              <color column='[federated.1jakakx0o5vydf1gnwr4z0rsi1f0].[usr:Calculation_1536571942723342342:qk]' />
+              <text column='[federated.1jakakx0o5vydf1gnwr4z0rsi1f0].[Multiple Values]' />
+            </encodings>
+            <customized-label>
+              <formatted-text>
+                <run bold='false' fontcolor='#100423'>&lt;</run>
+                <run bold='false' fontcolor='#100423'>[federated.1jakakx0o5vydf1gnwr4z0rsi1f0].[Multiple Values]</run>
+                <run bold='false' fontcolor='#100423'>&gt;</run>
+              </formatted-text>
+            </customized-label>
+            <style>
+              <style-rule element='mark'>
+                <format attr='mark-labels-show' value='true' />
+              </style-rule>
+              <style-rule element='pane'>
+                <format attr='minwidth' value='-1' />
+                <format attr='maxwidth' value='-1' />
+                <format attr='minheight' value='-1' />
+                <format attr='maxheight' value='-1' />
+              </style-rule>
+            </style>
+          </pane>
+        </panes>
+        <rows total='true'>([federated.1jakakx0o5vydf1gnwr4z0rsi1f0].[none:country_name:nk] / [federated.1jakakx0o5vydf1gnwr4z0rsi1f0].[:Measure Names])</rows>
+        <cols>[federated.1jakakx0o5vydf1gnwr4z0rsi1f0].[none:partition_date:ok]</cols>
+      </table>
+      <simple-id uuid='{C095BD89-73E1-4945-85C9-FF563C62DC38}' />
+    </worksheet>
+    <worksheet name='Evolucion por metrica'>
+      <repository-location id='Evolucionpormetrica' path='/t/Pedidosya/workbooks/ContactsCREDITS' revision='' site='Pedidosya' />
+      <layout-options>
+        <title>
+          <formatted-text>
+            <run>Evolución por metricas&#10;</run>
+          </formatted-text>
+        </title>
+      </layout-options>
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='Consulta SQL personalizada (da_fintech)' name='federated.1jakakx0o5vydf1gnwr4z0rsi1f0' />
+          </datasources>
+          <datasource-dependencies datasource='federated.1jakakx0o5vydf1gnwr4z0rsi1f0'>
+            <column caption='Ratio' datatype='real' default-format='n#,##0.00;-#,##0.00' name='[Calculation_1536571942723342342]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='100*(SUM([total_cases]) / SUM([active_credits]))' />
+            </column>
+            <column caption='Avg default days' datatype='real' name='[Calculation_1536571942743887880]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='SUM([sum_days_past_due_for_avg]) / SUM([defaulted_and_active_credits])' />
+            </column>
+            <column datatype='integer' name='[active_credits]' role='measure' type='quantitative' />
+            <column datatype='integer' name='[cases_2_1]' role='measure' type='quantitative' />
+            <column datatype='integer' name='[cases_3_1]' role='measure' type='quantitative' />
+            <column datatype='integer' name='[cases_3_3]' role='measure' type='quantitative' />
+            <column datatype='integer' name='[cases_3_4]' role='measure' type='quantitative' />
+            <column datatype='integer' name='[cases_4_1]' role='measure' type='quantitative' />
+            <column datatype='real' name='[debt_balance_amt_lc]' role='measure' type='quantitative' />
+            <column datatype='real' name='[debt_balance_defaulted_amt]' role='measure' type='quantitative' />
+            <column datatype='integer' name='[defaulted_and_active_credits]' role='measure' type='quantitative' />
+            <column-instance column='[partition_date]' derivation='None' name='[none:partition_date:ok]' pivot='key' type='ordinal' />
+            <column datatype='date' name='[partition_date]' role='dimension' type='ordinal' />
+            <column-instance column='[active_credits]' derivation='Sum' name='[pcdf:sum:active_credits:qk]' pivot='key' type='quantitative'>
+              <table-calc diff-options='Relative' ordering-type='Rows' type='PctDiff'>
+                <address>
+                  <value>-1</value>
+                </address>
+              </table-calc>
+            </column-instance>
+            <column-instance column='[cases_2_1]' derivation='Sum' name='[pcdf:sum:cases_2_1:qk]' pivot='key' type='quantitative'>
+              <table-calc diff-options='Relative' ordering-type='Rows' type='PctDiff'>
+                <address>
+                  <value>-1</value>
+                </address>
+              </table-calc>
+            </column-instance>
+            <column-instance column='[cases_3_1]' derivation='Sum' name='[pcdf:sum:cases_3_1:qk]' pivot='key' type='quantitative'>
+              <table-calc diff-options='Relative' ordering-type='Rows' type='PctDiff'>
+                <address>
+                  <value>-1</value>
+                </address>
+              </table-calc>
+            </column-instance>
+            <column-instance column='[cases_3_3]' derivation='Sum' name='[pcdf:sum:cases_3_3:qk]' pivot='key' type='quantitative'>
+              <table-calc diff-options='Relative' ordering-type='Rows' type='PctDiff'>
+                <address>
+                  <value>-1</value>
+                </address>
+              </table-calc>
+            </column-instance>
+            <column-instance column='[cases_3_4]' derivation='Sum' name='[pcdf:sum:cases_3_4:qk]' pivot='key' type='quantitative'>
+              <table-calc diff-options='Relative' ordering-type='Rows' type='PctDiff'>
+                <address>
+                  <value>-1</value>
+                </address>
+              </table-calc>
+            </column-instance>
+            <column-instance column='[cases_4_1]' derivation='Sum' name='[pcdf:sum:cases_4_1:qk]' pivot='key' type='quantitative'>
+              <table-calc diff-options='Relative' ordering-type='Rows' type='PctDiff'>
+                <address>
+                  <value>-1</value>
+                </address>
+              </table-calc>
+            </column-instance>
+            <column-instance column='[debt_balance_amt_lc]' derivation='Sum' name='[pcdf:sum:debt_balance_amt_lc:qk]' pivot='key' type='quantitative'>
+              <table-calc diff-options='Relative' ordering-type='Rows' type='PctDiff'>
+                <address>
+                  <value>-1</value>
+                </address>
+              </table-calc>
+            </column-instance>
+            <column-instance column='[debt_balance_defaulted_amt]' derivation='Sum' name='[pcdf:sum:debt_balance_defaulted_amt:qk]' pivot='key' type='quantitative'>
+              <table-calc diff-options='Relative' ordering-type='Rows' type='PctDiff'>
+                <address>
+                  <value>-1</value>
+                </address>
+              </table-calc>
+            </column-instance>
+            <column-instance column='[defaulted_and_active_credits]' derivation='Sum' name='[pcdf:sum:defaulted_and_active_credits:qk]' pivot='key' type='quantitative'>
+              <table-calc diff-options='Relative' ordering-type='Rows' type='PctDiff'>
+                <address>
+                  <value>-1</value>
+                </address>
+              </table-calc>
+            </column-instance>
+            <column-instance column='[total_cases]' derivation='Sum' name='[pcdf:sum:total_cases:qk]' pivot='key' type='quantitative'>
+              <table-calc diff-options='Relative' ordering-type='Rows' type='PctDiff'>
+                <address>
+                  <value>-1</value>
+                </address>
+              </table-calc>
+            </column-instance>
+            <column-instance column='[Calculation_1536571942723342342]' derivation='User' name='[pcdf:usr:Calculation_1536571942723342342:qk]' pivot='key' type='quantitative'>
+              <table-calc diff-options='Relative' ordering-type='Rows' type='PctDiff'>
+                <address>
+                  <value>-1</value>
+                </address>
+              </table-calc>
+            </column-instance>
+            <column-instance column='[Calculation_1536571942743887880]' derivation='User' name='[pcdf:usr:Calculation_1536571942743887880:qk]' pivot='key' type='quantitative'>
+              <table-calc diff-options='Relative' ordering-type='Rows' type='PctDiff'>
+                <address>
+                  <value>-1</value>
+                </address>
+              </table-calc>
+            </column-instance>
+            <column-instance column='[active_credits]' derivation='Sum' name='[sum:active_credits:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[cases_2_1]' derivation='Sum' name='[sum:cases_2_1:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[cases_3_1]' derivation='Sum' name='[sum:cases_3_1:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[cases_3_3]' derivation='Sum' name='[sum:cases_3_3:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[cases_3_4]' derivation='Sum' name='[sum:cases_3_4:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[cases_4_1]' derivation='Sum' name='[sum:cases_4_1:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[debt_balance_amt_lc]' derivation='Sum' name='[sum:debt_balance_amt_lc:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[debt_balance_defaulted_amt]' derivation='Sum' name='[sum:debt_balance_defaulted_amt:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[defaulted_and_active_credits]' derivation='Sum' name='[sum:defaulted_and_active_credits:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[total_cases]' derivation='Sum' name='[sum:total_cases:qk]' pivot='key' type='quantitative' />
+            <column datatype='integer' name='[sum_days_past_due_for_avg]' role='measure' type='quantitative' />
+            <column datatype='integer' name='[total_cases]' role='measure' type='quantitative' />
+            <column-instance column='[Calculation_1536571942723342342]' derivation='User' name='[usr:Calculation_1536571942723342342:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[Calculation_1536571942743887880]' derivation='User' name='[usr:Calculation_1536571942743887880:qk]' pivot='key' type='quantitative' />
+          </datasource-dependencies>
+          <filter class='categorical' column='[federated.1jakakx0o5vydf1gnwr4z0rsi1f0].[:Measure Names]'>
+            <groupfilter function='union' user:op='manual'>
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.1jakakx0o5vydf1gnwr4z0rsi1f0].[usr:Calculation_1536571942743887880:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.1jakakx0o5vydf1gnwr4z0rsi1f0].[pcdf:usr:Calculation_1536571942743887880:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.1jakakx0o5vydf1gnwr4z0rsi1f0].[sum:defaulted_and_active_credits:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.1jakakx0o5vydf1gnwr4z0rsi1f0].[pcdf:sum:defaulted_and_active_credits:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.1jakakx0o5vydf1gnwr4z0rsi1f0].[sum:debt_balance_amt_lc:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.1jakakx0o5vydf1gnwr4z0rsi1f0].[pcdf:sum:debt_balance_amt_lc:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.1jakakx0o5vydf1gnwr4z0rsi1f0].[sum:debt_balance_defaulted_amt:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.1jakakx0o5vydf1gnwr4z0rsi1f0].[pcdf:sum:debt_balance_defaulted_amt:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.1jakakx0o5vydf1gnwr4z0rsi1f0].[sum:cases_2_1:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.1jakakx0o5vydf1gnwr4z0rsi1f0].[pcdf:sum:cases_2_1:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.1jakakx0o5vydf1gnwr4z0rsi1f0].[sum:cases_3_1:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.1jakakx0o5vydf1gnwr4z0rsi1f0].[pcdf:sum:cases_3_1:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.1jakakx0o5vydf1gnwr4z0rsi1f0].[sum:cases_3_3:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.1jakakx0o5vydf1gnwr4z0rsi1f0].[pcdf:sum:cases_3_3:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.1jakakx0o5vydf1gnwr4z0rsi1f0].[sum:cases_3_4:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.1jakakx0o5vydf1gnwr4z0rsi1f0].[pcdf:sum:cases_3_4:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.1jakakx0o5vydf1gnwr4z0rsi1f0].[sum:cases_4_1:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.1jakakx0o5vydf1gnwr4z0rsi1f0].[pcdf:sum:cases_4_1:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.1jakakx0o5vydf1gnwr4z0rsi1f0].[sum:total_cases:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.1jakakx0o5vydf1gnwr4z0rsi1f0].[pcdf:sum:total_cases:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.1jakakx0o5vydf1gnwr4z0rsi1f0].[sum:active_credits:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.1jakakx0o5vydf1gnwr4z0rsi1f0].[pcdf:sum:active_credits:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.1jakakx0o5vydf1gnwr4z0rsi1f0].[usr:Calculation_1536571942723342342:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.1jakakx0o5vydf1gnwr4z0rsi1f0].[pcdf:usr:Calculation_1536571942723342342:qk]&quot;' />
+            </groupfilter>
+          </filter>
+          <manual-sort column='[federated.1jakakx0o5vydf1gnwr4z0rsi1f0].[:Measure Names]' direction='ASC'>
+            <dictionary>
+              <bucket>&quot;[federated.1jakakx0o5vydf1gnwr4z0rsi1f0].[usr:Calculation_1536571942743887880:qk]&quot;</bucket>
+              <bucket>&quot;[federated.1jakakx0o5vydf1gnwr4z0rsi1f0].[pcdf:usr:Calculation_1536571942743887880:qk]&quot;</bucket>
+              <bucket>&quot;[federated.1jakakx0o5vydf1gnwr4z0rsi1f0].[sum:defaulted_and_active_credits:qk]&quot;</bucket>
+              <bucket>&quot;[federated.1jakakx0o5vydf1gnwr4z0rsi1f0].[pcdf:sum:defaulted_and_active_credits:qk]&quot;</bucket>
+              <bucket>&quot;[federated.1jakakx0o5vydf1gnwr4z0rsi1f0].[sum:debt_balance_amt_lc:qk]&quot;</bucket>
+              <bucket>&quot;[federated.1jakakx0o5vydf1gnwr4z0rsi1f0].[pcdf:sum:debt_balance_amt_lc:qk]&quot;</bucket>
+              <bucket>&quot;[federated.1jakakx0o5vydf1gnwr4z0rsi1f0].[sum:debt_balance_defaulted_amt:qk]&quot;</bucket>
+              <bucket>&quot;[federated.1jakakx0o5vydf1gnwr4z0rsi1f0].[pcdf:sum:debt_balance_defaulted_amt:qk]&quot;</bucket>
+              <bucket>&quot;[federated.1jakakx0o5vydf1gnwr4z0rsi1f0].[sum:cases_2_1:qk]&quot;</bucket>
+              <bucket>&quot;[federated.1jakakx0o5vydf1gnwr4z0rsi1f0].[pcdf:sum:cases_2_1:qk]&quot;</bucket>
+              <bucket>&quot;[federated.1jakakx0o5vydf1gnwr4z0rsi1f0].[sum:cases_3_1:qk]&quot;</bucket>
+              <bucket>&quot;[federated.1jakakx0o5vydf1gnwr4z0rsi1f0].[pcdf:sum:cases_3_1:qk]&quot;</bucket>
+              <bucket>&quot;[federated.1jakakx0o5vydf1gnwr4z0rsi1f0].[sum:cases_3_3:qk]&quot;</bucket>
+              <bucket>&quot;[federated.1jakakx0o5vydf1gnwr4z0rsi1f0].[pcdf:sum:cases_3_3:qk]&quot;</bucket>
+              <bucket>&quot;[federated.1jakakx0o5vydf1gnwr4z0rsi1f0].[sum:cases_3_4:qk]&quot;</bucket>
+              <bucket>&quot;[federated.1jakakx0o5vydf1gnwr4z0rsi1f0].[pcdf:sum:cases_3_4:qk]&quot;</bucket>
+              <bucket>&quot;[federated.1jakakx0o5vydf1gnwr4z0rsi1f0].[sum:cases_4_1:qk]&quot;</bucket>
+              <bucket>&quot;[federated.1jakakx0o5vydf1gnwr4z0rsi1f0].[pcdf:sum:cases_4_1:qk]&quot;</bucket>
+              <bucket>&quot;[federated.1jakakx0o5vydf1gnwr4z0rsi1f0].[sum:total_cases:qk]&quot;</bucket>
+              <bucket>&quot;[federated.1jakakx0o5vydf1gnwr4z0rsi1f0].[pcdf:sum:total_cases:qk]&quot;</bucket>
+              <bucket>&quot;[federated.1jakakx0o5vydf1gnwr4z0rsi1f0].[sum:active_credits:qk]&quot;</bucket>
+              <bucket>&quot;[federated.1jakakx0o5vydf1gnwr4z0rsi1f0].[pcdf:sum:active_credits:qk]&quot;</bucket>
+              <bucket>&quot;[federated.1jakakx0o5vydf1gnwr4z0rsi1f0].[usr:Calculation_1536571942723342342:qk]&quot;</bucket>
+              <bucket>&quot;[federated.1jakakx0o5vydf1gnwr4z0rsi1f0].[pcdf:usr:Calculation_1536571942723342342:qk]&quot;</bucket>
+            </dictionary>
+          </manual-sort>
+          <slices>
+            <column>[federated.1jakakx0o5vydf1gnwr4z0rsi1f0].[:Measure Names]</column>
+          </slices>
+          <aggregation value='true' />
+        </view>
+        <style>
+          <style-rule element='cell'>
+            <format attr='width' field='[federated.1jakakx0o5vydf1gnwr4z0rsi1f0].[none:partition_date:ok]' value='106' />
+            <format attr='text-format' field='[federated.1jakakx0o5vydf1gnwr4z0rsi1f0].[Multiple Values]' value='N' />
+            <format attr='text-align' value='center' />
+            <format attr='text-format' field='[federated.1jakakx0o5vydf1gnwr4z0rsi1f0].[pcdf:usr:Calculation_1536571942743887880:qk]' value='p0.00%' />
+            <format attr='text-format' field='[federated.1jakakx0o5vydf1gnwr4z0rsi1f0].[usr:Calculation_1536571942743887880:qk]' value='n#,##0;-#,##0' />
+          </style-rule>
+          <style-rule element='header'>
+            <format attr='width' field='[federated.1jakakx0o5vydf1gnwr4z0rsi1f0].[:Measure Names]' value='240' />
+          </style-rule>
+        </style>
+        <panes>
+          <pane id='1' selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Square' />
+            <encodings>
+              <color column='[federated.1jakakx0o5vydf1gnwr4z0rsi1f0].[usr:Calculation_1536571942723342342:qk]' />
+              <text column='[federated.1jakakx0o5vydf1gnwr4z0rsi1f0].[Multiple Values]' />
+            </encodings>
+            <style>
+              <style-rule element='mark'>
+                <format attr='mark-labels-show' value='true' />
+                <format attr='has-stroke' value='true' />
+                <format attr='stroke-color' value='#ffffff' />
+              </style-rule>
+              <style-rule element='pane'>
+                <format attr='minwidth' value='-1' />
+                <format attr='maxwidth' value='-1' />
+              </style-rule>
+            </style>
+          </pane>
+        </panes>
+        <rows>[federated.1jakakx0o5vydf1gnwr4z0rsi1f0].[:Measure Names]</rows>
+        <cols>[federated.1jakakx0o5vydf1gnwr4z0rsi1f0].[none:partition_date:ok]</cols>
+      </table>
+      <simple-id uuid='{C8BC5DD1-0605-4127-B150-A1EFE4292782}' />
+    </worksheet>
+    <worksheet name='Participación por nodo'>
+      <repository-location id='Participacinpornodo' path='/t/Pedidosya/workbooks/ContactsCREDITS' revision='' site='Pedidosya' />
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='Consulta SQL personalizada (da_fintech)' name='federated.1jakakx0o5vydf1gnwr4z0rsi1f0' />
+          </datasources>
+          <datasource-dependencies datasource='federated.1jakakx0o5vydf1gnwr4z0rsi1f0'>
+            <column caption='No acreditación de fondos' datatype='real' default-format='p0.00%' name='[Calculation_1536571942677344257]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='SUM([cases_2_1]) /  SUM([total_cases])' />
+            </column>
+            <column datatype='real' default-format='p0.00%' name='[Cálculo3]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='SUM([cases_3_4]) / TOTAL(SUM([cases_3_4]))'>
+                <table-calc ordering-type='Columns' />
+              </calculation>
+            </column>
+            <column caption='Vencimiento de cuotas' datatype='real' default-format='p0.00%' name='[cases 2.1 rate (copia)_1536571942677499906]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='SUM([cases_3_1]) /  SUM([total_cases])' />
+            </column>
+            <column caption='Pago cuota' datatype='real' default-format='p0.00%' name='[cases 3.1 rate (copia)_1536571942677565443]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='SUM([cases_3_3]) /  SUM([total_cases])' />
+            </column>
+            <column caption='Cuota no se puede cobrar' datatype='real' default-format='p0.00%' name='[cases 3.3 rate (copia)_1536571942677639172]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='SUM([cases_3_4]) /  SUM([total_cases])' />
+            </column>
+            <column caption='Transferencia no reflejada' datatype='real' default-format='p0.00%' name='[cases 3.4 rate (copia)_1536571942677688325]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='SUM([cases_4_1]) /  SUM([total_cases])' />
+            </column>
+            <column datatype='integer' name='[cases_2_1]' role='measure' type='quantitative' />
+            <column datatype='integer' name='[cases_3_1]' role='measure' type='quantitative' />
+            <column datatype='integer' name='[cases_3_3]' role='measure' type='quantitative' />
+            <column datatype='integer' name='[cases_3_4]' role='measure' type='quantitative' />
+            <column datatype='integer' name='[cases_4_1]' role='measure' type='quantitative' />
+            <column datatype='string' name='[country_name]' role='dimension' semantic-role='[Country].[ISO3166_2]' type='nominal' />
+            <column-instance column='[country_name]' derivation='None' name='[none:country_name:nk]' pivot='key' type='nominal' />
+            <column-instance column='[partition_date]' derivation='None' name='[none:partition_date:ok]' pivot='key' type='ordinal' />
+            <column datatype='date' name='[partition_date]' role='dimension' type='ordinal' />
+            <column-instance column='[cases_4_1]' derivation='Sum' name='[pcto:sum:cases_4_1:qk:2]' pivot='key' type='quantitative'>
+              <table-calc ordering-type='Columns' type='PctTotal' />
+            </column-instance>
+            <column datatype='integer' name='[total_cases]' role='measure' type='quantitative' />
+            <column-instance column='[Calculation_1536571942677344257]' derivation='User' name='[usr:Calculation_1536571942677344257:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[Cálculo3]' derivation='User' name='[usr:Cálculo3:qk]' pivot='key' type='quantitative'>
+              <table-calc ordering-type='Columns' />
+            </column-instance>
+            <column-instance column='[cases 2.1 rate (copia)_1536571942677499906]' derivation='User' name='[usr:cases 2.1 rate (copia)_1536571942677499906:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[cases 3.1 rate (copia)_1536571942677565443]' derivation='User' name='[usr:cases 3.1 rate (copia)_1536571942677565443:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[cases 3.3 rate (copia)_1536571942677639172]' derivation='User' name='[usr:cases 3.3 rate (copia)_1536571942677639172:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[cases 3.4 rate (copia)_1536571942677688325]' derivation='User' name='[usr:cases 3.4 rate (copia)_1536571942677688325:qk]' pivot='key' type='quantitative' />
+          </datasource-dependencies>
+          <filter class='categorical' column='[federated.1jakakx0o5vydf1gnwr4z0rsi1f0].[:Measure Names]'>
+            <groupfilter function='union' user:op='manual'>
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.1jakakx0o5vydf1gnwr4z0rsi1f0].[usr:Calculation_1536571942677344257:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.1jakakx0o5vydf1gnwr4z0rsi1f0].[usr:cases 2.1 rate (copia)_1536571942677499906:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.1jakakx0o5vydf1gnwr4z0rsi1f0].[usr:cases 3.1 rate (copia)_1536571942677565443:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.1jakakx0o5vydf1gnwr4z0rsi1f0].[usr:cases 3.3 rate (copia)_1536571942677639172:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.1jakakx0o5vydf1gnwr4z0rsi1f0].[usr:cases 3.4 rate (copia)_1536571942677688325:qk]&quot;' />
+            </groupfilter>
+          </filter>
+          <manual-sort column='[federated.1jakakx0o5vydf1gnwr4z0rsi1f0].[:Measure Names]' direction='ASC'>
+            <dictionary>
+              <bucket>&quot;[federated.1jakakx0o5vydf1gnwr4z0rsi1f0].[usr:Calculation_1536571942677344257:qk]&quot;</bucket>
+              <bucket>&quot;[federated.1jakakx0o5vydf1gnwr4z0rsi1f0].[usr:cases 2.1 rate (copia)_1536571942677499906:qk]&quot;</bucket>
+              <bucket>&quot;[federated.1jakakx0o5vydf1gnwr4z0rsi1f0].[usr:cases 3.1 rate (copia)_1536571942677565443:qk]&quot;</bucket>
+              <bucket>&quot;[federated.1jakakx0o5vydf1gnwr4z0rsi1f0].[usr:cases 3.3 rate (copia)_1536571942677639172:qk]&quot;</bucket>
+              <bucket>&quot;[federated.1jakakx0o5vydf1gnwr4z0rsi1f0].[usr:cases 3.4 rate (copia)_1536571942677688325:qk]&quot;</bucket>
+              <bucket>&quot;[federated.1jakakx0o5vydf1gnwr4z0rsi1f0].[usr:Cálculo3:qk]&quot;</bucket>
+              <bucket>&quot;[federated.1jakakx0o5vydf1gnwr4z0rsi1f0].[pcto:sum:cases_4_1:qk:2]&quot;</bucket>
+            </dictionary>
+          </manual-sort>
+          <slices>
+            <column>[federated.1jakakx0o5vydf1gnwr4z0rsi1f0].[:Measure Names]</column>
+          </slices>
+          <aggregation value='true' />
+        </view>
+        <style>
+          <style-rule element='cell'>
+            <format attr='text-format' field='[federated.1jakakx0o5vydf1gnwr4z0rsi1f0].[Multiple Values]' value='N' />
+            <format attr='width' field='[federated.1jakakx0o5vydf1gnwr4z0rsi1f0].[none:partition_date:ok]' value='117' />
+            <format attr='height' field='[federated.1jakakx0o5vydf1gnwr4z0rsi1f0].[:Measure Names]' value='27' />
+          </style-rule>
+          <style-rule element='header'>
+            <format attr='width' field='[federated.1jakakx0o5vydf1gnwr4z0rsi1f0].[:Measure Names]' value='236' />
+            <format attr='width' field='[federated.1jakakx0o5vydf1gnwr4z0rsi1f0].[none:country_name:nk]' value='32' />
+          </style-rule>
+          <style-rule element='label'>
+            <format attr='text-orientation' field='[federated.1jakakx0o5vydf1gnwr4z0rsi1f0].[none:country_name:nk]' value='-90' />
+          </style-rule>
+        </style>
+        <panes>
+          <pane id='1' selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Square' />
+            <encodings>
+              <color column='[federated.1jakakx0o5vydf1gnwr4z0rsi1f0].[Multiple Values]' />
+              <text column='[federated.1jakakx0o5vydf1gnwr4z0rsi1f0].[Multiple Values]' />
+            </encodings>
+            <style>
+              <style-rule element='mark'>
+                <format attr='mark-labels-show' value='true' />
+                <format attr='has-stroke' value='true' />
+                <format attr='stroke-color' value='#ffffff' />
+              </style-rule>
+              <style-rule element='pane'>
+                <format attr='minwidth' value='-1' />
+                <format attr='maxwidth' value='-1' />
+                <format attr='minheight' value='-1' />
+                <format attr='maxheight' value='-1' />
+              </style-rule>
+            </style>
+          </pane>
+        </panes>
+        <rows>([federated.1jakakx0o5vydf1gnwr4z0rsi1f0].[none:country_name:nk] / [federated.1jakakx0o5vydf1gnwr4z0rsi1f0].[:Measure Names])</rows>
+        <cols total='true'>[federated.1jakakx0o5vydf1gnwr4z0rsi1f0].[none:partition_date:ok]</cols>
+      </table>
+      <simple-id uuid='{2351EEAD-C933-42CE-B77F-BAE3B3701277}' />
+    </worksheet>
+  </worksheets>
+  <windows source-height='30'>
+    <window class='worksheet' name='Chart concatcs / 100 credits'>
+      <cards>
+        <edge name='left'>
+          <strip size='240'>
+            <card type='pages' />
+            <card type='filters' />
+            <card type='marks' />
+          </strip>
+        </edge>
+        <edge name='top'>
+          <strip size='48'>
+            <card type='columns' />
+          </strip>
+          <strip size='48'>
+            <card type='rows' />
+          </strip>
+          <strip size='46'>
+            <card type='title' />
+          </strip>
+        </edge>
+        <edge name='right'>
+          <strip size='175'>
+            <card pane-specification-id='1' param='[federated.1jakakx0o5vydf1gnwr4z0rsi1f0].[:Measure Names]' type='color' />
+            <card pane-specification-id='4' param='[federated.1jakakx0o5vydf1gnwr4z0rsi1f0].[none:country_name:nk]' type='color' />
+          </strip>
+        </edge>
+      </cards>
+      <viewpoint>
+        <highlight>
+          <color-one-way>
+            <field>[federated.1jakakx0o5vydf1gnwr4z0rsi1f0].[:Measure Names]</field>
+            <field>[federated.1jakakx0o5vydf1gnwr4z0rsi1f0].[none:country_name:nk]</field>
+            <field>[federated.1jakakx0o5vydf1gnwr4z0rsi1f0].[none:partition_date:ok]</field>
+            <field>[federated.1jakakx0o5vydf1gnwr4z0rsi1f0].[usr:Calculation_1536571942723342342:qk]</field>
+            <field>[federated.1jakakx0o5vydf1gnwr4z0rsi1f0].[yr:partition_date:ok]</field>
+          </color-one-way>
+        </highlight>
+      </viewpoint>
+      <simple-id uuid='{5D279492-F33B-427F-9472-58637DAF61D1}' />
+    </window>
+    <window class='worksheet' name='Contacts / 100 credits'>
+      <cards>
+        <edge name='left'>
+          <strip size='240'>
+            <card type='pages' />
+            <card type='filters' />
+            <card type='marks' />
+            <card type='measures' />
+          </strip>
+        </edge>
+        <edge name='top'>
+          <strip size='48'>
+            <card type='columns' />
+          </strip>
+          <strip size='48'>
+            <card type='rows' />
+          </strip>
+          <strip size='46'>
+            <card type='title' />
+          </strip>
+        </edge>
+        <edge name='right'>
+          <strip size='175'>
+            <card pane-specification-id='0' param='[federated.1jakakx0o5vydf1gnwr4z0rsi1f0].[usr:Calculation_1536571942723342342:qk]' type='color' />
+          </strip>
+        </edge>
+      </cards>
+      <viewpoint>
+        <highlight>
+          <color-one-way>
+            <field>[federated.1jakakx0o5vydf1gnwr4z0rsi1f0].[:Measure Names]</field>
+            <field>[federated.1jakakx0o5vydf1gnwr4z0rsi1f0].[none:country_name:nk]</field>
+            <field>[federated.1jakakx0o5vydf1gnwr4z0rsi1f0].[none:partition_date:ok]</field>
+            <field>[federated.1jakakx0o5vydf1gnwr4z0rsi1f0].[usr:Calculation_1536571942723342342:qk]</field>
+            <field>[federated.1jakakx0o5vydf1gnwr4z0rsi1f0].[yr:partition_date:ok]</field>
+          </color-one-way>
+        </highlight>
+      </viewpoint>
+      <simple-id uuid='{C35565E5-9939-4BE0-AD93-10F372495E52}' />
+    </window>
+    <window class='worksheet' maximized='true' name='Participación por nodo'>
+      <cards>
+        <edge name='left'>
+          <strip size='240'>
+            <card type='pages' />
+            <card type='filters' />
+            <card type='marks' />
+            <card type='measures' />
+          </strip>
+        </edge>
+        <edge name='top'>
+          <strip size='48'>
+            <card type='columns' />
+          </strip>
+          <strip size='48'>
+            <card type='rows' />
+          </strip>
+          <strip size='45'>
+            <card type='title' />
+          </strip>
+        </edge>
+        <edge name='right'>
+          <strip size='262'>
+            <card pane-specification-id='1' param='[federated.1jakakx0o5vydf1gnwr4z0rsi1f0].[Multiple Values]' type='color' />
+          </strip>
+        </edge>
+      </cards>
+      <viewpoint>
+        <highlight>
+          <color-one-way>
+            <field>[federated.1jakakx0o5vydf1gnwr4z0rsi1f0].[:Measure Names]</field>
+            <field>[federated.1jakakx0o5vydf1gnwr4z0rsi1f0].[md:partition_date:ok]</field>
+            <field>[federated.1jakakx0o5vydf1gnwr4z0rsi1f0].[none:country_name:nk]</field>
+            <field>[federated.1jakakx0o5vydf1gnwr4z0rsi1f0].[none:currency_code:nk]</field>
+            <field>[federated.1jakakx0o5vydf1gnwr4z0rsi1f0].[none:partition_date:ok]</field>
+            <field>[federated.1jakakx0o5vydf1gnwr4z0rsi1f0].[sum:total_cases:qk]</field>
+            <field>[federated.1jakakx0o5vydf1gnwr4z0rsi1f0].[yr:partition_date:ok]</field>
+          </color-one-way>
+        </highlight>
+      </viewpoint>
+      <simple-id uuid='{7A5C47B3-47EF-4E4C-91D7-5AF3B71B8682}' />
+    </window>
+    <window class='worksheet' name='Evolucion por metrica'>
+      <cards>
+        <edge name='left'>
+          <strip size='300'>
+            <card type='pages' />
+            <card type='filters' />
+            <card type='marks' />
+            <card type='measures' />
+          </strip>
+        </edge>
+        <edge name='top'>
+          <strip size='48'>
+            <card type='columns' />
+          </strip>
+          <strip size='48'>
+            <card type='rows' />
+          </strip>
+          <strip size='67'>
+            <card type='title' />
+          </strip>
+        </edge>
+        <edge name='right'>
+          <strip size='262'>
+            <card pane-specification-id='1' param='[federated.1jakakx0o5vydf1gnwr4z0rsi1f0].[usr:Calculation_1536571942723342342:qk]' type='color' />
+          </strip>
+        </edge>
+      </cards>
+      <viewpoint>
+        <highlight>
+          <color-one-way>
+            <field>[federated.1jakakx0o5vydf1gnwr4z0rsi1f0].[:Measure Names]</field>
+            <field>[federated.1jakakx0o5vydf1gnwr4z0rsi1f0].[md:partition_date:ok]</field>
+            <field>[federated.1jakakx0o5vydf1gnwr4z0rsi1f0].[none:country_name:nk]</field>
+            <field>[federated.1jakakx0o5vydf1gnwr4z0rsi1f0].[none:partition_date:ok]</field>
+            <field>[federated.1jakakx0o5vydf1gnwr4z0rsi1f0].[sum:total_cases:qk]</field>
+            <field>[federated.1jakakx0o5vydf1gnwr4z0rsi1f0].[yr:partition_date:ok]</field>
+          </color-one-way>
+        </highlight>
+      </viewpoint>
+      <simple-id uuid='{852B049D-DC55-47BC-974B-3F7FC565A59A}' />
+    </window>
+  </windows>
+</workbook>

@@ -1,0 +1,1839 @@
+<?xml version='1.0' encoding='utf-8' ?>
+
+<!-- build 20233.25.0106.1650                               -->
+<workbook original-version='18.1' source-build='2023.3.14 (20233.25.0106.1650)' version='18.1' xml:base='https://tableau.deliveryhero.net' xmlns:user='http://www.tableausoftware.com/xml/user'>
+  <document-format-change-manifest>
+    <_.fcp.AccessibleZoneTabOrder.true...AccessibleZoneTabOrder />
+    <_.fcp.AnimationOnByDefault.true...AnimationOnByDefault />
+    <AutoCreateAndUpdateDSDPhoneLayouts />
+    <ISO8601PeriodTypes />
+    <_.fcp.MarkAnimation.true...MarkAnimation />
+    <_.fcp.ObjectModelEncapsulateLegacy.true...ObjectModelEncapsulateLegacy />
+    <_.fcp.ObjectModelExtractV2.true...ObjectModelExtractV2 />
+    <_.fcp.ObjectModelTableType.true...ObjectModelTableType />
+    <_.fcp.SchemaViewerObjectModel.true...SchemaViewerObjectModel />
+    <SetMembershipControl />
+    <SheetIdentifierTracking />
+    <_.fcp.VConnDownstreamExtractsWithWarnings.true...VConnDownstreamExtractsWithWarnings />
+    <WindowsPersistSimpleIdentifiers />
+    <WorksheetBackgroundTransparency />
+    <ZoneBackgroundTransparency />
+  </document-format-change-manifest>
+  <repository-location derived-from='https://tableau.deliveryhero.net/t/Pedidosya/workbooks/OpenTimeByHour_16613546514530?rev=1.1' id='OpenTimeByHour_16613546514530' path='/t/Pedidosya/workbooks' revision='1.2' site='Pedidosya' />
+  <preferences />
+  <_.fcp.AnimationOnByDefault.false...style>
+    <_.fcp.AnimationOnByDefault.false..._.fcp.MarkAnimation.true...style-rule element='animation'>
+      <_.fcp.AnimationOnByDefault.false...format attr='animation-on' value='ao-on' />
+    </_.fcp.AnimationOnByDefault.false..._.fcp.MarkAnimation.true...style-rule>
+  </_.fcp.AnimationOnByDefault.false...style>
+  <datasources>
+    <datasource hasconnection='false' inline='true' name='Parameters' version='18.1'>
+      <aliases enabled='yes' />
+      <column alias='Euro' caption='Currency View' datatype='string' name='[View (copia) 1]' param-domain-type='list' role='measure' type='nominal' value='&quot;Euro&quot;'>
+        <calculation class='tableau' formula='&quot;Euro&quot;' />
+        <aliases>
+          <alias key='&quot;Euro&quot;' value='Euro' />
+          <alias key='&quot;Local&quot;' value='Local' />
+          <alias key='&quot;USD&quot;' value='USD' />
+        </aliases>
+        <members>
+          <member alias='Local' value='&quot;Local&quot;' />
+          <member alias='Euro' value='&quot;Euro&quot;' />
+          <member alias='USD' value='&quot;USD&quot;' />
+        </members>
+      </column>
+    </datasource>
+    <datasource caption='OpenTime' inline='true' name='federated.087c9471dk62b019zc4f50x47xz2' version='18.1'>
+      <connection class='federated'>
+        <named-connections>
+          <named-connection caption='BigQuery' name='bigquery.0clmcsx0p3k6wh16nc0pd11384vc'>
+            <connection CATALOG='peya-markets' EXECCATALOG='peya-markets' authentication='oauth' bq-dataset-fetch-rows='' bq-fetch-rows='' bq-fetch-tasks='' bq-large-fetch-rows='' bq-project-fetch-rows='' bq-response-rows='' class='bigquery' connection-dialect='google-sql' project='peya-markets' schema='automated_tables_reports' server-oauth='' username='miguel.florencio@pedidosya.com' workgroup-auth-mode='prompt' />
+          </named-connection>
+        </named-connections>
+        <_.fcp.ObjectModelEncapsulateLegacy.false...relation connection='bigquery.0clmcsx0p3k6wh16nc0pd11384vc' name='Custom SQL Query' type='text'><![CDATA[With dates as (
+    SELECT DATE_SUB(DATE_TRUNC(CURRENT_DATE,MONTH), INTERVAL 5 MONTH) begin_date
+),
+
+ all_days as (
+       SELECT DISTINCT 
+              date as date_day 
+       FROM `peya-bi-tools-pro.il_core.dim_date` d
+       WHERE d.date >>= (SELECT begin_date FROM dates)
+       AND d.date << CURRENT_DATE
+       ORDER BY 1
+),
+all_hours as (
+    SELECT hour FROM `peya-data-origins-pro.cl_core.date_hour` ORDER BY 1
+),
+orders_data_info AS (
+
+    SELECT  o.order_id,
+            o.country.country_id AS country_id,
+            business_type.business_type_name vertical,
+    FROM `peya-bi-tools-pro.il_core.fact_orders` o 
+    INNER JOIN `peya-bi-tools-pro.il_core.dim_country` dc ON dc.country_id = o.country_id AND dc.active
+    WHERE o.registered_date >>= (SELECT begin_date FROM dates)
+),
+orders AS (
+
+    SELECT 
+            DATE(o.registered_date) AS date_day,
+            o.order_hour as hour,
+            o.country.country_id AS country_id,
+            business_type.business_type_name vertical,
+            COUNT(DISTINCT o.order_id) AS total_orders,
+            COUNT(DISTINCT CASE WHEN o.order_status = "CONFIRMED" THEN o.order_id ELSE NULL END) total_orders_confirmed,
+            COUNT(DISTINCT CASE WHEN o.with_logistics = TRUE THEN o.order_id ELSE NULL END) total_orders_omw_delivery,
+            COUNT(DISTINCT CASE WHEN o.order_status NOT IN ("CONFIRMED") THEN o.order_id ELSE NULL END) total_non_confirmed_orders,
+
+    FROM `peya-bi-tools-pro.il_core.fact_orders` o 
+    INNER JOIN `peya-bi-tools-pro.il_core.dim_country` dc ON dc.country_id = o.country_id AND dc.active
+    WHERE o.registered_date >>= (SELECT begin_date FROM dates)
+    AND DATE(o.registered_date) << DATE(CURRENT_DATE)
+    GROUP BY 1,2,3,4
+),
+partner_service_cases AS (
+
+    SELECT 
+            DATE(sca.create_date) date_day,
+            EXTRACT(HOUR FROM sca.create_date) AS hour,
+            sca.country_id,
+            o.vertical,
+            COUNT(DISTINCT sca.case_id) ps_cases
+
+    FROM `peya-bi-tools-pro.il_salesforce.fact_salesforce_cases` sca
+    LEFT JOIN orders_data_info as o ON CAST(o.order_id  as STRING) = sca.case_order_id
+    INNER JOIN `peya-bi-tools-pro.il_core.dim_country` cd ON cd.country_id = sca.country_id AND cd.active
+    WHERE DATE(sca.create_date)  >>= (SELECT begin_date FROM dates)
+      AND DATE(sca.create_date) << DATE(CURRENT_DATE)
+      AND sca.record_type_name IN ('PY Inbound Case','CD Inbound Case')
+      AND sca.case_origin NOT IN ('Chat')
+      AND (sca.case_subjec NOT LIKE '%NDC |%' OR sca.case_subjec NOT LIKE '%No country%' OR sca.case_subjec NOT LIKE '%restaurant portal%')
+      AND sca.case_type IN ('Restaurant - Data','Restaurant Request','Partner','Handover',' ', NULL)
+    GROUP BY 1,2,3,4
+),
+partner_service_chats AS (
+
+    SELECT 
+            DATE(sch.created_date) date_day,
+            EXTRACT(HOUR FROM sch.created_date) AS hour,
+            cd.country_id,
+            o.vertical,
+            COUNT(DISTINCT sch.chat_transcript_id) ps_chats    
+
+    FROM `peya-bi-tools-pro.il_salesforce.fact_livechat_transcripts` sch
+    LEFT JOIN orders_data_info as o on o.order_id = sch.order_id
+    INNER JOIN `peya-bi-tools-pro.il_core.dim_country` cd  ON cd.country_id = sch.country_id AND cd.active
+    WHERE DATE(sch.created_date) >>= (SELECT begin_date FROM dates)
+      AND DATE(sch.created_date) << DATE(CURRENT_DATE)
+      AND sch.livechat_button.button_name IN ('PS_SPA_PedidosYa_Courier_Partner','PS_SPA_PedidosYa_Vendor_KA_SSU_Chat','PS_SPA_PedidosYa_HighPrio_Partner','PS_SPA_PedidosYa_Kitchen_Partner','PS_SPA_PedidosYa_Restaurant_Chat','PS_SPA_Partner_Technical_Support_Chat','PS_SPA_PedidosYa_Urgent_Restaurant_Chat','PS_SPA_Partner_Technical_Support_Chat','PS_SPA_PedidosYa_Partner_Live_Chat','PS_SPA_PedidosYa_Content_Partner_Chat','PS_SPA_Appetito_Restaurant_Chat','PS_SPA_PedidosYa_Billing_Partner_Chat','PS_SPA_Appetito_Urgent_Restaurant_Chat')
+    GROUP BY 1,2,3,4
+),
+data_country_vertical as (
+    SELECT DISTINCT country_id, vertical
+    FROM orders
+    UNION DISTINCT 
+    SELECT DISTINCT country_id, vertical
+    FROM partner_service_cases
+    UNION DISTINCT 
+    SELECT DISTINCT country_id, vertical
+    FROM partner_service_chats
+),
+data_base as(
+
+    SELECT DISTINCT * FROM data_country_vertical as d
+    CROSS JOIN all_days
+    CROSS JOIN all_hours
+),
+
+--OPEN TIME
+
+
+   Open_data as (
+SELECT  a.country_id, 
+  dp.business_type.business_type_name vertical,
+  partner_time_date open_date, 
+  partner_time_hour open_hour,
+  COUNT(DISTINCT a.partner_id) open_partners_qty, 
+  FROM `peya-bi-tools-pro.il_core.agg_fact_partner_times` a
+  LEFT JOIN `peya-bi-tools-pro.il_core.dim_partner` dp ON a.partner_id = dp.partner_id
+  LEFT JOIN `peya-bi-tools-pro.il_core.dim_country` dc ON a.country_id = dc.country_id
+  WHERE state = 'OPEN' 
+  and partner_time_date >>= (SELECT begin_date FROM dates)
+  GROUP BY 1,2,3,4
+  order by 1,2,3
+)
+
+
+SELECT 
+        a.date_day,
+        a.hour,
+        a.country_id,
+        dc.country_name,
+        a.vertical,
+        CAST(FORMAT_DATE('%A', DATE(a.date_day)) AS STRING) weekday,
+        # ORDERS
+        o.total_orders,
+        o.total_orders_confirmed,
+        o.total_orders_omw_delivery,
+        o.total_non_confirmed_orders,
+        # PARTNERS
+        COALESCE(op.open_partners_qty,0) open_partners_qty,
+        COALESCE(pa.ps_cases,0) AS partner_service_cases,
+        COALESCE(ph.ps_chats,0) AS partner_service_chats,
+        COALESCE(pa.ps_cases,0) + COALESCE(ph.ps_chats,0) AS partner_service_contacts,
+
+        DATE_SUB(CURRENT_DATE(),INTERVAL 1 DAY) as last_date
+
+        #ROUND((COALESCE(pa.ps_cases,0) + COALESCE(ph.ps_chats,0)) / o.total_orders,2) AS Partner_Service_Contact_Rate
+
+FROM data_base AS a
+
+LEFT JOIN `peya-bi-tools-pro.il_core.dim_country` dc ON dc.country_id = a.country_id AND dc.active
+
+
+LEFT JOIN orders o
+       ON a.date_day = o.date_day 
+      AND a.country_id = o.country_id
+      AND a.hour = o.hour
+      AND a.vertical = o.vertical
+LEFT JOIN partner_service_cases pa
+       ON pa.date_day = a.date_day 
+      AND pa.country_id = a.country_id 
+      AND pa.hour = a.hour
+      AND pa.vertical = a.vertical
+LEFT JOIN partner_service_chats ph
+       ON ph.date_day = a.date_day 
+       AND ph.country_id = a.country_id 
+      AND ph.hour = a.hour 
+      AND ph.vertical = a.vertical
+--JOIN OPEN TIME
+LEFT JOIN Open_data op 
+       ON a.date_day = op.open_date
+      AND a.country_id = op.country_id
+      AND a.hour = op.open_hour
+      AND a.vertical = op.vertical
+
+
+
+ORDER BY 1 DESC, 2]]></_.fcp.ObjectModelEncapsulateLegacy.false...relation>
+        <_.fcp.ObjectModelEncapsulateLegacy.true...relation connection='bigquery.0clmcsx0p3k6wh16nc0pd11384vc' name='Custom SQL Query' type='text'><![CDATA[With dates as (
+    SELECT DATE_SUB(DATE_TRUNC(CURRENT_DATE,MONTH), INTERVAL 5 MONTH) begin_date
+),
+
+ all_days as (
+       SELECT DISTINCT 
+              date as date_day 
+       FROM `peya-bi-tools-pro.il_core.dim_date` d
+       WHERE d.date >>= (SELECT begin_date FROM dates)
+       AND d.date << CURRENT_DATE
+       ORDER BY 1
+),
+all_hours as (
+    SELECT hour FROM `peya-data-origins-pro.cl_core.date_hour` ORDER BY 1
+),
+orders_data_info AS (
+
+    SELECT  o.order_id,
+            o.country.country_id AS country_id,
+            business_type.business_type_name vertical,
+    FROM `peya-bi-tools-pro.il_core.fact_orders` o 
+    INNER JOIN `peya-bi-tools-pro.il_core.dim_country` dc ON dc.country_id = o.country_id AND dc.active
+    WHERE o.registered_date >>= (SELECT begin_date FROM dates)
+),
+orders AS (
+
+    SELECT 
+            DATE(o.registered_date) AS date_day,
+            o.order_hour as hour,
+            o.country.country_id AS country_id,
+            business_type.business_type_name vertical,
+            COUNT(DISTINCT o.order_id) AS total_orders,
+            COUNT(DISTINCT CASE WHEN o.order_status = "CONFIRMED" THEN o.order_id ELSE NULL END) total_orders_confirmed,
+            COUNT(DISTINCT CASE WHEN o.with_logistics = TRUE THEN o.order_id ELSE NULL END) total_orders_omw_delivery,
+            COUNT(DISTINCT CASE WHEN o.order_status NOT IN ("CONFIRMED") THEN o.order_id ELSE NULL END) total_non_confirmed_orders,
+
+    FROM `peya-bi-tools-pro.il_core.fact_orders` o 
+    INNER JOIN `peya-bi-tools-pro.il_core.dim_country` dc ON dc.country_id = o.country_id AND dc.active
+    WHERE o.registered_date >>= (SELECT begin_date FROM dates)
+    AND DATE(o.registered_date) << DATE(CURRENT_DATE)
+    GROUP BY 1,2,3,4
+),
+partner_service_cases AS (
+
+    SELECT 
+            DATE(sca.create_date) date_day,
+            EXTRACT(HOUR FROM sca.create_date) AS hour,
+            sca.country_id,
+            o.vertical,
+            COUNT(DISTINCT sca.case_id) ps_cases
+
+    FROM `peya-bi-tools-pro.il_salesforce.fact_salesforce_cases` sca
+    LEFT JOIN orders_data_info as o ON CAST(o.order_id  as STRING) = sca.case_order_id
+    INNER JOIN `peya-bi-tools-pro.il_core.dim_country` cd ON cd.country_id = sca.country_id AND cd.active
+    WHERE DATE(sca.create_date)  >>= (SELECT begin_date FROM dates)
+      AND DATE(sca.create_date) << DATE(CURRENT_DATE)
+      AND sca.record_type_name IN ('PY Inbound Case','CD Inbound Case')
+      AND sca.case_origin NOT IN ('Chat')
+      AND (sca.case_subjec NOT LIKE '%NDC |%' OR sca.case_subjec NOT LIKE '%No country%' OR sca.case_subjec NOT LIKE '%restaurant portal%')
+      AND sca.case_type IN ('Restaurant - Data','Restaurant Request','Partner','Handover',' ', NULL)
+    GROUP BY 1,2,3,4
+),
+partner_service_chats AS (
+
+    SELECT 
+            DATE(sch.created_date) date_day,
+            EXTRACT(HOUR FROM sch.created_date) AS hour,
+            cd.country_id,
+            o.vertical,
+            COUNT(DISTINCT sch.chat_transcript_id) ps_chats    
+
+    FROM `peya-bi-tools-pro.il_salesforce.fact_livechat_transcripts` sch
+    LEFT JOIN orders_data_info as o on o.order_id = sch.order_id
+    INNER JOIN `peya-bi-tools-pro.il_core.dim_country` cd  ON cd.country_id = sch.country_id AND cd.active
+    WHERE DATE(sch.created_date) >>= (SELECT begin_date FROM dates)
+      AND DATE(sch.created_date) << DATE(CURRENT_DATE)
+      AND sch.livechat_button.button_name IN ('PS_SPA_PedidosYa_Courier_Partner','PS_SPA_PedidosYa_Vendor_KA_SSU_Chat','PS_SPA_PedidosYa_HighPrio_Partner','PS_SPA_PedidosYa_Kitchen_Partner','PS_SPA_PedidosYa_Restaurant_Chat','PS_SPA_Partner_Technical_Support_Chat','PS_SPA_PedidosYa_Urgent_Restaurant_Chat','PS_SPA_Partner_Technical_Support_Chat','PS_SPA_PedidosYa_Partner_Live_Chat','PS_SPA_PedidosYa_Content_Partner_Chat','PS_SPA_Appetito_Restaurant_Chat','PS_SPA_PedidosYa_Billing_Partner_Chat','PS_SPA_Appetito_Urgent_Restaurant_Chat')
+    GROUP BY 1,2,3,4
+),
+data_country_vertical as (
+    SELECT DISTINCT country_id, vertical
+    FROM orders
+    UNION DISTINCT 
+    SELECT DISTINCT country_id, vertical
+    FROM partner_service_cases
+    UNION DISTINCT 
+    SELECT DISTINCT country_id, vertical
+    FROM partner_service_chats
+),
+data_base as(
+
+    SELECT DISTINCT * FROM data_country_vertical as d
+    CROSS JOIN all_days
+    CROSS JOIN all_hours
+),
+
+--OPEN TIME
+
+
+   Open_data as (
+SELECT  a.country_id, 
+  dp.business_type.business_type_name vertical,
+  partner_time_date open_date, 
+  partner_time_hour open_hour,
+  COUNT(DISTINCT a.partner_id) open_partners_qty, 
+  FROM `peya-bi-tools-pro.il_core.agg_fact_partner_times` a
+  LEFT JOIN `peya-bi-tools-pro.il_core.dim_partner` dp ON a.partner_id = dp.partner_id
+  LEFT JOIN `peya-bi-tools-pro.il_core.dim_country` dc ON a.country_id = dc.country_id
+  WHERE state = 'OPEN' 
+  and partner_time_date >>= (SELECT begin_date FROM dates)
+  GROUP BY 1,2,3,4
+  order by 1,2,3
+)
+
+
+SELECT 
+        a.date_day,
+        a.hour,
+        a.country_id,
+        dc.country_name,
+        a.vertical,
+        CAST(FORMAT_DATE('%A', DATE(a.date_day)) AS STRING) weekday,
+        # ORDERS
+        o.total_orders,
+        o.total_orders_confirmed,
+        o.total_orders_omw_delivery,
+        o.total_non_confirmed_orders,
+        # PARTNERS
+        COALESCE(op.open_partners_qty,0) open_partners_qty,
+        COALESCE(pa.ps_cases,0) AS partner_service_cases,
+        COALESCE(ph.ps_chats,0) AS partner_service_chats,
+        COALESCE(pa.ps_cases,0) + COALESCE(ph.ps_chats,0) AS partner_service_contacts,
+
+        DATE_SUB(CURRENT_DATE(),INTERVAL 1 DAY) as last_date
+
+        #ROUND((COALESCE(pa.ps_cases,0) + COALESCE(ph.ps_chats,0)) / o.total_orders,2) AS Partner_Service_Contact_Rate
+
+FROM data_base AS a
+
+LEFT JOIN `peya-bi-tools-pro.il_core.dim_country` dc ON dc.country_id = a.country_id AND dc.active
+
+
+LEFT JOIN orders o
+       ON a.date_day = o.date_day 
+      AND a.country_id = o.country_id
+      AND a.hour = o.hour
+      AND a.vertical = o.vertical
+LEFT JOIN partner_service_cases pa
+       ON pa.date_day = a.date_day 
+      AND pa.country_id = a.country_id 
+      AND pa.hour = a.hour
+      AND pa.vertical = a.vertical
+LEFT JOIN partner_service_chats ph
+       ON ph.date_day = a.date_day 
+       AND ph.country_id = a.country_id 
+      AND ph.hour = a.hour 
+      AND ph.vertical = a.vertical
+--JOIN OPEN TIME
+LEFT JOIN Open_data op 
+       ON a.date_day = op.open_date
+      AND a.country_id = op.country_id
+      AND a.hour = op.open_hour
+      AND a.vertical = op.vertical
+
+
+
+ORDER BY 1 DESC, 2]]></_.fcp.ObjectModelEncapsulateLegacy.true...relation>
+        <metadata-records>
+          <metadata-record class='column'>
+            <remote-name>date_day</remote-name>
+            <remote-type>7</remote-type>
+            <local-name>[date_day]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>date_day</remote-alias>
+            <local-type>date</local-type>
+            <aggregation>Year</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_2EC7DCFB28EA4363B97CB10A9F8C7FCC]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>hour</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[hour]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>hour</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_2EC7DCFB28EA4363B97CB10A9F8C7FCC]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>country_id</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[country_id]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>country_id</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_2EC7DCFB28EA4363B97CB10A9F8C7FCC]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>country_name</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[country_name]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>country_name</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_2EC7DCFB28EA4363B97CB10A9F8C7FCC]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>vertical</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[vertical]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>vertical</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_2EC7DCFB28EA4363B97CB10A9F8C7FCC]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>weekday</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[weekday]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>weekday</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_2EC7DCFB28EA4363B97CB10A9F8C7FCC]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>total_orders</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[total_orders]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>total_orders</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_2EC7DCFB28EA4363B97CB10A9F8C7FCC]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>total_orders_confirmed</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[total_orders_confirmed]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>total_orders_confirmed</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_2EC7DCFB28EA4363B97CB10A9F8C7FCC]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>total_orders_omw_delivery</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[total_orders_omw_delivery]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>total_orders_omw_delivery</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_2EC7DCFB28EA4363B97CB10A9F8C7FCC]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>total_non_confirmed_orders</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[total_non_confirmed_orders]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>total_non_confirmed_orders</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_2EC7DCFB28EA4363B97CB10A9F8C7FCC]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>open_partners_qty</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[open_partners_qty]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>open_partners_qty</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_2EC7DCFB28EA4363B97CB10A9F8C7FCC]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>partner_service_cases</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[partner_service_cases]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>partner_service_cases</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_2EC7DCFB28EA4363B97CB10A9F8C7FCC]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>partner_service_chats</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[partner_service_chats]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>partner_service_chats</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_2EC7DCFB28EA4363B97CB10A9F8C7FCC]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>partner_service_contacts</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[partner_service_contacts]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>partner_service_contacts</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_2EC7DCFB28EA4363B97CB10A9F8C7FCC]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>last_date</remote-name>
+            <remote-type>7</remote-type>
+            <local-name>[last_date]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>last_date</remote-alias>
+            <local-type>date</local-type>
+            <aggregation>Year</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_2EC7DCFB28EA4363B97CB10A9F8C7FCC]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+        </metadata-records>
+      </connection>
+      <aliases enabled='yes' />
+      <column caption='Dia_de_semana' datatype='boolean' name='[Calculation_219550483246370817]' role='dimension' type='nominal'>
+        <calculation class='tableau' formula='DATEPART(&apos;weekday&apos;,[date_day]) &lt;&gt; 1 AND DATEPART(&apos;weekday&apos;,[date_day]) &lt;&gt; 7' />
+      </column>
+      <column caption='Contact_rate' datatype='real' name='[Calculation_219550483252432898]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='SUM([partner_service_contacts])/SUM([total_orders])' />
+      </column>
+      <column caption='fail_rate' datatype='real' name='[Calculation_219550483254013955]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='SUM([total_non_confirmed_orders])/SUM([total_orders])' />
+      </column>
+      <column caption='AVG_Contact_rate' datatype='real' name='[Contact_rate (copia)_238127831996280840]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='AVG([partner_service_contacts])/AVG([total_orders])' />
+      </column>
+      <_.fcp.ObjectModelTableType.true...column caption='Custom SQL Query' datatype='table' name='[__tableau_internal_object_id__].[_2EC7DCFB28EA4363B97CB10A9F8C7FCC]' role='measure' type='quantitative' />
+      <column aggregation='Sum' datatype='integer' name='[country_id]' role='dimension' type='ordinal' />
+      <column datatype='string' name='[country_name]' role='dimension' semantic-role='[Country].[ISO3166_2]' type='nominal' />
+      <column aggregation='Sum' datatype='integer' name='[hour]' role='dimension' type='ordinal' />
+      <column datatype='integer' name='[total_orders]' role='measure' type='quantitative' />
+      <column-instance column='[total_orders]' derivation='Avg' name='[avg:total_orders:qk]' pivot='key' type='quantitative' />
+      <column-instance column='[total_orders]' derivation='Sum' name='[sum:total_orders:qk]' pivot='key' type='quantitative' />
+      <extract _.fcp.ObjectModelExtractV2.true...object-id='' _.fcp.VConnDownstreamExtractsWithWarnings.true...user-specific='false' count='-1' enabled='true' units='records'>
+        <connection access_mode='readonly' author-locale='en_US' class='hyper' dbname='extract/eb/70/{837CDB39-C36F-453D-A10D-35B620FDE791}/federated_087c9471dk62b019zc4f50.hyper' extract-engine='true' schema='Extract' sslmode='' tablename='Extract' update-time='04/30/2025 12:02:55 PM'>
+          <_.fcp.ObjectModelEncapsulateLegacy.false...relation name='Extract' table='[Extract].[Extract]' type='table' />
+          <_.fcp.ObjectModelEncapsulateLegacy.true...relation name='Extract' table='[Extract].[Extract]' type='table' />
+          <metadata-records>
+            <metadata-record class='column'>
+              <remote-name>date_day</remote-name>
+              <remote-type>133</remote-type>
+              <local-name>[date_day]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>date_day</remote-alias>
+              <ordinal>0</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>date</local-type>
+              <aggregation>Year</aggregation>
+              <approx-count>180</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_2EC7DCFB28EA4363B97CB10A9F8C7FCC]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>hour</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[hour]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>hour</remote-alias>
+              <ordinal>1</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>24</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_2EC7DCFB28EA4363B97CB10A9F8C7FCC]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>country_id</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[country_id]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>country_id</remote-alias>
+              <ordinal>2</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>15</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_2EC7DCFB28EA4363B97CB10A9F8C7FCC]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>country_name</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[country_name]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>country_name</remote-alias>
+              <ordinal>3</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>15</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_2EC7DCFB28EA4363B97CB10A9F8C7FCC]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>vertical</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[vertical]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>vertical</remote-alias>
+              <ordinal>4</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>11</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_2EC7DCFB28EA4363B97CB10A9F8C7FCC]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>weekday</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[weekday]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>weekday</remote-alias>
+              <ordinal>5</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>7</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_2EC7DCFB28EA4363B97CB10A9F8C7FCC]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>total_orders</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[total_orders]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>total_orders</remote-alias>
+              <ordinal>6</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>6258</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_2EC7DCFB28EA4363B97CB10A9F8C7FCC]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>total_orders_confirmed</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[total_orders_confirmed]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>total_orders_confirmed</remote-alias>
+              <ordinal>7</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>5802</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_2EC7DCFB28EA4363B97CB10A9F8C7FCC]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>total_orders_omw_delivery</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[total_orders_omw_delivery]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>total_orders_omw_delivery</remote-alias>
+              <ordinal>8</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>6209</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_2EC7DCFB28EA4363B97CB10A9F8C7FCC]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>total_non_confirmed_orders</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[total_non_confirmed_orders]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>total_non_confirmed_orders</remote-alias>
+              <ordinal>9</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>618</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_2EC7DCFB28EA4363B97CB10A9F8C7FCC]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>open_partners_qty</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[open_partners_qty]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>open_partners_qty</remote-alias>
+              <ordinal>10</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>9565</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_2EC7DCFB28EA4363B97CB10A9F8C7FCC]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>partner_service_cases</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[partner_service_cases]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>partner_service_cases</remote-alias>
+              <ordinal>11</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>8</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_2EC7DCFB28EA4363B97CB10A9F8C7FCC]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>partner_service_chats</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[partner_service_chats]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>partner_service_chats</remote-alias>
+              <ordinal>12</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>82</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_2EC7DCFB28EA4363B97CB10A9F8C7FCC]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>partner_service_contacts</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[partner_service_contacts]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>partner_service_contacts</remote-alias>
+              <ordinal>13</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>155</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_2EC7DCFB28EA4363B97CB10A9F8C7FCC]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>last_date</remote-name>
+              <remote-type>133</remote-type>
+              <local-name>[last_date]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>last_date</remote-alias>
+              <ordinal>14</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>date</local-type>
+              <aggregation>Year</aggregation>
+              <approx-count>1</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_2EC7DCFB28EA4363B97CB10A9F8C7FCC]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+          </metadata-records>
+        </connection>
+      </extract>
+      <layout _.fcp.SchemaViewerObjectModel.false...dim-percentage='0.5' _.fcp.SchemaViewerObjectModel.false...measure-percentage='0.4' dim-ordering='alphabetic' measure-ordering='alphabetic' show-structure='true' />
+      <style>
+        <style-rule element='mark'>
+          <encoding attr='color' field='[:Measure Names]' type='palette'>
+            <map to='#4e79a7'>
+              <bucket>&quot;[federated.087c9471dk62b019zc4f50x47xz2].[avg:qty_partners:qk]&quot;</bucket>
+            </map>
+            <map to='#4e79a7'>
+              <bucket>&quot;[federated.087c9471dk62b019zc4f50x47xz2].[sum:qty_partners:qk]&quot;</bucket>
+            </map>
+            <map to='#f28e2b'>
+              <bucket>&quot;[federated.087c9471dk62b019zc4f50x47xz2].[avg:total_orders:qk]&quot;</bucket>
+            </map>
+            <map to='#f28e2b'>
+              <bucket>&quot;[federated.087c9471dk62b019zc4f50x47xz2].[sum:total_orders:qk]&quot;</bucket>
+            </map>
+          </encoding>
+        </style-rule>
+      </style>
+      <semantic-values>
+        <semantic-value key='[Country].[Name]' value='&quot;Argentina&quot;' />
+      </semantic-values>
+      <field-sort-info field-sort-order-type='custom-order'>
+        <field-sort-custom-order field='date_day' />
+        <field-sort-custom-order field='hour' />
+        <field-sort-custom-order field='country_id' />
+        <field-sort-custom-order field='country_name' />
+        <field-sort-custom-order field='vertical' />
+        <field-sort-custom-order field='total_orders' />
+        <field-sort-custom-order field='total_orders (copia)_238127831982194689' />
+        <field-sort-custom-order field='Calculation_219550483254013955' />
+        <field-sort-custom-order field='fail_rate (copia)_238127831980625920' />
+        <field-sort-custom-order field='Calculation_219550483252432898' />
+        <field-sort-custom-order field='Contact_rate (copia)_238127831996280840' />
+        <field-sort-custom-order field='Contact_rate (copia)_238127831992545287' />
+        <field-sort-custom-order field='total_orders_confirmed' />
+        <field-sort-custom-order field='Calculation_219550483246370817' />
+        <field-sort-custom-order field='total_orders_omw_delivery' />
+        <field-sort-custom-order field='total_non_confirmed_orders' />
+        <field-sort-custom-order field='open_partners_qty' />
+        <field-sort-custom-order field='partner_service_cases' />
+        <field-sort-custom-order field='partner_service_chats' />
+        <field-sort-custom-order field='Calculation_219550483170476032' />
+        <field-sort-custom-order field='partner_service_contacts' />
+        <field-sort-custom-order field='last_date' />
+        <field-sort-custom-order field='business_type_name' />
+        <field-sort-custom-order field='partner_time_date' />
+        <field-sort-custom-order field='partner_time_hour' />
+        <field-sort-custom-order field='qty_partners' />
+      </field-sort-info>
+      <_.fcp.ObjectModelEncapsulateLegacy.true...object-graph>
+        <objects>
+          <object caption='Custom SQL Query' id='_2EC7DCFB28EA4363B97CB10A9F8C7FCC'>
+            <properties context=''>
+              <relation connection='bigquery.0clmcsx0p3k6wh16nc0pd11384vc' name='Custom SQL Query' type='text'><![CDATA[With dates as (
+    SELECT DATE_SUB(DATE_TRUNC(CURRENT_DATE,MONTH), INTERVAL 5 MONTH) begin_date
+),
+
+ all_days as (
+       SELECT DISTINCT 
+              date as date_day 
+       FROM `peya-bi-tools-pro.il_core.dim_date` d
+       WHERE d.date >>= (SELECT begin_date FROM dates)
+       AND d.date << CURRENT_DATE
+       ORDER BY 1
+),
+all_hours as (
+    SELECT hour FROM `peya-data-origins-pro.cl_core.date_hour` ORDER BY 1
+),
+orders_data_info AS (
+
+    SELECT  o.order_id,
+            o.country.country_id AS country_id,
+            business_type.business_type_name vertical,
+    FROM `peya-bi-tools-pro.il_core.fact_orders` o 
+    INNER JOIN `peya-bi-tools-pro.il_core.dim_country` dc ON dc.country_id = o.country_id AND dc.active
+    WHERE o.registered_date >>= (SELECT begin_date FROM dates)
+),
+orders AS (
+
+    SELECT 
+            DATE(o.registered_date) AS date_day,
+            o.order_hour as hour,
+            o.country.country_id AS country_id,
+            business_type.business_type_name vertical,
+            COUNT(DISTINCT o.order_id) AS total_orders,
+            COUNT(DISTINCT CASE WHEN o.order_status = "CONFIRMED" THEN o.order_id ELSE NULL END) total_orders_confirmed,
+            COUNT(DISTINCT CASE WHEN o.with_logistics = TRUE THEN o.order_id ELSE NULL END) total_orders_omw_delivery,
+            COUNT(DISTINCT CASE WHEN o.order_status NOT IN ("CONFIRMED") THEN o.order_id ELSE NULL END) total_non_confirmed_orders,
+
+    FROM `peya-bi-tools-pro.il_core.fact_orders` o 
+    INNER JOIN `peya-bi-tools-pro.il_core.dim_country` dc ON dc.country_id = o.country_id AND dc.active
+    WHERE o.registered_date >>= (SELECT begin_date FROM dates)
+    AND DATE(o.registered_date) << DATE(CURRENT_DATE)
+    GROUP BY 1,2,3,4
+),
+partner_service_cases AS (
+
+    SELECT 
+            DATE(sca.create_date) date_day,
+            EXTRACT(HOUR FROM sca.create_date) AS hour,
+            sca.country_id,
+            o.vertical,
+            COUNT(DISTINCT sca.case_id) ps_cases
+
+    FROM `peya-bi-tools-pro.il_salesforce.fact_salesforce_cases` sca
+    LEFT JOIN orders_data_info as o ON CAST(o.order_id  as STRING) = sca.case_order_id
+    INNER JOIN `peya-bi-tools-pro.il_core.dim_country` cd ON cd.country_id = sca.country_id AND cd.active
+    WHERE DATE(sca.create_date)  >>= (SELECT begin_date FROM dates)
+      AND DATE(sca.create_date) << DATE(CURRENT_DATE)
+      AND sca.record_type_name IN ('PY Inbound Case','CD Inbound Case')
+      AND sca.case_origin NOT IN ('Chat')
+      AND (sca.case_subjec NOT LIKE '%NDC |%' OR sca.case_subjec NOT LIKE '%No country%' OR sca.case_subjec NOT LIKE '%restaurant portal%')
+      AND sca.case_type IN ('Restaurant - Data','Restaurant Request','Partner','Handover',' ', NULL)
+    GROUP BY 1,2,3,4
+),
+partner_service_chats AS (
+
+    SELECT 
+            DATE(sch.created_date) date_day,
+            EXTRACT(HOUR FROM sch.created_date) AS hour,
+            cd.country_id,
+            o.vertical,
+            COUNT(DISTINCT sch.chat_transcript_id) ps_chats    
+
+    FROM `peya-bi-tools-pro.il_salesforce.fact_livechat_transcripts` sch
+    LEFT JOIN orders_data_info as o on o.order_id = sch.order_id
+    INNER JOIN `peya-bi-tools-pro.il_core.dim_country` cd  ON cd.country_id = sch.country_id AND cd.active
+    WHERE DATE(sch.created_date) >>= (SELECT begin_date FROM dates)
+      AND DATE(sch.created_date) << DATE(CURRENT_DATE)
+      AND sch.livechat_button.button_name IN ('PS_SPA_PedidosYa_Courier_Partner','PS_SPA_PedidosYa_Vendor_KA_SSU_Chat','PS_SPA_PedidosYa_HighPrio_Partner','PS_SPA_PedidosYa_Kitchen_Partner','PS_SPA_PedidosYa_Restaurant_Chat','PS_SPA_Partner_Technical_Support_Chat','PS_SPA_PedidosYa_Urgent_Restaurant_Chat','PS_SPA_Partner_Technical_Support_Chat','PS_SPA_PedidosYa_Partner_Live_Chat','PS_SPA_PedidosYa_Content_Partner_Chat','PS_SPA_Appetito_Restaurant_Chat','PS_SPA_PedidosYa_Billing_Partner_Chat','PS_SPA_Appetito_Urgent_Restaurant_Chat')
+    GROUP BY 1,2,3,4
+),
+data_country_vertical as (
+    SELECT DISTINCT country_id, vertical
+    FROM orders
+    UNION DISTINCT 
+    SELECT DISTINCT country_id, vertical
+    FROM partner_service_cases
+    UNION DISTINCT 
+    SELECT DISTINCT country_id, vertical
+    FROM partner_service_chats
+),
+data_base as(
+
+    SELECT DISTINCT * FROM data_country_vertical as d
+    CROSS JOIN all_days
+    CROSS JOIN all_hours
+),
+
+--OPEN TIME
+
+
+   Open_data as (
+SELECT  a.country_id, 
+  dp.business_type.business_type_name vertical,
+  partner_time_date open_date, 
+  partner_time_hour open_hour,
+  COUNT(DISTINCT a.partner_id) open_partners_qty, 
+  FROM `peya-bi-tools-pro.il_core.agg_fact_partner_times` a
+  LEFT JOIN `peya-bi-tools-pro.il_core.dim_partner` dp ON a.partner_id = dp.partner_id
+  LEFT JOIN `peya-bi-tools-pro.il_core.dim_country` dc ON a.country_id = dc.country_id
+  WHERE state = 'OPEN' 
+  and partner_time_date >>= (SELECT begin_date FROM dates)
+  GROUP BY 1,2,3,4
+  order by 1,2,3
+)
+
+
+SELECT 
+        a.date_day,
+        a.hour,
+        a.country_id,
+        dc.country_name,
+        a.vertical,
+        CAST(FORMAT_DATE('%A', DATE(a.date_day)) AS STRING) weekday,
+        # ORDERS
+        o.total_orders,
+        o.total_orders_confirmed,
+        o.total_orders_omw_delivery,
+        o.total_non_confirmed_orders,
+        # PARTNERS
+        COALESCE(op.open_partners_qty,0) open_partners_qty,
+        COALESCE(pa.ps_cases,0) AS partner_service_cases,
+        COALESCE(ph.ps_chats,0) AS partner_service_chats,
+        COALESCE(pa.ps_cases,0) + COALESCE(ph.ps_chats,0) AS partner_service_contacts,
+
+        DATE_SUB(CURRENT_DATE(),INTERVAL 1 DAY) as last_date
+
+        #ROUND((COALESCE(pa.ps_cases,0) + COALESCE(ph.ps_chats,0)) / o.total_orders,2) AS Partner_Service_Contact_Rate
+
+FROM data_base AS a
+
+LEFT JOIN `peya-bi-tools-pro.il_core.dim_country` dc ON dc.country_id = a.country_id AND dc.active
+
+
+LEFT JOIN orders o
+       ON a.date_day = o.date_day 
+      AND a.country_id = o.country_id
+      AND a.hour = o.hour
+      AND a.vertical = o.vertical
+LEFT JOIN partner_service_cases pa
+       ON pa.date_day = a.date_day 
+      AND pa.country_id = a.country_id 
+      AND pa.hour = a.hour
+      AND pa.vertical = a.vertical
+LEFT JOIN partner_service_chats ph
+       ON ph.date_day = a.date_day 
+       AND ph.country_id = a.country_id 
+      AND ph.hour = a.hour 
+      AND ph.vertical = a.vertical
+--JOIN OPEN TIME
+LEFT JOIN Open_data op 
+       ON a.date_day = op.open_date
+      AND a.country_id = op.country_id
+      AND a.hour = op.open_hour
+      AND a.vertical = op.vertical
+
+
+
+ORDER BY 1 DESC, 2]]></relation>
+            </properties>
+            <properties context='extract'>
+              <relation name='Extract' table='[Extract].[Extract]' type='table' />
+            </properties>
+          </object>
+        </objects>
+      </_.fcp.ObjectModelEncapsulateLegacy.true...object-graph>
+    </datasource>
+  </datasources>
+  <shared-views>
+    <shared-view name='federated.087c9471dk62b019zc4f50x47xz2'>
+      <datasources>
+        <datasource caption='OpenTime' name='federated.087c9471dk62b019zc4f50x47xz2' />
+      </datasources>
+      <datasource-dependencies datasource='federated.087c9471dk62b019zc4f50x47xz2'>
+        <column datatype='string' name='[country_name]' role='dimension' semantic-role='[Country].[ISO3166_2]' type='nominal' />
+        <column datatype='date' name='[date_day]' role='dimension' type='ordinal' />
+        <column-instance column='[country_name]' derivation='None' name='[none:country_name:nk]' pivot='key' type='nominal' />
+        <column-instance column='[date_day]' derivation='None' name='[none:date_day:qk]' pivot='key' type='quantitative' />
+        <column-instance column='[weekday]' derivation='None' name='[none:weekday:nk]' pivot='key' type='nominal' />
+        <column datatype='string' name='[weekday]' role='dimension' type='nominal' />
+      </datasource-dependencies>
+      <filter class='categorical' column='[federated.087c9471dk62b019zc4f50x47xz2].[none:country_name:nk]'>
+        <groupfilter function='member' level='[none:country_name:nk]' member='&quot;Argentina&quot;' user:ui-domain='database' user:ui-enumeration='inclusive' user:ui-marker='enumerate' />
+      </filter>
+      <filter class='relative-date' column='[federated.087c9471dk62b019zc4f50x47xz2].[none:date_day:qk]' first-period='0' include-future='true' include-null='false' last-period='0' period-type-v2='month' />
+      <filter class='categorical' column='[federated.087c9471dk62b019zc4f50x47xz2].[none:weekday:nk]'>
+        <groupfilter function='level-members' level='[none:weekday:nk]' user:ui-enumeration='all' user:ui-marker='enumerate' />
+      </filter>
+    </shared-view>
+  </shared-views>
+  <worksheets>
+    <worksheet name='DataUpTo'>
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='OpenTime' name='federated.087c9471dk62b019zc4f50x47xz2' />
+          </datasources>
+          <datasource-dependencies datasource='federated.087c9471dk62b019zc4f50x47xz2'>
+            <column datatype='string' name='[country_name]' role='dimension' semantic-role='[Country].[ISO3166_2]' type='nominal' />
+            <column datatype='date' name='[date_day]' role='dimension' type='ordinal' />
+            <column datatype='date' name='[last_date]' role='dimension' type='ordinal' />
+            <column-instance column='[country_name]' derivation='None' name='[none:country_name:nk]' pivot='key' type='nominal' />
+            <column-instance column='[date_day]' derivation='None' name='[none:date_day:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[weekday]' derivation='None' name='[none:weekday:nk]' pivot='key' type='nominal' />
+            <column-instance column='[last_date]' derivation='Day-Trunc' name='[tdy:last_date:qk]' pivot='key' type='quantitative' />
+            <column datatype='string' name='[weekday]' role='dimension' type='nominal' />
+          </datasource-dependencies>
+          <slices>
+            <column>[federated.087c9471dk62b019zc4f50x47xz2].[none:weekday:nk]</column>
+            <column>[federated.087c9471dk62b019zc4f50x47xz2].[none:country_name:nk]</column>
+            <column>[federated.087c9471dk62b019zc4f50x47xz2].[none:date_day:qk]</column>
+          </slices>
+          <aggregation value='true' />
+        </view>
+        <style>
+          <style-rule element='cell'>
+            <format attr='color' value='#ffffff' />
+            <format attr='font-size' value='8' />
+          </style-rule>
+          <style-rule element='header'>
+            <format attr='band-color' scope='cols' value='#00000000' />
+          </style-rule>
+          <style-rule element='pane'>
+            <format attr='band-color' scope='rows' value='#f5f5f5' />
+            <format attr='band-color' scope='cols' value='#00000000' />
+            <format attr='background-color' value='#fa0050' />
+          </style-rule>
+          <style-rule element='table'>
+            <format attr='band-size' scope='rows' value='1' />
+            <format attr='band-size' scope='cols' value='1' />
+          </style-rule>
+          <style-rule element='worksheet'>
+            <format attr='color' value='#ffffff' />
+          </style-rule>
+          <style-rule element='title'>
+            <format attr='font-weight' value='bold' />
+          </style-rule>
+          <style-rule element='tooltip'>
+            <format attr='font-size' value='8' />
+            <format attr='font-weight' value='bold' />
+          </style-rule>
+        </style>
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Automatic' />
+            <encodings>
+              <text column='[federated.087c9471dk62b019zc4f50x47xz2].[tdy:last_date:qk]' />
+            </encodings>
+            <customized-label>
+              <formatted-text>
+                <run bold='true'>Data up to:</run>
+                <run>Æ&#10;</run>
+                <run bold='true'><![CDATA[<[federated.087c9471dk62b019zc4f50x47xz2].[tdy:last_date:qk]>]]></run>
+              </formatted-text>
+            </customized-label>
+            <style>
+              <style-rule element='cell'>
+                <format attr='text-align' value='center' />
+              </style-rule>
+              <style-rule element='mark'>
+                <format attr='mark-labels-show' value='true' />
+                <format attr='mark-labels-cull' value='true' />
+              </style-rule>
+            </style>
+          </pane>
+        </panes>
+        <rows />
+        <cols />
+      </table>
+      <simple-id uuid='{88CD98BE-985B-41CB-8003-8189D6727E2D}' />
+    </worksheet>
+    <worksheet name='Partners_Qty'>
+      <layout-options>
+        <title>
+          <formatted-text>
+            <run fontalignment='1'>AVG Partners By Hour</run>
+          </formatted-text>
+        </title>
+      </layout-options>
+      <repository-location id='Sheet1' path='/t/Pedidosya/workbooks/QtyOrdersyPartnersporHora' revision='' site='Pedidosya' />
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='OpenTime' name='federated.087c9471dk62b019zc4f50x47xz2' />
+          </datasources>
+          <datasource-dependencies datasource='federated.087c9471dk62b019zc4f50x47xz2'>
+            <column caption='Contact_rate' datatype='real' name='[Calculation_219550483252432898]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='SUM([partner_service_contacts])/SUM([total_orders])' />
+            </column>
+            <column-instance column='[open_partners_qty]' derivation='Avg' name='[avg:open_partners_qty:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[partner_service_contacts]' derivation='Avg' name='[avg:partner_service_contacts:qk]' pivot='key' type='quantitative' />
+            <column datatype='string' name='[country_name]' role='dimension' semantic-role='[Country].[ISO3166_2]' type='nominal' />
+            <column datatype='date' name='[date_day]' role='dimension' type='ordinal' />
+            <column aggregation='Sum' datatype='integer' name='[hour]' role='dimension' type='ordinal' />
+            <column-instance column='[country_name]' derivation='None' name='[none:country_name:nk]' pivot='key' type='nominal' />
+            <column-instance column='[date_day]' derivation='None' name='[none:date_day:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[hour]' derivation='None' name='[none:hour:ok]' pivot='key' type='ordinal' />
+            <column-instance column='[weekday]' derivation='None' name='[none:weekday:nk]' pivot='key' type='nominal' />
+            <column datatype='integer' name='[open_partners_qty]' role='measure' type='quantitative' />
+            <column datatype='integer' name='[partner_service_contacts]' role='measure' type='quantitative' />
+            <column datatype='integer' name='[total_orders]' role='measure' type='quantitative' />
+            <column-instance column='[Calculation_219550483252432898]' derivation='User' name='[usr:Calculation_219550483252432898:qk]' pivot='key' type='quantitative' />
+            <column datatype='string' name='[weekday]' role='dimension' type='nominal' />
+          </datasource-dependencies>
+          <slices>
+            <column>[federated.087c9471dk62b019zc4f50x47xz2].[none:country_name:nk]</column>
+            <column>[federated.087c9471dk62b019zc4f50x47xz2].[none:date_day:qk]</column>
+            <column>[federated.087c9471dk62b019zc4f50x47xz2].[none:weekday:nk]</column>
+          </slices>
+          <aggregation value='true' />
+        </view>
+        <style>
+          <style-rule element='axis'>
+            <format attr='title' class='0' field='[federated.087c9471dk62b019zc4f50x47xz2].[avg:open_partners_qty:qk]' scope='rows' value='' />
+          </style-rule>
+          <style-rule element='cell'>
+            <format attr='text-format' field='[federated.087c9471dk62b019zc4f50x47xz2].[usr:Calculation_219550483252432898:qk]' value='p0.00%' />
+          </style-rule>
+          <style-rule element='worksheet'>
+            <format attr='display-field-labels' scope='cols' value='false' />
+          </style-rule>
+          <style-rule element='quick-filter'>
+            <format attr='title' field='[federated.087c9471dk62b019zc4f50x47xz2].[none:business_type_name:nk]' value='Vertical' />
+            <format attr='title' field='[federated.087c9471dk62b019zc4f50x47xz2].[none:country_name:nk]' value='Country' />
+            <format attr='title' field='[federated.087c9471dk62b019zc4f50x47xz2].[none:partner_time_date:qk]' value='Date' />
+            <format attr='title' field='[federated.087c9471dk62b019zc4f50x47xz2].[none:weekday:nk]' value='Weekday'>
+              <formatted-text>
+                <run>Weekday</run>
+              </formatted-text>
+            </format>
+            <format attr='title' field='[federated.087c9471dk62b019zc4f50x47xz2].[none:date_day:qk]' value='Date'>
+              <formatted-text>
+                <run>Date</run>
+              </formatted-text>
+            </format>
+          </style-rule>
+        </style>
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Automatic' />
+            <encodings>
+              <tooltip column='[federated.087c9471dk62b019zc4f50x47xz2].[usr:Calculation_219550483252432898:qk]' />
+              <tooltip column='[federated.087c9471dk62b019zc4f50x47xz2].[avg:partner_service_contacts:qk]' />
+            </encodings>
+            <customized-tooltip>
+              <formatted-text>
+                <run fontcolor='#787878'>hour:&#9;</run>
+                <run bold='true'><![CDATA[<[federated.087c9471dk62b019zc4f50x47xz2].[none:hour:ok]>]]></run>
+                <run>Æ&#10;</run>
+                <run fontcolor='#787878'>AVG Open partners:&#9;</run>
+                <run bold='true'><![CDATA[<[federated.087c9471dk62b019zc4f50x47xz2].[avg:open_partners_qty:qk]>]]></run>
+                <run>Æ&#10;</run>
+                <run fontcolor='#787878'>AVG Partners service contacts:&#9;</run>
+                <run bold='true'><![CDATA[<[federated.087c9471dk62b019zc4f50x47xz2].[avg:partner_service_contacts:qk]>]]></run>
+              </formatted-text>
+            </customized-tooltip>
+            <style>
+              <style-rule element='mark'>
+                <format attr='mark-labels-cull' value='true' />
+                <format attr='mark-labels-show' value='false' />
+              </style-rule>
+            </style>
+          </pane>
+        </panes>
+        <rows>[federated.087c9471dk62b019zc4f50x47xz2].[avg:open_partners_qty:qk]</rows>
+        <cols>[federated.087c9471dk62b019zc4f50x47xz2].[none:hour:ok]</cols>
+      </table>
+      <simple-id uuid='{6957FD76-63CD-4F03-BA76-9C934AFC5ABD}' />
+    </worksheet>
+    <worksheet name='Total_Orders'>
+      <layout-options>
+        <title>
+          <formatted-text>
+            <run fontalignment='1'>AVG Orders By Hour</run>
+          </formatted-text>
+        </title>
+      </layout-options>
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='OpenTime' name='federated.087c9471dk62b019zc4f50x47xz2' />
+          </datasources>
+          <datasource-dependencies datasource='federated.087c9471dk62b019zc4f50x47xz2'>
+            <column caption='Contact_rate' datatype='real' name='[Calculation_219550483252432898]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='SUM([partner_service_contacts])/SUM([total_orders])' />
+            </column>
+            <column caption='fail_rate' datatype='real' name='[Calculation_219550483254013955]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='SUM([total_non_confirmed_orders])/SUM([total_orders])' />
+            </column>
+            <column caption='AVG_Contact_rate' datatype='real' name='[Contact_rate (copia)_238127831996280840]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='AVG([partner_service_contacts])/AVG([total_orders])' />
+            </column>
+            <column-instance column='[total_non_confirmed_orders]' derivation='Avg' name='[avg:total_non_confirmed_orders:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[total_orders]' derivation='Avg' name='[avg:total_orders:qk]' pivot='key' type='quantitative' />
+            <column datatype='string' name='[country_name]' role='dimension' semantic-role='[Country].[ISO3166_2]' type='nominal' />
+            <column datatype='date' name='[date_day]' role='dimension' type='ordinal' />
+            <column aggregation='Sum' datatype='integer' name='[hour]' role='dimension' type='ordinal' />
+            <column-instance column='[country_name]' derivation='None' name='[none:country_name:nk]' pivot='key' type='nominal' />
+            <column-instance column='[date_day]' derivation='None' name='[none:date_day:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[hour]' derivation='None' name='[none:hour:ok]' pivot='key' type='ordinal' />
+            <column-instance column='[weekday]' derivation='None' name='[none:weekday:nk]' pivot='key' type='nominal' />
+            <column datatype='integer' name='[partner_service_contacts]' role='measure' type='quantitative' />
+            <column datatype='integer' name='[total_non_confirmed_orders]' role='measure' type='quantitative' />
+            <column datatype='integer' name='[total_orders]' role='measure' type='quantitative' />
+            <column-instance column='[Calculation_219550483252432898]' derivation='User' name='[usr:Calculation_219550483252432898:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[Calculation_219550483254013955]' derivation='User' name='[usr:Calculation_219550483254013955:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[Contact_rate (copia)_238127831996280840]' derivation='User' name='[usr:Contact_rate (copia)_238127831996280840:qk]' pivot='key' type='quantitative' />
+            <column datatype='string' name='[weekday]' role='dimension' type='nominal' />
+          </datasource-dependencies>
+          <slices>
+            <column>[federated.087c9471dk62b019zc4f50x47xz2].[none:country_name:nk]</column>
+            <column>[federated.087c9471dk62b019zc4f50x47xz2].[none:date_day:qk]</column>
+            <column>[federated.087c9471dk62b019zc4f50x47xz2].[none:weekday:nk]</column>
+          </slices>
+          <aggregation value='true' />
+        </view>
+        <style>
+          <style-rule element='axis'>
+            <format attr='title' class='0' field='[federated.087c9471dk62b019zc4f50x47xz2].[avg:total_orders:qk]' scope='rows' value='' />
+          </style-rule>
+          <style-rule element='cell'>
+            <format attr='text-format' field='[federated.087c9471dk62b019zc4f50x47xz2].[usr:Calculation_219550483254013955:qk]' value='p0.00%' />
+            <format attr='text-format' field='[federated.087c9471dk62b019zc4f50x47xz2].[usr:Calculation_219550483252432898:qk]' value='p0.00%' />
+            <format attr='text-format' field='[federated.087c9471dk62b019zc4f50x47xz2].[usr:Contact_rate (copia)_238127831996280840:qk]' value='p0.00%' />
+          </style-rule>
+          <style-rule element='worksheet'>
+            <format attr='display-field-labels' scope='cols' value='false' />
+          </style-rule>
+        </style>
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Line' />
+            <mark-sizing mark-sizing-setting='marks-scaling-off' />
+            <encodings>
+              <tooltip column='[federated.087c9471dk62b019zc4f50x47xz2].[avg:total_non_confirmed_orders:qk]' />
+              <tooltip column='[federated.087c9471dk62b019zc4f50x47xz2].[usr:Calculation_219550483254013955:qk]' />
+              <tooltip column='[federated.087c9471dk62b019zc4f50x47xz2].[avg:total_orders:qk]' />
+              <tooltip column='[federated.087c9471dk62b019zc4f50x47xz2].[usr:Calculation_219550483252432898:qk]' />
+              <tooltip column='[federated.087c9471dk62b019zc4f50x47xz2].[usr:Contact_rate (copia)_238127831996280840:qk]' />
+            </encodings>
+            <customized-tooltip>
+              <formatted-text>
+                <run fontcolor='#787878'>Hour:&#9;</run>
+                <run bold='true'><![CDATA[<[federated.087c9471dk62b019zc4f50x47xz2].[none:hour:ok]>]]></run>
+                <run>Æ&#10;</run>
+                <run fontcolor='#787878'>AVG Total orders:</run>
+                <run bold='true'><![CDATA[ <[federated.087c9471dk62b019zc4f50x47xz2].[avg:total_orders:qk]>]]></run>
+                <run>Æ&#10;</run>
+                <run fontcolor='#787878'>AVG Non confirmed orders:</run>
+                <run>Æ </run>
+                <run bold='true'><![CDATA[<[federated.087c9471dk62b019zc4f50x47xz2].[avg:total_non_confirmed_orders:qk]>]]></run>
+                <run>Æ&#10;</run>
+                <run fontcolor='#787878'>Fail rate:</run>
+                <run bold='true'><![CDATA[ <[federated.087c9471dk62b019zc4f50x47xz2].[usr:Calculation_219550483254013955:qk]>]]></run>
+                <run>Æ&#10;</run>
+                <run fontcolor='#787878'>Contact rate:</run>
+                <run bold='true'><![CDATA[ <[federated.087c9471dk62b019zc4f50x47xz2].[usr:Contact_rate (copia)_238127831996280840:qk]>]]></run>
+                <run>Æ&#10;</run>
+              </formatted-text>
+            </customized-tooltip>
+            <style>
+              <style-rule element='mark'>
+                <format attr='mark-labels-cull' value='true' />
+                <format attr='size' value='0.93353593349456787' />
+                <format attr='mark-labels-show' value='false' />
+                <format attr='mark-markers-mode' value='all' />
+              </style-rule>
+            </style>
+          </pane>
+        </panes>
+        <rows>[federated.087c9471dk62b019zc4f50x47xz2].[avg:total_orders:qk]</rows>
+        <cols>[federated.087c9471dk62b019zc4f50x47xz2].[none:hour:ok]</cols>
+      </table>
+      <simple-id uuid='{EE688701-BE42-43F0-BE57-149E3384D1C0}' />
+    </worksheet>
+  </worksheets>
+  <dashboards>
+    <dashboard _.fcp.AccessibleZoneTabOrder.true...enable-sort-zone-taborder='true' name='Glossary'>
+      <repository-location derived-from='https://tableau.deliveryhero.net/t/Pedidosya/workbooks/OpenTimeByHour_16613546514530/Glossary?rev=' id='Glossary' path='/t/Pedidosya/workbooks/OpenTimeByHour_16613546514530' revision='' site='Pedidosya' />
+      <style>
+        <style-rule element='parameter-ctrl-title'>
+          <format attr='text-align' value='center' />
+        </style-rule>
+      </style>
+      <size maxheight='900' maxwidth='1300' minheight='900' minwidth='1300' preset-index='17' sizing-mode='fixed' />
+      <zones>
+        <zone h='100000' id='4' type-v2='layout-basic' w='100000' x='0' y='0'>
+          <zone fixed-size='50' forceUpdate='true' h='8222' id='14' is-fixed='true' type-v2='text' w='98770' x='615' y='889'>
+            <formatted-text>
+              <run bold='true' fontalignment='1' fontcolor='#ffffff' fontsize='18'>GLOSSARY</run>
+            </formatted-text>
+            <zone-style>
+              <format attr='border-color' value='#000000' />
+              <format attr='border-style' value='none' />
+              <format attr='border-width' value='0' />
+              <format attr='margin' value='4' />
+              <format attr='background-color' value='#fa0050' />
+            </zone-style>
+          </zone>
+          <zone forceUpdate='true' h='13222' id='33' type-v2='text' w='98770' x='615' y='9111'>
+            <formatted-text>
+              <run fontsize='12'>Contact Rate                           - (Partner Service Chats + Partner Service Cases) / Total Orders.</run>
+              <run>Æ&#10;</run>
+              <run fontsize='12'>Fail Rate                                   -  Non Confirmed Orders / Total Orders.</run>
+              <run>Æ&#10;</run>
+              <run fontsize='12'>Non Confirmed Orders      -  Rejected Orders + Pending Orders + Cancelled Orders.</run>
+            </formatted-text>
+            <zone-style>
+              <format attr='border-color' value='#000000' />
+              <format attr='border-style' value='none' />
+              <format attr='border-width' value='0' />
+              <format attr='margin' value='4' />
+            </zone-style>
+          </zone>
+          <zone h='76778' id='34' type-v2='empty' w='98770' x='615' y='22333'>
+            <zone-style>
+              <format attr='border-color' value='#000000' />
+              <format attr='border-style' value='none' />
+              <format attr='border-width' value='0' />
+              <format attr='margin' value='4' />
+            </zone-style>
+          </zone>
+          <zone-style>
+            <format attr='border-color' value='#000000' />
+            <format attr='border-style' value='none' />
+            <format attr='border-width' value='0' />
+            <format attr='margin' value='8' />
+          </zone-style>
+        </zone>
+        <zone h='6111' id='15' is-centered='0' is-scaled='1' param='Image/PeYa_data_viz_logo_no_backround.png' type-v2='bitmap' w='4905' x='93924' y='1556' />
+        <zone h='5667' id='18' name='DataUpTo' show-title='false' w='9078' x='1245' y='1667' />
+      </zones>
+      <devicelayouts>
+        <devicelayout auto-generated='true' name='Phone'>
+          <size maxheight='700' minheight='700' sizing-mode='vscroll' />
+          <zones>
+            <zone h='100000' id='54' type-v2='layout-basic' w='100000' x='0' y='0'>
+              <zone h='84000' id='53' param='vert' type-v2='layout-flow' w='84000' x='8000' y='8000'>
+                <zone fixed-size='50' forceUpdate='true' h='8222' id='14' type-v2='text' w='98770' x='615' y='889'>
+                  <formatted-text>
+                    <run bold='true' fontalignment='1' fontcolor='#ffffff' fontsize='18'>GLOSSARY</run>
+                  </formatted-text>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                    <format attr='background-color' value='#fa0050' />
+                  </zone-style>
+                </zone>
+                <zone fixed-size='55' h='6111' id='15' is-centered='0' is-fixed='true' is-scaled='1' param='Image/PeYa_data_viz_logo_no_backround.png' type-v2='bitmap' w='4905' x='93924' y='1556'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone fixed-size='51' h='5667' id='18' is-fixed='true' name='DataUpTo' show-title='false' w='9078' x='1245' y='1667'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone forceUpdate='true' h='13222' id='33' type-v2='text' w='98770' x='615' y='9111'>
+                  <formatted-text>
+                    <run fontsize='12'>Contact Rate                           - (Partner Service Chats + Partner Service Cases) / Total Orders.</run>
+                    <run>Æ&#10;</run>
+                    <run fontsize='12'>Fail Rate                                   -  Non Confirmed Orders / Total Orders.</run>
+                    <run>Æ&#10;</run>
+                    <run fontsize='12'>Non Confirmed Orders      -  Rejected Orders + Pending Orders + Cancelled Orders.</run>
+                  </formatted-text>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+              </zone>
+              <zone-style>
+                <format attr='border-color' value='#000000' />
+                <format attr='border-style' value='none' />
+                <format attr='border-width' value='0' />
+                <format attr='margin' value='8' />
+              </zone-style>
+            </zone>
+          </zones>
+        </devicelayout>
+      </devicelayouts>
+      <simple-id uuid='{8C261383-27DC-4C47-BDB3-F3885E92C725}' />
+    </dashboard>
+    <dashboard _.fcp.AccessibleZoneTabOrder.true...enable-sort-zone-taborder='true' name='Open Time'>
+      <repository-location derived-from='https://tableau.deliveryhero.net/t/Pedidosya/workbooks/OpenTimeByHour_16613546514530/OpenTime?rev=' id='OpenTime' path='/t/Pedidosya/workbooks/OpenTimeByHour_16613546514530' revision='' site='Pedidosya' />
+      <style>
+        <style-rule element='parameter-ctrl-title'>
+          <format attr='text-align' value='center' />
+        </style-rule>
+      </style>
+      <size maxheight='900' maxwidth='1300' minheight='900' minwidth='1300' preset-index='17' sizing-mode='fixed' />
+      <datasources>
+        <datasource caption='OpenTime' name='federated.087c9471dk62b019zc4f50x47xz2' />
+      </datasources>
+      <datasource-dependencies datasource='federated.087c9471dk62b019zc4f50x47xz2'>
+        <column datatype='string' name='[country_name]' role='dimension' semantic-role='[Country].[ISO3166_2]' type='nominal' />
+        <column datatype='date' name='[date_day]' role='dimension' type='ordinal' />
+        <column-instance column='[country_name]' derivation='None' name='[none:country_name:nk]' pivot='key' type='nominal' />
+        <column-instance column='[date_day]' derivation='None' name='[none:date_day:qk]' pivot='key' type='quantitative' />
+        <column-instance column='[weekday]' derivation='None' name='[none:weekday:nk]' pivot='key' type='nominal' />
+        <column datatype='string' name='[weekday]' role='dimension' type='nominal' />
+      </datasource-dependencies>
+      <zones>
+        <zone h='100000' id='4' type-v2='layout-basic' w='100000' x='0' y='0'>
+          <zone h='90555' id='7' param='horz' type-v2='layout-flow' w='98770' x='615' y='8556'>
+            <zone h='90555' id='5' type-v2='layout-basic' w='86462' x='615' y='8556'>
+              <zone h='45278' id='3' name='Partners_Qty' w='86462' x='615' y='8556'>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                  <format attr='background-color' value='#d4d4d4' />
+                </zone-style>
+              </zone>
+              <zone h='45277' id='17' name='Total_Orders' w='86462' x='615' y='53834'>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                  <format attr='background-color' value='#d4d4d4' />
+                </zone-style>
+              </zone>
+            </zone>
+            <zone fixed-size='160' h='90555' id='6' is-fixed='true' param='vert' type-v2='layout-flow' w='12308' x='87077' y='8556'>
+              <zone fixed-size='39' h='5222' id='8' is-fixed='true' name='Partners_Qty' pane-specification-id='3' param='[federated.087c9471dk62b019zc4f50x47xz2].[:Measure Names]' type-v2='color' w='12308' x='87077' y='8556'>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+              <zone h='5778' id='9' mode='dropdown' name='Partners_Qty' param='[federated.087c9471dk62b019zc4f50x47xz2].[none:country_name:nk]' show-all='false' show-apply='true' type-v2='filter' values='database' w='12308' x='87077' y='13778'>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+              <zone h='2889' id='16' name='Partners_Qty' param='[federated.087c9471dk62b019zc4f50x47xz2].[none:partner_time_date:qk]' type-v2='filter' values='database' w='12308' x='87077' y='19556'>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+              <zone h='5778' id='27' mode='checkdropdown' name='Partners_Qty' param='[federated.087c9471dk62b019zc4f50x47xz2].[none:weekday:nk]' show-apply='true' type-v2='filter' values='database' w='12308' x='87077' y='22445'>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+              <zone h='2889' id='11' mode='checkdropdown' name='Partners_Qty' param='[federated.087c9471dk62b019zc4f50x47xz2].[none:business_type_name:nk]' show-apply='true' type-v2='filter' values='database' w='12308' x='87077' y='28223'>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+              <zone h='5556' id='30' name='Partners_Qty' param='[federated.087c9471dk62b019zc4f50x47xz2].[none:date_day:qk]' type-v2='filter' values='database' w='12308' x='87077' y='31112'>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+            </zone>
+          </zone>
+          <zone fixed-size='50' forceUpdate='true' h='7667' id='14' is-fixed='true' type-v2='text' w='98770' x='615' y='889'>
+            <formatted-text>
+              <run bold='true' fontalignment='1' fontcolor='#ffffff' fontsize='18'>OPEN TIME</run>
+            </formatted-text>
+            <zone-style>
+              <format attr='border-color' value='#000000' />
+              <format attr='border-style' value='none' />
+              <format attr='border-width' value='0' />
+              <format attr='margin' value='4' />
+              <format attr='background-color' value='#fa0050' />
+            </zone-style>
+          </zone>
+          <zone-style>
+            <format attr='border-color' value='#000000' />
+            <format attr='border-style' value='none' />
+            <format attr='border-width' value='0' />
+            <format attr='margin' value='8' />
+          </zone-style>
+        </zone>
+        <zone h='6111' id='15' is-centered='0' is-scaled='1' param='Image/PeYa_data_viz_logo_no_backround.png' type-v2='bitmap' w='4905' x='93924' y='1556' />
+        <zone h='5667' id='18' name='DataUpTo' show-title='false' w='9078' x='1245' y='1667' />
+      </zones>
+      <devicelayouts>
+        <devicelayout auto-generated='true' name='Phone'>
+          <size maxheight='1150' minheight='1150' sizing-mode='vscroll' />
+          <zones>
+            <zone h='100000' id='54' type-v2='layout-basic' w='100000' x='0' y='0'>
+              <zone h='84000' id='53' param='vert' type-v2='layout-flow' w='84000' x='8000' y='8000'>
+                <zone fixed-size='50' forceUpdate='true' h='7667' id='14' type-v2='text' w='98770' x='615' y='889'>
+                  <formatted-text>
+                    <run bold='true' fontalignment='1' fontcolor='#ffffff' fontsize='18'>OPEN TIME</run>
+                  </formatted-text>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                    <format attr='background-color' value='#fa0050' />
+                  </zone-style>
+                </zone>
+                <zone fixed-size='55' h='6111' id='15' is-centered='0' is-fixed='true' is-scaled='1' param='Image/PeYa_data_viz_logo_no_backround.png' type-v2='bitmap' w='4905' x='93924' y='1556'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone fixed-size='51' h='5667' id='18' is-fixed='true' name='DataUpTo' show-title='false' w='9078' x='1245' y='1667'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone h='5778' id='9' mode='dropdown' name='Partners_Qty' param='[federated.087c9471dk62b019zc4f50x47xz2].[none:country_name:nk]' show-all='false' show-apply='true' type-v2='filter' values='database' w='12308' x='87077' y='13778'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone h='2889' id='16' name='Partners_Qty' param='[federated.087c9471dk62b019zc4f50x47xz2].[none:partner_time_date:qk]' type-v2='filter' values='database' w='12308' x='87077' y='19556'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone h='5778' id='27' mode='checkdropdown' name='Partners_Qty' param='[federated.087c9471dk62b019zc4f50x47xz2].[none:weekday:nk]' show-apply='true' type-v2='filter' values='database' w='12308' x='87077' y='22445'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone h='2889' id='11' mode='checkdropdown' name='Partners_Qty' param='[federated.087c9471dk62b019zc4f50x47xz2].[none:business_type_name:nk]' show-apply='true' type-v2='filter' values='database' w='12308' x='87077' y='28223'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone h='5556' id='30' name='Partners_Qty' param='[federated.087c9471dk62b019zc4f50x47xz2].[none:date_day:qk]' type-v2='filter' values='database' w='12308' x='87077' y='31112'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone fixed-size='280' h='45278' id='3' is-fixed='true' name='Partners_Qty' w='86462' x='615' y='8556'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                    <format attr='background-color' value='#d4d4d4' />
+                  </zone-style>
+                </zone>
+                <zone fixed-size='39' h='5222' id='8' name='Partners_Qty' pane-specification-id='3' param='[federated.087c9471dk62b019zc4f50x47xz2].[:Measure Names]' type-v2='color' w='12308' x='87077' y='8556'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone fixed-size='280' h='45277' id='17' is-fixed='true' name='Total_Orders' w='86462' x='615' y='53834'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                    <format attr='background-color' value='#d4d4d4' />
+                  </zone-style>
+                </zone>
+              </zone>
+              <zone-style>
+                <format attr='border-color' value='#000000' />
+                <format attr='border-style' value='none' />
+                <format attr='border-width' value='0' />
+                <format attr='margin' value='8' />
+              </zone-style>
+            </zone>
+          </zones>
+        </devicelayout>
+      </devicelayouts>
+      <simple-id uuid='{0550A6CF-5E4C-4CAE-87DC-9E1C337BE44D}' />
+    </dashboard>
+  </dashboards>
+  <windows source-height='30'>
+    <window class='dashboard' name='Open Time'>
+      <viewpoints>
+        <viewpoint name='DataUpTo'>
+          <zoom type='entire-view' />
+        </viewpoint>
+        <viewpoint name='Partners_Qty'>
+          <zoom type='entire-view' />
+        </viewpoint>
+        <viewpoint name='Total_Orders'>
+          <zoom type='entire-view' />
+        </viewpoint>
+      </viewpoints>
+      <active id='-1' />
+      <simple-id uuid='{4FFB19C3-9F58-4643-B51C-AAD8C04D2709}' />
+    </window>
+    <window class='dashboard' name='Glossary'>
+      <viewpoints>
+        <viewpoint name='DataUpTo'>
+          <zoom type='entire-view' />
+        </viewpoint>
+      </viewpoints>
+      <active id='-1' />
+      <simple-id uuid='{E6876F15-9584-4E42-8BF8-2D7489E1017A}' />
+    </window>
+    <window class='worksheet' maximized='true' name='Partners_Qty'>
+      <cards>
+        <edge name='left'>
+          <strip size='390'>
+            <card type='pages' />
+            <card type='filters' />
+            <card type='marks' />
+          </strip>
+        </edge>
+        <edge name='top'>
+          <strip size='47'>
+            <card type='columns' />
+          </strip>
+          <strip size='47'>
+            <card type='rows' />
+          </strip>
+          <strip size='47'>
+            <card type='title' />
+          </strip>
+        </edge>
+        <edge name='right'>
+          <strip size='100'>
+            <card param='[federated.087c9471dk62b019zc4f50x47xz2].[none:weekday:nk]' type='filter' />
+          </strip>
+        </edge>
+      </cards>
+      <viewpoint>
+        <highlight>
+          <color-one-way>
+            <field>[federated.087c9471dk62b019zc4f50x47xz2].[md:partner_time_date:ok]</field>
+            <field>[federated.087c9471dk62b019zc4f50x47xz2].[none:business_type_name:nk]</field>
+            <field>[federated.087c9471dk62b019zc4f50x47xz2].[none:country_id:ok]</field>
+            <field>[federated.087c9471dk62b019zc4f50x47xz2].[none:country_name:nk]</field>
+            <field>[federated.087c9471dk62b019zc4f50x47xz2].[none:date_day:qk]</field>
+            <field>[federated.087c9471dk62b019zc4f50x47xz2].[none:hour:ok]</field>
+            <field>[federated.087c9471dk62b019zc4f50x47xz2].[none:partner_time_date:qk]</field>
+            <field>[federated.087c9471dk62b019zc4f50x47xz2].[none:partner_time_hour:ok]</field>
+            <field>[federated.087c9471dk62b019zc4f50x47xz2].[none:vertical:nk]</field>
+            <field>[federated.087c9471dk62b019zc4f50x47xz2].[yr:partner_time_date:ok]</field>
+          </color-one-way>
+        </highlight>
+      </viewpoint>
+      <simple-id uuid='{498088FA-9206-4670-B2DE-4D4ADC9D1229}' />
+    </window>
+    <window class='worksheet' name='Total_Orders'>
+      <cards>
+        <edge name='left'>
+          <strip size='312'>
+            <card type='pages' />
+            <card type='filters' />
+            <card type='marks' />
+          </strip>
+        </edge>
+        <edge name='top'>
+          <strip size='47'>
+            <card type='columns' />
+          </strip>
+          <strip size='47'>
+            <card type='rows' />
+          </strip>
+          <strip size='38'>
+            <card type='title' />
+          </strip>
+        </edge>
+      </cards>
+      <viewpoint>
+        <highlight>
+          <color-one-way>
+            <field>[federated.087c9471dk62b019zc4f50x47xz2].[none:Calculation_238127831986024451:qk]</field>
+            <field>[federated.087c9471dk62b019zc4f50x47xz2].[none:Calculation_238127831986049028:qk]</field>
+            <field>[federated.087c9471dk62b019zc4f50x47xz2].[none:Calculation_238127831986139141:qk]</field>
+            <field>[federated.087c9471dk62b019zc4f50x47xz2].[none:date_day:qk]</field>
+            <field>[federated.087c9471dk62b019zc4f50x47xz2].[none:hour:ok]</field>
+            <field>[federated.087c9471dk62b019zc4f50x47xz2].[none:partner_time_hour:ok]</field>
+          </color-one-way>
+        </highlight>
+      </viewpoint>
+      <simple-id uuid='{D8F09444-D331-468F-BDC5-BAEBBD641B2A}' />
+    </window>
+    <window class='worksheet' name='DataUpTo'>
+      <cards>
+        <edge name='left'>
+          <strip size='382'>
+            <card type='pages' />
+            <card type='filters' />
+            <card type='marks' />
+          </strip>
+        </edge>
+        <edge name='top'>
+          <strip size='58'>
+            <card type='columns' />
+          </strip>
+          <strip size='58'>
+            <card type='rows' />
+          </strip>
+        </edge>
+      </cards>
+      <viewpoint>
+        <zoom type='fit-width' />
+        <highlight>
+          <color-one-way>
+            <field>[federated.087c9471dk62b019zc4f50x47xz2].[yr:last_date:ok]</field>
+            <field>[federated.087c9471dk62b019zc4f50x47xz2].[yr:partner_time_date:ok]</field>
+          </color-one-way>
+        </highlight>
+      </viewpoint>
+      <simple-id uuid='{57E0E240-0161-4E0A-AC73-0AAEA17C190E}' />
+    </window>
+  </windows>
+</workbook>

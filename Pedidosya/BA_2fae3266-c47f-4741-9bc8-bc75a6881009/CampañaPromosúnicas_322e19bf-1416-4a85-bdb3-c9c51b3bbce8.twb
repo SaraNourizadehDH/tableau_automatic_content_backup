@@ -1,0 +1,1921 @@
+<?xml version='1.0' encoding='utf-8' ?>
+
+<!-- build 20214.22.0213.1102                               -->
+<workbook original-version='18.1' source-build='2021.4.4 (20214.22.0213.1102)' version='18.1' xml:base='https://tableau.deliveryhero.net' xmlns:user='http://www.tableausoftware.com/xml/user'>
+  <document-format-change-manifest>
+    <_.fcp.AnimationOnByDefault.true...AnimationOnByDefault />
+    <AutoCreateAndUpdateDSDPhoneLayouts />
+    <ISO8601PeriodTypes />
+    <_.fcp.MarkAnimation.true...MarkAnimation />
+    <_.fcp.ObjectModelEncapsulateLegacy.true...ObjectModelEncapsulateLegacy />
+    <_.fcp.ObjectModelExtractV2.true...ObjectModelExtractV2 />
+    <_.fcp.ObjectModelTableType.true...ObjectModelTableType />
+    <_.fcp.SchemaViewerObjectModel.true...SchemaViewerObjectModel />
+    <SetMembershipControl />
+    <SheetIdentifierTracking />
+    <SortTagCleanup />
+    <WindowsPersistSimpleIdentifiers />
+  </document-format-change-manifest>
+  <repository-location id='CampaaPromosnicas' path='/t/Pedidosya/workbooks' revision='1.0' site='Pedidosya' />
+  <preferences />
+  <_.fcp.AnimationOnByDefault.false...style>
+    <_.fcp.AnimationOnByDefault.false..._.fcp.MarkAnimation.true...style-rule element='animation'>
+      <_.fcp.AnimationOnByDefault.false...format attr='animation-on' value='ao-on' />
+    </_.fcp.AnimationOnByDefault.false..._.fcp.MarkAnimation.true...style-rule>
+  </_.fcp.AnimationOnByDefault.false...style>
+  <datasources>
+    <datasource caption='Consulta SQL personalizada (user_erik_otero)' inline='true' name='federated.0931ju30xbwn7o1cu5h3j1585v5w' version='18.1'>
+      <connection class='federated'>
+        <named-connections>
+          <named-connection caption='BigQuery' name='bigquery.18qzinl1ju08gj133tn360ugaodc'>
+            <connection CATALOG='peya-delivery-and-support' EXECCATALOG='peya-delivery-and-support' authentication='yes' bq-dataset-fetch-rows='' bq-fetch-rows='' bq-fetch-tasks='' bq-large-fetch-rows='' bq-project-fetch-rows='' bq-response-rows='' class='bigquery' connection-dialect='google-sql' project='peya-delivery-and-support' schema='user_erik_otero' server='' server-oauth='' username='erik.otero@pedidosya.com' workgroup-auth-mode='prompt' />
+          </named-connection>
+        </named-connections>
+        <_.fcp.ObjectModelEncapsulateLegacy.false...relation connection='bigquery.18qzinl1ju08gj133tn360ugaodc' name='Consulta SQL personalizada' type='text'>WITH dates AS ( &#13;
+	SELECT &#13;
+		DATE_ADD(CURRENT_DATE, INTERVAL -3 MONTH) start_date,&#13;
+		DATE(CURRENT_DATE) before_date &#13;
+),&#13;
+partner_campaign AS (&#13;
+  SELECT&#13;
+    DATE(createdAt) createdAt&#13;
+    ,partnerId partner_id&#13;
+    ,campaignId campaign_id&#13;
+    ,status&#13;
+  FROM `peya-data-origins-pro.cl_core.partner_campaign`&#13;
+),&#13;
+menu AS (&#13;
+  SELECT&#13;
+    DISTINCT &#13;
+    partner_id&#13;
+    ,product_legacy_id&#13;
+    ,product_id&#13;
+    ,product_name &#13;
+  FROM  `peya-bi-tools-pro.il_core.dim_partner_menu`&#13;
+),&#13;
+historical AS (&#13;
+  SELECT&#13;
+    product_id&#13;
+    ,subsidized_product_campaing_id&#13;
+    ,is_deleted&#13;
+  FROM `peya-data-origins-pro.cl_core.subsidized_product_historical`&#13;
+),&#13;
+discount AS (&#13;
+  SELECT&#13;
+    partnerId partner_id&#13;
+    ,campaignid campaign_id&#13;
+    ,product_id&#13;
+    ,startDateTime&#13;
+    ,endDateTime&#13;
+    ,originalPrice&#13;
+    ,amount&#13;
+    ,createdBy&#13;
+    ,partnerCountryId&#13;
+    ,c.name campaign_name&#13;
+  FROM `peya-data-origins-pro.cl_core.partner_discount`&#13;
+    ,UNNEST (itemIds) product_id&#13;
+  LEFT JOIN `peya-data-origins-pro.cl_core.campaign` c&#13;
+    ON c.id = campaignid&#13;
+  WHERE campaignId IS NOT NULL &#13;
+),&#13;
+orders_product AS (&#13;
+  SELECT&#13;
+    DISTINCT&#13;
+    o.order_id&#13;
+    ,DATE(o.registered_date) registered_date&#13;
+    ,d.product.product_id&#13;
+    ,o.restaurant.id partner_id&#13;
+    ,o.restaurant.name partner_name&#13;
+  FROM `peya-bi-tools-pro.il_core.fact_orders` o&#13;
+    ,UNNEST(details) d&#13;
+  WHERE DATE(registered_date) BETWEEN (SELECT start_date FROM dates) AND (SELECT before_date FROM dates)&#13;
+),&#13;
+orders_partner AS (&#13;
+  SELECT&#13;
+    DISTINCT&#13;
+    o.order_id&#13;
+    ,DATE(o.registered_date) registered_date&#13;
+    ,o.restaurant.id partner_id&#13;
+    ,o.restaurant.name partner_name&#13;
+    ,d.product.product_id&#13;
+  FROM `peya-bi-tools-pro.il_core.fact_orders` o&#13;
+    ,UNNEST(details) d&#13;
+  WHERE DATE(registered_date) BETWEEN (SELECT start_date FROM dates) AND (SELECT before_date FROM dates)&#13;
+),&#13;
+quantities_product AS (&#13;
+  SELECT&#13;
+    d.product_id&#13;
+    ,d.partner_id&#13;
+    ,o.partner_name&#13;
+    ,d.campaign_id&#13;
+    ,DATE(o.registered_date) order_date&#13;
+    ,COUNT(DISTINCT IF(o.registered_date BETWEEN d.startDateTime AND d.endDateTime,o.order_id,NULL)) orders_pro&#13;
+  FROM orders_product o&#13;
+  LEFT JOIN discount d&#13;
+    ON o.product_id = d.product_id&#13;
+    AND o.partner_id = d.partner_id&#13;
+  WHERE d.product_id IS NOT NULL&#13;
+  GROUP BY 1,2,3,4,5&#13;
+),&#13;
+quantities_partner AS (&#13;
+  SELECT&#13;
+    d.partner_id&#13;
+    ,o.partner_name&#13;
+    ,d.campaign_id&#13;
+    ,DATE(o.registered_date) order_date&#13;
+    ,COUNT(DISTINCT IF(o.registered_date BETWEEN d.startDateTime AND d.endDateTime,o.order_id,NULL)) orders_par&#13;
+  FROM orders_partner o&#13;
+  LEFT JOIN discount d&#13;
+    ON o.partner_id = d.partner_id&#13;
+    AND o.product_id = d.product_id&#13;
+  WHERE d.product_id IS NOT NULL&#13;
+  GROUP BY 1,2,3,4&#13;
+)&#13;
+&#13;
+SELECT&#13;
+  DISTINCT&#13;
+  qpro.order_date order_pro&#13;
+  ,qpar.order_date order_par&#13;
+  ,pc.createdAt&#13;
+  ,pc.partner_id&#13;
+  ,qpro.partner_name&#13;
+  ,pc.campaign_id&#13;
+  ,pc.status&#13;
+  ,d.product_id&#13;
+  ,DATE(d.startDateTime) start_at&#13;
+  ,DATE(d.endDateTime) end_at&#13;
+  ,d.originalPrice&#13;
+  ,d.amount&#13;
+  ,d.createdBy&#13;
+  ,d.partnerCountryId&#13;
+  ,d.campaign_name&#13;
+  ,m.product_legacy_id&#13;
+  ,m.product_name &#13;
+  -- ,h.is_deleted&#13;
+  ,qpro.orders_pro&#13;
+  ,qpar.orders_par&#13;
+&#13;
+FROM partner_campaign pc&#13;
+LEFT JOIN menu m&#13;
+  ON pc.partner_id = m.partner_id&#13;
+LEFT JOIN historical h&#13;
+  ON m.product_legacy_id = h.product_id&#13;
+LEFT JOIN discount d&#13;
+  ON h.subsidized_product_campaing_id = pc.campaign_id&#13;
+  AND m.product_legacy_id =  d.product_id&#13;
+  AND m.partner_id = d.partner_id&#13;
+LEFT JOIN quantities_product qpro&#13;
+  ON qpro.campaign_id = pc.campaign_id&#13;
+  AND qpro.partner_id = pc.partner_id&#13;
+  AND qpro.product_id = m.product_legacy_id&#13;
+LEFT JOIN quantities_partner qpar&#13;
+  ON qpar.campaign_id = pc.campaign_id&#13;
+  AND qpar.partner_id = pc.partner_id&#13;
+&#13;
+WHERE TRUE&#13;
+  AND status NOT IN (&quot;TARGETED&quot;)&#13;
+  AND d.product_id IS NOT NULL&#13;
+  AND UPPER(d.campaign_name) LIKE &quot;%PROMOS ÚNICAS%&quot;&#13;
+&#13;
+ORDER BY 4,2,1</_.fcp.ObjectModelEncapsulateLegacy.false...relation>
+        <_.fcp.ObjectModelEncapsulateLegacy.true...relation connection='bigquery.18qzinl1ju08gj133tn360ugaodc' name='Consulta SQL personalizada' type='text'>WITH dates AS ( &#13;
+	SELECT &#13;
+		DATE_ADD(CURRENT_DATE, INTERVAL -3 MONTH) start_date,&#13;
+		DATE(CURRENT_DATE) before_date &#13;
+),&#13;
+partner_campaign AS (&#13;
+  SELECT&#13;
+    DATE(createdAt) createdAt&#13;
+    ,partnerId partner_id&#13;
+    ,campaignId campaign_id&#13;
+    ,status&#13;
+  FROM `peya-data-origins-pro.cl_core.partner_campaign`&#13;
+),&#13;
+menu AS (&#13;
+  SELECT&#13;
+    DISTINCT &#13;
+    partner_id&#13;
+    ,product_legacy_id&#13;
+    ,product_id&#13;
+    ,product_name &#13;
+  FROM  `peya-bi-tools-pro.il_core.dim_partner_menu`&#13;
+),&#13;
+historical AS (&#13;
+  SELECT&#13;
+    product_id&#13;
+    ,subsidized_product_campaing_id&#13;
+    ,is_deleted&#13;
+  FROM `peya-data-origins-pro.cl_core.subsidized_product_historical`&#13;
+),&#13;
+discount AS (&#13;
+  SELECT&#13;
+    partnerId partner_id&#13;
+    ,campaignid campaign_id&#13;
+    ,product_id&#13;
+    ,startDateTime&#13;
+    ,endDateTime&#13;
+    ,originalPrice&#13;
+    ,amount&#13;
+    ,createdBy&#13;
+    ,partnerCountryId&#13;
+    ,c.name campaign_name&#13;
+  FROM `peya-data-origins-pro.cl_core.partner_discount`&#13;
+    ,UNNEST (itemIds) product_id&#13;
+  LEFT JOIN `peya-data-origins-pro.cl_core.campaign` c&#13;
+    ON c.id = campaignid&#13;
+  WHERE campaignId IS NOT NULL &#13;
+),&#13;
+orders_product AS (&#13;
+  SELECT&#13;
+    DISTINCT&#13;
+    o.order_id&#13;
+    ,DATE(o.registered_date) registered_date&#13;
+    ,d.product.product_id&#13;
+    ,o.restaurant.id partner_id&#13;
+    ,o.restaurant.name partner_name&#13;
+  FROM `peya-bi-tools-pro.il_core.fact_orders` o&#13;
+    ,UNNEST(details) d&#13;
+  WHERE DATE(registered_date) BETWEEN (SELECT start_date FROM dates) AND (SELECT before_date FROM dates)&#13;
+),&#13;
+orders_partner AS (&#13;
+  SELECT&#13;
+    DISTINCT&#13;
+    o.order_id&#13;
+    ,DATE(o.registered_date) registered_date&#13;
+    ,o.restaurant.id partner_id&#13;
+    ,o.restaurant.name partner_name&#13;
+    ,d.product.product_id&#13;
+  FROM `peya-bi-tools-pro.il_core.fact_orders` o&#13;
+    ,UNNEST(details) d&#13;
+  WHERE DATE(registered_date) BETWEEN (SELECT start_date FROM dates) AND (SELECT before_date FROM dates)&#13;
+),&#13;
+quantities_product AS (&#13;
+  SELECT&#13;
+    d.product_id&#13;
+    ,d.partner_id&#13;
+    ,o.partner_name&#13;
+    ,d.campaign_id&#13;
+    ,DATE(o.registered_date) order_date&#13;
+    ,COUNT(DISTINCT IF(o.registered_date BETWEEN d.startDateTime AND d.endDateTime,o.order_id,NULL)) orders_pro&#13;
+  FROM orders_product o&#13;
+  LEFT JOIN discount d&#13;
+    ON o.product_id = d.product_id&#13;
+    AND o.partner_id = d.partner_id&#13;
+  WHERE d.product_id IS NOT NULL&#13;
+  GROUP BY 1,2,3,4,5&#13;
+),&#13;
+quantities_partner AS (&#13;
+  SELECT&#13;
+    d.partner_id&#13;
+    ,o.partner_name&#13;
+    ,d.campaign_id&#13;
+    ,DATE(o.registered_date) order_date&#13;
+    ,COUNT(DISTINCT IF(o.registered_date BETWEEN d.startDateTime AND d.endDateTime,o.order_id,NULL)) orders_par&#13;
+  FROM orders_partner o&#13;
+  LEFT JOIN discount d&#13;
+    ON o.partner_id = d.partner_id&#13;
+    AND o.product_id = d.product_id&#13;
+  WHERE d.product_id IS NOT NULL&#13;
+  GROUP BY 1,2,3,4&#13;
+)&#13;
+&#13;
+SELECT&#13;
+  DISTINCT&#13;
+  qpro.order_date order_pro&#13;
+  ,qpar.order_date order_par&#13;
+  ,pc.createdAt&#13;
+  ,pc.partner_id&#13;
+  ,qpro.partner_name&#13;
+  ,pc.campaign_id&#13;
+  ,pc.status&#13;
+  ,d.product_id&#13;
+  ,DATE(d.startDateTime) start_at&#13;
+  ,DATE(d.endDateTime) end_at&#13;
+  ,d.originalPrice&#13;
+  ,d.amount&#13;
+  ,d.createdBy&#13;
+  ,d.partnerCountryId&#13;
+  ,d.campaign_name&#13;
+  ,m.product_legacy_id&#13;
+  ,m.product_name &#13;
+  -- ,h.is_deleted&#13;
+  ,qpro.orders_pro&#13;
+  ,qpar.orders_par&#13;
+&#13;
+FROM partner_campaign pc&#13;
+LEFT JOIN menu m&#13;
+  ON pc.partner_id = m.partner_id&#13;
+LEFT JOIN historical h&#13;
+  ON m.product_legacy_id = h.product_id&#13;
+LEFT JOIN discount d&#13;
+  ON h.subsidized_product_campaing_id = pc.campaign_id&#13;
+  AND m.product_legacy_id =  d.product_id&#13;
+  AND m.partner_id = d.partner_id&#13;
+LEFT JOIN quantities_product qpro&#13;
+  ON qpro.campaign_id = pc.campaign_id&#13;
+  AND qpro.partner_id = pc.partner_id&#13;
+  AND qpro.product_id = m.product_legacy_id&#13;
+LEFT JOIN quantities_partner qpar&#13;
+  ON qpar.campaign_id = pc.campaign_id&#13;
+  AND qpar.partner_id = pc.partner_id&#13;
+&#13;
+WHERE TRUE&#13;
+  AND status NOT IN (&quot;TARGETED&quot;)&#13;
+  AND d.product_id IS NOT NULL&#13;
+  AND UPPER(d.campaign_name) LIKE &quot;%PROMOS ÚNICAS%&quot;&#13;
+&#13;
+ORDER BY 4,2,1</_.fcp.ObjectModelEncapsulateLegacy.true...relation>
+        <metadata-records>
+          <metadata-record class='column'>
+            <remote-name>order_pro</remote-name>
+            <remote-type>7</remote-type>
+            <local-name>[order_pro]</local-name>
+            <parent-name>[Consulta SQL personalizada]</parent-name>
+            <remote-alias>order_pro</remote-alias>
+            <local-type>date</local-type>
+            <aggregation>Year</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_39E426B511A04ED6B65984A9663A364D]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>order_par</remote-name>
+            <remote-type>7</remote-type>
+            <local-name>[order_par]</local-name>
+            <parent-name>[Consulta SQL personalizada]</parent-name>
+            <remote-alias>order_par</remote-alias>
+            <local-type>date</local-type>
+            <aggregation>Year</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_39E426B511A04ED6B65984A9663A364D]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>createdAt</remote-name>
+            <remote-type>7</remote-type>
+            <local-name>[createdAt]</local-name>
+            <parent-name>[Consulta SQL personalizada]</parent-name>
+            <remote-alias>createdAt</remote-alias>
+            <local-type>date</local-type>
+            <aggregation>Year</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_39E426B511A04ED6B65984A9663A364D]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>partner_id</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[partner_id]</local-name>
+            <parent-name>[Consulta SQL personalizada]</parent-name>
+            <remote-alias>partner_id</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_39E426B511A04ED6B65984A9663A364D]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>partner_name</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[partner_name]</local-name>
+            <parent-name>[Consulta SQL personalizada]</parent-name>
+            <remote-alias>partner_name</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_39E426B511A04ED6B65984A9663A364D]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>campaign_id</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[campaign_id]</local-name>
+            <parent-name>[Consulta SQL personalizada]</parent-name>
+            <remote-alias>campaign_id</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_39E426B511A04ED6B65984A9663A364D]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>status</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[status]</local-name>
+            <parent-name>[Consulta SQL personalizada]</parent-name>
+            <remote-alias>status</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_39E426B511A04ED6B65984A9663A364D]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>product_id</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[product_id]</local-name>
+            <parent-name>[Consulta SQL personalizada]</parent-name>
+            <remote-alias>product_id</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_39E426B511A04ED6B65984A9663A364D]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>start_at</remote-name>
+            <remote-type>7</remote-type>
+            <local-name>[start_at]</local-name>
+            <parent-name>[Consulta SQL personalizada]</parent-name>
+            <remote-alias>start_at</remote-alias>
+            <local-type>date</local-type>
+            <aggregation>Year</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_39E426B511A04ED6B65984A9663A364D]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>end_at</remote-name>
+            <remote-type>7</remote-type>
+            <local-name>[end_at]</local-name>
+            <parent-name>[Consulta SQL personalizada]</parent-name>
+            <remote-alias>end_at</remote-alias>
+            <local-type>date</local-type>
+            <aggregation>Year</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_39E426B511A04ED6B65984A9663A364D]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>originalPrice</remote-name>
+            <remote-type>5</remote-type>
+            <local-name>[originalPrice]</local-name>
+            <parent-name>[Consulta SQL personalizada]</parent-name>
+            <remote-alias>originalPrice</remote-alias>
+            <local-type>real</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_39E426B511A04ED6B65984A9663A364D]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>amount</remote-name>
+            <remote-type>5</remote-type>
+            <local-name>[amount]</local-name>
+            <parent-name>[Consulta SQL personalizada]</parent-name>
+            <remote-alias>amount</remote-alias>
+            <local-type>real</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_39E426B511A04ED6B65984A9663A364D]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>createdBy</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[createdBy]</local-name>
+            <parent-name>[Consulta SQL personalizada]</parent-name>
+            <remote-alias>createdBy</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_39E426B511A04ED6B65984A9663A364D]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>partnerCountryId</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[partnerCountryId]</local-name>
+            <parent-name>[Consulta SQL personalizada]</parent-name>
+            <remote-alias>partnerCountryId</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_39E426B511A04ED6B65984A9663A364D]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>campaign_name</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[campaign_name]</local-name>
+            <parent-name>[Consulta SQL personalizada]</parent-name>
+            <remote-alias>campaign_name</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_39E426B511A04ED6B65984A9663A364D]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>product_legacy_id</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[product_legacy_id]</local-name>
+            <parent-name>[Consulta SQL personalizada]</parent-name>
+            <remote-alias>product_legacy_id</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_39E426B511A04ED6B65984A9663A364D]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>product_name</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[product_name]</local-name>
+            <parent-name>[Consulta SQL personalizada]</parent-name>
+            <remote-alias>product_name</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_39E426B511A04ED6B65984A9663A364D]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>orders_pro</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[orders_pro]</local-name>
+            <parent-name>[Consulta SQL personalizada]</parent-name>
+            <remote-alias>orders_pro</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_39E426B511A04ED6B65984A9663A364D]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>orders_par</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[orders_par]</local-name>
+            <parent-name>[Consulta SQL personalizada]</parent-name>
+            <remote-alias>orders_par</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_39E426B511A04ED6B65984A9663A364D]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+        </metadata-records>
+      </connection>
+      <aliases enabled='yes' />
+      <column caption='Duración' datatype='integer' name='[Calculation_1494632162534268928]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='MIN(TODAY(),[end_at])-MIN(TODAY(),[start_at])' />
+      </column>
+      <column caption='&quot;Órdenes&quot;' datatype='string' name='[Calculation_1494632162534694914]' role='dimension' type='nominal'>
+        <calculation class='tableau' formula='&quot;Órdenes&quot;' />
+      </column>
+      <column caption='Órdenes/días de campaña' datatype='real' name='[Calculation_1494632162535133187]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='[Calculation_1494632162543800325]/[Calculation_1494632162534268928]' />
+      </column>
+      <column caption='Orders partner' datatype='integer' name='[Calculation_1494632162543800325]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='{FIXED [partner_id],[order_par]: MAX([orders_par])}' />
+      </column>
+      <column caption='Órdenes producto' datatype='integer' name='[Calculation_1494632162544783366]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='{FIXED [partner_id],[product_id],[order_pro]: MIN([orders_pro])}' />
+      </column>
+      <column caption='Órdenes/Producto' datatype='real' name='[Calculation_1494632162558205961]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='SUM([Calculation_1494632162544783366])/COUNTD([product_id])' />
+      </column>
+      <_.fcp.ObjectModelTableType.true...column caption='Consulta SQL personalizada' datatype='table' name='[__tableau_internal_object_id__].[_39E426B511A04ED6B65984A9663A364D]' role='measure' type='quantitative' />
+      <column aggregation='Sum' datatype='integer' name='[campaign_id]' role='dimension' type='ordinal' />
+      <column datatype='date' name='[order_par]' role='dimension' type='ordinal' />
+      <column aggregation='Sum' datatype='integer' name='[partnerCountryId]' role='dimension' type='ordinal' />
+      <column aggregation='Sum' caption='Partner ID' datatype='integer' name='[partner_id]' role='dimension' type='ordinal' />
+      <column caption='Nombre' datatype='string' name='[partner_name]' role='dimension' type='nominal' />
+      <column aggregation='Sum' datatype='integer' name='[product_id]' role='dimension' type='ordinal' />
+      <column aggregation='Sum' datatype='integer' name='[product_legacy_id]' role='dimension' type='ordinal' />
+      <column caption='Órdenes/Partner' datatype='real' name='[Órdenes/Producto (copia)_1494632162558627850]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='SUM([Calculation_1494632162543800325])/COUNTD([partner_id])' />
+      </column>
+      <column-instance column='[Calculation_1494632162543800325]' derivation='Sum' name='[cum:sum:Calculation_1494632162543800325:qk]' pivot='key' type='quantitative'>
+        <table-calc aggregation='Sum' ordering-type='Rows' type='CumTotal' />
+      </column-instance>
+      <column-instance column='[Calculation_1494632162543800325]' derivation='Sum' name='[sum:Calculation_1494632162543800325:qk]' pivot='key' type='quantitative' />
+      <column-instance column='[order_par]' derivation='Day-Trunc' name='[tdy:order_par:ok]' pivot='key' type='ordinal' />
+      <group caption='Acción (&quot;Órdenes&quot;,Partner ID,Nombre)' hidden='true' name='[Action (&quot;Órdenes&quot;,Partner ID,Nombre)]' name-style='unqualified' user:auto-column='sheet_link'>
+        <groupfilter function='crossjoin'>
+          <groupfilter function='level-members' level='[Calculation_1494632162534694914]' />
+          <groupfilter function='level-members' level='[partner_id]' />
+          <groupfilter function='level-members' level='[partner_name]' />
+        </groupfilter>
+      </group>
+      <group caption='Acción (DÍA(order_par))' hidden='true' name='[Action (DAY(order_par))]' name-style='unqualified' user:auto-column='sheet_link'>
+        <groupfilter function='crossjoin'>
+          <groupfilter function='level-members' level='[tdy:order_par:ok]' />
+        </groupfilter>
+      </group>
+      <extract _.fcp.ObjectModelExtractV2.true...object-id='' count='-1' enabled='true' units='records'>
+        <connection access_mode='readonly' author-locale='en_US' class='hyper' dbname='extract/3d/69/{CDE62462-AC55-437D-BB59-6853DA412E4C}/federated_0931ju30xbwn7o1cu5h3j1.hyper' extract-engine='true' schema='Extract' sslmode='' tablename='Extract' update-time='06/09/2022 10:02:06 PM'>
+          <_.fcp.ObjectModelEncapsulateLegacy.false...relation name='Extract' table='[Extract].[Extract]' type='table' />
+          <_.fcp.ObjectModelEncapsulateLegacy.true...relation name='Extract' table='[Extract].[Extract]' type='table' />
+          <metadata-records>
+            <metadata-record class='column'>
+              <remote-name>order_pro</remote-name>
+              <remote-type>133</remote-type>
+              <local-name>[order_pro]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>order_pro</remote-alias>
+              <ordinal>0</ordinal>
+              <family>Consulta SQL personalizada</family>
+              <local-type>date</local-type>
+              <aggregation>Year</aggregation>
+              <approx-count>92</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_39E426B511A04ED6B65984A9663A364D]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>order_par</remote-name>
+              <remote-type>133</remote-type>
+              <local-name>[order_par]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>order_par</remote-alias>
+              <ordinal>1</ordinal>
+              <family>Consulta SQL personalizada</family>
+              <local-type>date</local-type>
+              <aggregation>Year</aggregation>
+              <approx-count>92</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_39E426B511A04ED6B65984A9663A364D]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>createdAt</remote-name>
+              <remote-type>133</remote-type>
+              <local-name>[createdAt]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>createdAt</remote-alias>
+              <ordinal>2</ordinal>
+              <family>Consulta SQL personalizada</family>
+              <local-type>date</local-type>
+              <aggregation>Year</aggregation>
+              <approx-count>1</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_39E426B511A04ED6B65984A9663A364D]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>partner_id</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[partner_id]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>partner_id</remote-alias>
+              <ordinal>3</ordinal>
+              <family>Consulta SQL personalizada</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>272</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_39E426B511A04ED6B65984A9663A364D]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>partner_name</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[partner_name]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>partner_name</remote-alias>
+              <ordinal>4</ordinal>
+              <family>Consulta SQL personalizada</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>299</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_39E426B511A04ED6B65984A9663A364D]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>campaign_id</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[campaign_id]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>campaign_id</remote-alias>
+              <ordinal>5</ordinal>
+              <family>Consulta SQL personalizada</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>1</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_39E426B511A04ED6B65984A9663A364D]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>status</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[status]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>status</remote-alias>
+              <ordinal>6</ordinal>
+              <family>Consulta SQL personalizada</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>2</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_39E426B511A04ED6B65984A9663A364D]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>product_id</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[product_id]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>product_id</remote-alias>
+              <ordinal>7</ordinal>
+              <family>Consulta SQL personalizada</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>368</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_39E426B511A04ED6B65984A9663A364D]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>start_at</remote-name>
+              <remote-type>133</remote-type>
+              <local-name>[start_at]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>start_at</remote-alias>
+              <ordinal>8</ordinal>
+              <family>Consulta SQL personalizada</family>
+              <local-type>date</local-type>
+              <aggregation>Year</aggregation>
+              <approx-count>64</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_39E426B511A04ED6B65984A9663A364D]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>end_at</remote-name>
+              <remote-type>133</remote-type>
+              <local-name>[end_at]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>end_at</remote-alias>
+              <ordinal>9</ordinal>
+              <family>Consulta SQL personalizada</family>
+              <local-type>date</local-type>
+              <aggregation>Year</aggregation>
+              <approx-count>1</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_39E426B511A04ED6B65984A9663A364D]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>originalPrice</remote-name>
+              <remote-type>5</remote-type>
+              <local-name>[originalPrice]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>originalPrice</remote-alias>
+              <ordinal>10</ordinal>
+              <family>Consulta SQL personalizada</family>
+              <local-type>real</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>74</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_39E426B511A04ED6B65984A9663A364D]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>amount</remote-name>
+              <remote-type>5</remote-type>
+              <local-name>[amount]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>amount</remote-alias>
+              <ordinal>11</ordinal>
+              <family>Consulta SQL personalizada</family>
+              <local-type>real</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>248</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_39E426B511A04ED6B65984A9663A364D]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>createdBy</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[createdBy]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>createdBy</remote-alias>
+              <ordinal>12</ordinal>
+              <family>Consulta SQL personalizada</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>1</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_39E426B511A04ED6B65984A9663A364D]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>partnerCountryId</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[partnerCountryId]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>partnerCountryId</remote-alias>
+              <ordinal>13</ordinal>
+              <family>Consulta SQL personalizada</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>1</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_39E426B511A04ED6B65984A9663A364D]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>campaign_name</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[campaign_name]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>campaign_name</remote-alias>
+              <ordinal>14</ordinal>
+              <family>Consulta SQL personalizada</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>1</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_39E426B511A04ED6B65984A9663A364D]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>product_legacy_id</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[product_legacy_id]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>product_legacy_id</remote-alias>
+              <ordinal>15</ordinal>
+              <family>Consulta SQL personalizada</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>368</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_39E426B511A04ED6B65984A9663A364D]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>product_name</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[product_name]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>product_name</remote-alias>
+              <ordinal>16</ordinal>
+              <family>Consulta SQL personalizada</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>364</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_39E426B511A04ED6B65984A9663A364D]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>orders_pro</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[orders_pro]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>orders_pro</remote-alias>
+              <ordinal>17</ordinal>
+              <family>Consulta SQL personalizada</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>31</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_39E426B511A04ED6B65984A9663A364D]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>orders_par</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[orders_par]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>orders_par</remote-alias>
+              <ordinal>18</ordinal>
+              <family>Consulta SQL personalizada</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>31</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_39E426B511A04ED6B65984A9663A364D]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+          </metadata-records>
+        </connection>
+      </extract>
+      <layout _.fcp.SchemaViewerObjectModel.false...dim-percentage='0.5' _.fcp.SchemaViewerObjectModel.false...measure-percentage='0.4' dim-ordering='alphabetic' measure-ordering='alphabetic' show-structure='true' />
+      <style>
+        <style-rule element='mark'>
+          <encoding attr='color' field='[:Measure Names]' type='palette'>
+            <map to='#bab0ac'>
+              <bucket>&quot;[federated.0931ju30xbwn7o1cu5h3j1585v5w].[sum:Calculation_1494632162543800325:qk]&quot;</bucket>
+            </map>
+            <map to='#fa0050'>
+              <bucket>&quot;[federated.0931ju30xbwn7o1cu5h3j1585v5w].[cum:sum:Calculation_1494632162543800325:qk]&quot;</bucket>
+            </map>
+          </encoding>
+        </style-rule>
+      </style>
+      <semantic-values>
+        <semantic-value key='[Country].[Name]' value='&quot;Argentina&quot;' />
+      </semantic-values>
+      <_.fcp.ObjectModelEncapsulateLegacy.true...object-graph>
+        <objects>
+          <object caption='Consulta SQL personalizada' id='_39E426B511A04ED6B65984A9663A364D'>
+            <properties context=''>
+              <relation connection='bigquery.18qzinl1ju08gj133tn360ugaodc' name='Consulta SQL personalizada' type='text'>WITH dates AS ( &#13;
+	SELECT &#13;
+		DATE_ADD(CURRENT_DATE, INTERVAL -3 MONTH) start_date,&#13;
+		DATE(CURRENT_DATE) before_date &#13;
+),&#13;
+partner_campaign AS (&#13;
+  SELECT&#13;
+    DATE(createdAt) createdAt&#13;
+    ,partnerId partner_id&#13;
+    ,campaignId campaign_id&#13;
+    ,status&#13;
+  FROM `peya-data-origins-pro.cl_core.partner_campaign`&#13;
+),&#13;
+menu AS (&#13;
+  SELECT&#13;
+    DISTINCT &#13;
+    partner_id&#13;
+    ,product_legacy_id&#13;
+    ,product_id&#13;
+    ,product_name &#13;
+  FROM  `peya-bi-tools-pro.il_core.dim_partner_menu`&#13;
+),&#13;
+historical AS (&#13;
+  SELECT&#13;
+    product_id&#13;
+    ,subsidized_product_campaing_id&#13;
+    ,is_deleted&#13;
+  FROM `peya-data-origins-pro.cl_core.subsidized_product_historical`&#13;
+),&#13;
+discount AS (&#13;
+  SELECT&#13;
+    partnerId partner_id&#13;
+    ,campaignid campaign_id&#13;
+    ,product_id&#13;
+    ,startDateTime&#13;
+    ,endDateTime&#13;
+    ,originalPrice&#13;
+    ,amount&#13;
+    ,createdBy&#13;
+    ,partnerCountryId&#13;
+    ,c.name campaign_name&#13;
+  FROM `peya-data-origins-pro.cl_core.partner_discount`&#13;
+    ,UNNEST (itemIds) product_id&#13;
+  LEFT JOIN `peya-data-origins-pro.cl_core.campaign` c&#13;
+    ON c.id = campaignid&#13;
+  WHERE campaignId IS NOT NULL &#13;
+),&#13;
+orders_product AS (&#13;
+  SELECT&#13;
+    DISTINCT&#13;
+    o.order_id&#13;
+    ,DATE(o.registered_date) registered_date&#13;
+    ,d.product.product_id&#13;
+    ,o.restaurant.id partner_id&#13;
+    ,o.restaurant.name partner_name&#13;
+  FROM `peya-bi-tools-pro.il_core.fact_orders` o&#13;
+    ,UNNEST(details) d&#13;
+  WHERE DATE(registered_date) BETWEEN (SELECT start_date FROM dates) AND (SELECT before_date FROM dates)&#13;
+),&#13;
+orders_partner AS (&#13;
+  SELECT&#13;
+    DISTINCT&#13;
+    o.order_id&#13;
+    ,DATE(o.registered_date) registered_date&#13;
+    ,o.restaurant.id partner_id&#13;
+    ,o.restaurant.name partner_name&#13;
+    ,d.product.product_id&#13;
+  FROM `peya-bi-tools-pro.il_core.fact_orders` o&#13;
+    ,UNNEST(details) d&#13;
+  WHERE DATE(registered_date) BETWEEN (SELECT start_date FROM dates) AND (SELECT before_date FROM dates)&#13;
+),&#13;
+quantities_product AS (&#13;
+  SELECT&#13;
+    d.product_id&#13;
+    ,d.partner_id&#13;
+    ,o.partner_name&#13;
+    ,d.campaign_id&#13;
+    ,DATE(o.registered_date) order_date&#13;
+    ,COUNT(DISTINCT IF(o.registered_date BETWEEN d.startDateTime AND d.endDateTime,o.order_id,NULL)) orders_pro&#13;
+  FROM orders_product o&#13;
+  LEFT JOIN discount d&#13;
+    ON o.product_id = d.product_id&#13;
+    AND o.partner_id = d.partner_id&#13;
+  WHERE d.product_id IS NOT NULL&#13;
+  GROUP BY 1,2,3,4,5&#13;
+),&#13;
+quantities_partner AS (&#13;
+  SELECT&#13;
+    d.partner_id&#13;
+    ,o.partner_name&#13;
+    ,d.campaign_id&#13;
+    ,DATE(o.registered_date) order_date&#13;
+    ,COUNT(DISTINCT IF(o.registered_date BETWEEN d.startDateTime AND d.endDateTime,o.order_id,NULL)) orders_par&#13;
+  FROM orders_partner o&#13;
+  LEFT JOIN discount d&#13;
+    ON o.partner_id = d.partner_id&#13;
+    AND o.product_id = d.product_id&#13;
+  WHERE d.product_id IS NOT NULL&#13;
+  GROUP BY 1,2,3,4&#13;
+)&#13;
+&#13;
+SELECT&#13;
+  DISTINCT&#13;
+  qpro.order_date order_pro&#13;
+  ,qpar.order_date order_par&#13;
+  ,pc.createdAt&#13;
+  ,pc.partner_id&#13;
+  ,qpro.partner_name&#13;
+  ,pc.campaign_id&#13;
+  ,pc.status&#13;
+  ,d.product_id&#13;
+  ,DATE(d.startDateTime) start_at&#13;
+  ,DATE(d.endDateTime) end_at&#13;
+  ,d.originalPrice&#13;
+  ,d.amount&#13;
+  ,d.createdBy&#13;
+  ,d.partnerCountryId&#13;
+  ,d.campaign_name&#13;
+  ,m.product_legacy_id&#13;
+  ,m.product_name &#13;
+  -- ,h.is_deleted&#13;
+  ,qpro.orders_pro&#13;
+  ,qpar.orders_par&#13;
+&#13;
+FROM partner_campaign pc&#13;
+LEFT JOIN menu m&#13;
+  ON pc.partner_id = m.partner_id&#13;
+LEFT JOIN historical h&#13;
+  ON m.product_legacy_id = h.product_id&#13;
+LEFT JOIN discount d&#13;
+  ON h.subsidized_product_campaing_id = pc.campaign_id&#13;
+  AND m.product_legacy_id =  d.product_id&#13;
+  AND m.partner_id = d.partner_id&#13;
+LEFT JOIN quantities_product qpro&#13;
+  ON qpro.campaign_id = pc.campaign_id&#13;
+  AND qpro.partner_id = pc.partner_id&#13;
+  AND qpro.product_id = m.product_legacy_id&#13;
+LEFT JOIN quantities_partner qpar&#13;
+  ON qpar.campaign_id = pc.campaign_id&#13;
+  AND qpar.partner_id = pc.partner_id&#13;
+&#13;
+WHERE TRUE&#13;
+  AND status NOT IN (&quot;TARGETED&quot;)&#13;
+  AND d.product_id IS NOT NULL&#13;
+  AND UPPER(d.campaign_name) LIKE &quot;%PROMOS ÚNICAS%&quot;&#13;
+&#13;
+ORDER BY 4,2,1</relation>
+            </properties>
+            <properties context='extract'>
+              <relation name='Extract' table='[Extract].[Extract]' type='table' />
+            </properties>
+          </object>
+        </objects>
+      </_.fcp.ObjectModelEncapsulateLegacy.true...object-graph>
+    </datasource>
+  </datasources>
+  <actions>
+    <action caption='Filtro 1 (generado)' name='[Action1_538F828830354BDA86C1495B868C81E8]'>
+      <activation auto-clear='true' type='on-select' />
+      <source dashboard='Dashboard 1' type='sheet' worksheet='Partner' />
+      <command command='tsc:tsl-filter'>
+        <param name='special-fields' value='all' />
+        <param name='target' value='Dashboard 1' />
+      </command>
+    </action>
+    <action caption='Filtro 2 (generado)' name='[Action2_B297489389EC4814AF56B222028363E6]'>
+      <activation auto-clear='true' type='on-select' />
+      <source dashboard='Dashboard 1' type='sheet' worksheet='Evolución órdenes' />
+      <command command='tsc:tsl-filter'>
+        <param name='special-fields' value='all' />
+        <param name='target' value='Dashboard 1' />
+      </command>
+    </action>
+  </actions>
+  <worksheets>
+    <worksheet name='Evolución órdenes'>
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='Consulta SQL personalizada (user_erik_otero)' name='federated.0931ju30xbwn7o1cu5h3j1585v5w' />
+          </datasources>
+          <datasource-dependencies datasource='federated.0931ju30xbwn7o1cu5h3j1585v5w'>
+            <column caption='&quot;Órdenes&quot;' datatype='string' name='[Calculation_1494632162534694914]' role='dimension' type='nominal'>
+              <calculation class='tableau' formula='&quot;Órdenes&quot;' />
+            </column>
+            <column caption='Orders partner' datatype='integer' name='[Calculation_1494632162543800325]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='{FIXED [partner_id],[order_par]: MAX([orders_par])}' />
+            </column>
+            <column-instance column='[Calculation_1494632162543800325]' derivation='Sum' name='[cum:sum:Calculation_1494632162543800325:qk]' pivot='key' type='quantitative'>
+              <table-calc aggregation='Sum' ordering-type='Rows' type='CumTotal' />
+            </column-instance>
+            <column-instance column='[order_par]' derivation='None' name='[none:order_par:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[partner_name]' derivation='None' name='[none:partner_name:nk]' pivot='key' type='nominal' />
+            <column datatype='date' name='[order_par]' role='dimension' type='ordinal' />
+            <column datatype='integer' name='[orders_par]' role='measure' type='quantitative' />
+            <column aggregation='Sum' caption='Partner ID' datatype='integer' name='[partner_id]' role='dimension' type='ordinal' />
+            <column caption='Nombre' datatype='string' name='[partner_name]' role='dimension' type='nominal' />
+            <column-instance column='[Calculation_1494632162543800325]' derivation='Sum' name='[sum:Calculation_1494632162543800325:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[order_par]' derivation='Day-Trunc' name='[tdy:order_par:qk]' pivot='key' type='quantitative' />
+          </datasource-dependencies>
+          <filter class='categorical' column='[federated.0931ju30xbwn7o1cu5h3j1585v5w].[Action (&quot;Órdenes&quot;,Partner ID,Nombre)]'>
+            <groupfilter function='crossjoin' user:ui-action-filter='[Action1_538F828830354BDA86C1495B868C81E8]' user:ui-enumeration='all' user:ui-marker='enumerate'>
+              <groupfilter function='level-members' level='[Calculation_1494632162534694914]' />
+              <groupfilter function='level-members' level='[partner_id]' />
+              <groupfilter function='level-members' level='[partner_name]' />
+            </groupfilter>
+          </filter>
+          <filter class='quantitative' column='[federated.0931ju30xbwn7o1cu5h3j1585v5w].[none:order_par:qk]' included-values='in-range'>
+            <min>#2022-04-01#</min>
+          </filter>
+          <filter class='categorical' column='[federated.0931ju30xbwn7o1cu5h3j1585v5w].[none:partner_name:nk]'>
+            <groupfilter function='level-members' level='[none:partner_name:nk]' user:ui-exclude='true' user:ui-manual-selection='true' user:ui-manual-selection-all-when-empty='true' user:ui-manual-selection-is-empty='true' user:ui-marker='enumerate' />
+          </filter>
+          <slices>
+            <column>[federated.0931ju30xbwn7o1cu5h3j1585v5w].[none:partner_name:nk]</column>
+            <column>[federated.0931ju30xbwn7o1cu5h3j1585v5w].[none:order_par:qk]</column>
+            <column>[federated.0931ju30xbwn7o1cu5h3j1585v5w].[Action (&quot;Órdenes&quot;,Partner ID,Nombre)]</column>
+          </slices>
+          <aggregation value='true' />
+        </view>
+        <style>
+          <style-rule element='axis'>
+            <encoding attr='space' class='0' field='[federated.0931ju30xbwn7o1cu5h3j1585v5w].[tdy:order_par:qk]' field-type='quantitative' major-origin='#2022-04-25 00:00:00#' major-spacing='1.0' major-units='days' max='#2022-05-21 09:36:00#' min='#2022-04-01 00:00:00#' range-type='fixed' scope='cols' type='space' />
+            <format attr='title' class='0' field='[federated.0931ju30xbwn7o1cu5h3j1585v5w].[tdy:order_par:qk]' scope='cols' value='Fecha' />
+            <format attr='title' class='0' field='[federated.0931ju30xbwn7o1cu5h3j1585v5w].[sum:Calculation_1494632162543800325:qk]' scope='rows' value='Órdenes' />
+            <format attr='title' class='0' field='[federated.0931ju30xbwn7o1cu5h3j1585v5w].[cum:sum:Calculation_1494632162543800325:qk]' scope='rows' value='Órdenes' />
+            <encoding attr='space' class='0' field='[federated.0931ju30xbwn7o1cu5h3j1585v5w].[cum:sum:Calculation_1494632162543800325:qk]' field-type='quantitative' fold='true' scope='rows' type='space' />
+          </style-rule>
+          <style-rule element='cell'>
+            <format attr='text-format' field='[federated.0931ju30xbwn7o1cu5h3j1585v5w].[tdy:order_par:qk]' value='*d/mmm' />
+          </style-rule>
+          <style-rule element='label'>
+            <format attr='text-format' field='[federated.0931ju30xbwn7o1cu5h3j1585v5w].[tdy:order_par:qk]' value='*d/mmm' />
+            <format attr='text-format' field='[federated.0931ju30xbwn7o1cu5h3j1585v5w].[sum:Calculation_1494632162543800325:qk]' value='n#,##0;-#,##0' />
+            <format attr='text-format' field='[federated.0931ju30xbwn7o1cu5h3j1585v5w].[cum:sum:Calculation_1494632162543800325:qk]' value='n#,##0;-#,##0' />
+            <format attr='text-orientation' value='-90' />
+          </style-rule>
+        </style>
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Bar' />
+            <mark-sizing custom-mark-size-in-axis-units='1.0' mark-alignment='mark-alignment-left' mark-sizing-setting='marks-scaling-on' use-custom-mark-size='false' />
+            <encodings>
+              <color column='[federated.0931ju30xbwn7o1cu5h3j1585v5w].[:Measure Names]' />
+            </encodings>
+            <customized-tooltip>
+              <formatted-text>
+                <run><![CDATA[<[federated.0931ju30xbwn7o1cu5h3j1585v5w].[tdy:order_par:qk]>
+]]></run>
+                <run fontcolor='#787878'>Órdenes día:&#9;</run>
+                <run bold='true'><![CDATA[<[federated.0931ju30xbwn7o1cu5h3j1585v5w].[sum:Calculation_1494632162543800325:qk]>]]></run>
+                <run>Æ&#10;</run>
+                <run fontcolor='#787878'>Órdenes acum &#9;</run>
+                <run bold='true'><![CDATA[<[federated.0931ju30xbwn7o1cu5h3j1585v5w].[cum:sum:Calculation_1494632162543800325:qk]>]]></run>
+              </formatted-text>
+            </customized-tooltip>
+            <style>
+              <style-rule element='mark'>
+                <format attr='mark-labels-show' value='true' />
+                <format attr='mark-labels-cull' value='true' />
+                <format attr='line-interpolation' value='linear' />
+              </style-rule>
+            </style>
+          </pane>
+          <pane id='1' selection-relaxation-option='selection-relaxation-allow' y-axis-name='[federated.0931ju30xbwn7o1cu5h3j1585v5w].[sum:Calculation_1494632162543800325:qk]'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Bar' />
+            <mark-sizing custom-mark-size-in-axis-units='1.0' mark-alignment='mark-alignment-left' mark-sizing-setting='marks-scaling-on' use-custom-mark-size='false' />
+            <encodings>
+              <color column='[federated.0931ju30xbwn7o1cu5h3j1585v5w].[:Measure Names]' />
+            </encodings>
+            <customized-tooltip>
+              <formatted-text>
+                <run><![CDATA[<[federated.0931ju30xbwn7o1cu5h3j1585v5w].[tdy:order_par:qk]>
+]]></run>
+                <run fontcolor='#787878'>Órdenes día:&#9;</run>
+                <run bold='true'><![CDATA[<[federated.0931ju30xbwn7o1cu5h3j1585v5w].[sum:Calculation_1494632162543800325:qk]>]]></run>
+                <run>Æ&#10;</run>
+                <run fontcolor='#787878'>Órdenes acum &#9;</run>
+                <run bold='true'><![CDATA[<[federated.0931ju30xbwn7o1cu5h3j1585v5w].[cum:sum:Calculation_1494632162543800325:qk]>]]></run>
+              </formatted-text>
+            </customized-tooltip>
+            <style>
+              <style-rule element='mark'>
+                <format attr='mark-labels-show' value='true' />
+                <format attr='mark-labels-cull' value='true' />
+                <format attr='line-interpolation' value='linear' />
+              </style-rule>
+            </style>
+          </pane>
+          <pane id='2' selection-relaxation-option='selection-relaxation-allow' y-axis-name='[federated.0931ju30xbwn7o1cu5h3j1585v5w].[cum:sum:Calculation_1494632162543800325:qk]'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Line' />
+            <encodings>
+              <color column='[federated.0931ju30xbwn7o1cu5h3j1585v5w].[:Measure Names]' />
+            </encodings>
+            <customized-tooltip>
+              <formatted-text>
+                <run><![CDATA[<[federated.0931ju30xbwn7o1cu5h3j1585v5w].[tdy:order_par:qk]>
+]]></run>
+                <run fontcolor='#787878'>Órdenes día:&#9;</run>
+                <run bold='true'><![CDATA[<[federated.0931ju30xbwn7o1cu5h3j1585v5w].[sum:Calculation_1494632162543800325:qk]>]]></run>
+                <run>Æ&#10;</run>
+                <run fontcolor='#787878'>Órdenes acum &#9;</run>
+                <run bold='true'><![CDATA[<[federated.0931ju30xbwn7o1cu5h3j1585v5w].[cum:sum:Calculation_1494632162543800325:qk]>]]></run>
+              </formatted-text>
+            </customized-tooltip>
+            <style>
+              <style-rule element='mark'>
+                <format attr='mark-labels-show' value='true' />
+                <format attr='mark-labels-cull' value='false' />
+                <format attr='mark-labels-mode' value='line-ends' />
+                <format attr='line-interpolation' value='linear' />
+              </style-rule>
+            </style>
+          </pane>
+        </panes>
+        <rows>([federated.0931ju30xbwn7o1cu5h3j1585v5w].[sum:Calculation_1494632162543800325:qk] + [federated.0931ju30xbwn7o1cu5h3j1585v5w].[cum:sum:Calculation_1494632162543800325:qk])</rows>
+        <cols>[federated.0931ju30xbwn7o1cu5h3j1585v5w].[tdy:order_par:qk]</cols>
+      </table>
+      <simple-id uuid='{29EDBC6C-84BE-4861-A889-2FF1319633C8}' />
+    </worksheet>
+    <worksheet name='Partner'>
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='Consulta SQL personalizada (user_erik_otero)' name='federated.0931ju30xbwn7o1cu5h3j1585v5w' />
+          </datasources>
+          <datasource-dependencies datasource='federated.0931ju30xbwn7o1cu5h3j1585v5w'>
+            <column caption='&quot;Órdenes&quot;' datatype='string' name='[Calculation_1494632162534694914]' role='dimension' type='nominal'>
+              <calculation class='tableau' formula='&quot;Órdenes&quot;' />
+            </column>
+            <column caption='Orders partner' datatype='integer' name='[Calculation_1494632162543800325]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='{FIXED [partner_id],[order_par]: MAX([orders_par])}' />
+            </column>
+            <column-instance column='[end_at]' derivation='Attribute' name='[attr:end_at:ok]' pivot='key' type='ordinal' />
+            <column-instance column='[start_at]' derivation='Attribute' name='[attr:start_at:ok]' pivot='key' type='ordinal' />
+            <column datatype='date' name='[end_at]' role='dimension' type='ordinal' />
+            <column-instance column='[Calculation_1494632162534694914]' derivation='None' name='[none:Calculation_1494632162534694914:nk]' pivot='key' type='nominal' />
+            <column-instance column='[partner_id]' derivation='None' name='[none:partner_id:ok]' pivot='key' type='ordinal' />
+            <column-instance column='[partner_name]' derivation='None' name='[none:partner_name:nk]' pivot='key' type='nominal' />
+            <column datatype='date' name='[order_par]' role='dimension' type='ordinal' />
+            <column datatype='integer' name='[orders_par]' role='measure' type='quantitative' />
+            <column aggregation='Sum' caption='Partner ID' datatype='integer' name='[partner_id]' role='dimension' type='ordinal' />
+            <column caption='Nombre' datatype='string' name='[partner_name]' role='dimension' type='nominal' />
+            <column datatype='date' name='[start_at]' role='dimension' type='ordinal' />
+            <column-instance column='[Calculation_1494632162543800325]' derivation='Sum' name='[sum:Calculation_1494632162543800325:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[order_par]' derivation='Day-Trunc' name='[tdy:order_par:ok]' pivot='key' type='ordinal' />
+          </datasource-dependencies>
+          <filter class='categorical' column='[federated.0931ju30xbwn7o1cu5h3j1585v5w].[Action (DAY(order_par))]'>
+            <groupfilter function='level-members' level='[tdy:order_par:ok]' user:ui-action-filter='[Action2_B297489389EC4814AF56B222028363E6]' user:ui-enumeration='all' user:ui-marker='enumerate' />
+          </filter>
+          <computed-sort column='[federated.0931ju30xbwn7o1cu5h3j1585v5w].[none:partner_id:ok]' direction='DESC' using='[federated.0931ju30xbwn7o1cu5h3j1585v5w].[sum:Calculation_1494632162543800325:qk]' />
+          <filter class='categorical' column='[federated.0931ju30xbwn7o1cu5h3j1585v5w].[none:partner_name:nk]'>
+            <groupfilter function='except' user:ui-domain='relevant' user:ui-enumeration='exclusive' user:ui-manual-selection='true' user:ui-manual-selection-all-when-empty='true' user:ui-marker='enumerate'>
+              <groupfilter function='level-members' level='[none:partner_name:nk]' />
+              <groupfilter function='union'>
+                <groupfilter function='member' level='[none:partner_name:nk]' member='%null%' />
+                <groupfilter function='member' level='[none:partner_name:nk]' member='&quot;Heladería de la Nona - Belgrano&quot;' />
+                <groupfilter function='member' level='[none:partner_name:nk]' member='&quot;Lo De Jesús Parrilla - Belgrano&quot;' />
+                <groupfilter function='member' level='[none:partner_name:nk]' member='&quot;Martinelli Obrador Argentino Pasteleria&quot;' />
+                <groupfilter function='member' level='[none:partner_name:nk]' member='&quot;Old/ Otaku Sushi Ramos Mejía&quot;' />
+                <groupfilter function='member' level='[none:partner_name:nk]' member='&quot;Old/ Teik It - Ramos Mejía&quot;' />
+                <groupfilter function='member' level='[none:partner_name:nk]' member='&quot;Toro Bravo&quot;' />
+              </groupfilter>
+            </groupfilter>
+          </filter>
+          <slices>
+            <column>[federated.0931ju30xbwn7o1cu5h3j1585v5w].[none:partner_name:nk]</column>
+            <column>[federated.0931ju30xbwn7o1cu5h3j1585v5w].[Action (DAY(order_par))]</column>
+          </slices>
+          <aggregation value='true' />
+        </view>
+        <style>
+          <style-rule element='cell'>
+            <format attr='width' field='[federated.0931ju30xbwn7o1cu5h3j1585v5w].[none:Calculation_1494632162534694914:nk]' value='99' />
+          </style-rule>
+          <style-rule element='header'>
+            <format attr='width' field='[federated.0931ju30xbwn7o1cu5h3j1585v5w].[none:partner_name:nk]' value='340' />
+            <format attr='width' field='[federated.0931ju30xbwn7o1cu5h3j1585v5w].[attr:start_at:ok]' value='96' />
+            <format attr='width' field='[federated.0931ju30xbwn7o1cu5h3j1585v5w].[attr:end_at:ok]' value='96' />
+          </style-rule>
+          <style-rule element='worksheet'>
+            <format attr='display-field-labels' scope='cols' value='false' />
+          </style-rule>
+        </style>
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Automatic' />
+            <encodings>
+              <text column='[federated.0931ju30xbwn7o1cu5h3j1585v5w].[sum:Calculation_1494632162543800325:qk]' />
+              <lod column='[federated.0931ju30xbwn7o1cu5h3j1585v5w].[attr:end_at:ok]' />
+              <lod column='[federated.0931ju30xbwn7o1cu5h3j1585v5w].[attr:start_at:ok]' />
+            </encodings>
+            <style>
+              <style-rule element='mark'>
+                <format attr='mark-labels-show' value='true' />
+              </style-rule>
+              <style-rule element='pane'>
+                <format attr='minwidth' value='-1' />
+                <format attr='maxwidth' value='-1' />
+              </style-rule>
+            </style>
+          </pane>
+        </panes>
+        <rows>([federated.0931ju30xbwn7o1cu5h3j1585v5w].[none:partner_id:ok] / ([federated.0931ju30xbwn7o1cu5h3j1585v5w].[none:partner_name:nk] / ([federated.0931ju30xbwn7o1cu5h3j1585v5w].[attr:start_at:ok] / [federated.0931ju30xbwn7o1cu5h3j1585v5w].[attr:end_at:ok])))</rows>
+        <cols>[federated.0931ju30xbwn7o1cu5h3j1585v5w].[none:Calculation_1494632162534694914:nk]</cols>
+      </table>
+      <simple-id uuid='{690AB6BE-1B78-4A4F-935E-DD429D1907A8}' />
+    </worksheet>
+    <worksheet name='Partners'>
+      <layout-options>
+        <title>
+          <formatted-text>
+            <run bold='true'>&lt;</run>
+            <run bold='true'>Sheet Name</run>
+            <run bold='true'>&gt;</run>
+          </formatted-text>
+        </title>
+      </layout-options>
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='Consulta SQL personalizada (user_erik_otero)' name='federated.0931ju30xbwn7o1cu5h3j1585v5w' />
+          </datasources>
+          <datasource-dependencies datasource='federated.0931ju30xbwn7o1cu5h3j1585v5w'>
+            <column caption='&quot;Órdenes&quot;' datatype='string' name='[Calculation_1494632162534694914]' role='dimension' type='nominal'>
+              <calculation class='tableau' formula='&quot;Órdenes&quot;' />
+            </column>
+            <column-instance column='[partner_id]' derivation='CountD' name='[ctd:partner_id:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[start_at]' derivation='None' name='[none:start_at:qk]' pivot='key' type='quantitative' />
+            <column datatype='date' name='[order_par]' role='dimension' type='ordinal' />
+            <column aggregation='Sum' caption='Partner ID' datatype='integer' name='[partner_id]' role='dimension' type='ordinal' />
+            <column caption='Nombre' datatype='string' name='[partner_name]' role='dimension' type='nominal' />
+            <column datatype='date' name='[start_at]' role='dimension' type='ordinal' />
+            <column-instance column='[order_par]' derivation='Day-Trunc' name='[tdy:order_par:ok]' pivot='key' type='ordinal' />
+          </datasource-dependencies>
+          <filter class='categorical' column='[federated.0931ju30xbwn7o1cu5h3j1585v5w].[Action (&quot;Órdenes&quot;,Partner ID,Nombre)]'>
+            <groupfilter function='crossjoin' user:ui-action-filter='[Action1_538F828830354BDA86C1495B868C81E8]' user:ui-enumeration='all' user:ui-marker='enumerate'>
+              <groupfilter function='level-members' level='[Calculation_1494632162534694914]' />
+              <groupfilter function='level-members' level='[partner_id]' />
+              <groupfilter function='level-members' level='[partner_name]' />
+            </groupfilter>
+          </filter>
+          <filter class='categorical' column='[federated.0931ju30xbwn7o1cu5h3j1585v5w].[Action (DAY(order_par))]'>
+            <groupfilter function='level-members' level='[tdy:order_par:ok]' user:ui-action-filter='[Action2_B297489389EC4814AF56B222028363E6]' user:ui-enumeration='all' user:ui-marker='enumerate' />
+          </filter>
+          <filter class='relative-date' column='[federated.0931ju30xbwn7o1cu5h3j1585v5w].[none:start_at:qk]' first-period='-59' include-future='true' include-null='false' last-period='0' period-type-v2='day' />
+          <slices>
+            <column>[federated.0931ju30xbwn7o1cu5h3j1585v5w].[none:start_at:qk]</column>
+            <column>[federated.0931ju30xbwn7o1cu5h3j1585v5w].[Action (&quot;Órdenes&quot;,Partner ID,Nombre)]</column>
+            <column>[federated.0931ju30xbwn7o1cu5h3j1585v5w].[Action (DAY(order_par))]</column>
+          </slices>
+          <aggregation value='true' />
+        </view>
+        <style>
+          <style-rule element='cell'>
+            <format attr='font-weight' value='bold' />
+            <format attr='font-size' value='26' />
+          </style-rule>
+          <style-rule element='worksheet'>
+            <format attr='display-field-labels' scope='cols' value='false' />
+          </style-rule>
+        </style>
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Automatic' />
+            <encodings>
+              <text column='[federated.0931ju30xbwn7o1cu5h3j1585v5w].[ctd:partner_id:qk]' />
+            </encodings>
+            <style>
+              <style-rule element='mark'>
+                <format attr='mark-labels-show' value='true' />
+                <format attr='mark-labels-cull' value='true' />
+              </style-rule>
+              <style-rule element='pane'>
+                <format attr='minwidth' value='-1' />
+                <format attr='maxwidth' value='-1' />
+              </style-rule>
+            </style>
+          </pane>
+        </panes>
+        <rows />
+        <cols />
+      </table>
+      <simple-id uuid='{89F060D1-FAE6-424B-A611-57D0C045F6F7}' />
+    </worksheet>
+    <worksheet name='Productos'>
+      <layout-options>
+        <title>
+          <formatted-text>
+            <run bold='true'>&lt;</run>
+            <run bold='true'>Sheet Name</run>
+            <run bold='true'>&gt;</run>
+          </formatted-text>
+        </title>
+      </layout-options>
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='Consulta SQL personalizada (user_erik_otero)' name='federated.0931ju30xbwn7o1cu5h3j1585v5w' />
+          </datasources>
+          <datasource-dependencies datasource='federated.0931ju30xbwn7o1cu5h3j1585v5w'>
+            <column caption='&quot;Órdenes&quot;' datatype='string' name='[Calculation_1494632162534694914]' role='dimension' type='nominal'>
+              <calculation class='tableau' formula='&quot;Órdenes&quot;' />
+            </column>
+            <column-instance column='[product_id]' derivation='CountD' name='[ctd:product_id:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[start_at]' derivation='None' name='[none:start_at:qk]' pivot='key' type='quantitative' />
+            <column datatype='date' name='[order_par]' role='dimension' type='ordinal' />
+            <column aggregation='Sum' caption='Partner ID' datatype='integer' name='[partner_id]' role='dimension' type='ordinal' />
+            <column caption='Nombre' datatype='string' name='[partner_name]' role='dimension' type='nominal' />
+            <column aggregation='Sum' datatype='integer' name='[product_id]' role='dimension' type='ordinal' />
+            <column datatype='date' name='[start_at]' role='dimension' type='ordinal' />
+            <column-instance column='[order_par]' derivation='Day-Trunc' name='[tdy:order_par:ok]' pivot='key' type='ordinal' />
+          </datasource-dependencies>
+          <filter class='categorical' column='[federated.0931ju30xbwn7o1cu5h3j1585v5w].[Action (&quot;Órdenes&quot;,Partner ID,Nombre)]'>
+            <groupfilter function='crossjoin' user:ui-action-filter='[Action1_538F828830354BDA86C1495B868C81E8]' user:ui-enumeration='all' user:ui-marker='enumerate'>
+              <groupfilter function='level-members' level='[Calculation_1494632162534694914]' />
+              <groupfilter function='level-members' level='[partner_id]' />
+              <groupfilter function='level-members' level='[partner_name]' />
+            </groupfilter>
+          </filter>
+          <filter class='categorical' column='[federated.0931ju30xbwn7o1cu5h3j1585v5w].[Action (DAY(order_par))]'>
+            <groupfilter function='level-members' level='[tdy:order_par:ok]' user:ui-action-filter='[Action2_B297489389EC4814AF56B222028363E6]' user:ui-enumeration='all' user:ui-marker='enumerate' />
+          </filter>
+          <filter class='relative-date' column='[federated.0931ju30xbwn7o1cu5h3j1585v5w].[none:start_at:qk]' first-period='-59' include-future='true' include-null='false' last-period='0' period-type-v2='day' />
+          <slices>
+            <column>[federated.0931ju30xbwn7o1cu5h3j1585v5w].[none:start_at:qk]</column>
+            <column>[federated.0931ju30xbwn7o1cu5h3j1585v5w].[Action (&quot;Órdenes&quot;,Partner ID,Nombre)]</column>
+            <column>[federated.0931ju30xbwn7o1cu5h3j1585v5w].[Action (DAY(order_par))]</column>
+          </slices>
+          <aggregation value='true' />
+        </view>
+        <style>
+          <style-rule element='worksheet'>
+            <format attr='font-size' value='26' />
+            <format attr='font-weight' value='bold' />
+          </style-rule>
+        </style>
+        <panes>
+          <pane id='2' selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Automatic' />
+            <encodings>
+              <text column='[federated.0931ju30xbwn7o1cu5h3j1585v5w].[ctd:product_id:qk]' />
+            </encodings>
+            <style>
+              <style-rule element='mark'>
+                <format attr='mark-labels-show' value='true' />
+                <format attr='mark-labels-cull' value='true' />
+              </style-rule>
+            </style>
+          </pane>
+        </panes>
+        <rows />
+        <cols />
+      </table>
+      <simple-id uuid='{6869F53D-8AE1-423A-9FB7-E16A31D4E63B}' />
+    </worksheet>
+    <worksheet name='Órdenes totales'>
+      <layout-options>
+        <title>
+          <formatted-text>
+            <run bold='true'>&lt;</run>
+            <run bold='true'>Sheet Name</run>
+            <run bold='true'>&gt;</run>
+          </formatted-text>
+        </title>
+      </layout-options>
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='Consulta SQL personalizada (user_erik_otero)' name='federated.0931ju30xbwn7o1cu5h3j1585v5w' />
+          </datasources>
+          <datasource-dependencies datasource='federated.0931ju30xbwn7o1cu5h3j1585v5w'>
+            <column caption='&quot;Órdenes&quot;' datatype='string' name='[Calculation_1494632162534694914]' role='dimension' type='nominal'>
+              <calculation class='tableau' formula='&quot;Órdenes&quot;' />
+            </column>
+            <column caption='Orders partner' datatype='integer' name='[Calculation_1494632162543800325]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='{FIXED [partner_id],[order_par]: MAX([orders_par])}' />
+            </column>
+            <column datatype='date' name='[order_par]' role='dimension' type='ordinal' />
+            <column datatype='integer' name='[orders_par]' role='measure' type='quantitative' />
+            <column aggregation='Sum' caption='Partner ID' datatype='integer' name='[partner_id]' role='dimension' type='ordinal' />
+            <column caption='Nombre' datatype='string' name='[partner_name]' role='dimension' type='nominal' />
+            <column-instance column='[Calculation_1494632162543800325]' derivation='Sum' name='[sum:Calculation_1494632162543800325:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[order_par]' derivation='Day-Trunc' name='[tdy:order_par:ok]' pivot='key' type='ordinal' />
+          </datasource-dependencies>
+          <filter class='categorical' column='[federated.0931ju30xbwn7o1cu5h3j1585v5w].[Action (&quot;Órdenes&quot;,Partner ID,Nombre)]'>
+            <groupfilter function='crossjoin' user:ui-action-filter='[Action1_538F828830354BDA86C1495B868C81E8]' user:ui-enumeration='all' user:ui-marker='enumerate'>
+              <groupfilter function='level-members' level='[Calculation_1494632162534694914]' />
+              <groupfilter function='level-members' level='[partner_id]' />
+              <groupfilter function='level-members' level='[partner_name]' />
+            </groupfilter>
+          </filter>
+          <filter class='categorical' column='[federated.0931ju30xbwn7o1cu5h3j1585v5w].[Action (DAY(order_par))]'>
+            <groupfilter function='level-members' level='[tdy:order_par:ok]' user:ui-action-filter='[Action2_B297489389EC4814AF56B222028363E6]' user:ui-enumeration='all' user:ui-marker='enumerate' />
+          </filter>
+          <slices>
+            <column>[federated.0931ju30xbwn7o1cu5h3j1585v5w].[Action (&quot;Órdenes&quot;,Partner ID,Nombre)]</column>
+            <column>[federated.0931ju30xbwn7o1cu5h3j1585v5w].[Action (DAY(order_par))]</column>
+          </slices>
+          <aggregation value='true' />
+        </view>
+        <style>
+          <style-rule element='cell'>
+            <format attr='font-size' value='26' />
+            <format attr='font-weight' value='bold' />
+          </style-rule>
+          <style-rule element='worksheet'>
+            <format attr='display-field-labels' scope='cols' value='false' />
+          </style-rule>
+        </style>
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Automatic' />
+            <encodings>
+              <text column='[federated.0931ju30xbwn7o1cu5h3j1585v5w].[sum:Calculation_1494632162543800325:qk]' />
+            </encodings>
+            <style>
+              <style-rule element='mark'>
+                <format attr='mark-labels-cull' value='true' />
+                <format attr='mark-labels-show' value='true' />
+              </style-rule>
+              <style-rule element='pane'>
+                <format attr='minwidth' value='-1' />
+                <format attr='maxwidth' value='-1' />
+              </style-rule>
+            </style>
+          </pane>
+        </panes>
+        <rows onTop='true' total='true' />
+        <cols />
+      </table>
+      <simple-id uuid='{C0A7425E-AD1A-4B01-B4C9-61758D4AF9E2}' />
+    </worksheet>
+  </worksheets>
+  <dashboards>
+    <dashboard name='Dashboard 1'>
+      <repository-location id='Dashboard1' path='/t/Pedidosya/workbooks/CampaaPromosnicas' revision='' site='Pedidosya' />
+      <style />
+      <size sizing-mode='automatic' />
+      <zones>
+        <zone h='100000' id='4' type-v2='layout-basic' w='100000' x='0' y='0'>
+          <zone h='98188' id='3' param='vert' type-v2='layout-flow' w='99034' x='483' y='906'>
+            <zone fixed-size='52' h='6795' id='5' is-fixed='true' type-v2='text' w='99034' x='483' y='906'>
+              <formatted-text>
+                <run bold='true' fontcolor='#ffffff' fontsize='20'>CAMPAÑA PROMOS ÚNICAS</run>
+              </formatted-text>
+              <zone-style>
+                <format attr='border-color' value='#000000' />
+                <format attr='border-style' value='none' />
+                <format attr='border-width' value='0' />
+                <format attr='margin' value='4' />
+                <format attr='background-color' value='#fa0050' />
+              </zone-style>
+            </zone>
+            <zone h='91393' id='7' param='horz' type-v2='layout-flow' w='99034' x='483' y='7701'>
+              <zone h='91393' id='9' param='vert' type-v2='layout-flow' w='55159' x='483' y='7701'>
+                <zone fixed-size='99' h='11212' id='10' is-fixed='true' layout-strategy-id='distribute-evenly' param='horz' type-v2='layout-flow' w='55159' x='483' y='7701'>
+                  <zone h='11212' id='12' name='Partners' w='18407' x='483' y='7701'>
+                    <layout-cache cell-count-h='1' cell-count-w='1' non-cell-size-h='50' type-h='cell' type-w='cell' />
+                    <zone-style>
+                      <format attr='border-color' value='#000000' />
+                      <format attr='border-style' value='none' />
+                      <format attr='border-width' value='0' />
+                      <format attr='margin' value='4' />
+                    </zone-style>
+                  </zone>
+                  <zone h='11212' id='11' name='Productos' w='18406' x='18890' y='7701'>
+                    <layout-cache cell-count-h='1' cell-count-w='1' non-cell-size-h='50' type-h='cell' type-w='cell' />
+                    <zone-style>
+                      <format attr='border-color' value='#000000' />
+                      <format attr='border-style' value='none' />
+                      <format attr='border-width' value='0' />
+                      <format attr='margin' value='4' />
+                    </zone-style>
+                  </zone>
+                  <zone h='11212' id='13' name='Órdenes totales' w='18347' x='37296' y='7701'>
+                    <layout-cache cell-count-h='1' cell-count-w='1' non-cell-size-h='50' type-h='cell' type-w='cell' />
+                    <zone-style>
+                      <format attr='border-color' value='#000000' />
+                      <format attr='border-style' value='none' />
+                      <format attr='border-width' value='0' />
+                      <format attr='margin' value='4' />
+                    </zone-style>
+                  </zone>
+                </zone>
+                <zone h='80181' id='6' name='Evolución órdenes' w='55159' x='483' y='18913'>
+                  <layout-cache minheight='246' minwidth='228' type-h='scalable' type-w='scalable' />
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                  </zone-style>
+                </zone>
+              </zone>
+              <zone fixed-size='719' h='91393' id='8' is-fixed='true' name='Partner' w='43875' x='55642' y='7701'>
+                <layout-cache fixed-size-h='2549' type-h='fixed' type-w='cell' />
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+            </zone>
+          </zone>
+          <zone-style>
+            <format attr='border-color' value='#000000' />
+            <format attr='border-style' value='none' />
+            <format attr='border-width' value='0' />
+            <format attr='margin' value='8' />
+          </zone-style>
+        </zone>
+      </zones>
+      <devicelayouts>
+        <devicelayout auto-generated='true' name='Phone'>
+          <size maxheight='950' minheight='950' sizing-mode='vscroll' />
+          <zones>
+            <zone h='100000' id='21' type-v2='layout-basic' w='100000' x='0' y='0'>
+              <zone h='98188' id='20' param='vert' type-v2='layout-flow' w='99034' x='483' y='906'>
+                <zone fixed-size='52' h='6795' id='5' type-v2='text' w='99034' x='483' y='906'>
+                  <formatted-text>
+                    <run bold='true' fontcolor='#ffffff' fontsize='20'>CAMPAÑA PROMOS ÚNICAS</run>
+                  </formatted-text>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                    <format attr='background-color' value='#fa0050' />
+                  </zone-style>
+                </zone>
+                <zone fixed-size='81' h='11212' id='12' is-fixed='true' name='Partners' w='18407' x='483' y='7701'>
+                  <layout-cache cell-count-h='1' cell-count-w='1' non-cell-size-h='50' type-h='cell' type-w='cell' />
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone fixed-size='81' h='11212' id='11' is-fixed='true' name='Productos' w='18406' x='18890' y='7701'>
+                  <layout-cache cell-count-h='1' cell-count-w='1' non-cell-size-h='50' type-h='cell' type-w='cell' />
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone fixed-size='81' h='11212' id='13' is-fixed='true' name='Órdenes totales' w='18347' x='37296' y='7701'>
+                  <layout-cache cell-count-h='1' cell-count-w='1' non-cell-size-h='50' type-h='cell' type-w='cell' />
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone fixed-size='280' h='91393' id='8' is-fixed='true' name='Partner' w='43875' x='55642' y='7701'>
+                  <layout-cache fixed-size-h='2549' type-h='fixed' type-w='cell' />
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone fixed-size='280' h='80181' id='6' is-fixed='true' name='Evolución órdenes' w='55159' x='483' y='18913'>
+                  <layout-cache minheight='246' minwidth='228' type-h='scalable' type-w='scalable' />
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+              </zone>
+              <zone-style>
+                <format attr='border-color' value='#000000' />
+                <format attr='border-style' value='none' />
+                <format attr='border-width' value='0' />
+                <format attr='margin' value='8' />
+              </zone-style>
+            </zone>
+          </zones>
+        </devicelayout>
+      </devicelayouts>
+      <simple-id uuid='{EC9240F8-F190-4845-B2E0-860D2AAF982C}' />
+    </dashboard>
+  </dashboards>
+  <windows source-height='30'>
+    <window class='worksheet' name='Partners'>
+      <cards>
+        <edge name='left'>
+          <strip size='200'>
+            <card type='pages' />
+            <card type='filters' />
+            <card type='marks' />
+          </strip>
+        </edge>
+        <edge name='top'>
+          <strip size='38'>
+            <card type='columns' />
+          </strip>
+          <strip size='38'>
+            <card type='rows' />
+          </strip>
+          <strip size='38'>
+            <card type='title' />
+          </strip>
+        </edge>
+      </cards>
+      <viewpoint>
+        <highlight>
+          <color-one-way>
+            <field>[federated.0931ju30xbwn7o1cu5h3j1585v5w].[:Measure Names]</field>
+            <field>[federated.0931ju30xbwn7o1cu5h3j1585v5w].[attr:start_at:ok]</field>
+            <field>[federated.0931ju30xbwn7o1cu5h3j1585v5w].[none:Calculation_1494632162534694914:nk]</field>
+            <field>[federated.0931ju30xbwn7o1cu5h3j1585v5w].[none:partner_id:ok]</field>
+            <field>[federated.0931ju30xbwn7o1cu5h3j1585v5w].[none:partner_name:nk]</field>
+            <field>[federated.0931ju30xbwn7o1cu5h3j1585v5w].[none:product_id:ok]</field>
+            <field>[federated.0931ju30xbwn7o1cu5h3j1585v5w].[none:product_name:nk]</field>
+            <field>[federated.0931ju30xbwn7o1cu5h3j1585v5w].[none:start_at:qk]</field>
+            <field>[federated.0931ju30xbwn7o1cu5h3j1585v5w].[yr:end_at:ok]</field>
+            <field>[federated.0931ju30xbwn7o1cu5h3j1585v5w].[yr:order_date:ok]</field>
+            <field>[federated.0931ju30xbwn7o1cu5h3j1585v5w].[yr:start_at:ok]</field>
+          </color-one-way>
+        </highlight>
+      </viewpoint>
+      <simple-id uuid='{6F6949D1-8823-4A3B-B7A5-8BEFB264BF7C}' />
+    </window>
+    <window class='worksheet' name='Órdenes totales'>
+      <cards>
+        <edge name='left'>
+          <strip size='200'>
+            <card type='pages' />
+            <card type='filters' />
+            <card type='marks' />
+          </strip>
+        </edge>
+        <edge name='top'>
+          <strip size='38'>
+            <card type='columns' />
+          </strip>
+          <strip size='38'>
+            <card type='rows' />
+          </strip>
+          <strip size='38'>
+            <card type='title' />
+          </strip>
+        </edge>
+      </cards>
+      <viewpoint>
+        <highlight>
+          <color-one-way>
+            <field>[federated.0931ju30xbwn7o1cu5h3j1585v5w].[:Measure Names]</field>
+            <field>[federated.0931ju30xbwn7o1cu5h3j1585v5w].[attr:start_at:ok]</field>
+            <field>[federated.0931ju30xbwn7o1cu5h3j1585v5w].[none:Calculation_1494632162534694914:nk]</field>
+            <field>[federated.0931ju30xbwn7o1cu5h3j1585v5w].[none:partner_id:ok]</field>
+            <field>[federated.0931ju30xbwn7o1cu5h3j1585v5w].[none:partner_name:nk]</field>
+            <field>[federated.0931ju30xbwn7o1cu5h3j1585v5w].[none:product_id:ok]</field>
+            <field>[federated.0931ju30xbwn7o1cu5h3j1585v5w].[none:product_name:nk]</field>
+            <field>[federated.0931ju30xbwn7o1cu5h3j1585v5w].[none:start_at:qk]</field>
+            <field>[federated.0931ju30xbwn7o1cu5h3j1585v5w].[yr:end_at:ok]</field>
+            <field>[federated.0931ju30xbwn7o1cu5h3j1585v5w].[yr:order_date:ok]</field>
+            <field>[federated.0931ju30xbwn7o1cu5h3j1585v5w].[yr:start_at:ok]</field>
+          </color-one-way>
+        </highlight>
+      </viewpoint>
+      <simple-id uuid='{BFA483CF-003F-42D6-9FC1-8A6E46EE06B3}' />
+    </window>
+    <window class='worksheet' name='Productos'>
+      <cards>
+        <edge name='left'>
+          <strip size='160'>
+            <card type='pages' />
+            <card type='filters' />
+            <card type='marks' />
+          </strip>
+        </edge>
+        <edge name='top'>
+          <strip size='2147483647'>
+            <card type='columns' />
+          </strip>
+          <strip size='2147483647'>
+            <card type='rows' />
+          </strip>
+          <strip size='31'>
+            <card type='title' />
+          </strip>
+        </edge>
+      </cards>
+      <viewpoint>
+        <highlight>
+          <color-one-way>
+            <field>[federated.0931ju30xbwn7o1cu5h3j1585v5w].[none:partner_id:ok]</field>
+            <field>[federated.0931ju30xbwn7o1cu5h3j1585v5w].[none:partner_name:nk]</field>
+            <field>[federated.0931ju30xbwn7o1cu5h3j1585v5w].[none:product_id:ok]</field>
+            <field>[federated.0931ju30xbwn7o1cu5h3j1585v5w].[none:start_at:qk]</field>
+            <field>[federated.0931ju30xbwn7o1cu5h3j1585v5w].[tdy:order_par:qk]</field>
+            <field>[federated.0931ju30xbwn7o1cu5h3j1585v5w].[yr:order_par:ok]</field>
+            <field>[federated.0931ju30xbwn7o1cu5h3j1585v5w].[yr:order_pro:ok]</field>
+          </color-one-way>
+        </highlight>
+      </viewpoint>
+      <simple-id uuid='{98D68FAD-BEC8-4A26-82E5-711C399C3859}' />
+    </window>
+    <window class='worksheet' name='Partner'>
+      <cards>
+        <edge name='left'>
+          <strip size='200'>
+            <card type='pages' />
+            <card type='filters' />
+            <card type='marks' />
+          </strip>
+        </edge>
+        <edge name='top'>
+          <strip size='38'>
+            <card type='columns' />
+          </strip>
+          <strip size='38'>
+            <card type='rows' />
+          </strip>
+          <strip size='38'>
+            <card type='title' />
+          </strip>
+        </edge>
+      </cards>
+      <viewpoint>
+        <highlight>
+          <color-one-way>
+            <field>[federated.0931ju30xbwn7o1cu5h3j1585v5w].[:Measure Names]</field>
+            <field>[federated.0931ju30xbwn7o1cu5h3j1585v5w].[attr:start_at:ok]</field>
+            <field>[federated.0931ju30xbwn7o1cu5h3j1585v5w].[none:Calculation_1494632162534694914:nk]</field>
+            <field>[federated.0931ju30xbwn7o1cu5h3j1585v5w].[none:partner_id:ok]</field>
+            <field>[federated.0931ju30xbwn7o1cu5h3j1585v5w].[none:partner_name:nk]</field>
+            <field>[federated.0931ju30xbwn7o1cu5h3j1585v5w].[none:product_id:ok]</field>
+            <field>[federated.0931ju30xbwn7o1cu5h3j1585v5w].[none:product_name:nk]</field>
+            <field>[federated.0931ju30xbwn7o1cu5h3j1585v5w].[yr:end_at:ok]</field>
+            <field>[federated.0931ju30xbwn7o1cu5h3j1585v5w].[yr:order_date:ok]</field>
+            <field>[federated.0931ju30xbwn7o1cu5h3j1585v5w].[yr:start_at:ok]</field>
+          </color-one-way>
+        </highlight>
+      </viewpoint>
+      <simple-id uuid='{02999689-A218-4B5B-B6AF-DAF276EE2B6F}' />
+    </window>
+    <window class='worksheet' name='Evolución órdenes'>
+      <cards>
+        <edge name='left'>
+          <strip size='160'>
+            <card type='pages' />
+            <card type='filters' />
+            <card type='marks' />
+          </strip>
+        </edge>
+        <edge name='top'>
+          <strip size='2147483647'>
+            <card type='columns' />
+          </strip>
+          <strip size='2147483647'>
+            <card type='rows' />
+          </strip>
+          <strip size='31'>
+            <card type='title' />
+          </strip>
+        </edge>
+        <edge name='right'>
+          <strip size='175'>
+            <card pane-specification-id='1' param='[federated.0931ju30xbwn7o1cu5h3j1585v5w].[:Measure Names]' type='color' />
+          </strip>
+        </edge>
+      </cards>
+      <viewpoint>
+        <highlight>
+          <color-one-way>
+            <field>[federated.0931ju30xbwn7o1cu5h3j1585v5w].[none:order_par:qk]</field>
+            <field>[federated.0931ju30xbwn7o1cu5h3j1585v5w].[none:partner_id:ok]</field>
+            <field>[federated.0931ju30xbwn7o1cu5h3j1585v5w].[none:partner_name:nk]</field>
+            <field>[federated.0931ju30xbwn7o1cu5h3j1585v5w].[tdy:order_par:qk]</field>
+            <field>[federated.0931ju30xbwn7o1cu5h3j1585v5w].[yr:order_par:ok]</field>
+          </color-one-way>
+        </highlight>
+      </viewpoint>
+      <simple-id uuid='{D100470D-607D-42CF-A70A-19442BEE83CB}' />
+    </window>
+    <window class='dashboard' maximized='true' name='Dashboard 1'>
+      <viewpoints>
+        <viewpoint name='Evolución órdenes'>
+          <zoom type='entire-view' />
+        </viewpoint>
+        <viewpoint name='Partner'>
+          <zoom type='fit-width' />
+        </viewpoint>
+        <viewpoint name='Partners'>
+          <zoom type='entire-view' />
+        </viewpoint>
+        <viewpoint name='Productos'>
+          <zoom type='entire-view' />
+        </viewpoint>
+        <viewpoint name='Órdenes totales'>
+          <zoom type='entire-view' />
+        </viewpoint>
+      </viewpoints>
+      <active id='6' />
+      <simple-id uuid='{F59447E0-A0AA-49FE-A1AF-DFB396B05737}' />
+    </window>
+  </windows>
+</workbook>

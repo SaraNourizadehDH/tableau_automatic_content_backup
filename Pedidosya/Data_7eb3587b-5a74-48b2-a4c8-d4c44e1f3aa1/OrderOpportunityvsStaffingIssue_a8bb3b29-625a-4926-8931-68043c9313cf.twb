@@ -1,0 +1,897 @@
+<?xml version='1.0' encoding='utf-8' ?>
+
+<!-- build 20221.22.1108.1355                               -->
+<workbook original-version='18.1' source-build='2021.4.19 (20214.23.0627.1201)' source-platform='mac' version='18.1' xml:base='https://tableau.deliveryhero.net' xmlns:user='http://www.tableausoftware.com/xml/user'>
+  <document-format-change-manifest>
+    <_.fcp.AnimationOnByDefault.true...AnimationOnByDefault />
+    <AutoCreateAndUpdateDSDPhoneLayouts />
+    <CascadingFilters />
+    <_.fcp.MarkAnimation.true...MarkAnimation />
+    <_.fcp.ObjectModelEncapsulateLegacy.true...ObjectModelEncapsulateLegacy />
+    <_.fcp.ObjectModelExtractV2.true...ObjectModelExtractV2 />
+    <_.fcp.ObjectModelTableType.true...ObjectModelTableType />
+    <_.fcp.SchemaViewerObjectModel.true...SchemaViewerObjectModel />
+    <SetMembershipControl />
+    <SheetIdentifierTracking />
+    <WindowsPersistSimpleIdentifiers />
+    <ZoneBackgroundTransparency />
+  </document-format-change-manifest>
+  <repository-location derived-from='https://tableau.deliveryhero.net/t/Pedidosya/workbooks/OrderOpportunityvsStaffingIssue?rev=1.3' id='OrderOpportunityvsStaffingIssue' path='/t/Pedidosya/workbooks' revision='1.4' site='Pedidosya' />
+  <preferences>
+    <preference name='ui.encoding.shelf.height' value='24' />
+    <preference name='ui.shelf.height' value='26' />
+  </preferences>
+  <style>
+    <_.fcp.MarkAnimation.true...style-rule element='animation'>
+      <format attr='animation-on' value='ao-off' />
+    </_.fcp.MarkAnimation.true...style-rule>
+  </style>
+  <datasources>
+    <datasource caption='Consulta SQL personalizada (user_mariana_irureta)' inline='true' name='federated.1519x191r3uzme15aflxi1hk4gj4' version='18.1'>
+      <connection class='federated'>
+        <named-connections>
+          <named-connection caption='BigQuery' name='bigquery.0xtfi0c0769wgq1g3t0w40bjjf73'>
+            <connection CATALOG='peya-delivery-and-support' EXECCATALOG='peya-delivery-and-support' authentication='yes' bq-dataset-fetch-rows='' bq-fetch-rows='' bq-fetch-tasks='' bq-large-fetch-rows='' bq-project-fetch-rows='' bq-response-rows='' class='bigquery' connection-dialect='google-sql' project='peya-delivery-and-support' schema='user_mariana_irureta' server-oauth='' username='ignacio.sardi@pedidosya.com' workgroup-auth-mode='prompt' />
+          </named-connection>
+        </named-connections>
+        <_.fcp.ObjectModelEncapsulateLegacy.false...relation connection='bigquery.0xtfi0c0769wgq1g3t0w40bjjf73' name='Consulta SQL personalizada' type='text'>with logistic_orders AS&#13;
+(&#13;
+SELECT&#13;
+created_date_local,&#13;
+country.country_name,&#13;
+country.country_code,&#13;
+city.city_name,&#13;
+city.city_id,&#13;
+COUNT(DISTINCT platform_order_code) AS logistic_orders,&#13;
+COUNT(DISTINCT CASE WHEN b.staffing_impact_min &gt;&gt; 10 then b.order_id END) AS staffing_issue_orders&#13;
+FROM `peya-bi-tools-pro.il_logistics.fact_logistic_orders` a &#13;
+LEFT JOIN  `peya-datamarts-pro.dm_fulfillment.staffing_issues_order_level` b  &#13;
+  ON a.platform_order_code = b.order_id&#13;
+WHERE&#13;
+created_date_local &gt;&gt;= &quot;2023-01-01&quot;&#13;
+GROUP BY 1,2,3,4,5&#13;
+)&#13;
+&#13;
+, total_sessions AS&#13;
+(&#13;
+SELECT&#13;
+date&#13;
+, country_code&#13;
+, city_id&#13;
+, count(distinct session_id) as total_sessions&#13;
+, count(distinct case when time_start_home_in_minutes is not null then session_id end) as home_sessions&#13;
+, count(distinct case when time_start_list_in_minutes is not null then session_id end) as list_sessions&#13;
+FROM `peya-datamarts-pro.dm_fulfillment.fact_sessions_for_zone_stats`&#13;
+WHERE date &gt;&gt;= &quot;2023-01-01&quot;&#13;
+GROUP BY 1,2,3&#13;
+&#13;
+)&#13;
+SELECT&#13;
+EXTRACT (MONTH FROM ingested_at) as mes&#13;
+, ingested_at as dia&#13;
+, country_code&#13;
+, city_name&#13;
+--, sum(CVR2_sessions) as sessions_cvr2&#13;
+--, sum(lost_orders_p75) as lost_orders_p75&#13;
+--, sum(lost_orders_pond) as lost_orders_pond&#13;
+, sum(lost_orders_comb) as lost_orders_comb&#13;
+, sum(logistic_orders) as logistic_orders&#13;
+, sum(staffing_issue_orders) as staffing_issue_orders&#13;
+, sum(cvr2_sessions) as cvr2_sessions&#13;
+, sum(cvr2_transactions) as cvr2_transactions&#13;
+&#13;
+&#13;
+FROM(&#13;
+SELECT&#13;
+a.*&#13;
+, b.CVR2&#13;
+, b.CVR2_50&#13;
+, b.cvr_index&#13;
+, b.CVR2_75&#13;
+, b.CVR2_sessions&#13;
+, b.CVR2_transactions&#13;
+, logistic_orders&#13;
+, staffing_issue_orders&#13;
+, c.home_sessions&#13;
+, c.list_sessions&#13;
+, case when cvr_index = 1 and md_index_p75 = 1 then (CVR2_75*CVR2_sessions)-(CVR2*CVR2_sessions) else 0 end as lost_orders_p75&#13;
+, case when cvr_index = 1 and md_index_pond = 1 then (CVR2_75*CVR2_sessions)-(CVR2*CVR2_sessions) else 0 end as lost_orders_pond&#13;
+, case when cvr_index = 1 and (md_index_pond = 1 or md_index_p75 = 1) then (CVR2_75*home_sessions)-(CVR2*home_sessions) else 0 end as lost_orders_comb_home&#13;
+, case when cvr_index = 1 and (md_index_pond = 1 or md_index_p75 = 1) then (CVR2_75*list_sessions)-(CVR2*list_sessions) else 0 end as lost_orders_comb_list&#13;
+, case when cvr_index = 1 and (md_index_pond = 1 or md_index_p75 = 1) then (CVR2_75*CVR2_sessions)-(CVR2*CVR2_sessions) else 0 end as lost_orders_comb&#13;
+, (case when d.city_id is not null then 1 else 0 end) valid_city&#13;
+FROM `peya-datamarts-pro.dm_fulfillment.mean_delay_index_daily` a&#13;
+LEFT JOIN `peya-datamarts-pro.dm_fulfillment.cvr_index_daily` b&#13;
+ON a.country_code = b.country_code&#13;
+AND a.city_id = b.city_id&#13;
+AND a.ingested_at = b.date&#13;
+LEFT JOIN logistic_orders d&#13;
+ON a.country_code = d.country_code&#13;
+AND a.city_id = d.city_id&#13;
+AND a.ingested_at = d.created_date_local&#13;
+LEFT JOIN total_sessions c&#13;
+ON a.country_code = c.country_code&#13;
+AND a.city_id = c.city_id&#13;
+AND a.ingested_at = c.date&#13;
+WHERE&#13;
+TRUE&#13;
+--AND a.city_name in (&apos;Buenos aires&apos;, &apos;Gba sur&apos;, &apos;Panama city&apos;, &apos;Panama oeste&apos;, &apos;Asuncion&apos;, &apos;Lima&apos;)&#13;
+--AND EXTRACT(MONTH FROM date) = 8&#13;
+)&#13;
+group by 1,2,3,4&#13;
+order by 1,2,3,4</_.fcp.ObjectModelEncapsulateLegacy.false...relation>
+        <_.fcp.ObjectModelEncapsulateLegacy.true...relation connection='bigquery.0xtfi0c0769wgq1g3t0w40bjjf73' name='Consulta SQL personalizada' type='text'>with logistic_orders AS&#13;
+(&#13;
+SELECT&#13;
+created_date_local,&#13;
+country.country_name,&#13;
+country.country_code,&#13;
+city.city_name,&#13;
+city.city_id,&#13;
+COUNT(DISTINCT platform_order_code) AS logistic_orders,&#13;
+COUNT(DISTINCT CASE WHEN b.staffing_impact_min &gt;&gt; 10 then b.order_id END) AS staffing_issue_orders&#13;
+FROM `peya-bi-tools-pro.il_logistics.fact_logistic_orders` a &#13;
+LEFT JOIN  `peya-datamarts-pro.dm_fulfillment.staffing_issues_order_level` b  &#13;
+  ON a.platform_order_code = b.order_id&#13;
+WHERE&#13;
+created_date_local &gt;&gt;= &quot;2023-01-01&quot;&#13;
+GROUP BY 1,2,3,4,5&#13;
+)&#13;
+&#13;
+, total_sessions AS&#13;
+(&#13;
+SELECT&#13;
+date&#13;
+, country_code&#13;
+, city_id&#13;
+, count(distinct session_id) as total_sessions&#13;
+, count(distinct case when time_start_home_in_minutes is not null then session_id end) as home_sessions&#13;
+, count(distinct case when time_start_list_in_minutes is not null then session_id end) as list_sessions&#13;
+FROM `peya-datamarts-pro.dm_fulfillment.fact_sessions_for_zone_stats`&#13;
+WHERE date &gt;&gt;= &quot;2023-01-01&quot;&#13;
+GROUP BY 1,2,3&#13;
+&#13;
+)&#13;
+SELECT&#13;
+EXTRACT (MONTH FROM ingested_at) as mes&#13;
+, ingested_at as dia&#13;
+, country_code&#13;
+, city_name&#13;
+--, sum(CVR2_sessions) as sessions_cvr2&#13;
+--, sum(lost_orders_p75) as lost_orders_p75&#13;
+--, sum(lost_orders_pond) as lost_orders_pond&#13;
+, sum(lost_orders_comb) as lost_orders_comb&#13;
+, sum(logistic_orders) as logistic_orders&#13;
+, sum(staffing_issue_orders) as staffing_issue_orders&#13;
+, sum(cvr2_sessions) as cvr2_sessions&#13;
+, sum(cvr2_transactions) as cvr2_transactions&#13;
+&#13;
+&#13;
+FROM(&#13;
+SELECT&#13;
+a.*&#13;
+, b.CVR2&#13;
+, b.CVR2_50&#13;
+, b.cvr_index&#13;
+, b.CVR2_75&#13;
+, b.CVR2_sessions&#13;
+, b.CVR2_transactions&#13;
+, logistic_orders&#13;
+, staffing_issue_orders&#13;
+, c.home_sessions&#13;
+, c.list_sessions&#13;
+, case when cvr_index = 1 and md_index_p75 = 1 then (CVR2_75*CVR2_sessions)-(CVR2*CVR2_sessions) else 0 end as lost_orders_p75&#13;
+, case when cvr_index = 1 and md_index_pond = 1 then (CVR2_75*CVR2_sessions)-(CVR2*CVR2_sessions) else 0 end as lost_orders_pond&#13;
+, case when cvr_index = 1 and (md_index_pond = 1 or md_index_p75 = 1) then (CVR2_75*home_sessions)-(CVR2*home_sessions) else 0 end as lost_orders_comb_home&#13;
+, case when cvr_index = 1 and (md_index_pond = 1 or md_index_p75 = 1) then (CVR2_75*list_sessions)-(CVR2*list_sessions) else 0 end as lost_orders_comb_list&#13;
+, case when cvr_index = 1 and (md_index_pond = 1 or md_index_p75 = 1) then (CVR2_75*CVR2_sessions)-(CVR2*CVR2_sessions) else 0 end as lost_orders_comb&#13;
+, (case when d.city_id is not null then 1 else 0 end) valid_city&#13;
+FROM `peya-datamarts-pro.dm_fulfillment.mean_delay_index_daily` a&#13;
+LEFT JOIN `peya-datamarts-pro.dm_fulfillment.cvr_index_daily` b&#13;
+ON a.country_code = b.country_code&#13;
+AND a.city_id = b.city_id&#13;
+AND a.ingested_at = b.date&#13;
+LEFT JOIN logistic_orders d&#13;
+ON a.country_code = d.country_code&#13;
+AND a.city_id = d.city_id&#13;
+AND a.ingested_at = d.created_date_local&#13;
+LEFT JOIN total_sessions c&#13;
+ON a.country_code = c.country_code&#13;
+AND a.city_id = c.city_id&#13;
+AND a.ingested_at = c.date&#13;
+WHERE&#13;
+TRUE&#13;
+--AND a.city_name in (&apos;Buenos aires&apos;, &apos;Gba sur&apos;, &apos;Panama city&apos;, &apos;Panama oeste&apos;, &apos;Asuncion&apos;, &apos;Lima&apos;)&#13;
+--AND EXTRACT(MONTH FROM date) = 8&#13;
+)&#13;
+group by 1,2,3,4&#13;
+order by 1,2,3,4</_.fcp.ObjectModelEncapsulateLegacy.true...relation>
+        <metadata-records>
+          <metadata-record class='column'>
+            <remote-name>mes</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[mes]</local-name>
+            <parent-name>[Consulta SQL personalizada]</parent-name>
+            <remote-alias>mes</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_F0547EC0C6BA46CD8605A929B0745122]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>dia</remote-name>
+            <remote-type>7</remote-type>
+            <local-name>[dia]</local-name>
+            <parent-name>[Consulta SQL personalizada]</parent-name>
+            <remote-alias>dia</remote-alias>
+            <local-type>date</local-type>
+            <aggregation>Year</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_F0547EC0C6BA46CD8605A929B0745122]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>country_code</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[country_code]</local-name>
+            <parent-name>[Consulta SQL personalizada]</parent-name>
+            <remote-alias>country_code</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_F0547EC0C6BA46CD8605A929B0745122]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>city_name</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[city_name]</local-name>
+            <parent-name>[Consulta SQL personalizada]</parent-name>
+            <remote-alias>city_name</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_F0547EC0C6BA46CD8605A929B0745122]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>lost_orders_comb</remote-name>
+            <remote-type>5</remote-type>
+            <local-name>[lost_orders_comb]</local-name>
+            <parent-name>[Consulta SQL personalizada]</parent-name>
+            <remote-alias>lost_orders_comb</remote-alias>
+            <local-type>real</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_F0547EC0C6BA46CD8605A929B0745122]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>logistic_orders</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[logistic_orders]</local-name>
+            <parent-name>[Consulta SQL personalizada]</parent-name>
+            <remote-alias>logistic_orders</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_F0547EC0C6BA46CD8605A929B0745122]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>staffing_issue_orders</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[staffing_issue_orders]</local-name>
+            <parent-name>[Consulta SQL personalizada]</parent-name>
+            <remote-alias>staffing_issue_orders</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_F0547EC0C6BA46CD8605A929B0745122]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>cvr2_sessions</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[cvr2_sessions]</local-name>
+            <parent-name>[Consulta SQL personalizada]</parent-name>
+            <remote-alias>cvr2_sessions</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_F0547EC0C6BA46CD8605A929B0745122]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>cvr2_transactions</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[cvr2_transactions]</local-name>
+            <parent-name>[Consulta SQL personalizada]</parent-name>
+            <remote-alias>cvr2_transactions</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_F0547EC0C6BA46CD8605A929B0745122]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+        </metadata-records>
+      </connection>
+      <aliases enabled='yes' />
+      <column caption='Staffing Issue prop' datatype='real' name='[Calculation_1065101380394094592]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='SUM([staffing_issue_orders])/SUM([logistic_orders])' />
+      </column>
+      <column caption='Order Opportunity prop' datatype='real' name='[Calculation_1065101380394299393]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='SUM([lost_orders_comb])/SUM([logistic_orders])' />
+      </column>
+      <column caption='CVR2' datatype='real' name='[Calculation_229683581212176384]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='sum([cvr2_transactions])/sum([cvr2_sessions])' />
+      </column>
+      <_.fcp.ObjectModelTableType.true...column caption='Consulta SQL personalizada' datatype='table' name='[__tableau_internal_object_id__].[_F0547EC0C6BA46CD8605A929B0745122]' role='measure' type='quantitative' />
+      <column datatype='string' name='[city_name]' role='dimension' semantic-role='[City].[Name]' type='nominal' />
+      <column datatype='string' name='[country_code]' role='dimension' semantic-role='[Country].[ISO3166_2]' type='nominal' />
+      <column-instance column='[Calculation_1065101380394094592]' derivation='User' name='[usr:Calculation_1065101380394094592:qk]' pivot='key' type='quantitative' />
+      <column-instance column='[Calculation_1065101380394299393]' derivation='User' name='[usr:Calculation_1065101380394299393:qk]' pivot='key' type='quantitative' />
+      <column-instance column='[Calculation_229683581212176384]' derivation='User' name='[usr:Calculation_229683581212176384:qk]' pivot='key' type='quantitative' />
+      <drill-paths>
+        <drill-path name='country_code, city_name'>
+          <field>[country_code]</field>
+          <field>[city_name]</field>
+        </drill-path>
+      </drill-paths>
+      <extract _.fcp.ObjectModelExtractV2.true...object-id='' count='-1' enabled='false' units='records'>
+        <connection access_mode='readonly' authentication='auth-none' author-locale='es_ES' class='hyper' dbname='C:/Users/mariana.irureta/Documents/Mi Repositorio de Tableau/Libros de trabajo/Consulta SQL personalizada (user_mariana_irureta).hyper' default-settings='yes' schema='Extract' sslmode='' tablename='Extract' update-time='09/12/2023 02:59:55 PM' username='tableau_internal_user'>
+          <_.fcp.ObjectModelEncapsulateLegacy.false...relation name='Extract' table='[Extract].[Extract]' type='table' />
+          <_.fcp.ObjectModelEncapsulateLegacy.true...relation name='Extract' table='[Extract].[Extract]' type='table' />
+          <refresh>
+            <refresh-event add-from-file-path='Consulta SQL personalizada (user_mariana_irureta)' increment-value='%null%' refresh-type='create' rows-inserted='60373' timestamp-start='2023-09-12 14:59:55.193' />
+          </refresh>
+          <metadata-records>
+            <metadata-record class='column'>
+              <remote-name>mes</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[mes]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>mes</remote-alias>
+              <ordinal>0</ordinal>
+              <family>Consulta SQL personalizada</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>9</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_F0547EC0C6BA46CD8605A929B0745122]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>dia</remote-name>
+              <remote-type>133</remote-type>
+              <local-name>[dia]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>dia</remote-alias>
+              <ordinal>1</ordinal>
+              <family>Consulta SQL personalizada</family>
+              <local-type>date</local-type>
+              <aggregation>Year</aggregation>
+              <approx-count>416</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_F0547EC0C6BA46CD8605A929B0745122]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>country_code</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[country_code]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>country_code</remote-alias>
+              <ordinal>2</ordinal>
+              <family>Consulta SQL personalizada</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>15</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_F0547EC0C6BA46CD8605A929B0745122]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>city_name</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[city_name]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>city_name</remote-alias>
+              <ordinal>3</ordinal>
+              <family>Consulta SQL personalizada</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>343</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_F0547EC0C6BA46CD8605A929B0745122]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>lost_orders_comb</remote-name>
+              <remote-type>5</remote-type>
+              <local-name>[lost_orders_comb]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>lost_orders_comb</remote-alias>
+              <ordinal>4</ordinal>
+              <family>Consulta SQL personalizada</family>
+              <local-type>real</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>15747</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_F0547EC0C6BA46CD8605A929B0745122]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>logistic_orders</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[logistic_orders]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>logistic_orders</remote-alias>
+              <ordinal>5</ordinal>
+              <family>Consulta SQL personalizada</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>4831</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_F0547EC0C6BA46CD8605A929B0745122]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>staffing_issue_orders</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[staffing_issue_orders]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>staffing_issue_orders</remote-alias>
+              <ordinal>6</ordinal>
+              <family>Consulta SQL personalizada</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>1398</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_F0547EC0C6BA46CD8605A929B0745122]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+          </metadata-records>
+        </connection>
+      </extract>
+      <layout _.fcp.SchemaViewerObjectModel.false...dim-percentage='0.5' _.fcp.SchemaViewerObjectModel.false...measure-percentage='0.4' dim-ordering='alphabetic' measure-ordering='alphabetic' show-structure='true' />
+      <style>
+        <style-rule element='mark'>
+          <encoding attr='color' field='[:Measure Names]' type='palette'>
+            <map to='#4e79a7'>
+              <bucket>&quot;[federated.1519x191r3uzme15aflxi1hk4gj4].[usr:Calculation_229683581212176384:qk]&quot;</bucket>
+            </map>
+            <map to='#5c6068'>
+              <bucket>&quot;[federated.1519x191r3uzme15aflxi1hk4gj4].[usr:Calculation_1065101380394094592:qk]&quot;</bucket>
+            </map>
+            <map to='#c8133b'>
+              <bucket>&quot;[federated.1519x191r3uzme15aflxi1hk4gj4].[usr:Calculation_1065101380394299393:qk]&quot;</bucket>
+            </map>
+          </encoding>
+        </style-rule>
+      </style>
+      <semantic-values>
+        <semantic-value key='[Country].[Name]' value='&quot;República Oriental de Uruguay&quot;' />
+      </semantic-values>
+      <date-options start-of-week='monday' />
+      <_.fcp.ObjectModelEncapsulateLegacy.true...object-graph>
+        <objects>
+          <object caption='Consulta SQL personalizada' id='_F0547EC0C6BA46CD8605A929B0745122'>
+            <properties context=''>
+              <relation connection='bigquery.0xtfi0c0769wgq1g3t0w40bjjf73' name='Consulta SQL personalizada' type='text'>with logistic_orders AS&#13;
+(&#13;
+SELECT&#13;
+created_date_local,&#13;
+country.country_name,&#13;
+country.country_code,&#13;
+city.city_name,&#13;
+city.city_id,&#13;
+COUNT(DISTINCT platform_order_code) AS logistic_orders,&#13;
+COUNT(DISTINCT CASE WHEN b.staffing_impact_min &gt;&gt; 10 then b.order_id END) AS staffing_issue_orders&#13;
+FROM `peya-bi-tools-pro.il_logistics.fact_logistic_orders` a &#13;
+LEFT JOIN  `peya-datamarts-pro.dm_fulfillment.staffing_issues_order_level` b  &#13;
+  ON a.platform_order_code = b.order_id&#13;
+WHERE&#13;
+created_date_local &gt;&gt;= &quot;2023-01-01&quot;&#13;
+GROUP BY 1,2,3,4,5&#13;
+)&#13;
+&#13;
+, total_sessions AS&#13;
+(&#13;
+SELECT&#13;
+date&#13;
+, country_code&#13;
+, city_id&#13;
+, count(distinct session_id) as total_sessions&#13;
+, count(distinct case when time_start_home_in_minutes is not null then session_id end) as home_sessions&#13;
+, count(distinct case when time_start_list_in_minutes is not null then session_id end) as list_sessions&#13;
+FROM `peya-datamarts-pro.dm_fulfillment.fact_sessions_for_zone_stats`&#13;
+WHERE date &gt;&gt;= &quot;2023-01-01&quot;&#13;
+GROUP BY 1,2,3&#13;
+&#13;
+)&#13;
+SELECT&#13;
+EXTRACT (MONTH FROM ingested_at) as mes&#13;
+, ingested_at as dia&#13;
+, country_code&#13;
+, city_name&#13;
+--, sum(CVR2_sessions) as sessions_cvr2&#13;
+--, sum(lost_orders_p75) as lost_orders_p75&#13;
+--, sum(lost_orders_pond) as lost_orders_pond&#13;
+, sum(lost_orders_comb) as lost_orders_comb&#13;
+, sum(logistic_orders) as logistic_orders&#13;
+, sum(staffing_issue_orders) as staffing_issue_orders&#13;
+, sum(cvr2_sessions) as cvr2_sessions&#13;
+, sum(cvr2_transactions) as cvr2_transactions&#13;
+&#13;
+&#13;
+FROM(&#13;
+SELECT&#13;
+a.*&#13;
+, b.CVR2&#13;
+, b.CVR2_50&#13;
+, b.cvr_index&#13;
+, b.CVR2_75&#13;
+, b.CVR2_sessions&#13;
+, b.CVR2_transactions&#13;
+, logistic_orders&#13;
+, staffing_issue_orders&#13;
+, c.home_sessions&#13;
+, c.list_sessions&#13;
+, case when cvr_index = 1 and md_index_p75 = 1 then (CVR2_75*CVR2_sessions)-(CVR2*CVR2_sessions) else 0 end as lost_orders_p75&#13;
+, case when cvr_index = 1 and md_index_pond = 1 then (CVR2_75*CVR2_sessions)-(CVR2*CVR2_sessions) else 0 end as lost_orders_pond&#13;
+, case when cvr_index = 1 and (md_index_pond = 1 or md_index_p75 = 1) then (CVR2_75*home_sessions)-(CVR2*home_sessions) else 0 end as lost_orders_comb_home&#13;
+, case when cvr_index = 1 and (md_index_pond = 1 or md_index_p75 = 1) then (CVR2_75*list_sessions)-(CVR2*list_sessions) else 0 end as lost_orders_comb_list&#13;
+, case when cvr_index = 1 and (md_index_pond = 1 or md_index_p75 = 1) then (CVR2_75*CVR2_sessions)-(CVR2*CVR2_sessions) else 0 end as lost_orders_comb&#13;
+, (case when d.city_id is not null then 1 else 0 end) valid_city&#13;
+FROM `peya-datamarts-pro.dm_fulfillment.mean_delay_index_daily` a&#13;
+LEFT JOIN `peya-datamarts-pro.dm_fulfillment.cvr_index_daily` b&#13;
+ON a.country_code = b.country_code&#13;
+AND a.city_id = b.city_id&#13;
+AND a.ingested_at = b.date&#13;
+LEFT JOIN logistic_orders d&#13;
+ON a.country_code = d.country_code&#13;
+AND a.city_id = d.city_id&#13;
+AND a.ingested_at = d.created_date_local&#13;
+LEFT JOIN total_sessions c&#13;
+ON a.country_code = c.country_code&#13;
+AND a.city_id = c.city_id&#13;
+AND a.ingested_at = c.date&#13;
+WHERE&#13;
+TRUE&#13;
+--AND a.city_name in (&apos;Buenos aires&apos;, &apos;Gba sur&apos;, &apos;Panama city&apos;, &apos;Panama oeste&apos;, &apos;Asuncion&apos;, &apos;Lima&apos;)&#13;
+--AND EXTRACT(MONTH FROM date) = 8&#13;
+)&#13;
+group by 1,2,3,4&#13;
+order by 1,2,3,4</relation>
+            </properties>
+            <properties context='extract'>
+              <relation name='Extract' table='[Extract].[Extract]' type='table' />
+            </properties>
+          </object>
+        </objects>
+      </_.fcp.ObjectModelEncapsulateLegacy.true...object-graph>
+    </datasource>
+  </datasources>
+  <worksheets>
+    <worksheet name='order opp vs staffing issue'>
+      <repository-location derived-from='https://tableau.deliveryhero.net/t/Pedidosya/workbooks/OrderOpportunityvsStaffingIssue/orderoppvsstaffingissue?rev=' id='orderoppvsstaffingissue' path='/t/Pedidosya/workbooks/OrderOpportunityvsStaffingIssue' revision='' site='Pedidosya' />
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='Consulta SQL personalizada (user_mariana_irureta)' name='federated.1519x191r3uzme15aflxi1hk4gj4' />
+          </datasources>
+          <datasource-dependencies datasource='federated.1519x191r3uzme15aflxi1hk4gj4'>
+            <column caption='Staffing Issue prop' datatype='real' name='[Calculation_1065101380394094592]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='SUM([staffing_issue_orders])/SUM([logistic_orders])' />
+            </column>
+            <column caption='Order Opportunity prop' datatype='real' name='[Calculation_1065101380394299393]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='SUM([lost_orders_comb])/SUM([logistic_orders])' />
+            </column>
+            <column caption='CVR2' datatype='real' name='[Calculation_229683581212176384]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='sum([cvr2_transactions])/sum([cvr2_sessions])' />
+            </column>
+            <column datatype='string' name='[city_name]' role='dimension' semantic-role='[City].[Name]' type='nominal' />
+            <column datatype='string' name='[country_code]' role='dimension' semantic-role='[Country].[ISO3166_2]' type='nominal' />
+            <column datatype='integer' name='[cvr2_sessions]' role='measure' type='quantitative' />
+            <column datatype='integer' name='[cvr2_transactions]' role='measure' type='quantitative' />
+            <column datatype='date' name='[dia]' role='dimension' type='ordinal' />
+            <column-instance column='[dia]' derivation='Day' name='[dy:dia:ok]' pivot='key' type='ordinal' />
+            <column datatype='integer' name='[logistic_orders]' role='measure' type='quantitative' />
+            <column datatype='real' name='[lost_orders_comb]' role='measure' type='quantitative' />
+            <column datatype='integer' name='[mes]' role='measure' type='quantitative' />
+            <column-instance column='[dia]' derivation='Month' name='[mn:dia:ok]' pivot='key' type='ordinal' />
+            <column-instance column='[city_name]' derivation='None' name='[none:city_name:nk]' pivot='key' type='nominal' />
+            <column-instance column='[country_code]' derivation='None' name='[none:country_code:nk]' pivot='key' type='nominal' />
+            <column-instance column='[mes]' derivation='None' name='[none:mes:qk]' pivot='key' type='quantitative' />
+            <column datatype='integer' name='[staffing_issue_orders]' role='measure' type='quantitative' />
+            <column-instance column='[Calculation_1065101380394094592]' derivation='User' name='[usr:Calculation_1065101380394094592:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[Calculation_1065101380394299393]' derivation='User' name='[usr:Calculation_1065101380394299393:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[Calculation_229683581212176384]' derivation='User' name='[usr:Calculation_229683581212176384:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[dia]' derivation='Year' name='[yr:dia:ok]' pivot='key' type='ordinal' />
+          </datasource-dependencies>
+          <filter class='categorical' column='[federated.1519x191r3uzme15aflxi1hk4gj4].[:Measure Names]'>
+            <groupfilter function='union' user:op='manual'>
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.1519x191r3uzme15aflxi1hk4gj4].[usr:Calculation_229683581212176384:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.1519x191r3uzme15aflxi1hk4gj4].[usr:Calculation_1065101380394299393:qk]&quot;' />
+            </groupfilter>
+          </filter>
+          <filter class='categorical' column='[federated.1519x191r3uzme15aflxi1hk4gj4].[none:city_name:nk]'>
+            <groupfilter function='level-members' level='[none:city_name:nk]' user:ui-enumeration='all' user:ui-marker='enumerate' />
+          </filter>
+          <filter class='categorical' column='[federated.1519x191r3uzme15aflxi1hk4gj4].[none:country_code:nk]'>
+            <groupfilter function='level-members' level='[none:country_code:nk]' user:ui-enumeration='all' user:ui-marker='enumerate' />
+          </filter>
+          <filter class='quantitative' column='[federated.1519x191r3uzme15aflxi1hk4gj4].[none:mes:qk]' included-values='in-range'>
+            <min>5</min>
+            <max>9</max>
+          </filter>
+          <slices>
+            <column>[federated.1519x191r3uzme15aflxi1hk4gj4].[none:mes:qk]</column>
+            <column>[federated.1519x191r3uzme15aflxi1hk4gj4].[none:country_code:nk]</column>
+            <column>[federated.1519x191r3uzme15aflxi1hk4gj4].[none:city_name:nk]</column>
+            <column>[federated.1519x191r3uzme15aflxi1hk4gj4].[:Measure Names]</column>
+          </slices>
+          <aggregation value='true' />
+        </view>
+        <style>
+          <style-rule element='axis'>
+            <encoding attr='space' class='0' field='[federated.1519x191r3uzme15aflxi1hk4gj4].[Multiple Values]' field-type='quantitative' fold='true' scope='rows' type='space' />
+          </style-rule>
+          <style-rule element='cell'>
+            <format attr='width' field='[federated.1519x191r3uzme15aflxi1hk4gj4].[dy:dia:ok]' value='21' />
+          </style-rule>
+          <style-rule element='header'>
+            <format attr='height' field='[federated.1519x191r3uzme15aflxi1hk4gj4].[yr:dia:ok]' value='19' />
+          </style-rule>
+        </style>
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Automatic' />
+            <encodings>
+              <color column='[federated.1519x191r3uzme15aflxi1hk4gj4].[:Measure Names]' />
+            </encodings>
+            <style>
+              <style-rule element='pane'>
+                <format attr='minwidth' value='-1' />
+                <format attr='maxwidth' value='-1' />
+              </style-rule>
+            </style>
+          </pane>
+          <pane id='1' selection-relaxation-option='selection-relaxation-allow' y-axis-name='[federated.1519x191r3uzme15aflxi1hk4gj4].[usr:Calculation_1065101380394094592:qk]'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Automatic' />
+            <encodings>
+              <color column='[federated.1519x191r3uzme15aflxi1hk4gj4].[:Measure Names]' />
+            </encodings>
+            <style>
+              <style-rule element='mark'>
+                <format attr='mark-color' value='#fa0050' />
+              </style-rule>
+            </style>
+          </pane>
+          <pane id='2' selection-relaxation-option='selection-relaxation-allow' y-axis-name='[federated.1519x191r3uzme15aflxi1hk4gj4].[Multiple Values]'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Automatic' />
+            <encodings>
+              <color column='[federated.1519x191r3uzme15aflxi1hk4gj4].[:Measure Names]' />
+            </encodings>
+            <style>
+              <style-rule element='mark'>
+                <format attr='mark-color' value='#100423' />
+              </style-rule>
+            </style>
+          </pane>
+        </panes>
+        <rows>([federated.1519x191r3uzme15aflxi1hk4gj4].[mn:dia:ok] * ([federated.1519x191r3uzme15aflxi1hk4gj4].[usr:Calculation_1065101380394094592:qk] + [federated.1519x191r3uzme15aflxi1hk4gj4].[Multiple Values]))</rows>
+        <cols>([federated.1519x191r3uzme15aflxi1hk4gj4].[yr:dia:ok] / [federated.1519x191r3uzme15aflxi1hk4gj4].[dy:dia:ok])</cols>
+      </table>
+      <simple-id uuid='{0190C97A-2687-43B2-A083-67CE02F407D1}' />
+    </worksheet>
+  </worksheets>
+  <dashboards>
+    <dashboard name='Dashboard 1'>
+      <repository-location derived-from='https://tableau.deliveryhero.net/t/Pedidosya/workbooks/OrderOpportunityvsStaffingIssue/Dashboard1?rev=' id='Dashboard1' path='/t/Pedidosya/workbooks/OrderOpportunityvsStaffingIssue' revision='' site='Pedidosya' />
+      <style />
+      <size maxheight='800' maxwidth='1000' minheight='800' minwidth='1000' />
+      <datasources>
+        <datasource caption='Consulta SQL personalizada (user_mariana_irureta)' name='federated.1519x191r3uzme15aflxi1hk4gj4' />
+      </datasources>
+      <datasource-dependencies datasource='federated.1519x191r3uzme15aflxi1hk4gj4'>
+        <column datatype='string' name='[city_name]' role='dimension' semantic-role='[City].[Name]' type='nominal' />
+        <column datatype='string' name='[country_code]' role='dimension' semantic-role='[Country].[ISO3166_2]' type='nominal' />
+        <column datatype='integer' name='[mes]' role='measure' type='quantitative' />
+        <column-instance column='[city_name]' derivation='None' name='[none:city_name:nk]' pivot='key' type='nominal' />
+        <column-instance column='[country_code]' derivation='None' name='[none:country_code:nk]' pivot='key' type='nominal' />
+        <column-instance column='[mes]' derivation='None' name='[none:mes:qk]' pivot='key' type='quantitative' />
+      </datasource-dependencies>
+      <zones>
+        <zone h='100000' id='4' type-v2='layout-basic' w='100000' x='0' y='0'>
+          <zone h='98000' id='7' param='horz' type-v2='layout-flow' w='98400' x='800' y='1000'>
+            <zone h='98000' id='5' type-v2='layout-basic' w='82400' x='800' y='1000'>
+              <zone h='98000' id='3' name='order opp vs staffing issue' w='82400' x='800' y='1000'>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+            </zone>
+            <zone fixed-size='160' h='98000' id='6' is-fixed='true' param='vert' type-v2='layout-flow' w='16000' x='83200' y='1000'>
+              <zone h='8625' id='8' name='order opp vs staffing issue' param='[federated.1519x191r3uzme15aflxi1hk4gj4].[none:mes:qk]' show-domain='false' show-null-ctrls='false' type-v2='filter' w='16000' x='83200' y='1000'>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+              <zone h='6500' id='9' mode='checkdropdown' name='order opp vs staffing issue' param='[federated.1519x191r3uzme15aflxi1hk4gj4].[none:country_code:nk]' type-v2='filter' w='16000' x='83200' y='9625'>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+              <zone h='6500' id='10' mode='checkdropdown' name='order opp vs staffing issue' param='[federated.1519x191r3uzme15aflxi1hk4gj4].[none:city_name:nk]' type-v2='filter' values='cascading' w='16000' x='83200' y='16125'>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+              <zone h='10750' id='11' name='order opp vs staffing issue' pane-specification-id='1' param='[federated.1519x191r3uzme15aflxi1hk4gj4].[:Measure Names]' type-v2='color' w='16000' x='83200' y='22625'>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+            </zone>
+          </zone>
+          <zone-style>
+            <format attr='border-color' value='#000000' />
+            <format attr='border-style' value='none' />
+            <format attr='border-width' value='0' />
+            <format attr='margin' value='8' />
+          </zone-style>
+        </zone>
+      </zones>
+      <devicelayouts>
+        <devicelayout auto-generated='true' name='Phone'>
+          <size maxheight='700' minheight='700' sizing-mode='vscroll' />
+          <zones>
+            <zone h='100000' id='31' type-v2='layout-basic' w='100000' x='0' y='0'>
+              <zone h='98000' id='30' param='vert' type-v2='layout-flow' w='98400' x='800' y='1000'>
+                <zone h='8625' id='8' name='order opp vs staffing issue' param='[federated.1519x191r3uzme15aflxi1hk4gj4].[none:mes:qk]' show-domain='false' show-null-ctrls='false' type-v2='filter' w='16000' x='83200' y='1000'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone h='6500' id='9' mode='checkdropdown' name='order opp vs staffing issue' param='[federated.1519x191r3uzme15aflxi1hk4gj4].[none:country_code:nk]' type-v2='filter' w='16000' x='83200' y='9625'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone h='6500' id='10' mode='checkdropdown' name='order opp vs staffing issue' param='[federated.1519x191r3uzme15aflxi1hk4gj4].[none:city_name:nk]' type-v2='filter' values='cascading' w='16000' x='83200' y='16125'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone fixed-size='280' h='98000' id='3' is-fixed='true' name='order opp vs staffing issue' w='82400' x='800' y='1000'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone h='10750' id='11' name='order opp vs staffing issue' pane-specification-id='1' param='[federated.1519x191r3uzme15aflxi1hk4gj4].[:Measure Names]' type-v2='color' w='16000' x='83200' y='22625'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+              </zone>
+              <zone-style>
+                <format attr='border-color' value='#000000' />
+                <format attr='border-style' value='none' />
+                <format attr='border-width' value='0' />
+                <format attr='margin' value='8' />
+              </zone-style>
+            </zone>
+          </zones>
+        </devicelayout>
+      </devicelayouts>
+      <simple-id uuid='{05353E2E-2465-4C5B-9F50-FABA013A9119}' />
+    </dashboard>
+  </dashboards>
+  <windows source-height='30'>
+    <window class='worksheet' name='order opp vs staffing issue'>
+      <cards>
+        <edge name='left'>
+          <strip size='225'>
+            <card type='pages' />
+            <card type='filters' />
+            <card type='marks' />
+            <card type='measures' />
+          </strip>
+        </edge>
+        <edge name='top'>
+          <strip size='72'>
+            <card type='columns' />
+          </strip>
+          <strip size='72'>
+            <card type='rows' />
+          </strip>
+          <strip size='69'>
+            <card type='title' />
+          </strip>
+        </edge>
+        <edge name='right'>
+          <strip size='238'>
+            <card param='[federated.1519x191r3uzme15aflxi1hk4gj4].[none:mes:qk]' show-domain='false' show-null-ctrls='false' type='filter' />
+            <card param='[federated.1519x191r3uzme15aflxi1hk4gj4].[none:country_code:nk]' type='filter' />
+            <card mode='checkdropdown' param='[federated.1519x191r3uzme15aflxi1hk4gj4].[none:city_name:nk]' type='filter' values='cascading' />
+            <card pane-specification-id='1' param='[federated.1519x191r3uzme15aflxi1hk4gj4].[:Measure Names]' type='color' />
+          </strip>
+        </edge>
+      </cards>
+      <viewpoint>
+        <highlight field='[federated.1519x191r3uzme15aflxi1hk4gj4].[:Measure Names]'>
+          <color-one-way>
+            <field>[federated.1519x191r3uzme15aflxi1hk4gj4].[:Measure Names]</field>
+            <field>[federated.1519x191r3uzme15aflxi1hk4gj4].[mn:dia:ok]</field>
+            <field>[federated.1519x191r3uzme15aflxi1hk4gj4].[none:city_name:nk]</field>
+            <field>[federated.1519x191r3uzme15aflxi1hk4gj4].[none:country_code:nk]</field>
+            <field>[federated.1519x191r3uzme15aflxi1hk4gj4].[none:mes:qk]</field>
+            <field>[federated.1519x191r3uzme15aflxi1hk4gj4].[yr:dia:ok]</field>
+          </color-one-way>
+          <bucket-selection>
+            <bucket>&quot;[federated.1519x191r3uzme15aflxi1hk4gj4].[usr:Calculation_229683581212176384:qk]&quot;</bucket>
+          </bucket-selection>
+        </highlight>
+      </viewpoint>
+      <simple-id uuid='{FA496ACE-C63B-427D-B9A4-2F365D0BFDC0}' />
+    </window>
+    <window class='dashboard' maximized='true' name='Dashboard 1'>
+      <viewpoints>
+        <viewpoint name='order opp vs staffing issue'>
+          <zoom type='entire-view' />
+          <selection-collection>
+            <node-selection select-tuples='false'>
+              <oriented-node-reference orientation='vertical'>
+                <node-reference>
+                  <fields>
+                    <field>[federated.1519x191r3uzme15aflxi1hk4gj4].[mn:dia:ok]</field>
+                  </fields>
+                  <multibucket>
+                    <bucket>6</bucket>
+                  </multibucket>
+                  <axis>[federated.1519x191r3uzme15aflxi1hk4gj4].[Multiple Values]</axis>
+                </node-reference>
+                <page-reference />
+              </oriented-node-reference>
+            </node-selection>
+          </selection-collection>
+        </viewpoint>
+      </viewpoints>
+      <active id='3' />
+      <simple-id uuid='{0464367D-C0B5-4710-8289-E2318F8A06C9}' />
+    </window>
+  </windows>
+</workbook>

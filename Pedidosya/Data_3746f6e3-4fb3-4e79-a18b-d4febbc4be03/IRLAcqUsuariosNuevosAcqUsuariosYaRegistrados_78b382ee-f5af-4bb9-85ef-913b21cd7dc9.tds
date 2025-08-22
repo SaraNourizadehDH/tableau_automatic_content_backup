@@ -1,0 +1,404 @@
+<?xml version='1.0' encoding='utf-8' ?>
+
+<!-- build 20221.22.1108.1355                               -->
+<datasource formatted-name='federated.1ypvtug12kbrt51dscr9h1ty9b7i' inline='true' source-platform='win' version='18.1' xml:base='https://tableau.deliveryhero.net' xmlns:user='http://www.tableausoftware.com/xml/user'>
+  <document-format-change-manifest>
+    <_.fcp.ObjectModelEncapsulateLegacy.true...ObjectModelEncapsulateLegacy />
+    <_.fcp.ObjectModelExtractV2.true...ObjectModelExtractV2 />
+    <_.fcp.ObjectModelTableType.true...ObjectModelTableType />
+    <_.fcp.SchemaViewerObjectModel.true...SchemaViewerObjectModel />
+  </document-format-change-manifest>
+  <repository-location id='IRLAcqUsuariosNuevosAcqUsuariosYaRegistrados' path='/t/Pedidosya/datasources' revision='1.0' site='Pedidosya' />
+  <connection class='federated'>
+    <named-connections>
+      <named-connection caption='BigQuery' name='bigquery.1byqan81c2y2yk1bzvj061uj9k9o'>
+        <connection CATALOG='peya-growth-and-onboarding' EXECCATALOG='peya-growth-and-onboarding' authentication='oauth' bq-dataset-fetch-rows='' bq-fetch-rows='' bq-fetch-tasks='10' bq-large-fetch-rows='' bq-project-fetch-rows='2000' bq-response-rows='' class='bigquery' connection-dialect='google-sql' project='peya-growth-and-onboarding' schema='automated_tables_reports' server-oauth='' username='guido.oliveri@pedidosya.com' workgroup-auth-mode='prompt'>
+          <connection-customization class='bigquery' enabled='false' version='18.1'>
+            <vendor name='bigquery' />
+            <driver name='bigquery' />
+            <customizations>
+              <customization name='CAP_BIGQUERY_FORCE_SPOOL_JOB' value='no' />
+              <customization name='CAP_FAST_METADATA' value='no' />
+              <customization name='bq-fetch-tasks' value='10' />
+              <customization name='bq-project-fetch-rows' value='2000' />
+            </customizations>
+          </connection-customization>
+        </connection>
+      </named-connection>
+    </named-connections>
+    <_.fcp.ObjectModelEncapsulateLegacy.false...relation connection='bigquery.1byqan81c2y2yk1bzvj061uj9k9o' name='Consulta SQL personalizada' type='text'>#DECLARE start_date DATE DEFAULT &apos;2023-08-01&apos;;													&#13;
+#DECLARE end_date DATE DEFAULT   &apos;2023-09-21&apos;;													&#13;
+&#13;
+with clients_con_user as &#13;
+(&#13;
+              SELECT DISTINCT	user_id,													&#13;
+                              client_id													&#13;
+              FROM `peya-bi-tools-pro.il_sessions.fact_perseus_sessions` AS ps													&#13;
+              WHERE partition_date BETWEEN &apos;2023-08-01&apos; AND &apos;2023-09-21&apos;	-- antes y durante el experimento 											&#13;
+              AND user_id IS NOT NULL		-- que tenga user en algun momento antes o durante experimento (o sea registrado antes o durante experimento)&#13;
+)&#13;
+&#13;
+,cant_clients_por_user as&#13;
+(&#13;
+        SELECT	user_id,													&#13;
+                COUNT(DISTINCT client_id) AS qty_client_id													&#13;
+												&#13;
+        FROM clients_con_user			-- antes y durante el experimento 											&#13;
+        GROUP BY 1	&#13;
+)&#13;
+&#13;
+-- GENTE QUE SE HAYA REGISTRADO ANTES O DURANTE DEL EXPERIMENTO (Y QUE DURANTE EL EXPERIMENTO NO ESTABA LOGUEADA PORQUE EL USER ID IS NULL DE LA TABLA C Y NO TIENE) Y HAYA SIDO ACQUISITION POST EXPERIMENTO (SIEMPRE VIENDO AL MUNDO DE GENTE QUE PARTICIPÓ EN EL EXPERIMENTO QUE ES LA `peya-growth-and-onboarding.automated_tables_reports.irl_analysis_ios`)&#13;
+&#13;
+&#13;
+/*&#13;
+    *****************************************************************************************************************************************************&#13;
+    FALTARIA EN QUERY APARTE (PORQUE EN ESTE NO SE PODRÍA ENTIENDO POR FILTROS DE QUE USER ID ES NULL EN MOMENTO AB O SEA QUE NO ESTABA LOGUEADO AHI)&#13;
+    --------------------------------------------------------&#13;
+    --------------------------------------------------------&#13;
+    -------- ESTO HAY QUE SACAR DE ALGUNA MANERA -----------&#13;
+    -USUARIOS NUEVOS      (REGISTRADOS DURANTE EXPERIMENTO   + ADQUIRIDOS EN EL EXPERIMENTO)&#13;
+    CON 1 SOLO CLIENT ID DURANTE EXPERIMENTO&#13;
+&#13;
+    -USUARIOS REGISTRADOS (REGISTRADOS ANTES DEL EXPERIMENTO + ADQUIRIDOS EN EL EXPERIMENTO) &#13;
+    CON 1 SOLO CLIENT ID ANTES O DURANTE EXPERIMENTO &#13;
+    --------------------------------------------------------&#13;
+    --------------------------------------------------------&#13;
+*/&#13;
+&#13;
+SELECT DISTINCT			 c.abTestingVariation											&#13;
+                    ,a.user_id								&#13;
+                    ,c.client_id													&#13;
+                    ,c.has_home_screen_loaded													&#13;
+                    ,CASE WHEN obc.order_id IS NOT NULL THEN 1 ELSE 0 END AS is_acquisition&#13;
+                    ,CASE WHEN obc.dh_uuid is not null then 1 else 0 end as is_acquisition_2 													&#13;
+&#13;
+FROM cant_clients_por_user AS a	                                     -- antes y durante el experimento gente que tiene usuario (registrada y no se si compró)&#13;
+&#13;
+LEFT JOIN `peya-bi-tools-pro.il_sessions.fact_perseus_sessions` AS b -- antes y durante el experimento &#13;
+  ON  (a.user_id = b.user_id  -- es lo unico que tiene, client id en la de cant clients por user no tengo &#13;
+      AND b.partition_date BETWEEN &apos;2023-08-01&apos; AND &apos;2023-09-21&apos;)											&#13;
+&#13;
+LEFT JOIN `peya-growth-and-onboarding.automated_tables_reports.irl_analysis_ios` AS c --  durante el experimento &#13;
+  ON  (b.client_id	= c.client_id)												&#13;
+&#13;
+LEFT JOIN `peya-bi-tools-pro.il_core.fact_peya_orders_by_customers` AS obc -- despues del experimento haya sido acquisition &#13;
+  ON  (a.user_id = CAST(obc.user_id AS STRING) -- con el user id de antes y durante el experimento (o sea que estaba registrado antes o durante experimento)&#13;
+      AND DATE(obc.registered_date) BETWEEN &apos;2023-09-04&apos; AND &apos;2023-09-21&apos; -- durante experimento &#13;
+      AND obc.nro_order_confirmed = 1)	-- que haya sido acquisition durante del experimento (O SEA SE REGISTRÓ ANTES Y DURANTE, Y FUE ACQ DURANTE) &#13;
+&#13;
+WHERE a.qty_client_id = 1     -- que el user tenga solo un client id antes y durante el experimento									&#13;
+  AND c.client_id IS NOT NULL	-- que el client id no sea null 	             durante el experimento	(para tener la gente sólo del experimento)									&#13;
+&#13;
+ORDER BY 1,2</_.fcp.ObjectModelEncapsulateLegacy.false...relation>
+    <_.fcp.ObjectModelEncapsulateLegacy.true...relation connection='bigquery.1byqan81c2y2yk1bzvj061uj9k9o' name='Consulta SQL personalizada' type='text'>#DECLARE start_date DATE DEFAULT &apos;2023-08-01&apos;;													&#13;
+#DECLARE end_date DATE DEFAULT   &apos;2023-09-21&apos;;													&#13;
+&#13;
+with clients_con_user as &#13;
+(&#13;
+              SELECT DISTINCT	user_id,													&#13;
+                              client_id													&#13;
+              FROM `peya-bi-tools-pro.il_sessions.fact_perseus_sessions` AS ps													&#13;
+              WHERE partition_date BETWEEN &apos;2023-08-01&apos; AND &apos;2023-09-21&apos;	-- antes y durante el experimento 											&#13;
+              AND user_id IS NOT NULL		-- que tenga user en algun momento antes o durante experimento (o sea registrado antes o durante experimento)&#13;
+)&#13;
+&#13;
+,cant_clients_por_user as&#13;
+(&#13;
+        SELECT	user_id,													&#13;
+                COUNT(DISTINCT client_id) AS qty_client_id													&#13;
+												&#13;
+        FROM clients_con_user			-- antes y durante el experimento 											&#13;
+        GROUP BY 1	&#13;
+)&#13;
+&#13;
+-- GENTE QUE SE HAYA REGISTRADO ANTES O DURANTE DEL EXPERIMENTO (Y QUE DURANTE EL EXPERIMENTO NO ESTABA LOGUEADA PORQUE EL USER ID IS NULL DE LA TABLA C Y NO TIENE) Y HAYA SIDO ACQUISITION POST EXPERIMENTO (SIEMPRE VIENDO AL MUNDO DE GENTE QUE PARTICIPÓ EN EL EXPERIMENTO QUE ES LA `peya-growth-and-onboarding.automated_tables_reports.irl_analysis_ios`)&#13;
+&#13;
+&#13;
+/*&#13;
+    *****************************************************************************************************************************************************&#13;
+    FALTARIA EN QUERY APARTE (PORQUE EN ESTE NO SE PODRÍA ENTIENDO POR FILTROS DE QUE USER ID ES NULL EN MOMENTO AB O SEA QUE NO ESTABA LOGUEADO AHI)&#13;
+    --------------------------------------------------------&#13;
+    --------------------------------------------------------&#13;
+    -------- ESTO HAY QUE SACAR DE ALGUNA MANERA -----------&#13;
+    -USUARIOS NUEVOS      (REGISTRADOS DURANTE EXPERIMENTO   + ADQUIRIDOS EN EL EXPERIMENTO)&#13;
+    CON 1 SOLO CLIENT ID DURANTE EXPERIMENTO&#13;
+&#13;
+    -USUARIOS REGISTRADOS (REGISTRADOS ANTES DEL EXPERIMENTO + ADQUIRIDOS EN EL EXPERIMENTO) &#13;
+    CON 1 SOLO CLIENT ID ANTES O DURANTE EXPERIMENTO &#13;
+    --------------------------------------------------------&#13;
+    --------------------------------------------------------&#13;
+*/&#13;
+&#13;
+SELECT DISTINCT			 c.abTestingVariation											&#13;
+                    ,a.user_id								&#13;
+                    ,c.client_id													&#13;
+                    ,c.has_home_screen_loaded													&#13;
+                    ,CASE WHEN obc.order_id IS NOT NULL THEN 1 ELSE 0 END AS is_acquisition&#13;
+                    ,CASE WHEN obc.dh_uuid is not null then 1 else 0 end as is_acquisition_2 													&#13;
+&#13;
+FROM cant_clients_por_user AS a	                                     -- antes y durante el experimento gente que tiene usuario (registrada y no se si compró)&#13;
+&#13;
+LEFT JOIN `peya-bi-tools-pro.il_sessions.fact_perseus_sessions` AS b -- antes y durante el experimento &#13;
+  ON  (a.user_id = b.user_id  -- es lo unico que tiene, client id en la de cant clients por user no tengo &#13;
+      AND b.partition_date BETWEEN &apos;2023-08-01&apos; AND &apos;2023-09-21&apos;)											&#13;
+&#13;
+LEFT JOIN `peya-growth-and-onboarding.automated_tables_reports.irl_analysis_ios` AS c --  durante el experimento &#13;
+  ON  (b.client_id	= c.client_id)												&#13;
+&#13;
+LEFT JOIN `peya-bi-tools-pro.il_core.fact_peya_orders_by_customers` AS obc -- despues del experimento haya sido acquisition &#13;
+  ON  (a.user_id = CAST(obc.user_id AS STRING) -- con el user id de antes y durante el experimento (o sea que estaba registrado antes o durante experimento)&#13;
+      AND DATE(obc.registered_date) BETWEEN &apos;2023-09-04&apos; AND &apos;2023-09-21&apos; -- durante experimento &#13;
+      AND obc.nro_order_confirmed = 1)	-- que haya sido acquisition durante del experimento (O SEA SE REGISTRÓ ANTES Y DURANTE, Y FUE ACQ DURANTE) &#13;
+&#13;
+WHERE a.qty_client_id = 1     -- que el user tenga solo un client id antes y durante el experimento									&#13;
+  AND c.client_id IS NOT NULL	-- que el client id no sea null 	             durante el experimento	(para tener la gente sólo del experimento)									&#13;
+&#13;
+ORDER BY 1,2</_.fcp.ObjectModelEncapsulateLegacy.true...relation>
+    <metadata-records>
+      <metadata-record class='column'>
+        <remote-name>abTestingVariation</remote-name>
+        <remote-type>130</remote-type>
+        <local-name>[abTestingVariation]</local-name>
+        <parent-name>[Consulta SQL personalizada]</parent-name>
+        <remote-alias>abTestingVariation</remote-alias>
+        <local-type>string</local-type>
+        <aggregation>Count</aggregation>
+        <contains-null>true</contains-null>
+        <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_6EC8EB8611384805A240BCA4D7F3DD63]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+      </metadata-record>
+      <metadata-record class='column'>
+        <remote-name>user_id</remote-name>
+        <remote-type>130</remote-type>
+        <local-name>[user_id]</local-name>
+        <parent-name>[Consulta SQL personalizada]</parent-name>
+        <remote-alias>user_id</remote-alias>
+        <local-type>string</local-type>
+        <aggregation>Count</aggregation>
+        <contains-null>true</contains-null>
+        <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_6EC8EB8611384805A240BCA4D7F3DD63]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+      </metadata-record>
+      <metadata-record class='column'>
+        <remote-name>client_id</remote-name>
+        <remote-type>130</remote-type>
+        <local-name>[client_id]</local-name>
+        <parent-name>[Consulta SQL personalizada]</parent-name>
+        <remote-alias>client_id</remote-alias>
+        <local-type>string</local-type>
+        <aggregation>Count</aggregation>
+        <contains-null>true</contains-null>
+        <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_6EC8EB8611384805A240BCA4D7F3DD63]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+      </metadata-record>
+      <metadata-record class='column'>
+        <remote-name>has_home_screen_loaded</remote-name>
+        <remote-type>20</remote-type>
+        <local-name>[has_home_screen_loaded]</local-name>
+        <parent-name>[Consulta SQL personalizada]</parent-name>
+        <remote-alias>has_home_screen_loaded</remote-alias>
+        <local-type>integer</local-type>
+        <aggregation>Sum</aggregation>
+        <contains-null>true</contains-null>
+        <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_6EC8EB8611384805A240BCA4D7F3DD63]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+      </metadata-record>
+      <metadata-record class='column'>
+        <remote-name>is_acquisition</remote-name>
+        <remote-type>20</remote-type>
+        <local-name>[is_acquisition]</local-name>
+        <parent-name>[Consulta SQL personalizada]</parent-name>
+        <remote-alias>is_acquisition</remote-alias>
+        <local-type>integer</local-type>
+        <aggregation>Sum</aggregation>
+        <contains-null>true</contains-null>
+        <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_6EC8EB8611384805A240BCA4D7F3DD63]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+      </metadata-record>
+      <metadata-record class='column'>
+        <remote-name>is_acquisition_2</remote-name>
+        <remote-type>20</remote-type>
+        <local-name>[is_acquisition_2]</local-name>
+        <parent-name>[Consulta SQL personalizada]</parent-name>
+        <remote-alias>is_acquisition_2</remote-alias>
+        <local-type>integer</local-type>
+        <aggregation>Sum</aggregation>
+        <contains-null>true</contains-null>
+        <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_6EC8EB8611384805A240BCA4D7F3DD63]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+      </metadata-record>
+    </metadata-records>
+  </connection>
+  <aliases enabled='yes' />
+  <column caption='Acq / Users ' datatype='real' name='[Calculation_1056094155923025920]' role='measure' type='quantitative'>
+    <calculation class='tableau' formula='SUM([is_acquisition_2])&#13;&#10;/&#13;&#10;COUNTD([user_id])' />
+  </column>
+  <_.fcp.ObjectModelTableType.true...column caption='Consulta SQL personalizada' datatype='table' name='[__tableau_internal_object_id__].[_6EC8EB8611384805A240BCA4D7F3DD63]' role='measure' type='quantitative' />
+  <column aggregation='Sum' datatype='integer' name='[has_home_screen_loaded]' role='dimension' type='ordinal' />
+  <extract _.fcp.ObjectModelExtractV2.true...object-id='' count='-1' enabled='true' units='records'>
+    <connection class='hyper' dbname='extract/94/78/{DDD909CA-14E5-4B61-BCA5-D01A297A9929}/federated_1ypvtug12kbrt51dscr9h1.hyper' default-settings='yes' extract-engine='true' schema='Extract' tablename='Extract' update-time='01/12/2024 02:48:18 PM'>
+      <_.fcp.ObjectModelEncapsulateLegacy.false...relation name='Extract' table='[Extract].[Extract]' type='table' />
+      <_.fcp.ObjectModelEncapsulateLegacy.true...relation name='Extract' table='[Extract].[Extract]' type='table' />
+      <refresh>
+        <refresh-event add-from-file-path='Consulta SQL personalizada (automated_tables_reports)' increment-value='%null%' refresh-type='create' rows-inserted='72766' timestamp-start='2024-01-12 14:48:01.172' />
+      </refresh>
+      <metadata-records>
+        <metadata-record class='column'>
+          <remote-name>abTestingVariation</remote-name>
+          <remote-type>129</remote-type>
+          <local-name>[abTestingVariation]</local-name>
+          <parent-name>[Extract]</parent-name>
+          <remote-alias>abTestingVariation</remote-alias>
+          <ordinal>0</ordinal>
+          <family>Consulta SQL personalizada</family>
+          <local-type>string</local-type>
+          <aggregation>Count</aggregation>
+          <approx-count>2</approx-count>
+          <contains-null>true</contains-null>
+          <collation flag='0' name='LROOT' />
+        </metadata-record>
+        <metadata-record class='column'>
+          <remote-name>user_id</remote-name>
+          <remote-type>129</remote-type>
+          <local-name>[user_id]</local-name>
+          <parent-name>[Extract]</parent-name>
+          <remote-alias>user_id</remote-alias>
+          <ordinal>1</ordinal>
+          <family>Consulta SQL personalizada</family>
+          <local-type>string</local-type>
+          <aggregation>Count</aggregation>
+          <approx-count>69038</approx-count>
+          <contains-null>true</contains-null>
+          <collation flag='0' name='LROOT' />
+        </metadata-record>
+        <metadata-record class='column'>
+          <remote-name>client_id</remote-name>
+          <remote-type>129</remote-type>
+          <local-name>[client_id]</local-name>
+          <parent-name>[Extract]</parent-name>
+          <remote-alias>client_id</remote-alias>
+          <ordinal>2</ordinal>
+          <family>Consulta SQL personalizada</family>
+          <local-type>string</local-type>
+          <aggregation>Count</aggregation>
+          <approx-count>69038</approx-count>
+          <contains-null>true</contains-null>
+          <collation flag='0' name='LROOT' />
+        </metadata-record>
+        <metadata-record class='column'>
+          <remote-name>has_home_screen_loaded</remote-name>
+          <remote-type>20</remote-type>
+          <local-name>[has_home_screen_loaded]</local-name>
+          <parent-name>[Extract]</parent-name>
+          <remote-alias>has_home_screen_loaded</remote-alias>
+          <ordinal>3</ordinal>
+          <family>Consulta SQL personalizada</family>
+          <local-type>integer</local-type>
+          <aggregation>Sum</aggregation>
+          <approx-count>2</approx-count>
+          <contains-null>true</contains-null>
+        </metadata-record>
+        <metadata-record class='column'>
+          <remote-name>is_acquisition</remote-name>
+          <remote-type>20</remote-type>
+          <local-name>[is_acquisition]</local-name>
+          <parent-name>[Extract]</parent-name>
+          <remote-alias>is_acquisition</remote-alias>
+          <ordinal>4</ordinal>
+          <family>Consulta SQL personalizada</family>
+          <local-type>integer</local-type>
+          <aggregation>Sum</aggregation>
+          <approx-count>2</approx-count>
+          <contains-null>true</contains-null>
+        </metadata-record>
+        <metadata-record class='column'>
+          <remote-name>is_acquisition_2</remote-name>
+          <remote-type>20</remote-type>
+          <local-name>[is_acquisition_2]</local-name>
+          <parent-name>[Extract]</parent-name>
+          <remote-alias>is_acquisition_2</remote-alias>
+          <ordinal>5</ordinal>
+          <family>Consulta SQL personalizada</family>
+          <local-type>integer</local-type>
+          <aggregation>Sum</aggregation>
+          <approx-count>2</approx-count>
+          <contains-null>true</contains-null>
+        </metadata-record>
+      </metadata-records>
+    </connection>
+  </extract>
+  <layout _.fcp.SchemaViewerObjectModel.false...dim-percentage='0.5' _.fcp.SchemaViewerObjectModel.false...measure-percentage='0.4' dim-ordering='alphabetic' measure-ordering='alphabetic' show-structure='true' />
+  <semantic-values>
+    <semantic-value key='[Country].[Name]' value='&quot;Argentina&quot;' />
+  </semantic-values>
+  <date-options start-of-week='monday' />
+  <_.fcp.ObjectModelEncapsulateLegacy.true...object-graph>
+    <objects>
+      <object caption='Consulta SQL personalizada' id='_6EC8EB8611384805A240BCA4D7F3DD63'>
+        <properties context=''>
+          <relation connection='bigquery.1byqan81c2y2yk1bzvj061uj9k9o' name='Consulta SQL personalizada' type='text'>#DECLARE start_date DATE DEFAULT &apos;2023-08-01&apos;;													&#13;
+#DECLARE end_date DATE DEFAULT   &apos;2023-09-21&apos;;													&#13;
+&#13;
+with clients_con_user as &#13;
+(&#13;
+              SELECT DISTINCT	user_id,													&#13;
+                              client_id													&#13;
+              FROM `peya-bi-tools-pro.il_sessions.fact_perseus_sessions` AS ps													&#13;
+              WHERE partition_date BETWEEN &apos;2023-08-01&apos; AND &apos;2023-09-21&apos;	-- antes y durante el experimento 											&#13;
+              AND user_id IS NOT NULL		-- que tenga user en algun momento antes o durante experimento (o sea registrado antes o durante experimento)&#13;
+)&#13;
+&#13;
+,cant_clients_por_user as&#13;
+(&#13;
+        SELECT	user_id,													&#13;
+                COUNT(DISTINCT client_id) AS qty_client_id													&#13;
+												&#13;
+        FROM clients_con_user			-- antes y durante el experimento 											&#13;
+        GROUP BY 1	&#13;
+)&#13;
+&#13;
+-- GENTE QUE SE HAYA REGISTRADO ANTES O DURANTE DEL EXPERIMENTO (Y QUE DURANTE EL EXPERIMENTO NO ESTABA LOGUEADA PORQUE EL USER ID IS NULL DE LA TABLA C Y NO TIENE) Y HAYA SIDO ACQUISITION POST EXPERIMENTO (SIEMPRE VIENDO AL MUNDO DE GENTE QUE PARTICIPÓ EN EL EXPERIMENTO QUE ES LA `peya-growth-and-onboarding.automated_tables_reports.irl_analysis_ios`)&#13;
+&#13;
+&#13;
+/*&#13;
+    *****************************************************************************************************************************************************&#13;
+    FALTARIA EN QUERY APARTE (PORQUE EN ESTE NO SE PODRÍA ENTIENDO POR FILTROS DE QUE USER ID ES NULL EN MOMENTO AB O SEA QUE NO ESTABA LOGUEADO AHI)&#13;
+    --------------------------------------------------------&#13;
+    --------------------------------------------------------&#13;
+    -------- ESTO HAY QUE SACAR DE ALGUNA MANERA -----------&#13;
+    -USUARIOS NUEVOS      (REGISTRADOS DURANTE EXPERIMENTO   + ADQUIRIDOS EN EL EXPERIMENTO)&#13;
+    CON 1 SOLO CLIENT ID DURANTE EXPERIMENTO&#13;
+&#13;
+    -USUARIOS REGISTRADOS (REGISTRADOS ANTES DEL EXPERIMENTO + ADQUIRIDOS EN EL EXPERIMENTO) &#13;
+    CON 1 SOLO CLIENT ID ANTES O DURANTE EXPERIMENTO &#13;
+    --------------------------------------------------------&#13;
+    --------------------------------------------------------&#13;
+*/&#13;
+&#13;
+SELECT DISTINCT			 c.abTestingVariation											&#13;
+                    ,a.user_id								&#13;
+                    ,c.client_id													&#13;
+                    ,c.has_home_screen_loaded													&#13;
+                    ,CASE WHEN obc.order_id IS NOT NULL THEN 1 ELSE 0 END AS is_acquisition&#13;
+                    ,CASE WHEN obc.dh_uuid is not null then 1 else 0 end as is_acquisition_2 													&#13;
+&#13;
+FROM cant_clients_por_user AS a	                                     -- antes y durante el experimento gente que tiene usuario (registrada y no se si compró)&#13;
+&#13;
+LEFT JOIN `peya-bi-tools-pro.il_sessions.fact_perseus_sessions` AS b -- antes y durante el experimento &#13;
+  ON  (a.user_id = b.user_id  -- es lo unico que tiene, client id en la de cant clients por user no tengo &#13;
+      AND b.partition_date BETWEEN &apos;2023-08-01&apos; AND &apos;2023-09-21&apos;)											&#13;
+&#13;
+LEFT JOIN `peya-growth-and-onboarding.automated_tables_reports.irl_analysis_ios` AS c --  durante el experimento &#13;
+  ON  (b.client_id	= c.client_id)												&#13;
+&#13;
+LEFT JOIN `peya-bi-tools-pro.il_core.fact_peya_orders_by_customers` AS obc -- despues del experimento haya sido acquisition &#13;
+  ON  (a.user_id = CAST(obc.user_id AS STRING) -- con el user id de antes y durante el experimento (o sea que estaba registrado antes o durante experimento)&#13;
+      AND DATE(obc.registered_date) BETWEEN &apos;2023-09-04&apos; AND &apos;2023-09-21&apos; -- durante experimento &#13;
+      AND obc.nro_order_confirmed = 1)	-- que haya sido acquisition durante del experimento (O SEA SE REGISTRÓ ANTES Y DURANTE, Y FUE ACQ DURANTE) &#13;
+&#13;
+WHERE a.qty_client_id = 1     -- que el user tenga solo un client id antes y durante el experimento									&#13;
+  AND c.client_id IS NOT NULL	-- que el client id no sea null 	             durante el experimento	(para tener la gente sólo del experimento)									&#13;
+&#13;
+ORDER BY 1,2</relation>
+        </properties>
+        <properties context='extract'>
+          <relation name='Extract' table='[Extract].[Extract]' type='table' />
+        </properties>
+      </object>
+    </objects>
+  </_.fcp.ObjectModelEncapsulateLegacy.true...object-graph>
+</datasource>

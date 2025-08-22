@@ -1,0 +1,1594 @@
+<?xml version='1.0' encoding='utf-8' ?>
+
+<!-- build 20233.25.0106.1650                               -->
+<workbook original-version='18.1' source-build='2023.3.14 (20233.25.0106.1650)' version='18.1' xml:base='http://ip-172-31-0-197:8389' xmlns:user='http://www.tableausoftware.com/xml/user'>
+  <document-format-change-manifest>
+    <_.fcp.AccessibleZoneTabOrder.true...AccessibleZoneTabOrder />
+    <_.fcp.AnimationOnByDefault.true...AnimationOnByDefault />
+    <AutoCreateAndUpdateDSDPhoneLayouts />
+    <_.fcp.MarkAnimation.true...MarkAnimation />
+    <_.fcp.ObjectModelEncapsulateLegacy.true...ObjectModelEncapsulateLegacy />
+    <_.fcp.ObjectModelTableType.true...ObjectModelTableType />
+    <_.fcp.SchemaViewerObjectModel.true...SchemaViewerObjectModel />
+    <SetMembershipControl />
+    <SheetIdentifierTracking />
+    <WindowsPersistSimpleIdentifiers />
+    <ZoneBackgroundTransparency />
+  </document-format-change-manifest>
+  <repository-location derived-from='http://ip-172-31-0-197:8389/t/Pedidosya/workbooks/ORQUEST?rev=1.1' id='ORQUEST_17514725952760' path='/t/Pedidosya/workbooks' revision='1.0' site='Pedidosya' />
+  <preferences />
+  <_.fcp.AnimationOnByDefault.false...style>
+    <_.fcp.AnimationOnByDefault.false..._.fcp.MarkAnimation.true...style-rule element='animation'>
+      <_.fcp.AnimationOnByDefault.false...format attr='animation-on' value='ao-on' />
+    </_.fcp.AnimationOnByDefault.false..._.fcp.MarkAnimation.true...style-rule>
+  </_.fcp.AnimationOnByDefault.false...style>
+  <datasources>
+    <datasource caption='query forecast' inline='true' name='federated.1embhp21b8whu112mb11805u0c7n' version='18.1'>
+      <connection class='federated'>
+        <named-connections>
+          <named-connection caption='BigQuery' name='bigquery.1xexnda04nftco1b0umf209qvadi'>
+            <connection CATALOG='peya-delivery-and-support' EXECCATALOG='peya-delivery-and-support' authentication='oauth' class='bigquery' connection-dialect='google-sql' project='peya-delivery-and-support' schema='user_marcos_tedesco' server-oauth='server-custom' username='agus.cordoba@pedidosya.com' workgroup-auth-mode='prompt' />
+          </named-connection>
+        </named-connections>
+        <_.fcp.ObjectModelEncapsulateLegacy.false...relation connection='bigquery.1xexnda04nftco1b0umf209qvadi' name='Consulta SQL personalizada' type='text'>WITH &#13;
+forecast AS (&#13;
+  SELECT&#13;
+    product_id,&#13;
+    business_id,&#13;
+    measure,  &#13;
+    DATE(dia) AS fecha,&#13;
+    SUM(value) AS valor_fcst&#13;
+  FROM `peya-data-origins-pro.raw_orquest.output_measure_forecast`,&#13;
+  UNNEST(GENERATE_DATE_ARRAY(DATE(`from`), DATE(`to`))) AS dia&#13;
+  GROUP BY 1,2,3,4&#13;
+),&#13;
+&#13;
+store AS (&#13;
+  SELECT DISTINCT&#13;
+    warehouse_id,&#13;
+    store_name&#13;
+  FROM `peya-delivery-and-support.user_marcos_tedesco.ops_okr`&#13;
+),&#13;
+&#13;
+reales AS (&#13;
+  WITH &#13;
+  st AS (&#13;
+    SELECT&#13;
+      destination_warehouse,&#13;
+      FORMAT_DATE(&apos;%Y%m%d&apos;, DATE(completed_at)) AS DATE,&#13;
+      SUM(received_qty) AS units_received_st&#13;
+    FROM `peya-datamarts-pro.dm_dmarts.dmarts_store_transfers`&#13;
+    WHERE DATE(completed_at) &gt;&gt;= &apos;2023-01-01&apos; AND transfer_status = &apos;COMPLETED&apos;&#13;
+    GROUP BY 1, 2&#13;
+  ),&#13;
+&#13;
+  po AS (&#13;
+    SELECT&#13;
+      store_name,&#13;
+      FORMAT_DATE(&apos;%Y%m%d&apos;, DATE(receiving_timestamp)) AS DATE,&#13;
+      SUM(received_qty) AS units_received_po&#13;
+    FROM `peya-datamarts-pro.dm_dmarts.dmarts_purchase_orders_sku_level`&#13;
+    WHERE DATE(receiving_timestamp) &gt;&gt;= &apos;2023-01-01&apos;&#13;
+      AND po_creation_date &gt;&gt;= &apos;2022-01-01&apos;&#13;
+      AND po_status = &apos;done&apos;&#13;
+    GROUP BY 1, 2&#13;
+  ),&#13;
+&#13;
+  ord AS (&#13;
+    SELECT&#13;
+      warehouse.warehouse_name AS STORE,&#13;
+      FORMAT_DATE(&apos;%Y%m%d&apos;, DATE(order_placed_localtime_at)) AS DATE,&#13;
+      &apos;GENERAL&apos; AS ZONE,&#13;
+      SUM(order_value_lc.amt_gmv_lc) AS sales,&#13;
+      COUNT(DISTINCT order_id) AS tickets,&#13;
+      SUM(qty_ordered) AS units&#13;
+    FROM `peya-data-origins-pro.cl_dmarts.customer_orders` c&#13;
+    WHERE DATE(order_placed_localtime_at) &gt;&gt;= &apos;2023-01-01&apos;&#13;
+      AND order_status = &apos;sent&apos;&#13;
+    GROUP BY 1, 2&#13;
+  ),&#13;
+&#13;
+  calendar AS (&#13;
+    SELECT STORE, DATE&#13;
+    FROM (SELECT DISTINCT STORE FROM ord)&#13;
+    CROSS JOIN (SELECT DISTINCT DATE FROM ord)&#13;
+  ),&#13;
+&#13;
+  base AS (&#13;
+    SELECT&#13;
+      c.STORE,&#13;
+      c.DATE,&#13;
+      COALESCE(ord.ZONE, &apos;GENERAL&apos;) AS ZONE,&#13;
+      SAFE_CAST(COALESCE(ord.sales, 0) AS NUMERIC) AS sales,&#13;
+      SAFE_CAST(COALESCE(ord.tickets, 0) AS NUMERIC) AS tickets,&#13;
+      SAFE_CAST(COALESCE(ord.units, 0) AS NUMERIC) AS units_out,&#13;
+      SAFE_CAST(COALESCE(st.units_received_st, 0) + COALESCE(po.units_received_po, 0) AS NUMERIC) AS units_in&#13;
+    FROM calendar c&#13;
+    LEFT JOIN ord ON c.STORE = ord.STORE AND c.DATE = ord.DATE&#13;
+    LEFT JOIN st ON c.STORE = st.destination_warehouse AND c.DATE = st.DATE&#13;
+    LEFT JOIN po ON c.STORE = po.store_name AND c.DATE = po.DATE&#13;
+  )&#13;
+&#13;
+  SELECT&#13;
+    PARSE_DATE(&apos;%Y%m%d&apos;, DATE) AS fecha,&#13;
+    STORE AS store_name,&#13;
+    measure,&#13;
+    value AS valor_real&#13;
+  FROM (&#13;
+    SELECT&#13;
+      base.DATE,&#13;
+      base.STORE,&#13;
+      base.sales,&#13;
+      base.tickets,&#13;
+      base.units_in,&#13;
+      base.units_out&#13;
+    FROM base&#13;
+  )&#13;
+  UNPIVOT (&#13;
+    value FOR measure IN (&#13;
+      sales AS &quot;sales&quot;,&#13;
+      tickets AS &quot;tickets&quot;,&#13;
+      units_in AS &quot;units_in&quot;,&#13;
+      units_out AS &quot;units_out&quot;&#13;
+    )&#13;
+  )&#13;
+)&#13;
+&#13;
+-- Unión final forecast + reales&#13;
+SELECT&#13;
+  fcst.fecha,&#13;
+  s.store_name,&#13;
+  fcst.measure,&#13;
+  fcst.valor_fcst,&#13;
+  r.valor_real&#13;
+FROM forecast fcst&#13;
+JOIN store s ON fcst.product_id = s.warehouse_id&#13;
+LEFT JOIN reales r &#13;
+  ON r.fecha = fcst.fecha&#13;
+  AND r.store_name = s.store_name&#13;
+  AND r.measure = fcst.measure</_.fcp.ObjectModelEncapsulateLegacy.false...relation>
+        <_.fcp.ObjectModelEncapsulateLegacy.true...relation connection='bigquery.1xexnda04nftco1b0umf209qvadi' name='Consulta SQL personalizada' type='text'>WITH &#13;
+forecast AS (&#13;
+  SELECT&#13;
+    product_id,&#13;
+    business_id,&#13;
+    measure,  &#13;
+    DATE(dia) AS fecha,&#13;
+    SUM(value) AS valor_fcst&#13;
+  FROM `peya-data-origins-pro.raw_orquest.output_measure_forecast`,&#13;
+  UNNEST(GENERATE_DATE_ARRAY(DATE(`from`), DATE(`to`))) AS dia&#13;
+  GROUP BY 1,2,3,4&#13;
+),&#13;
+&#13;
+store AS (&#13;
+  SELECT DISTINCT&#13;
+    warehouse_id,&#13;
+    store_name&#13;
+  FROM `peya-delivery-and-support.user_marcos_tedesco.ops_okr`&#13;
+),&#13;
+&#13;
+reales AS (&#13;
+  WITH &#13;
+  st AS (&#13;
+    SELECT&#13;
+      destination_warehouse,&#13;
+      FORMAT_DATE(&apos;%Y%m%d&apos;, DATE(completed_at)) AS DATE,&#13;
+      SUM(received_qty) AS units_received_st&#13;
+    FROM `peya-datamarts-pro.dm_dmarts.dmarts_store_transfers`&#13;
+    WHERE DATE(completed_at) &gt;&gt;= &apos;2023-01-01&apos; AND transfer_status = &apos;COMPLETED&apos;&#13;
+    GROUP BY 1, 2&#13;
+  ),&#13;
+&#13;
+  po AS (&#13;
+    SELECT&#13;
+      store_name,&#13;
+      FORMAT_DATE(&apos;%Y%m%d&apos;, DATE(receiving_timestamp)) AS DATE,&#13;
+      SUM(received_qty) AS units_received_po&#13;
+    FROM `peya-datamarts-pro.dm_dmarts.dmarts_purchase_orders_sku_level`&#13;
+    WHERE DATE(receiving_timestamp) &gt;&gt;= &apos;2023-01-01&apos;&#13;
+      AND po_creation_date &gt;&gt;= &apos;2022-01-01&apos;&#13;
+      AND po_status = &apos;done&apos;&#13;
+    GROUP BY 1, 2&#13;
+  ),&#13;
+&#13;
+  ord AS (&#13;
+    SELECT&#13;
+      warehouse.warehouse_name AS STORE,&#13;
+      FORMAT_DATE(&apos;%Y%m%d&apos;, DATE(order_placed_localtime_at)) AS DATE,&#13;
+      &apos;GENERAL&apos; AS ZONE,&#13;
+      SUM(order_value_lc.amt_gmv_lc) AS sales,&#13;
+      COUNT(DISTINCT order_id) AS tickets,&#13;
+      SUM(qty_ordered) AS units&#13;
+    FROM `peya-data-origins-pro.cl_dmarts.customer_orders` c&#13;
+    WHERE DATE(order_placed_localtime_at) &gt;&gt;= &apos;2023-01-01&apos;&#13;
+      AND order_status = &apos;sent&apos;&#13;
+    GROUP BY 1, 2&#13;
+  ),&#13;
+&#13;
+  calendar AS (&#13;
+    SELECT STORE, DATE&#13;
+    FROM (SELECT DISTINCT STORE FROM ord)&#13;
+    CROSS JOIN (SELECT DISTINCT DATE FROM ord)&#13;
+  ),&#13;
+&#13;
+  base AS (&#13;
+    SELECT&#13;
+      c.STORE,&#13;
+      c.DATE,&#13;
+      COALESCE(ord.ZONE, &apos;GENERAL&apos;) AS ZONE,&#13;
+      SAFE_CAST(COALESCE(ord.sales, 0) AS NUMERIC) AS sales,&#13;
+      SAFE_CAST(COALESCE(ord.tickets, 0) AS NUMERIC) AS tickets,&#13;
+      SAFE_CAST(COALESCE(ord.units, 0) AS NUMERIC) AS units_out,&#13;
+      SAFE_CAST(COALESCE(st.units_received_st, 0) + COALESCE(po.units_received_po, 0) AS NUMERIC) AS units_in&#13;
+    FROM calendar c&#13;
+    LEFT JOIN ord ON c.STORE = ord.STORE AND c.DATE = ord.DATE&#13;
+    LEFT JOIN st ON c.STORE = st.destination_warehouse AND c.DATE = st.DATE&#13;
+    LEFT JOIN po ON c.STORE = po.store_name AND c.DATE = po.DATE&#13;
+  )&#13;
+&#13;
+  SELECT&#13;
+    PARSE_DATE(&apos;%Y%m%d&apos;, DATE) AS fecha,&#13;
+    STORE AS store_name,&#13;
+    measure,&#13;
+    value AS valor_real&#13;
+  FROM (&#13;
+    SELECT&#13;
+      base.DATE,&#13;
+      base.STORE,&#13;
+      base.sales,&#13;
+      base.tickets,&#13;
+      base.units_in,&#13;
+      base.units_out&#13;
+    FROM base&#13;
+  )&#13;
+  UNPIVOT (&#13;
+    value FOR measure IN (&#13;
+      sales AS &quot;sales&quot;,&#13;
+      tickets AS &quot;tickets&quot;,&#13;
+      units_in AS &quot;units_in&quot;,&#13;
+      units_out AS &quot;units_out&quot;&#13;
+    )&#13;
+  )&#13;
+)&#13;
+&#13;
+-- Unión final forecast + reales&#13;
+SELECT&#13;
+  fcst.fecha,&#13;
+  s.store_name,&#13;
+  fcst.measure,&#13;
+  fcst.valor_fcst,&#13;
+  r.valor_real&#13;
+FROM forecast fcst&#13;
+JOIN store s ON fcst.product_id = s.warehouse_id&#13;
+LEFT JOIN reales r &#13;
+  ON r.fecha = fcst.fecha&#13;
+  AND r.store_name = s.store_name&#13;
+  AND r.measure = fcst.measure</_.fcp.ObjectModelEncapsulateLegacy.true...relation>
+        <metadata-records>
+          <metadata-record class='column'>
+            <remote-name>fecha</remote-name>
+            <remote-type>7</remote-type>
+            <local-name>[fecha]</local-name>
+            <parent-name>[Consulta SQL personalizada]</parent-name>
+            <remote-alias>fecha</remote-alias>
+            <local-type>date</local-type>
+            <aggregation>Year</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_D9B3960F7E6C4A1BBA820F85BC314CBE]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>store_name</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[store_name]</local-name>
+            <parent-name>[Consulta SQL personalizada]</parent-name>
+            <remote-alias>store_name</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_D9B3960F7E6C4A1BBA820F85BC314CBE]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>measure</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[measure]</local-name>
+            <parent-name>[Consulta SQL personalizada]</parent-name>
+            <remote-alias>measure</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_D9B3960F7E6C4A1BBA820F85BC314CBE]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>valor_fcst</remote-name>
+            <remote-type>5</remote-type>
+            <local-name>[valor_fcst]</local-name>
+            <parent-name>[Consulta SQL personalizada]</parent-name>
+            <remote-alias>valor_fcst</remote-alias>
+            <local-type>real</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_D9B3960F7E6C4A1BBA820F85BC314CBE]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>valor_real</remote-name>
+            <remote-type>5</remote-type>
+            <local-name>[valor_real]</local-name>
+            <parent-name>[Consulta SQL personalizada]</parent-name>
+            <remote-alias>valor_real</remote-alias>
+            <local-type>real</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_D9B3960F7E6C4A1BBA820F85BC314CBE]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+        </metadata-records>
+      </connection>
+      <aliases enabled='yes' />
+      <column datatype='string' name='[:Measure Names]' role='dimension' type='nominal'>
+        <aliases>
+          <alias key='&quot;[federated.1embhp21b8whu112mb11805u0c7n].[sum:value_forecast:qk]&quot;' value='FORECAST' />
+          <alias key='&quot;[federated.1embhp21b8whu112mb11805u0c7n].[sum:value_reales:qk]&quot;' value='REALES' />
+        </aliases>
+      </column>
+      <column caption='Desvio FCST' datatype='real' name='[Calculation_1151795622383034369]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='(SUM([valor_real]) - SUM([valor_fcst])) / SUM([valor_fcst])' />
+      </column>
+      <_.fcp.ObjectModelTableType.true...column caption='Consulta SQL personalizada' datatype='table' name='[__tableau_internal_object_id__].[_D9B3960F7E6C4A1BBA820F85BC314CBE]' role='measure' type='quantitative' />
+      <column datatype='date' name='[fecha]' role='dimension' type='ordinal' />
+      <column datatype='real' name='[valor_fcst]' role='measure' type='quantitative' />
+      <column datatype='real' name='[valor_real]' role='measure' type='quantitative' />
+      <column-instance column='[valor_fcst]' derivation='Sum' name='[sum:valor_fcst:qk]' pivot='key' type='quantitative' />
+      <column-instance column='[valor_real]' derivation='Sum' name='[sum:valor_real:qk]' pivot='key' type='quantitative' />
+      <column-instance column='[fecha]' derivation='Day-Trunc' name='[tdy:fecha:ok]' pivot='key' type='ordinal' />
+      <column-instance column='[Calculation_1151795622383034369]' derivation='User' name='[usr:Calculation_1151795622383034369:qk]' pivot='key' type='quantitative' />
+      <group caption='Acción (DÍA(fecha))' hidden='true' name='[Action (DAY(fecha))]' name-style='unqualified' user:auto-column='sheet_link'>
+        <groupfilter function='crossjoin'>
+          <groupfilter function='level-members' level='[tdy:fecha:ok]' />
+        </groupfilter>
+      </group>
+      <layout _.fcp.SchemaViewerObjectModel.false...dim-percentage='0.5' _.fcp.SchemaViewerObjectModel.false...measure-percentage='0.4' dim-ordering='alphabetic' measure-ordering='alphabetic' show-structure='true' />
+      <style>
+        <style-rule element='mark'>
+          <encoding attr='color' field='[:Measure Names]' type='palette'>
+            <map to='#4e79a7'>
+              <bucket>&quot;[federated.1embhp21b8whu112mb11805u0c7n].[sum:valor_fcst:qk]&quot;</bucket>
+            </map>
+            <map to='#e15759'>
+              <bucket>&quot;[federated.1embhp21b8whu112mb11805u0c7n].[usr:Calculation_1151795622383034369:qk]&quot;</bucket>
+            </map>
+            <map to='#f28e2b'>
+              <bucket>&quot;[federated.1embhp21b8whu112mb11805u0c7n].[sum:valor_real:qk]&quot;</bucket>
+            </map>
+          </encoding>
+        </style-rule>
+      </style>
+      <semantic-values>
+        <semantic-value key='[Country].[Name]' value='&quot;Argentina&quot;' />
+      </semantic-values>
+      <date-options start-of-week='monday' />
+      <_.fcp.ObjectModelEncapsulateLegacy.true...object-graph>
+        <objects>
+          <object caption='Consulta SQL personalizada' id='_D9B3960F7E6C4A1BBA820F85BC314CBE'>
+            <properties context=''>
+              <relation connection='bigquery.1xexnda04nftco1b0umf209qvadi' name='Consulta SQL personalizada' type='text'>WITH &#13;
+forecast AS (&#13;
+  SELECT&#13;
+    product_id,&#13;
+    business_id,&#13;
+    measure,  &#13;
+    DATE(dia) AS fecha,&#13;
+    SUM(value) AS valor_fcst&#13;
+  FROM `peya-data-origins-pro.raw_orquest.output_measure_forecast`,&#13;
+  UNNEST(GENERATE_DATE_ARRAY(DATE(`from`), DATE(`to`))) AS dia&#13;
+  GROUP BY 1,2,3,4&#13;
+),&#13;
+&#13;
+store AS (&#13;
+  SELECT DISTINCT&#13;
+    warehouse_id,&#13;
+    store_name&#13;
+  FROM `peya-delivery-and-support.user_marcos_tedesco.ops_okr`&#13;
+),&#13;
+&#13;
+reales AS (&#13;
+  WITH &#13;
+  st AS (&#13;
+    SELECT&#13;
+      destination_warehouse,&#13;
+      FORMAT_DATE(&apos;%Y%m%d&apos;, DATE(completed_at)) AS DATE,&#13;
+      SUM(received_qty) AS units_received_st&#13;
+    FROM `peya-datamarts-pro.dm_dmarts.dmarts_store_transfers`&#13;
+    WHERE DATE(completed_at) &gt;&gt;= &apos;2023-01-01&apos; AND transfer_status = &apos;COMPLETED&apos;&#13;
+    GROUP BY 1, 2&#13;
+  ),&#13;
+&#13;
+  po AS (&#13;
+    SELECT&#13;
+      store_name,&#13;
+      FORMAT_DATE(&apos;%Y%m%d&apos;, DATE(receiving_timestamp)) AS DATE,&#13;
+      SUM(received_qty) AS units_received_po&#13;
+    FROM `peya-datamarts-pro.dm_dmarts.dmarts_purchase_orders_sku_level`&#13;
+    WHERE DATE(receiving_timestamp) &gt;&gt;= &apos;2023-01-01&apos;&#13;
+      AND po_creation_date &gt;&gt;= &apos;2022-01-01&apos;&#13;
+      AND po_status = &apos;done&apos;&#13;
+    GROUP BY 1, 2&#13;
+  ),&#13;
+&#13;
+  ord AS (&#13;
+    SELECT&#13;
+      warehouse.warehouse_name AS STORE,&#13;
+      FORMAT_DATE(&apos;%Y%m%d&apos;, DATE(order_placed_localtime_at)) AS DATE,&#13;
+      &apos;GENERAL&apos; AS ZONE,&#13;
+      SUM(order_value_lc.amt_gmv_lc) AS sales,&#13;
+      COUNT(DISTINCT order_id) AS tickets,&#13;
+      SUM(qty_ordered) AS units&#13;
+    FROM `peya-data-origins-pro.cl_dmarts.customer_orders` c&#13;
+    WHERE DATE(order_placed_localtime_at) &gt;&gt;= &apos;2023-01-01&apos;&#13;
+      AND order_status = &apos;sent&apos;&#13;
+    GROUP BY 1, 2&#13;
+  ),&#13;
+&#13;
+  calendar AS (&#13;
+    SELECT STORE, DATE&#13;
+    FROM (SELECT DISTINCT STORE FROM ord)&#13;
+    CROSS JOIN (SELECT DISTINCT DATE FROM ord)&#13;
+  ),&#13;
+&#13;
+  base AS (&#13;
+    SELECT&#13;
+      c.STORE,&#13;
+      c.DATE,&#13;
+      COALESCE(ord.ZONE, &apos;GENERAL&apos;) AS ZONE,&#13;
+      SAFE_CAST(COALESCE(ord.sales, 0) AS NUMERIC) AS sales,&#13;
+      SAFE_CAST(COALESCE(ord.tickets, 0) AS NUMERIC) AS tickets,&#13;
+      SAFE_CAST(COALESCE(ord.units, 0) AS NUMERIC) AS units_out,&#13;
+      SAFE_CAST(COALESCE(st.units_received_st, 0) + COALESCE(po.units_received_po, 0) AS NUMERIC) AS units_in&#13;
+    FROM calendar c&#13;
+    LEFT JOIN ord ON c.STORE = ord.STORE AND c.DATE = ord.DATE&#13;
+    LEFT JOIN st ON c.STORE = st.destination_warehouse AND c.DATE = st.DATE&#13;
+    LEFT JOIN po ON c.STORE = po.store_name AND c.DATE = po.DATE&#13;
+  )&#13;
+&#13;
+  SELECT&#13;
+    PARSE_DATE(&apos;%Y%m%d&apos;, DATE) AS fecha,&#13;
+    STORE AS store_name,&#13;
+    measure,&#13;
+    value AS valor_real&#13;
+  FROM (&#13;
+    SELECT&#13;
+      base.DATE,&#13;
+      base.STORE,&#13;
+      base.sales,&#13;
+      base.tickets,&#13;
+      base.units_in,&#13;
+      base.units_out&#13;
+    FROM base&#13;
+  )&#13;
+  UNPIVOT (&#13;
+    value FOR measure IN (&#13;
+      sales AS &quot;sales&quot;,&#13;
+      tickets AS &quot;tickets&quot;,&#13;
+      units_in AS &quot;units_in&quot;,&#13;
+      units_out AS &quot;units_out&quot;&#13;
+    )&#13;
+  )&#13;
+)&#13;
+&#13;
+-- Unión final forecast + reales&#13;
+SELECT&#13;
+  fcst.fecha,&#13;
+  s.store_name,&#13;
+  fcst.measure,&#13;
+  fcst.valor_fcst,&#13;
+  r.valor_real&#13;
+FROM forecast fcst&#13;
+JOIN store s ON fcst.product_id = s.warehouse_id&#13;
+LEFT JOIN reales r &#13;
+  ON r.fecha = fcst.fecha&#13;
+  AND r.store_name = s.store_name&#13;
+  AND r.measure = fcst.measure</relation>
+            </properties>
+          </object>
+        </objects>
+      </_.fcp.ObjectModelEncapsulateLegacy.true...object-graph>
+    </datasource>
+    <datasource caption='tareas planificadas' inline='true' name='federated.1j9lfss1rxtpax12tekhu0bthiip' version='18.1'>
+      <connection class='federated'>
+        <named-connections>
+          <named-connection caption='BigQuery' name='bigquery.0gfwitm0gv97yj10g5lq71k9ika0'>
+            <connection CATALOG='peya-delivery-and-support' EXECCATALOG='peya-delivery-and-support' authentication='oauth' class='bigquery' connection-dialect='google-sql' project='peya-delivery-and-support' schema='user_agus_cordoba' server-oauth='server-custom' username='agus.cordoba@pedidosya.com' workgroup-auth-mode='prompt' />
+          </named-connection>
+        </named-connections>
+        <_.fcp.ObjectModelEncapsulateLegacy.false...relation connection='bigquery.0gfwitm0gv97yj10g5lq71k9ika0' name='Consulta SQL personalizada' type='text'>SELECT&#13;
+  business_id,&#13;
+  product,&#13;
+  service,&#13;
+  location,&#13;
+  dia,&#13;
+  SUM(&#13;
+    TIMESTAMP_DIFF(&#13;
+      PARSE_TIMESTAMP(&apos;%Y-%m-%dT%H:%M:%E*S%Ez&apos;, ts.to),&#13;
+      PARSE_TIMESTAMP(&apos;%Y-%m-%dT%H:%M:%E*S%Ez&apos;, ts.from),&#13;
+      MINUTE&#13;
+    ) / 60.0&#13;
+  ) AS horas_totales&#13;
+FROM `peya-data-origins-pro.raw_orquest.output_assignments_summary_by_service`,&#13;
+UNNEST(timeSlots) AS ts,&#13;
+UNNEST(GENERATE_DATE_ARRAY(&#13;
+  DATE(PARSE_TIMESTAMP(&apos;%Y-%m-%dT%H:%M:%E*S%Ez&apos;, ts.from)),&#13;
+  DATE(PARSE_TIMESTAMP(&apos;%Y-%m-%dT%H:%M:%E*S%Ez&apos;, ts.to))&#13;
+)) AS dia&#13;
+&#13;
+&#13;
+WHERE service = &quot;AR_210_Neuquen_Este&quot;&#13;
+&#13;
+GROUP BY business_id, location, service, product, dia&#13;
+ORDER BY business_id, location, service, product, dia</_.fcp.ObjectModelEncapsulateLegacy.false...relation>
+        <_.fcp.ObjectModelEncapsulateLegacy.true...relation connection='bigquery.0gfwitm0gv97yj10g5lq71k9ika0' name='Consulta SQL personalizada' type='text'>SELECT&#13;
+  business_id,&#13;
+  product,&#13;
+  service,&#13;
+  location,&#13;
+  dia,&#13;
+  SUM(&#13;
+    TIMESTAMP_DIFF(&#13;
+      PARSE_TIMESTAMP(&apos;%Y-%m-%dT%H:%M:%E*S%Ez&apos;, ts.to),&#13;
+      PARSE_TIMESTAMP(&apos;%Y-%m-%dT%H:%M:%E*S%Ez&apos;, ts.from),&#13;
+      MINUTE&#13;
+    ) / 60.0&#13;
+  ) AS horas_totales&#13;
+FROM `peya-data-origins-pro.raw_orquest.output_assignments_summary_by_service`,&#13;
+UNNEST(timeSlots) AS ts,&#13;
+UNNEST(GENERATE_DATE_ARRAY(&#13;
+  DATE(PARSE_TIMESTAMP(&apos;%Y-%m-%dT%H:%M:%E*S%Ez&apos;, ts.from)),&#13;
+  DATE(PARSE_TIMESTAMP(&apos;%Y-%m-%dT%H:%M:%E*S%Ez&apos;, ts.to))&#13;
+)) AS dia&#13;
+&#13;
+&#13;
+WHERE service = &quot;AR_210_Neuquen_Este&quot;&#13;
+&#13;
+GROUP BY business_id, location, service, product, dia&#13;
+ORDER BY business_id, location, service, product, dia</_.fcp.ObjectModelEncapsulateLegacy.true...relation>
+        <metadata-records>
+          <metadata-record class='column'>
+            <remote-name>business_id</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[business_id]</local-name>
+            <parent-name>[Consulta SQL personalizada]</parent-name>
+            <remote-alias>business_id</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_414EFCBBEF8A4CA1AA32ABBE3C605AD3]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>product</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[product]</local-name>
+            <parent-name>[Consulta SQL personalizada]</parent-name>
+            <remote-alias>product</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_414EFCBBEF8A4CA1AA32ABBE3C605AD3]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>service</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[service]</local-name>
+            <parent-name>[Consulta SQL personalizada]</parent-name>
+            <remote-alias>service</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_414EFCBBEF8A4CA1AA32ABBE3C605AD3]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>location</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[location]</local-name>
+            <parent-name>[Consulta SQL personalizada]</parent-name>
+            <remote-alias>location</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_414EFCBBEF8A4CA1AA32ABBE3C605AD3]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>dia</remote-name>
+            <remote-type>7</remote-type>
+            <local-name>[dia]</local-name>
+            <parent-name>[Consulta SQL personalizada]</parent-name>
+            <remote-alias>dia</remote-alias>
+            <local-type>date</local-type>
+            <aggregation>Year</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_414EFCBBEF8A4CA1AA32ABBE3C605AD3]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>horas_totales</remote-name>
+            <remote-type>5</remote-type>
+            <local-name>[horas_totales]</local-name>
+            <parent-name>[Consulta SQL personalizada]</parent-name>
+            <remote-alias>horas_totales</remote-alias>
+            <local-type>real</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_414EFCBBEF8A4CA1AA32ABBE3C605AD3]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+        </metadata-records>
+      </connection>
+      <aliases enabled='yes' />
+      <column caption='cantidad de tareas' datatype='integer' name='[Calculation_1151795622405787650]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='COUNTD([location] )' />
+      </column>
+      <_.fcp.ObjectModelTableType.true...column caption='Consulta SQL personalizada' datatype='table' name='[__tableau_internal_object_id__].[_414EFCBBEF8A4CA1AA32ABBE3C605AD3]' role='measure' type='quantitative' />
+      <column datatype='string' name='[location]' role='dimension' type='nominal' />
+      <column-instance column='[location]' derivation='None' name='[none:location:nk]' pivot='key' type='nominal' />
+      <layout _.fcp.SchemaViewerObjectModel.false...dim-percentage='0.5' _.fcp.SchemaViewerObjectModel.false...measure-percentage='0.4' dim-ordering='alphabetic' measure-ordering='alphabetic' show-structure='true' />
+      <style>
+        <style-rule element='mark'>
+          <encoding attr='color' field='[none:location:nk]' type='palette'>
+            <map to='#499894'>
+              <bucket>&quot;Control de temperatura AM&quot;</bucket>
+            </map>
+            <map to='#4e79a7'>
+              <bucket>&quot;Ajuste de bolsas&quot;</bucket>
+            </map>
+            <map to='#59a14f'>
+              <bucket>&quot;Conteos cíclicos&quot;</bucket>
+            </map>
+            <map to='#76b7b2'>
+              <bucket>&quot;Despacho de órdenes&quot;</bucket>
+            </map>
+            <map to='#79706e'>
+              <bucket>&quot;Limpieza de freezers y heladeras&quot;</bucket>
+            </map>
+            <map to='#86bcb6'>
+              <bucket>&quot;Control de temperatura PM&quot;</bucket>
+            </map>
+            <map to='#8cd17d'>
+              <bucket>&quot;Control de expirados&quot;</bucket>
+            </map>
+            <map to='#a0cbe8'>
+              <bucket>&quot;Apertura&quot;</bucket>
+            </map>
+            <map to='#b07aa1'>
+              <bucket>&quot;Putaway&quot;</bucket>
+            </map>
+            <map to='#b6992d'>
+              <bucket>&quot;Control de Frescos y ultra frescos AM&quot;</bucket>
+            </map>
+            <map to='#bab0ac'>
+              <bucket>&quot;Management&quot;</bucket>
+            </map>
+            <map to='#d37295'>
+              <bucket>&quot;Onboarding&quot;</bucket>
+            </map>
+            <map to='#d4a6c8'>
+              <bucket>&quot;Recepción Proveedores &amp; CD&quot;</bucket>
+            </map>
+            <map to='#e15759'>
+              <bucket>&quot;Despacho de órdenes AM&quot;</bucket>
+            </map>
+            <map to='#f1ce63'>
+              <bucket>&quot;Control de Frescos y ultra frescos PM&quot;</bucket>
+            </map>
+            <map to='#f28e2b'>
+              <bucket>&quot;Carga de Facturas&quot;</bucket>
+            </map>
+            <map to='#fabfd2'>
+              <bucket>&quot;Picking de órdenes&quot;</bucket>
+            </map>
+            <map to='#ff9d9a'>
+              <bucket>&quot;Despacho de órdenes PM&quot;</bucket>
+            </map>
+            <map to='#ffbe7d'>
+              <bucket>&quot;Cierre de tienda&quot;</bucket>
+            </map>
+          </encoding>
+        </style-rule>
+      </style>
+      <semantic-values>
+        <semantic-value key='[Country].[Name]' value='&quot;Argentina&quot;' />
+      </semantic-values>
+      <date-options start-of-week='monday' />
+      <_.fcp.ObjectModelEncapsulateLegacy.true...object-graph>
+        <objects>
+          <object caption='Consulta SQL personalizada' id='_414EFCBBEF8A4CA1AA32ABBE3C605AD3'>
+            <properties context=''>
+              <relation connection='bigquery.0gfwitm0gv97yj10g5lq71k9ika0' name='Consulta SQL personalizada' type='text'>SELECT&#13;
+  business_id,&#13;
+  product,&#13;
+  service,&#13;
+  location,&#13;
+  dia,&#13;
+  SUM(&#13;
+    TIMESTAMP_DIFF(&#13;
+      PARSE_TIMESTAMP(&apos;%Y-%m-%dT%H:%M:%E*S%Ez&apos;, ts.to),&#13;
+      PARSE_TIMESTAMP(&apos;%Y-%m-%dT%H:%M:%E*S%Ez&apos;, ts.from),&#13;
+      MINUTE&#13;
+    ) / 60.0&#13;
+  ) AS horas_totales&#13;
+FROM `peya-data-origins-pro.raw_orquest.output_assignments_summary_by_service`,&#13;
+UNNEST(timeSlots) AS ts,&#13;
+UNNEST(GENERATE_DATE_ARRAY(&#13;
+  DATE(PARSE_TIMESTAMP(&apos;%Y-%m-%dT%H:%M:%E*S%Ez&apos;, ts.from)),&#13;
+  DATE(PARSE_TIMESTAMP(&apos;%Y-%m-%dT%H:%M:%E*S%Ez&apos;, ts.to))&#13;
+)) AS dia&#13;
+&#13;
+&#13;
+WHERE service = &quot;AR_210_Neuquen_Este&quot;&#13;
+&#13;
+GROUP BY business_id, location, service, product, dia&#13;
+ORDER BY business_id, location, service, product, dia</relation>
+            </properties>
+          </object>
+        </objects>
+      </_.fcp.ObjectModelEncapsulateLegacy.true...object-graph>
+    </datasource>
+  </datasources>
+  <shared-views>
+    <shared-view name='federated.1embhp21b8whu112mb11805u0c7n'>
+      <datasources>
+        <datasource caption='query forecast' name='federated.1embhp21b8whu112mb11805u0c7n' />
+      </datasources>
+      <datasource-dependencies datasource='federated.1embhp21b8whu112mb11805u0c7n'>
+        <column datatype='date' name='[fecha]' role='dimension' type='ordinal' />
+        <column datatype='string' name='[measure]' role='dimension' type='nominal' />
+        <column-instance column='[measure]' derivation='None' name='[none:measure:nk]' pivot='key' type='nominal' />
+        <column-instance column='[store_name]' derivation='None' name='[none:store_name:nk]' pivot='key' type='nominal' />
+        <column datatype='string' name='[store_name]' role='dimension' type='nominal' />
+        <column-instance column='[fecha]' derivation='Day-Trunc' name='[tdy:fecha:qk]' pivot='key' type='quantitative' />
+      </datasource-dependencies>
+      <filter class='categorical' column='[federated.1embhp21b8whu112mb11805u0c7n].[none:measure:nk]'>
+        <groupfilter function='union' user:ui-domain='database' user:ui-enumeration='inclusive' user:ui-marker='enumerate'>
+          <groupfilter function='member' level='[none:measure:nk]' member='&quot;count_orders&quot;' />
+          <groupfilter function='member' level='[none:measure:nk]' member='&quot;tickets&quot;' />
+        </groupfilter>
+      </filter>
+      <filter class='categorical' column='[federated.1embhp21b8whu112mb11805u0c7n].[none:store_name:nk]'>
+        <groupfilter function='member' level='[none:store_name:nk]' member='&quot;AR_210_Neuquen_Este&quot;' user:ui-domain='database' user:ui-enumeration='inclusive' user:ui-marker='enumerate' />
+      </filter>
+      <filter class='quantitative' column='[federated.1embhp21b8whu112mb11805u0c7n].[tdy:fecha:qk]' included-values='in-range-or-null'>
+        <min>#2025-03-30 00:00:00#</min>
+        <max>#2025-06-30 23:59:59#</max>
+      </filter>
+    </shared-view>
+  </shared-views>
+  <actions>
+    <action caption='Resaltado 2 (generado)' name='[Action2_48AC3B716A394B23B0987637B8D67A5E]'>
+      <activation auto-clear='true' type='on-select' />
+      <source dashboard='Dashboard FCST' type='sheet' />
+      <command command='tsc:brush'>
+        <param name='field-captions' value='Nombres de medidas' />
+        <param name='target' value='Dashboard FCST' />
+      </command>
+    </action>
+    <action caption='Resaltado 1 (generado)' name='[Action2_52CD8C85C58B4BCD9F781FADA19E6534]'>
+      <activation auto-clear='true' type='on-select' />
+      <source type='sheet' worksheet='FCST vs. REALES' />
+      <command command='tsc:brush'>
+        <param name='field-captions' value='Nombres de medidas' />
+        <param name='target' value='FCST vs. REALES' />
+      </command>
+    </action>
+    <action caption='Filtro 1 (generado)' name='[Action3_876D2BFA643343C290B958664215F4C6]'>
+      <activation auto-clear='true' type='on-select' />
+      <source dashboard='Dashboard FCST' type='sheet' worksheet='Desvio FCST' />
+      <command command='tsc:tsl-filter'>
+        <param name='special-fields' value='all' />
+        <param name='target' value='Dashboard FCST' />
+      </command>
+    </action>
+  </actions>
+  <worksheets>
+    <worksheet name='# Horas planificadas'>
+      <repository-location derived-from='http://ip-172-31-0-197:8389/t/Pedidosya/workbooks/ORQUEST/Horasplanificadas?rev=' id='Horasplanificadas' path='/t/Pedidosya/workbooks/ORQUEST_17514725952760' revision='' site='Pedidosya' />
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='tareas planificadas' name='federated.1j9lfss1rxtpax12tekhu0bthiip' />
+          </datasources>
+          <datasource-dependencies datasource='federated.1j9lfss1rxtpax12tekhu0bthiip'>
+            <column datatype='string' name='[business_id]' role='dimension' type='nominal' />
+            <column datatype='date' name='[dia]' role='dimension' type='ordinal' />
+            <column datatype='real' name='[horas_totales]' role='measure' type='quantitative' />
+            <column datatype='string' name='[location]' role='dimension' type='nominal' />
+            <column-instance column='[business_id]' derivation='None' name='[none:business_id:nk]' pivot='key' type='nominal' />
+            <column-instance column='[location]' derivation='None' name='[none:location:nk]' pivot='key' type='nominal' />
+            <column-instance column='[service]' derivation='None' name='[none:service:nk]' pivot='key' type='nominal' />
+            <column datatype='string' name='[service]' role='dimension' type='nominal' />
+            <column-instance column='[horas_totales]' derivation='Sum' name='[sum:horas_totales:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[dia]' derivation='Week-Trunc' name='[twk:dia:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[dia]' derivation='Week' name='[wk:dia:ok]' pivot='key' type='ordinal' />
+          </datasource-dependencies>
+          <filter class='categorical' column='[federated.1j9lfss1rxtpax12tekhu0bthiip].[none:business_id:nk]'>
+            <groupfilter function='except' user:ui-domain='database' user:ui-enumeration='inclusive' user:ui-marker='enumerate'>
+              <groupfilter function='level-members' level='[none:business_id:nk]' />
+              <groupfilter function='member' level='[none:business_id:nk]' member='%null%' />
+            </groupfilter>
+          </filter>
+          <filter class='categorical' column='[federated.1j9lfss1rxtpax12tekhu0bthiip].[none:service:nk]'>
+            <groupfilter function='level-members' level='[none:service:nk]' user:ui-enumeration='all' user:ui-marker='enumerate' />
+          </filter>
+          <filter class='categorical' column='[federated.1j9lfss1rxtpax12tekhu0bthiip].[wk:dia:ok]'>
+            <groupfilter from='14' function='range' level='[wk:dia:ok]' to='27' user:ui-domain='database' user:ui-enumeration='inclusive' user:ui-marker='enumerate' />
+          </filter>
+          <slices>
+            <column>[federated.1j9lfss1rxtpax12tekhu0bthiip].[wk:dia:ok]</column>
+            <column>[federated.1j9lfss1rxtpax12tekhu0bthiip].[none:business_id:nk]</column>
+            <column>[federated.1j9lfss1rxtpax12tekhu0bthiip].[none:service:nk]</column>
+          </slices>
+          <aggregation value='true' />
+        </view>
+        <style />
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Bar' />
+            <mark-sizing custom-mark-size-in-axis-units='1.0' mark-alignment='mark-alignment-left' mark-sizing-setting='marks-scaling-on' use-custom-mark-size='false' />
+            <encodings>
+              <color column='[federated.1j9lfss1rxtpax12tekhu0bthiip].[none:location:nk]' />
+            </encodings>
+          </pane>
+        </panes>
+        <rows>[federated.1j9lfss1rxtpax12tekhu0bthiip].[sum:horas_totales:qk]</rows>
+        <cols>[federated.1j9lfss1rxtpax12tekhu0bthiip].[twk:dia:qk]</cols>
+      </table>
+      <simple-id uuid='{D79A7EA5-83A9-4CAD-96CC-8A433A08E53C}' />
+    </worksheet>
+    <worksheet name='# Tareas planificadas'>
+      <repository-location derived-from='http://ip-172-31-0-197:8389/t/Pedidosya/workbooks/ORQUEST/Tareasplanificadas?rev=' id='Tareasplanificadas' path='/t/Pedidosya/workbooks/ORQUEST_17514725952760' revision='' site='Pedidosya' />
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='tareas planificadas' name='federated.1j9lfss1rxtpax12tekhu0bthiip' />
+          </datasources>
+          <datasource-dependencies datasource='federated.1j9lfss1rxtpax12tekhu0bthiip'>
+            <column caption='cantidad de tareas' datatype='integer' name='[Calculation_1151795622405787650]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='COUNTD([location] )' />
+            </column>
+            <column datatype='string' name='[business_id]' role='dimension' type='nominal' />
+            <column datatype='date' name='[dia]' role='dimension' type='ordinal' />
+            <column datatype='string' name='[location]' role='dimension' type='nominal' />
+            <column-instance column='[business_id]' derivation='None' name='[none:business_id:nk]' pivot='key' type='nominal' />
+            <column-instance column='[location]' derivation='None' name='[none:location:nk]' pivot='key' type='nominal' />
+            <column-instance column='[service]' derivation='None' name='[none:service:nk]' pivot='key' type='nominal' />
+            <column datatype='string' name='[service]' role='dimension' type='nominal' />
+            <column-instance column='[dia]' derivation='Week-Trunc' name='[twk:dia:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[Calculation_1151795622405787650]' derivation='User' name='[usr:Calculation_1151795622405787650:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[dia]' derivation='Week' name='[wk:dia:ok]' pivot='key' type='ordinal' />
+          </datasource-dependencies>
+          <filter class='categorical' column='[federated.1j9lfss1rxtpax12tekhu0bthiip].[none:business_id:nk]'>
+            <groupfilter function='except' user:ui-domain='database' user:ui-enumeration='inclusive' user:ui-marker='enumerate'>
+              <groupfilter function='level-members' level='[none:business_id:nk]' />
+              <groupfilter function='member' level='[none:business_id:nk]' member='%null%' />
+            </groupfilter>
+          </filter>
+          <filter class='categorical' column='[federated.1j9lfss1rxtpax12tekhu0bthiip].[none:service:nk]'>
+            <groupfilter function='level-members' level='[none:service:nk]' user:ui-enumeration='all' user:ui-marker='enumerate' />
+          </filter>
+          <filter class='categorical' column='[federated.1j9lfss1rxtpax12tekhu0bthiip].[wk:dia:ok]'>
+            <groupfilter from='14' function='range' level='[wk:dia:ok]' to='27' user:ui-domain='database' user:ui-enumeration='inclusive' user:ui-marker='enumerate' />
+          </filter>
+          <slices>
+            <column>[federated.1j9lfss1rxtpax12tekhu0bthiip].[wk:dia:ok]</column>
+            <column>[federated.1j9lfss1rxtpax12tekhu0bthiip].[none:business_id:nk]</column>
+            <column>[federated.1j9lfss1rxtpax12tekhu0bthiip].[none:service:nk]</column>
+          </slices>
+          <aggregation value='true' />
+        </view>
+        <style>
+          <style-rule element='refline'>
+            <format attr='fill-above' id='refline0' value='#00000000' />
+            <format attr='fill-below' id='refline0' value='#00000000' />
+            <format attr='stroke-size' id='refline0' value='3' />
+          </style-rule>
+          <style-rule element='legend-title-text'>
+            <format attr='color' field='[federated.1j9lfss1rxtpax12tekhu0bthiip].[none:location:nk]' value='Tarea'>
+              <formatted-text>
+                <run>Tarea</run>
+              </formatted-text>
+            </format>
+          </style-rule>
+          <style-rule element='quick-filter'>
+            <format attr='title' field='[federated.1j9lfss1rxtpax12tekhu0bthiip].[none:service:nk]' value='Tienda'>
+              <formatted-text>
+                <run>Tienda</run>
+              </formatted-text>
+            </format>
+            <format attr='title' field='[federated.1j9lfss1rxtpax12tekhu0bthiip].[none:business_id:nk]' value='Mercado'>
+              <formatted-text>
+                <run>Mercado</run>
+              </formatted-text>
+            </format>
+            <format attr='title' field='[federated.1j9lfss1rxtpax12tekhu0bthiip].[wk:dia:ok]' value='Semana'>
+              <formatted-text>
+                <run>Semana</run>
+              </formatted-text>
+            </format>
+          </style-rule>
+        </style>
+        <panes>
+          <pane id='1' selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Bar' />
+            <mark-sizing custom-mark-size-in-axis-units='1.0' mark-alignment='mark-alignment-left' mark-sizing-setting='marks-scaling-on' use-custom-mark-size='false' />
+            <encodings>
+              <color column='[federated.1j9lfss1rxtpax12tekhu0bthiip].[none:location:nk]' />
+            </encodings>
+            <reference-line axis-column='[federated.1j9lfss1rxtpax12tekhu0bthiip].[usr:Calculation_1151795622405787650:qk]' enable-instant-analytics='true' formula='constant' id='refline0' label='tareas totales (AR)' label-type='custom' scope='per-pane' value='18' value-column='[federated.1j9lfss1rxtpax12tekhu0bthiip].[usr:Calculation_1151795622405787650:qk]' z-order='1' />
+            <style>
+              <style-rule element='mark'>
+                <format attr='mark-labels-cull' value='true' />
+                <format attr='mark-labels-show' value='false' />
+              </style-rule>
+            </style>
+          </pane>
+        </panes>
+        <rows>[federated.1j9lfss1rxtpax12tekhu0bthiip].[usr:Calculation_1151795622405787650:qk]</rows>
+        <cols>[federated.1j9lfss1rxtpax12tekhu0bthiip].[twk:dia:qk]</cols>
+      </table>
+      <simple-id uuid='{8A0410CC-C589-4958-86CB-1059686121A2}' />
+    </worksheet>
+    <worksheet name='Desvio FCST'>
+      <repository-location derived-from='http://ip-172-31-0-197:8389/t/Pedidosya/workbooks/ORQUEST/DesvioFCST?rev=' id='DesvioFCST' path='/t/Pedidosya/workbooks/ORQUEST_17514725952760' revision='' site='Pedidosya' />
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='query forecast' name='federated.1embhp21b8whu112mb11805u0c7n' />
+          </datasources>
+          <datasource-dependencies datasource='federated.1embhp21b8whu112mb11805u0c7n'>
+            <column caption='Desvio FCST' datatype='real' name='[Calculation_1151795622383034369]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='(SUM([valor_real]) - SUM([valor_fcst])) / SUM([valor_fcst])' />
+            </column>
+            <column datatype='date' name='[fecha]' role='dimension' type='ordinal' />
+            <column datatype='string' name='[measure]' role='dimension' type='nominal' />
+            <column-instance column='[measure]' derivation='None' name='[none:measure:nk]' pivot='key' type='nominal' />
+            <column-instance column='[store_name]' derivation='None' name='[none:store_name:nk]' pivot='key' type='nominal' />
+            <column datatype='string' name='[store_name]' role='dimension' type='nominal' />
+            <column-instance column='[fecha]' derivation='Day-Trunc' name='[tdy:fecha:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[Calculation_1151795622383034369]' derivation='User' name='[usr:Calculation_1151795622383034369:qk]' pivot='key' type='quantitative' />
+            <column datatype='real' name='[valor_fcst]' role='measure' type='quantitative' />
+            <column datatype='real' name='[valor_real]' role='measure' type='quantitative' />
+          </datasource-dependencies>
+          <filter class='quantitative' column='[federated.1embhp21b8whu112mb11805u0c7n].[usr:Calculation_1151795622383034369:qk]' included-values='in-range' />
+          <slices>
+            <column>[federated.1embhp21b8whu112mb11805u0c7n].[none:store_name:nk]</column>
+            <column>[federated.1embhp21b8whu112mb11805u0c7n].[none:measure:nk]</column>
+            <column>[federated.1embhp21b8whu112mb11805u0c7n].[tdy:fecha:qk]</column>
+            <column>[federated.1embhp21b8whu112mb11805u0c7n].[usr:Calculation_1151795622383034369:qk]</column>
+          </slices>
+          <aggregation value='true' />
+        </view>
+        <style>
+          <style-rule element='axis'>
+            <format attr='display' class='0' field='[federated.1embhp21b8whu112mb11805u0c7n].[usr:Calculation_1151795622383034369:qk]' scope='rows' value='false' />
+            <format attr='title' class='0' field='[federated.1embhp21b8whu112mb11805u0c7n].[tdy:fecha:qk]' scope='cols' value='' />
+          </style-rule>
+          <style-rule element='quick-filter'>
+            <format attr='title' field='[federated.1embhp21b8whu112mb11805u0c7n].[none:measure:nk]' value='Medida'>
+              <formatted-text>
+                <run>Medida</run>
+              </formatted-text>
+            </format>
+            <format attr='title' field='[federated.1embhp21b8whu112mb11805u0c7n].[none:store_name:nk]' value='Tienda'>
+              <formatted-text>
+                <run>Tienda</run>
+              </formatted-text>
+            </format>
+            <format attr='title' field='[federated.1embhp21b8whu112mb11805u0c7n].[tdy:fecha:qk]' value='Rango de Fechas&#10;'>
+              <formatted-text>
+                <run>Rango de Fechas&#10;</run>
+              </formatted-text>
+            </format>
+          </style-rule>
+        </style>
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Bar' />
+            <mark-sizing custom-mark-size-in-axis-units='1.0' mark-alignment='mark-alignment-left' mark-sizing-setting='marks-scaling-on' use-custom-mark-size='false' />
+          </pane>
+        </panes>
+        <rows>[federated.1embhp21b8whu112mb11805u0c7n].[usr:Calculation_1151795622383034369:qk]</rows>
+        <cols>[federated.1embhp21b8whu112mb11805u0c7n].[tdy:fecha:qk]</cols>
+      </table>
+      <simple-id uuid='{23946469-685F-4EDA-A28C-A584800851E2}' />
+    </worksheet>
+    <worksheet name='FCST vs. REALES'>
+      <repository-location derived-from='http://ip-172-31-0-197:8389/t/Pedidosya/workbooks/ORQUEST/FCSTvs_REALES?rev=' id='FCSTvs_REALES' path='/t/Pedidosya/workbooks/ORQUEST_17514725952760' revision='' site='Pedidosya' />
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='query forecast' name='federated.1embhp21b8whu112mb11805u0c7n' />
+          </datasources>
+          <datasource-dependencies datasource='federated.1embhp21b8whu112mb11805u0c7n'>
+            <column datatype='date' name='[fecha]' role='dimension' type='ordinal' />
+            <column datatype='string' name='[measure]' role='dimension' type='nominal' />
+            <column-instance column='[measure]' derivation='None' name='[none:measure:nk]' pivot='key' type='nominal' />
+            <column-instance column='[store_name]' derivation='None' name='[none:store_name:nk]' pivot='key' type='nominal' />
+            <column datatype='string' name='[store_name]' role='dimension' type='nominal' />
+            <column-instance column='[valor_fcst]' derivation='Sum' name='[sum:valor_fcst:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[valor_real]' derivation='Sum' name='[sum:valor_real:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[fecha]' derivation='Day-Trunc' name='[tdy:fecha:ok]' pivot='key' type='ordinal' />
+            <column-instance column='[fecha]' derivation='Day-Trunc' name='[tdy:fecha:qk]' pivot='key' type='quantitative' />
+            <column datatype='real' name='[valor_fcst]' role='measure' type='quantitative' />
+            <column datatype='real' name='[valor_real]' role='measure' type='quantitative' />
+          </datasource-dependencies>
+          <filter class='categorical' column='[federated.1embhp21b8whu112mb11805u0c7n].[Action (DAY(fecha))]'>
+            <groupfilter function='level-members' level='[tdy:fecha:ok]' user:ui-action-filter='[Action3_876D2BFA643343C290B958664215F4C6]' user:ui-enumeration='all' user:ui-marker='enumerate' />
+          </filter>
+          <slices>
+            <column>[federated.1embhp21b8whu112mb11805u0c7n].[none:store_name:nk]</column>
+            <column>[federated.1embhp21b8whu112mb11805u0c7n].[none:measure:nk]</column>
+            <column>[federated.1embhp21b8whu112mb11805u0c7n].[tdy:fecha:qk]</column>
+            <column>[federated.1embhp21b8whu112mb11805u0c7n].[Action (DAY(fecha))]</column>
+          </slices>
+          <aggregation value='true' />
+        </view>
+        <style>
+          <style-rule element='axis'>
+            <encoding attr='space' class='0' field='[federated.1embhp21b8whu112mb11805u0c7n].[sum:valor_real:qk]' field-type='quantitative' fold='true' min='0.0' range-type='fixedmin' scope='rows' type='space' />
+            <encoding attr='space' class='0' field='[federated.1embhp21b8whu112mb11805u0c7n].[sum:valor_fcst:qk]' field-type='quantitative' min='0.0' range-type='fixedmin' scope='rows' type='space' />
+            <format attr='title' class='0' field='[federated.1embhp21b8whu112mb11805u0c7n].[sum:valor_fcst:qk]' scope='rows' value='' />
+            <format attr='title' class='0' field='[federated.1embhp21b8whu112mb11805u0c7n].[sum:valor_real:qk]' scope='rows' value='' />
+            <format attr='title' class='0' field='[federated.1embhp21b8whu112mb11805u0c7n].[tdy:fecha:qk]' scope='cols' value='' />
+          </style-rule>
+          <style-rule element='legend-title-text'>
+            <format attr='color' field='[federated.1embhp21b8whu112mb11805u0c7n].[:Measure Names]' value='Referencia'>
+              <formatted-text>
+                <run>Referencia</run>
+              </formatted-text>
+            </format>
+          </style-rule>
+          <style-rule element='quick-filter'>
+            <format attr='title' field='[federated.1embhp21b8whu112mb11805u0c7n].[tdy:fecha:qk]' value='Rango de Fechas&#10;'>
+              <formatted-text>
+                <run>Rango de Fechas&#10;</run>
+              </formatted-text>
+            </format>
+            <format attr='title' field='[federated.1embhp21b8whu112mb11805u0c7n].[none:measure:nk]' value='Medida'>
+              <formatted-text>
+                <run>Medida</run>
+              </formatted-text>
+            </format>
+            <format attr='title' field='[federated.1embhp21b8whu112mb11805u0c7n].[none:store_name:nk]' value='Tienda'>
+              <formatted-text>
+                <run>Tienda</run>
+              </formatted-text>
+            </format>
+          </style-rule>
+        </style>
+        <panes>
+          <pane id='1' selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Automatic' />
+            <encodings>
+              <color column='[federated.1embhp21b8whu112mb11805u0c7n].[:Measure Names]' />
+            </encodings>
+          </pane>
+          <pane id='2' selection-relaxation-option='selection-relaxation-allow' y-axis-name='[federated.1embhp21b8whu112mb11805u0c7n].[sum:valor_fcst:qk]'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Automatic' />
+            <encodings>
+              <color column='[federated.1embhp21b8whu112mb11805u0c7n].[:Measure Names]' />
+            </encodings>
+          </pane>
+          <pane id='3' selection-relaxation-option='selection-relaxation-allow' y-axis-name='[federated.1embhp21b8whu112mb11805u0c7n].[sum:valor_real:qk]'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Automatic' />
+            <encodings>
+              <color column='[federated.1embhp21b8whu112mb11805u0c7n].[:Measure Names]' />
+            </encodings>
+          </pane>
+        </panes>
+        <rows>([federated.1embhp21b8whu112mb11805u0c7n].[sum:valor_fcst:qk] + [federated.1embhp21b8whu112mb11805u0c7n].[sum:valor_real:qk])</rows>
+        <cols>[federated.1embhp21b8whu112mb11805u0c7n].[tdy:fecha:qk]</cols>
+      </table>
+      <simple-id uuid='{D8AF5D13-F1DB-43F1-A570-242C20350E2E}' />
+    </worksheet>
+    <worksheet name='Tareas Planificadas'>
+      <repository-location derived-from='http://ip-172-31-0-197:8389/t/Pedidosya/workbooks/ORQUEST/TareasPlanificadas?rev=' id='TareasPlanificadas' path='/t/Pedidosya/workbooks/ORQUEST_17514725952760' revision='' site='Pedidosya' />
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='tareas planificadas' name='federated.1j9lfss1rxtpax12tekhu0bthiip' />
+          </datasources>
+          <datasource-dependencies datasource='federated.1j9lfss1rxtpax12tekhu0bthiip'>
+            <column datatype='string' name='[business_id]' role='dimension' type='nominal' />
+            <column datatype='date' name='[dia]' role='dimension' type='ordinal' />
+            <column datatype='real' name='[horas_totales]' role='measure' type='quantitative' />
+            <column datatype='string' name='[location]' role='dimension' type='nominal' />
+            <column-instance column='[business_id]' derivation='None' name='[none:business_id:nk]' pivot='key' type='nominal' />
+            <column-instance column='[location]' derivation='None' name='[none:location:nk]' pivot='key' type='nominal' />
+            <column-instance column='[service]' derivation='None' name='[none:service:nk]' pivot='key' type='nominal' />
+            <column datatype='string' name='[service]' role='dimension' type='nominal' />
+            <column-instance column='[horas_totales]' derivation='Sum' name='[sum:horas_totales:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[dia]' derivation='Week' name='[wk:dia:ok]' pivot='key' type='ordinal' />
+          </datasource-dependencies>
+          <filter class='categorical' column='[federated.1j9lfss1rxtpax12tekhu0bthiip].[none:business_id:nk]'>
+            <groupfilter function='except' user:ui-domain='database' user:ui-enumeration='inclusive' user:ui-marker='enumerate'>
+              <groupfilter function='level-members' level='[none:business_id:nk]' />
+              <groupfilter function='member' level='[none:business_id:nk]' member='%null%' />
+            </groupfilter>
+          </filter>
+          <filter class='categorical' column='[federated.1j9lfss1rxtpax12tekhu0bthiip].[none:service:nk]'>
+            <groupfilter function='except' user:ui-domain='database' user:ui-enumeration='inclusive' user:ui-marker='enumerate'>
+              <groupfilter function='level-members' level='[none:service:nk]' />
+              <groupfilter function='member' level='[none:service:nk]' member='%null%' />
+            </groupfilter>
+          </filter>
+          <filter class='categorical' column='[federated.1j9lfss1rxtpax12tekhu0bthiip].[wk:dia:ok]'>
+            <groupfilter function='member' level='[wk:dia:ok]' member='27' user:ui-domain='database' user:ui-enumeration='inclusive' user:ui-marker='enumerate' />
+          </filter>
+          <slices>
+            <column>[federated.1j9lfss1rxtpax12tekhu0bthiip].[wk:dia:ok]</column>
+            <column>[federated.1j9lfss1rxtpax12tekhu0bthiip].[none:business_id:nk]</column>
+            <column>[federated.1j9lfss1rxtpax12tekhu0bthiip].[none:service:nk]</column>
+          </slices>
+          <aggregation value='true' />
+        </view>
+        <style>
+          <style-rule element='cell'>
+            <format attr='cell-w' value='660' />
+            <format attr='cell-h' value='580' />
+            <format attr='cell' value='20' />
+            <format attr='cell-q' value='100' />
+          </style-rule>
+          <style-rule element='legend-title-text'>
+            <format attr='color' field='[federated.1j9lfss1rxtpax12tekhu0bthiip].[none:location:nk]' value='Tarea&#10;'>
+              <formatted-text>
+                <run>Tarea&#10;</run>
+              </formatted-text>
+            </format>
+            <format attr='size' field='[federated.1j9lfss1rxtpax12tekhu0bthiip].[sum:horas_totales:qk]' value='Horas Totales&#10;'>
+              <formatted-text>
+                <run>Horas Totales&#10;</run>
+              </formatted-text>
+            </format>
+          </style-rule>
+          <style-rule element='quick-filter'>
+            <format attr='title' field='[federated.1j9lfss1rxtpax12tekhu0bthiip].[wk:dia:ok]' value='Semana&#10;'>
+              <formatted-text>
+                <run>Semana&#10;</run>
+              </formatted-text>
+            </format>
+            <format attr='title' field='[federated.1j9lfss1rxtpax12tekhu0bthiip].[none:service:nk]' value='Tienda&#10;'>
+              <formatted-text>
+                <run>Tienda&#10;</run>
+              </formatted-text>
+            </format>
+            <format attr='title' field='[federated.1j9lfss1rxtpax12tekhu0bthiip].[none:business_id:nk]' value='Mercado&#10;'>
+              <formatted-text>
+                <run>Mercado&#10;</run>
+              </formatted-text>
+            </format>
+          </style-rule>
+        </style>
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Pie' />
+            <mark-sizing mark-sizing-setting='marks-scaling-off' />
+            <encodings>
+              <color column='[federated.1j9lfss1rxtpax12tekhu0bthiip].[none:location:nk]' />
+              <wedge-size column='[federated.1j9lfss1rxtpax12tekhu0bthiip].[sum:horas_totales:qk]' />
+              <size column='[federated.1j9lfss1rxtpax12tekhu0bthiip].[sum:horas_totales:qk]' />
+              <text column='[federated.1j9lfss1rxtpax12tekhu0bthiip].[none:location:nk]' />
+            </encodings>
+            <style>
+              <style-rule element='mark'>
+                <format attr='size' value='2' />
+                <format attr='mark-labels-cull' value='true' />
+                <format attr='mark-labels-show' value='true' />
+              </style-rule>
+              <style-rule element='pane'>
+                <format attr='aspect' value='0' />
+              </style-rule>
+            </style>
+          </pane>
+        </panes>
+        <rows />
+        <cols />
+      </table>
+      <simple-id uuid='{0A6037C6-A71D-4B30-86BD-9071C28B509B}' />
+    </worksheet>
+  </worksheets>
+  <dashboards>
+    <dashboard _.fcp.AccessibleZoneTabOrder.true...enable-sort-zone-taborder='true' name='Dashboard FCST'>
+      <repository-location derived-from='http://ip-172-31-0-197:8389/t/Pedidosya/workbooks/ORQUEST/DashboardFCST?rev=' id='DashboardFCST' path='/t/Pedidosya/workbooks/ORQUEST_17514725952760' revision='' site='Pedidosya' />
+      <style />
+      <size maxheight='800' maxwidth='1000' minheight='800' minwidth='1000' />
+      <datasources>
+        <datasource caption='query forecast' name='federated.1embhp21b8whu112mb11805u0c7n' />
+      </datasources>
+      <datasource-dependencies datasource='federated.1embhp21b8whu112mb11805u0c7n'>
+        <column datatype='date' name='[fecha]' role='dimension' type='ordinal' />
+        <column datatype='string' name='[measure]' role='dimension' type='nominal' />
+        <column-instance column='[measure]' derivation='None' name='[none:measure:nk]' pivot='key' type='nominal' />
+        <column-instance column='[store_name]' derivation='None' name='[none:store_name:nk]' pivot='key' type='nominal' />
+        <column datatype='string' name='[store_name]' role='dimension' type='nominal' />
+        <column-instance column='[fecha]' derivation='Day-Trunc' name='[tdy:fecha:qk]' pivot='key' type='quantitative' />
+      </datasource-dependencies>
+      <zones>
+        <zone h='100000' id='4' type-v2='layout-basic' w='100000' x='0' y='0'>
+          <zone h='98000' id='36' param='vert' type-v2='layout-flow' w='98400' x='800' y='1000'>
+            <zone h='98000' id='34' type-v2='layout-basic' w='98400' x='800' y='1000'>
+              <zone h='65624' id='7' param='horz' type-v2='layout-flow' w='98400' x='800' y='1000'>
+                <zone h='65624' id='5' type-v2='layout-basic' w='82400' x='800' y='1000'>
+                  <zone h='65624' id='3' name='FCST vs. REALES' w='82400' x='800' y='1000'>
+                    <zone-style>
+                      <format attr='border-color' value='#000000' />
+                      <format attr='border-style' value='none' />
+                      <format attr='border-width' value='0' />
+                      <format attr='margin' value='4' />
+                    </zone-style>
+                  </zone>
+                </zone>
+                <zone fixed-size='160' h='65624' id='6' is-fixed='true' layout-strategy-id='distribute-evenly' param='vert' type-v2='layout-flow' w='16000' x='83200' y='1000'>
+                  <zone h='16500' id='8' name='FCST vs. REALES' param='[federated.1embhp21b8whu112mb11805u0c7n].[tdy:fecha:qk]' show-domain='false' show-null-ctrls='false' type-v2='filter' w='16000' x='83200' y='1000'>
+                    <zone-style>
+                      <format attr='border-color' value='#000000' />
+                      <format attr='border-style' value='none' />
+                      <format attr='border-width' value='0' />
+                      <format attr='margin' value='4' />
+                    </zone-style>
+                  </zone>
+                  <zone h='16375' id='9' mode='dropdown' name='FCST vs. REALES' param='[federated.1embhp21b8whu112mb11805u0c7n].[none:measure:nk]' type-v2='filter' w='16000' x='83200' y='17500'>
+                    <zone-style>
+                      <format attr='border-color' value='#000000' />
+                      <format attr='border-style' value='none' />
+                      <format attr='border-width' value='0' />
+                      <format attr='margin' value='4' />
+                    </zone-style>
+                  </zone>
+                  <zone h='16375' id='10' mode='dropdown' name='FCST vs. REALES' param='[federated.1embhp21b8whu112mb11805u0c7n].[none:store_name:nk]' type-v2='filter' w='16000' x='83200' y='33875'>
+                    <zone-style>
+                      <format attr='border-color' value='#000000' />
+                      <format attr='border-style' value='none' />
+                      <format attr='border-width' value='0' />
+                      <format attr='margin' value='4' />
+                    </zone-style>
+                  </zone>
+                  <zone h='16375' id='11' name='FCST vs. REALES' pane-specification-id='2' param='[federated.1embhp21b8whu112mb11805u0c7n].[:Measure Names]' type-v2='color' w='16000' x='83200' y='50250'>
+                    <zone-style>
+                      <format attr='border-color' value='#000000' />
+                      <format attr='border-style' value='none' />
+                      <format attr='border-width' value='0' />
+                      <format attr='margin' value='4' />
+                    </zone-style>
+                  </zone>
+                </zone>
+              </zone>
+              <zone h='32376' id='12' name='Desvio FCST' w='71800' x='6000' y='66624'>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+              <zone h='32376' id='28' param='vert' type-v2='layout-flow' w='21400' x='77800' y='66624' />
+              <zone h='32376' id='29' param='vert' type-v2='layout-flow' w='5200' x='800' y='66624' />
+            </zone>
+          </zone>
+          <zone-style>
+            <format attr='border-color' value='#000000' />
+            <format attr='border-style' value='none' />
+            <format attr='border-width' value='0' />
+            <format attr='margin' value='8' />
+          </zone-style>
+        </zone>
+      </zones>
+      <devicelayouts>
+        <devicelayout auto-generated='true' name='Phone'>
+          <size maxheight='800' minheight='800' sizing-mode='vscroll' />
+          <zones>
+            <zone h='100000' id='42' type-v2='layout-basic' w='100000' x='0' y='0'>
+              <zone h='98000' id='41' param='vert' type-v2='layout-flow' w='98400' x='800' y='1000'>
+                <zone h='16500' id='8' name='FCST vs. REALES' param='[federated.1embhp21b8whu112mb11805u0c7n].[tdy:fecha:qk]' show-domain='false' show-null-ctrls='false' type-v2='filter' w='16000' x='83200' y='1000'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone h='16375' id='9' mode='dropdown' name='FCST vs. REALES' param='[federated.1embhp21b8whu112mb11805u0c7n].[none:measure:nk]' type-v2='filter' w='16000' x='83200' y='17500'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone h='16375' id='10' mode='dropdown' name='FCST vs. REALES' param='[federated.1embhp21b8whu112mb11805u0c7n].[none:store_name:nk]' type-v2='filter' w='16000' x='83200' y='33875'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone fixed-size='280' h='65624' id='3' is-fixed='true' name='FCST vs. REALES' w='82400' x='800' y='1000'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone h='16375' id='11' name='FCST vs. REALES' pane-specification-id='2' param='[federated.1embhp21b8whu112mb11805u0c7n].[:Measure Names]' type-v2='color' w='16000' x='83200' y='50250'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone fixed-size='251' h='32376' id='12' is-fixed='true' name='Desvio FCST' w='71800' x='6000' y='66624'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+              </zone>
+              <zone-style>
+                <format attr='border-color' value='#000000' />
+                <format attr='border-style' value='none' />
+                <format attr='border-width' value='0' />
+                <format attr='margin' value='8' />
+              </zone-style>
+            </zone>
+          </zones>
+        </devicelayout>
+      </devicelayouts>
+      <simple-id uuid='{C14B10C2-36B9-4397-B3C0-E46C5B9D4699}' />
+    </dashboard>
+  </dashboards>
+  <windows source-height='51'>
+    <window class='worksheet' name='FCST vs. REALES'>
+      <cards>
+        <edge name='left'>
+          <strip size='238'>
+            <card type='pages' />
+            <card type='filters' />
+            <card type='marks' />
+          </strip>
+        </edge>
+        <edge name='top'>
+          <strip size='72'>
+            <card type='columns' />
+          </strip>
+          <strip size='72'>
+            <card type='rows' />
+          </strip>
+          <strip size='45'>
+            <card type='title' />
+          </strip>
+        </edge>
+        <edge name='right'>
+          <strip size='261'>
+            <card param='[federated.1embhp21b8whu112mb11805u0c7n].[tdy:fecha:qk]' show-domain='false' show-null-ctrls='false' type='filter' />
+            <card mode='dropdown' param='[federated.1embhp21b8whu112mb11805u0c7n].[none:measure:nk]' type='filter' />
+            <card mode='dropdown' param='[federated.1embhp21b8whu112mb11805u0c7n].[none:store_name:nk]' type='filter' />
+            <card pane-specification-id='2' param='[federated.1embhp21b8whu112mb11805u0c7n].[:Measure Names]' type='color' />
+          </strip>
+        </edge>
+      </cards>
+      <viewpoint>
+        <highlight>
+          <color-one-way>
+            <field>[federated.1embhp21b8whu112mb11805u0c7n].[dy:fecha:ok]</field>
+            <field>[federated.1embhp21b8whu112mb11805u0c7n].[mn:fecha:ok]</field>
+            <field>[federated.1embhp21b8whu112mb11805u0c7n].[none:measure:nk]</field>
+            <field>[federated.1embhp21b8whu112mb11805u0c7n].[none:store_name:nk]</field>
+            <field>[federated.1embhp21b8whu112mb11805u0c7n].[yr:fecha:ok]</field>
+          </color-one-way>
+        </highlight>
+      </viewpoint>
+      <simple-id uuid='{9A34629E-A79B-4E09-AD45-99E1D61095B8}' />
+    </window>
+    <window class='worksheet' name='Desvio FCST'>
+      <cards>
+        <edge name='left'>
+          <strip size='240'>
+            <card type='pages' />
+            <card type='filters' />
+            <card type='marks' />
+          </strip>
+        </edge>
+        <edge name='top'>
+          <strip size='48'>
+            <card type='columns' />
+          </strip>
+          <strip size='48'>
+            <card type='rows' />
+          </strip>
+          <strip size='45'>
+            <card type='title' />
+          </strip>
+        </edge>
+        <edge name='right'>
+          <strip size='261'>
+            <card mode='dropdown' param='[federated.1embhp21b8whu112mb11805u0c7n].[none:measure:nk]' type='filter' />
+            <card mode='dropdown' param='[federated.1embhp21b8whu112mb11805u0c7n].[none:store_name:nk]' type='filter' />
+            <card param='[federated.1embhp21b8whu112mb11805u0c7n].[tdy:fecha:qk]' show-domain='false' show-null-ctrls='false' type='filter' />
+          </strip>
+        </edge>
+      </cards>
+      <viewpoint>
+        <highlight>
+          <color-one-way>
+            <field>[federated.1embhp21b8whu112mb11805u0c7n].[dy:fecha:ok]</field>
+            <field>[federated.1embhp21b8whu112mb11805u0c7n].[none:measure:nk]</field>
+            <field>[federated.1embhp21b8whu112mb11805u0c7n].[none:store_name:nk]</field>
+            <field>[federated.1embhp21b8whu112mb11805u0c7n].[yr:fecha:ok]</field>
+          </color-one-way>
+        </highlight>
+      </viewpoint>
+      <simple-id uuid='{AE14A26D-2C2A-4FFB-B8E7-58733D853B43}' />
+    </window>
+    <window class='worksheet' name='Tareas Planificadas'>
+      <cards>
+        <edge name='left'>
+          <strip size='240'>
+            <card type='pages' />
+            <card type='filters' />
+            <card type='marks' />
+          </strip>
+        </edge>
+        <edge name='top'>
+          <strip size='48'>
+            <card type='columns' />
+          </strip>
+          <strip size='48'>
+            <card type='rows' />
+          </strip>
+          <strip size='45'>
+            <card type='title' />
+          </strip>
+        </edge>
+        <edge name='right'>
+          <strip size='261'>
+            <card mode='dropdown' param='[federated.1j9lfss1rxtpax12tekhu0bthiip].[none:business_id:nk]' type='filter' />
+            <card mode='dropdown' param='[federated.1j9lfss1rxtpax12tekhu0bthiip].[none:service:nk]' type='filter' />
+            <card mode='dropdown' param='[federated.1j9lfss1rxtpax12tekhu0bthiip].[wk:dia:ok]' type='filter' />
+            <card pane-specification-id='0' param='[federated.1j9lfss1rxtpax12tekhu0bthiip].[none:location:nk]' type='color' />
+            <card pane-specification-id='0' param='[federated.1j9lfss1rxtpax12tekhu0bthiip].[sum:horas_totales:qk]' type='size' />
+          </strip>
+        </edge>
+      </cards>
+      <viewpoint>
+        <highlight>
+          <color-one-way>
+            <field>[federated.1j9lfss1rxtpax12tekhu0bthiip].[:Measure Names]</field>
+            <field>[federated.1j9lfss1rxtpax12tekhu0bthiip].[none:business_id:nk]</field>
+            <field>[federated.1j9lfss1rxtpax12tekhu0bthiip].[none:service:nk]</field>
+            <field>[federated.1j9lfss1rxtpax12tekhu0bthiip].[wk:dia:ok]</field>
+          </color-one-way>
+        </highlight>
+      </viewpoint>
+      <simple-id uuid='{73241D32-9C53-4DCA-8E73-8686E9941AA6}' />
+    </window>
+    <window class='worksheet' name='# Tareas planificadas'>
+      <cards>
+        <edge name='left'>
+          <strip size='240'>
+            <card type='pages' />
+            <card type='filters' />
+            <card type='marks' />
+          </strip>
+        </edge>
+        <edge name='top'>
+          <strip size='48'>
+            <card type='columns' />
+          </strip>
+          <strip size='48'>
+            <card type='rows' />
+          </strip>
+          <strip size='45'>
+            <card type='title' />
+          </strip>
+        </edge>
+        <edge name='right'>
+          <strip size='262'>
+            <card mode='dropdown' param='[federated.1j9lfss1rxtpax12tekhu0bthiip].[none:service:nk]' type='filter' />
+            <card mode='dropdown' param='[federated.1j9lfss1rxtpax12tekhu0bthiip].[none:business_id:nk]' type='filter' />
+            <card mode='checkdropdown' param='[federated.1j9lfss1rxtpax12tekhu0bthiip].[wk:dia:ok]' type='filter' />
+            <card pane-specification-id='1' param='[federated.1j9lfss1rxtpax12tekhu0bthiip].[none:location:nk]' type='color' />
+          </strip>
+        </edge>
+      </cards>
+      <viewpoint>
+        <highlight>
+          <color-one-way>
+            <field>[federated.1j9lfss1rxtpax12tekhu0bthiip].[none:business_id:nk]</field>
+            <field>[federated.1j9lfss1rxtpax12tekhu0bthiip].[none:location:nk]</field>
+            <field>[federated.1j9lfss1rxtpax12tekhu0bthiip].[none:service:nk]</field>
+            <field>[federated.1j9lfss1rxtpax12tekhu0bthiip].[wk:dia:ok]</field>
+            <field>[federated.1j9lfss1rxtpax12tekhu0bthiip].[yr:dia:ok]</field>
+          </color-one-way>
+        </highlight>
+      </viewpoint>
+      <simple-id uuid='{D65540ED-49CF-4A7A-B882-1170FB31F2A7}' />
+    </window>
+    <window class='worksheet' name='# Horas planificadas'>
+      <cards>
+        <edge name='left'>
+          <strip size='160'>
+            <card type='pages' />
+            <card type='filters' />
+            <card type='marks' />
+          </strip>
+        </edge>
+        <edge name='top'>
+          <strip size='2147483647'>
+            <card type='columns' />
+          </strip>
+          <strip size='2147483647'>
+            <card type='rows' />
+          </strip>
+          <strip size='31'>
+            <card type='title' />
+          </strip>
+        </edge>
+        <edge name='right'>
+          <strip size='175'>
+            <card mode='dropdown' param='[federated.1j9lfss1rxtpax12tekhu0bthiip].[none:service:nk]' type='filter' />
+            <card mode='dropdown' param='[federated.1j9lfss1rxtpax12tekhu0bthiip].[none:business_id:nk]' type='filter' />
+            <card mode='checkdropdown' param='[federated.1j9lfss1rxtpax12tekhu0bthiip].[wk:dia:ok]' type='filter' />
+            <card pane-specification-id='0' param='[federated.1j9lfss1rxtpax12tekhu0bthiip].[none:location:nk]' type='color' />
+          </strip>
+        </edge>
+      </cards>
+      <viewpoint>
+        <highlight>
+          <color-one-way>
+            <field>[federated.1j9lfss1rxtpax12tekhu0bthiip].[none:business_id:nk]</field>
+            <field>[federated.1j9lfss1rxtpax12tekhu0bthiip].[none:location:nk]</field>
+            <field>[federated.1j9lfss1rxtpax12tekhu0bthiip].[none:service:nk]</field>
+            <field>[federated.1j9lfss1rxtpax12tekhu0bthiip].[wk:dia:ok]</field>
+            <field>[federated.1j9lfss1rxtpax12tekhu0bthiip].[yr:dia:ok]</field>
+          </color-one-way>
+        </highlight>
+      </viewpoint>
+      <simple-id uuid='{00272ACF-6AFE-4A0A-8B7E-EE5FA9520999}' />
+    </window>
+    <window class='dashboard' maximized='true' name='Dashboard FCST'>
+      <viewpoints>
+        <viewpoint name='Desvio FCST'>
+          <zoom type='entire-view' />
+        </viewpoint>
+        <viewpoint name='FCST vs. REALES'>
+          <zoom type='entire-view' />
+        </viewpoint>
+      </viewpoints>
+      <active id='10' />
+      <simple-id uuid='{175C63E0-EFCE-4B7C-BB96-160823B2693A}' />
+    </window>
+  </windows>
+</workbook>

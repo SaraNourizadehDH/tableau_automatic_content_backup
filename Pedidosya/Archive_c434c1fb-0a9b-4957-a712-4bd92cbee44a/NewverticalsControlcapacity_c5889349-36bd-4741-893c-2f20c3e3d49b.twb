@@ -1,0 +1,2698 @@
+<?xml version='1.0' encoding='utf-8' ?>
+
+<!-- build 20203.21.0819.0845                               -->
+<workbook original-version='18.1' source-build='2020.3.12 (20203.21.0819.0845)' version='18.1' xml:base='https://tableau.deliveryhero.net' xmlns:user='http://www.tableausoftware.com/xml/user'>
+  <document-format-change-manifest>
+    <AutoCreateAndUpdateDSDPhoneLayouts />
+    <CascadingFilters />
+    <ISO8601PeriodTypes />
+    <_.fcp.MarkAnimation.true...MarkAnimation />
+    <_.fcp.ObjectModelEncapsulateLegacy.true...ObjectModelEncapsulateLegacy />
+    <_.fcp.ObjectModelExtractV2.true...ObjectModelExtractV2 />
+    <_.fcp.ObjectModelTableType.true...ObjectModelTableType />
+    <_.fcp.SchemaViewerObjectModel.true...SchemaViewerObjectModel />
+    <_.fcp.SetMembershipControl.true...SetMembershipControl />
+    <SheetIdentifierTracking />
+    <SortTagCleanup />
+    <WindowsPersistSimpleIdentifiers />
+    <ZoneBackgroundTransparency />
+  </document-format-change-manifest>
+  <repository-location derived-from='https://tableau.deliveryhero.net/t/Pedidosya/workbooks/Newverticals-Controlcapacity?rev=1.2' id='Newverticals-Controlcapacity' path='/t/Pedidosya/workbooks' revision='1.3' site='Pedidosya' />
+  <preferences />
+  <style>
+    <_.fcp.MarkAnimation.true...style-rule element='animation'>
+      <format attr='animation-on' value='ao-on' />
+    </_.fcp.MarkAnimation.true...style-rule>
+  </style>
+  <datasources>
+    <datasource caption='Consulta SQL personalizada (user_fernanda_ochoa)' inline='true' name='federated.1pcdexa0p9c2j71e3h8uu1iup1lx' version='18.1'>
+      <connection class='federated'>
+        <named-connections>
+          <named-connection caption='BigQuery' name='bigquery.1rrkq0z0nxvzhr1d3g8ny04yphjz'>
+            <connection CATALOG='peya-food-and-groceries' EXECCATALOG='peya-food-and-groceries' authentication='yes' bq-dataset-fetch-rows='' bq-fetch-rows='' bq-fetch-tasks='' bq-large-fetch-rows='' bq-project-fetch-rows='' bq-response-rows='' class='bigquery' connection-dialect='google-sql' project='peya-food-and-groceries' schema='user_fernanda_ochoa' server-oauth='' username='fernanda.ochoa@pedidosya.com' workgroup-auth-mode='prompt' />
+          </named-connection>
+        </named-connections>
+        <_.fcp.ObjectModelEncapsulateLegacy.false...relation connection='bigquery.1rrkq0z0nxvzhr1d3g8ny04yphjz' name='Consulta SQL personalizada' type='text'><![CDATA[WITH configuration as (
+ SELECT  DATE(DATE_ADD(CURRENT_DATE(), INTERVAL -120 DAY)) AS from_interval 
+       , CURRENT_DATE() AS to_interval
+     )
+, partner_schedule AS (
+    SELECT *
+    FROM `peya-data-origins-pro.cl_core.partner_schedule` as p
+)
+,   vendor_capacity AS (
+    SELECT
+            EXTRACT(DATE FROM _ingested_at) as ingested_date
+        ,   c.vendorId
+        ,   c.dayId
+        ,   CASE
+                WHEN c.dayId = 1 THEN "Sunday"
+                WHEN c.dayId = 2 THEN "Monday"
+                WHEN c.dayId = 3 THEN "Tuesday"
+                WHEN c.dayId = 4 THEN "Wednesday"
+                WHEN c.dayId = 5 THEN "Thursday"
+                WHEN c.dayId = 6 THEN "Friday"
+                WHEN c.dayId = 7 THEN "Saturday"
+            END as week_day
+        ,   c.duration
+        ,   s.size
+        ,   PARSE_TIMESTAMP("%H:%M:%S", CONCAT(s.start.hour,":",s.start.minute,":00")) as start_interval
+        ,   PARSE_TIMESTAMP("%H:%M:%S", CONCAT(s.end.hour,":",s.end.minute,":00"))     as end_interval
+    FROM `peya-data-origins-pro.cl_groceries.vendor_capacity` c
+    , UNNEST(shifts) s
+    )
+, buckets AS (
+    SELECT
+            vc.ingested_date
+        ,   vc.RANK
+        ,   vc.vendorId
+        ,   vc.dayId
+        ,   vc.week_day
+        ,   vc.duration
+        ,   vc.size
+        ,   vc.start_interval
+        ,   vc.end_interval
+        ,   vc.hour
+        ,   vc.new_start_interval
+        ,   vc.new_end_interval
+    FROM (
+        SELECT
+                vc.ingested_date
+            ,   RANK() OVER (PARTITION BY vc.vendorId, vc.dayId ORDER BY hour) as RANK
+            ,   vc.vendorId
+            ,   vc.dayId
+            ,   vc.week_day
+            ,   vc.duration
+            ,   vc.size
+            ,   vc.start_interval
+            ,   vc.end_interval
+            ,   hour
+            ,   EXTRACT(TIME FROM hour) as new_start_interval
+            ,   EXTRACT(TIME FROM (TIMESTAMP_ADD(hour, INTERVAL duration MINUTE))) as new_end_interval
+        FROM  vendor_capacity vc
+        , UNNEST(GENERATE_TIMESTAMP_ARRAY(start_interval, end_interval, INTERVAL duration MINUTE)) AS hour
+        LEFT JOIN partner_schedule ps
+            ON  vc.vendorId = ps.restaurant_id
+            AND vc.dayId   = ps.day_id
+        WHERE
+                EXTRACT(TIME FROM hour) >>= EXTRACT(TIME FROM ps.from_date)
+            AND EXTRACT(TIME FROM (TIMESTAMP_ADD(hour, INTERVAL duration MINUTE))) <<  EXTRACT(TIME FROM ps.to_date)
+        ) as vc
+)
+, orders AS (
+    SELECT
+            order_id
+        ,   vendorId
+        ,   time
+        ,   EXTRACT(DATE FROM time) as registered_date
+        ,   FORMAT_DATE('%A', EXTRACT(DATE FROM time)) as week_day
+        ,   EXTRACT(TIME FROM time) as bucket
+    FROM `peya-data-origins-pro.cl_groceries.order_time_saved` ots
+    CROSS JOIN UNNEST(orderIds) as order_id
+    WHERE DATE(time)
+                BETWEEN (SELECT from_interval FROM configuration)
+                    AND (SELECT to_interval FROM configuration)
+),
+fact_orders AS (
+    SELECT
+            o.order_id
+        ,   o.restaurant.id as restaurant_id
+        ,   o.business_type.business_type_name as business_name
+        ,   EXTRACT(DATE FROM o.registered_at) as registered_date
+        ,   EXTRACT(TIME FROM o.registered_at) as registered_time
+        ,   o.is_pre_order
+        ,   o.order_status
+        ,   o.city.city_name
+        ,   o.qty_total_products
+        ,   o.qty_distinct_products
+        ,   o.country.country_name AS country_name
+        ,   o.business_type.business_type_name 
+    FROM `peya-bi-tools-pro.il_core.fact_orders` as o
+    WHERE
+            DATE(o.registered_date) >> (SELECT from_interval FROM configuration) 
+            and o.business_type_id <<>> 1
+    )
+SELECT
+        b.vendorId
+    ,   b.dayId
+    ,   b.week_day
+    ,   b.duration
+    ,   b.RANK as bucket_final
+    ,   b.size as size_bucket_final
+    ,   cast(b.new_start_interval as string) as start_bucket_final
+    ,   cast(b.new_end_interval as string)  as end_bucket_final
+    ,   fo.country_name
+    ,   fo.business_name
+    ,   fo.is_pre_order
+    ,   fo.order_status
+    ,   fo.qty_total_products
+    ,   fo.city_name
+    ,   o.order_id
+    ,   o.registered_date as registeted_date_capacity_table
+FROM buckets b
+LEFT JOIN orders o
+    ON  b.vendorId = o.vendorId
+    AND b.new_start_interval = o.bucket 
+    AND b.week_day = o.week_day   
+LEFT JOIN fact_orders fo  
+    ON fo.order_id = o.order_Id
+WHERE o.order_id is not null
+ORDER BY vendorId,registeted_date_capacity_table, dayId, start_bucket_final]]></_.fcp.ObjectModelEncapsulateLegacy.false...relation>
+        <_.fcp.ObjectModelEncapsulateLegacy.true...relation connection='bigquery.1rrkq0z0nxvzhr1d3g8ny04yphjz' name='Consulta SQL personalizada' type='text'><![CDATA[WITH configuration as (
+ SELECT  DATE(DATE_ADD(CURRENT_DATE(), INTERVAL -120 DAY)) AS from_interval 
+       , CURRENT_DATE() AS to_interval
+     )
+, partner_schedule AS (
+    SELECT *
+    FROM `peya-data-origins-pro.cl_core.partner_schedule` as p
+)
+,   vendor_capacity AS (
+    SELECT
+            EXTRACT(DATE FROM _ingested_at) as ingested_date
+        ,   c.vendorId
+        ,   c.dayId
+        ,   CASE
+                WHEN c.dayId = 1 THEN "Sunday"
+                WHEN c.dayId = 2 THEN "Monday"
+                WHEN c.dayId = 3 THEN "Tuesday"
+                WHEN c.dayId = 4 THEN "Wednesday"
+                WHEN c.dayId = 5 THEN "Thursday"
+                WHEN c.dayId = 6 THEN "Friday"
+                WHEN c.dayId = 7 THEN "Saturday"
+            END as week_day
+        ,   c.duration
+        ,   s.size
+        ,   PARSE_TIMESTAMP("%H:%M:%S", CONCAT(s.start.hour,":",s.start.minute,":00")) as start_interval
+        ,   PARSE_TIMESTAMP("%H:%M:%S", CONCAT(s.end.hour,":",s.end.minute,":00"))     as end_interval
+    FROM `peya-data-origins-pro.cl_groceries.vendor_capacity` c
+    , UNNEST(shifts) s
+    )
+, buckets AS (
+    SELECT
+            vc.ingested_date
+        ,   vc.RANK
+        ,   vc.vendorId
+        ,   vc.dayId
+        ,   vc.week_day
+        ,   vc.duration
+        ,   vc.size
+        ,   vc.start_interval
+        ,   vc.end_interval
+        ,   vc.hour
+        ,   vc.new_start_interval
+        ,   vc.new_end_interval
+    FROM (
+        SELECT
+                vc.ingested_date
+            ,   RANK() OVER (PARTITION BY vc.vendorId, vc.dayId ORDER BY hour) as RANK
+            ,   vc.vendorId
+            ,   vc.dayId
+            ,   vc.week_day
+            ,   vc.duration
+            ,   vc.size
+            ,   vc.start_interval
+            ,   vc.end_interval
+            ,   hour
+            ,   EXTRACT(TIME FROM hour) as new_start_interval
+            ,   EXTRACT(TIME FROM (TIMESTAMP_ADD(hour, INTERVAL duration MINUTE))) as new_end_interval
+        FROM  vendor_capacity vc
+        , UNNEST(GENERATE_TIMESTAMP_ARRAY(start_interval, end_interval, INTERVAL duration MINUTE)) AS hour
+        LEFT JOIN partner_schedule ps
+            ON  vc.vendorId = ps.restaurant_id
+            AND vc.dayId   = ps.day_id
+        WHERE
+                EXTRACT(TIME FROM hour) >>= EXTRACT(TIME FROM ps.from_date)
+            AND EXTRACT(TIME FROM (TIMESTAMP_ADD(hour, INTERVAL duration MINUTE))) <<  EXTRACT(TIME FROM ps.to_date)
+        ) as vc
+)
+, orders AS (
+    SELECT
+            order_id
+        ,   vendorId
+        ,   time
+        ,   EXTRACT(DATE FROM time) as registered_date
+        ,   FORMAT_DATE('%A', EXTRACT(DATE FROM time)) as week_day
+        ,   EXTRACT(TIME FROM time) as bucket
+    FROM `peya-data-origins-pro.cl_groceries.order_time_saved` ots
+    CROSS JOIN UNNEST(orderIds) as order_id
+    WHERE DATE(time)
+                BETWEEN (SELECT from_interval FROM configuration)
+                    AND (SELECT to_interval FROM configuration)
+),
+fact_orders AS (
+    SELECT
+            o.order_id
+        ,   o.restaurant.id as restaurant_id
+        ,   o.business_type.business_type_name as business_name
+        ,   EXTRACT(DATE FROM o.registered_at) as registered_date
+        ,   EXTRACT(TIME FROM o.registered_at) as registered_time
+        ,   o.is_pre_order
+        ,   o.order_status
+        ,   o.city.city_name
+        ,   o.qty_total_products
+        ,   o.qty_distinct_products
+        ,   o.country.country_name AS country_name
+        ,   o.business_type.business_type_name 
+    FROM `peya-bi-tools-pro.il_core.fact_orders` as o
+    WHERE
+            DATE(o.registered_date) >> (SELECT from_interval FROM configuration) 
+            and o.business_type_id <<>> 1
+    )
+SELECT
+        b.vendorId
+    ,   b.dayId
+    ,   b.week_day
+    ,   b.duration
+    ,   b.RANK as bucket_final
+    ,   b.size as size_bucket_final
+    ,   cast(b.new_start_interval as string) as start_bucket_final
+    ,   cast(b.new_end_interval as string)  as end_bucket_final
+    ,   fo.country_name
+    ,   fo.business_name
+    ,   fo.is_pre_order
+    ,   fo.order_status
+    ,   fo.qty_total_products
+    ,   fo.city_name
+    ,   o.order_id
+    ,   o.registered_date as registeted_date_capacity_table
+FROM buckets b
+LEFT JOIN orders o
+    ON  b.vendorId = o.vendorId
+    AND b.new_start_interval = o.bucket 
+    AND b.week_day = o.week_day   
+LEFT JOIN fact_orders fo  
+    ON fo.order_id = o.order_Id
+WHERE o.order_id is not null
+ORDER BY vendorId,registeted_date_capacity_table, dayId, start_bucket_final]]></_.fcp.ObjectModelEncapsulateLegacy.true...relation>
+        <metadata-records>
+          <metadata-record class='column'>
+            <remote-name>vendorId</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[vendorId]</local-name>
+            <parent-name>[Consulta SQL personalizada]</parent-name>
+            <remote-alias>vendorId</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_1167AACB544A4E7E8FDED5CAF3F3ADC5]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>dayId</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[dayId]</local-name>
+            <parent-name>[Consulta SQL personalizada]</parent-name>
+            <remote-alias>dayId</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_1167AACB544A4E7E8FDED5CAF3F3ADC5]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>week_day</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[week_day]</local-name>
+            <parent-name>[Consulta SQL personalizada]</parent-name>
+            <remote-alias>week_day</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_1167AACB544A4E7E8FDED5CAF3F3ADC5]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>duration</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[duration]</local-name>
+            <parent-name>[Consulta SQL personalizada]</parent-name>
+            <remote-alias>duration</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_1167AACB544A4E7E8FDED5CAF3F3ADC5]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>bucket_final</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[bucket_final]</local-name>
+            <parent-name>[Consulta SQL personalizada]</parent-name>
+            <remote-alias>bucket_final</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_1167AACB544A4E7E8FDED5CAF3F3ADC5]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>size_bucket_final</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[size_bucket_final]</local-name>
+            <parent-name>[Consulta SQL personalizada]</parent-name>
+            <remote-alias>size_bucket_final</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_1167AACB544A4E7E8FDED5CAF3F3ADC5]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>start_bucket_final</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[start_bucket_final]</local-name>
+            <parent-name>[Consulta SQL personalizada]</parent-name>
+            <remote-alias>start_bucket_final</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_1167AACB544A4E7E8FDED5CAF3F3ADC5]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>end_bucket_final</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[end_bucket_final]</local-name>
+            <parent-name>[Consulta SQL personalizada]</parent-name>
+            <remote-alias>end_bucket_final</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_1167AACB544A4E7E8FDED5CAF3F3ADC5]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>country_name</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[country_name]</local-name>
+            <parent-name>[Consulta SQL personalizada]</parent-name>
+            <remote-alias>country_name</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_1167AACB544A4E7E8FDED5CAF3F3ADC5]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>business_name</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[business_name]</local-name>
+            <parent-name>[Consulta SQL personalizada]</parent-name>
+            <remote-alias>business_name</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_1167AACB544A4E7E8FDED5CAF3F3ADC5]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>is_pre_order</remote-name>
+            <remote-type>11</remote-type>
+            <local-name>[is_pre_order]</local-name>
+            <parent-name>[Consulta SQL personalizada]</parent-name>
+            <remote-alias>is_pre_order</remote-alias>
+            <local-type>boolean</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_1167AACB544A4E7E8FDED5CAF3F3ADC5]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>order_status</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[order_status]</local-name>
+            <parent-name>[Consulta SQL personalizada]</parent-name>
+            <remote-alias>order_status</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_1167AACB544A4E7E8FDED5CAF3F3ADC5]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>qty_total_products</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[qty_total_products]</local-name>
+            <parent-name>[Consulta SQL personalizada]</parent-name>
+            <remote-alias>qty_total_products</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_1167AACB544A4E7E8FDED5CAF3F3ADC5]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>city_name</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[city_name]</local-name>
+            <parent-name>[Consulta SQL personalizada]</parent-name>
+            <remote-alias>city_name</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_1167AACB544A4E7E8FDED5CAF3F3ADC5]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>order_id</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[order_id]</local-name>
+            <parent-name>[Consulta SQL personalizada]</parent-name>
+            <remote-alias>order_id</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_1167AACB544A4E7E8FDED5CAF3F3ADC5]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>registeted_date_capacity_table</remote-name>
+            <remote-type>7</remote-type>
+            <local-name>[registeted_date_capacity_table]</local-name>
+            <parent-name>[Consulta SQL personalizada]</parent-name>
+            <remote-alias>registeted_date_capacity_table</remote-alias>
+            <local-type>date</local-type>
+            <aggregation>Year</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_1167AACB544A4E7E8FDED5CAF3F3ADC5]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+        </metadata-records>
+      </connection>
+      <aliases enabled='yes' />
+      <column caption='Qty orders' datatype='integer' name='[Calculation_1462262513611313152]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='COUNTD([order_id])' />
+      </column>
+      <column caption='Size ' datatype='integer' name='[Calculation_1462262513644072961]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='SUM([size_bucket_final])' />
+      </column>
+      <column caption='% orders/ Total size' datatype='real' name='[Calculation_1462262513645793282]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='[Calculation_1462262513611313152]/[Calculation_1462262513644072961]' />
+      </column>
+      <column caption='Qty vendors' datatype='integer' name='[Calculation_1462262513648558083]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='COUNTD([vendorId])' />
+      </column>
+      <column caption='Qty rejected' datatype='integer' name='[Calculation_1462262513648861188]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='COUNTD( IF ([order_status]= &quot;REJECTED&quot;) THEN [order_id] ELSE NULL END)' />
+      </column>
+      <column caption='qty pre order' datatype='integer' name='[Calculation_1462262513649700871]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='COUNTD([is_pre_order])' />
+      </column>
+      <column caption='Cálculo1' datatype='string' name='[Calculation_1462262513687785483]' role='measure' type='nominal'>
+        <calculation class='tableau' formula='IF ([Calculation_1462262513644072961]=[Calculation_1462262513611313152]) THEN &quot;Sin capacidad&quot; ELSE NULL END' />
+      </column>
+      <column caption='Date up to' datatype='date' name='[Calculation_1462262513960374284]' role='dimension' type='ordinal'>
+        <calculation class='tableau' formula='DATE(TODAY()-1)' />
+      </column>
+      <column caption='qty partners size &lt; orders' datatype='boolean' name='[Qty confirmed (copia)_1462262513653452809]' role='measure' type='nominal'>
+        <calculation class='tableau' formula='[Calculation_1462262513644072961]&lt;[Calculation_1462262513611313152]' />
+      </column>
+      <column caption='Qty confirmed' datatype='integer' name='[Qty rejected (copia)_1462262513649246213]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='COUNTD( IF ([order_status]= &quot;CONFIRMED&quot;) THEN [order_id] ELSE NULL END)' />
+      </column>
+      <_.fcp.ObjectModelTableType.true...column caption='Consulta SQL personalizada' datatype='table' name='[__tableau_internal_object_id__].[_1167AACB544A4E7E8FDED5CAF3F3ADC5]' role='measure' type='quantitative' />
+      <column caption='Business name' datatype='string' name='[business_name]' role='dimension' type='nominal' />
+      <column caption='City name' datatype='string' name='[city_name]' role='dimension' semantic-role='[City].[Name]' type='nominal' />
+      <column caption='Country' datatype='string' name='[country_name]' role='dimension' semantic-role='[Country].[ISO3166_2]' type='nominal' />
+      <column aggregation='Sum' caption='Time duration bucket (min)' datatype='integer' name='[duration]' role='dimension' type='ordinal' />
+      <column caption='End bucket' datatype='string' name='[end_bucket_final]' role='dimension' type='nominal' />
+      <column caption='Is pre order' datatype='boolean' name='[is_pre_order]' role='dimension' type='nominal' />
+      <column aggregation='Sum' datatype='integer' name='[order_id]' role='dimension' type='ordinal' />
+      <column caption='Order status' datatype='string' name='[order_status]' role='dimension' type='nominal' />
+      <column caption='Registeted date capacity' datatype='date' name='[registeted_date_capacity_table]' role='dimension' type='ordinal' />
+      <column aggregation='Sum' caption='Size' datatype='integer' name='[size_bucket_final]' role='dimension' type='ordinal' />
+      <column caption='Start bucket' datatype='string' name='[start_bucket_final]' role='dimension' type='nominal' />
+      <column aggregation='Sum' caption='Vendor Id' datatype='integer' name='[vendorId]' role='dimension' type='ordinal' />
+      <column caption='Week day' datatype='string' name='[week_day]' role='dimension' type='nominal' />
+      <drill-paths>
+        <drill-path name='Country, city_name'>
+          <field>[country_name]</field>
+          <field>[city_name]</field>
+        </drill-path>
+      </drill-paths>
+      <extract _.fcp.ObjectModelExtractV2.true...object-id='' count='-1' enabled='true' units='records'>
+        <connection access_mode='readonly' author-locale='en_US' class='hyper' dbname='extract/6b/50/{E05D4663-BA11-401C-A1B1-517581BB8F15}/federated_1pcdexa0p9c2j71e3h8uu1.hyper' extract-engine='true' schema='Extract' sslmode='' tablename='Extract' update-time='11/18/2021 11:32:28 AM'>
+          <_.fcp.ObjectModelEncapsulateLegacy.false...relation name='Extract' table='[Extract].[Extract]' type='table' />
+          <_.fcp.ObjectModelEncapsulateLegacy.true...relation name='Extract' table='[Extract].[Extract]' type='table' />
+          <metadata-records>
+            <metadata-record class='column'>
+              <remote-name>vendorId</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[vendorId]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>vendorId</remote-alias>
+              <ordinal>0</ordinal>
+              <family>Consulta SQL personalizada</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>1156</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_1167AACB544A4E7E8FDED5CAF3F3ADC5]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>dayId</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[dayId]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>dayId</remote-alias>
+              <ordinal>1</ordinal>
+              <family>Consulta SQL personalizada</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>7</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_1167AACB544A4E7E8FDED5CAF3F3ADC5]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>week_day</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[week_day]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>week_day</remote-alias>
+              <ordinal>2</ordinal>
+              <family>Consulta SQL personalizada</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>7</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_1167AACB544A4E7E8FDED5CAF3F3ADC5]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>duration</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[duration]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>duration</remote-alias>
+              <ordinal>3</ordinal>
+              <family>Consulta SQL personalizada</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>4</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_1167AACB544A4E7E8FDED5CAF3F3ADC5]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>bucket_final</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[bucket_final]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>bucket_final</remote-alias>
+              <ordinal>4</ordinal>
+              <family>Consulta SQL personalizada</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>139</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_1167AACB544A4E7E8FDED5CAF3F3ADC5]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>size_bucket_final</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[size_bucket_final]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>size_bucket_final</remote-alias>
+              <ordinal>5</ordinal>
+              <family>Consulta SQL personalizada</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>43</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_1167AACB544A4E7E8FDED5CAF3F3ADC5]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>start_bucket_final</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[start_bucket_final]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>start_bucket_final</remote-alias>
+              <ordinal>6</ordinal>
+              <family>Consulta SQL personalizada</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>268</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_1167AACB544A4E7E8FDED5CAF3F3ADC5]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>end_bucket_final</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[end_bucket_final]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>end_bucket_final</remote-alias>
+              <ordinal>7</ordinal>
+              <family>Consulta SQL personalizada</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>244</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_1167AACB544A4E7E8FDED5CAF3F3ADC5]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>country_name</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[country_name]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>country_name</remote-alias>
+              <ordinal>8</ordinal>
+              <family>Consulta SQL personalizada</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>12</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_1167AACB544A4E7E8FDED5CAF3F3ADC5]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>business_name</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[business_name]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>business_name</remote-alias>
+              <ordinal>9</ordinal>
+              <family>Consulta SQL personalizada</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>5</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_1167AACB544A4E7E8FDED5CAF3F3ADC5]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>is_pre_order</remote-name>
+              <remote-type>11</remote-type>
+              <local-name>[is_pre_order]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>is_pre_order</remote-alias>
+              <ordinal>10</ordinal>
+              <family>Consulta SQL personalizada</family>
+              <local-type>boolean</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>3</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_1167AACB544A4E7E8FDED5CAF3F3ADC5]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>order_status</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[order_status]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>order_status</remote-alias>
+              <ordinal>11</ordinal>
+              <family>Consulta SQL personalizada</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>4</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_1167AACB544A4E7E8FDED5CAF3F3ADC5]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>qty_total_products</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[qty_total_products]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>qty_total_products</remote-alias>
+              <ordinal>12</ordinal>
+              <family>Consulta SQL personalizada</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>108</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_1167AACB544A4E7E8FDED5CAF3F3ADC5]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>city_name</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[city_name]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>city_name</remote-alias>
+              <ordinal>13</ordinal>
+              <family>Consulta SQL personalizada</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>144</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_1167AACB544A4E7E8FDED5CAF3F3ADC5]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>order_id</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[order_id]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>order_id</remote-alias>
+              <ordinal>14</ordinal>
+              <family>Consulta SQL personalizada</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>2980054</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_1167AACB544A4E7E8FDED5CAF3F3ADC5]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>registeted_date_capacity_table</remote-name>
+              <remote-type>133</remote-type>
+              <local-name>[registeted_date_capacity_table]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>registeted_date_capacity_table</remote-alias>
+              <ordinal>15</ordinal>
+              <family>Consulta SQL personalizada</family>
+              <local-type>date</local-type>
+              <aggregation>Year</aggregation>
+              <approx-count>120</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_1167AACB544A4E7E8FDED5CAF3F3ADC5]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+          </metadata-records>
+        </connection>
+      </extract>
+      <layout _.fcp.SchemaViewerObjectModel.false...dim-percentage='0.5' _.fcp.SchemaViewerObjectModel.false...measure-percentage='0.4' dim-ordering='alphabetic' measure-ordering='alphabetic' show-structure='true' />
+      <semantic-values>
+        <semantic-value key='[Country].[Name]' value='&quot;Uruguay&quot;' />
+      </semantic-values>
+      <date-options start-of-week='monday' />
+      <_.fcp.ObjectModelEncapsulateLegacy.true...object-graph>
+        <objects>
+          <object caption='Consulta SQL personalizada' id='_1167AACB544A4E7E8FDED5CAF3F3ADC5'>
+            <properties context=''>
+              <relation connection='bigquery.1rrkq0z0nxvzhr1d3g8ny04yphjz' name='Consulta SQL personalizada' type='text'><![CDATA[WITH configuration as (
+ SELECT  DATE(DATE_ADD(CURRENT_DATE(), INTERVAL -120 DAY)) AS from_interval 
+       , CURRENT_DATE() AS to_interval
+     )
+, partner_schedule AS (
+    SELECT *
+    FROM `peya-data-origins-pro.cl_core.partner_schedule` as p
+)
+,   vendor_capacity AS (
+    SELECT
+            EXTRACT(DATE FROM _ingested_at) as ingested_date
+        ,   c.vendorId
+        ,   c.dayId
+        ,   CASE
+                WHEN c.dayId = 1 THEN "Sunday"
+                WHEN c.dayId = 2 THEN "Monday"
+                WHEN c.dayId = 3 THEN "Tuesday"
+                WHEN c.dayId = 4 THEN "Wednesday"
+                WHEN c.dayId = 5 THEN "Thursday"
+                WHEN c.dayId = 6 THEN "Friday"
+                WHEN c.dayId = 7 THEN "Saturday"
+            END as week_day
+        ,   c.duration
+        ,   s.size
+        ,   PARSE_TIMESTAMP("%H:%M:%S", CONCAT(s.start.hour,":",s.start.minute,":00")) as start_interval
+        ,   PARSE_TIMESTAMP("%H:%M:%S", CONCAT(s.end.hour,":",s.end.minute,":00"))     as end_interval
+    FROM `peya-data-origins-pro.cl_groceries.vendor_capacity` c
+    , UNNEST(shifts) s
+    )
+, buckets AS (
+    SELECT
+            vc.ingested_date
+        ,   vc.RANK
+        ,   vc.vendorId
+        ,   vc.dayId
+        ,   vc.week_day
+        ,   vc.duration
+        ,   vc.size
+        ,   vc.start_interval
+        ,   vc.end_interval
+        ,   vc.hour
+        ,   vc.new_start_interval
+        ,   vc.new_end_interval
+    FROM (
+        SELECT
+                vc.ingested_date
+            ,   RANK() OVER (PARTITION BY vc.vendorId, vc.dayId ORDER BY hour) as RANK
+            ,   vc.vendorId
+            ,   vc.dayId
+            ,   vc.week_day
+            ,   vc.duration
+            ,   vc.size
+            ,   vc.start_interval
+            ,   vc.end_interval
+            ,   hour
+            ,   EXTRACT(TIME FROM hour) as new_start_interval
+            ,   EXTRACT(TIME FROM (TIMESTAMP_ADD(hour, INTERVAL duration MINUTE))) as new_end_interval
+        FROM  vendor_capacity vc
+        , UNNEST(GENERATE_TIMESTAMP_ARRAY(start_interval, end_interval, INTERVAL duration MINUTE)) AS hour
+        LEFT JOIN partner_schedule ps
+            ON  vc.vendorId = ps.restaurant_id
+            AND vc.dayId   = ps.day_id
+        WHERE
+                EXTRACT(TIME FROM hour) >>= EXTRACT(TIME FROM ps.from_date)
+            AND EXTRACT(TIME FROM (TIMESTAMP_ADD(hour, INTERVAL duration MINUTE))) <<  EXTRACT(TIME FROM ps.to_date)
+        ) as vc
+)
+, orders AS (
+    SELECT
+            order_id
+        ,   vendorId
+        ,   time
+        ,   EXTRACT(DATE FROM time) as registered_date
+        ,   FORMAT_DATE('%A', EXTRACT(DATE FROM time)) as week_day
+        ,   EXTRACT(TIME FROM time) as bucket
+    FROM `peya-data-origins-pro.cl_groceries.order_time_saved` ots
+    CROSS JOIN UNNEST(orderIds) as order_id
+    WHERE DATE(time)
+                BETWEEN (SELECT from_interval FROM configuration)
+                    AND (SELECT to_interval FROM configuration)
+),
+fact_orders AS (
+    SELECT
+            o.order_id
+        ,   o.restaurant.id as restaurant_id
+        ,   o.business_type.business_type_name as business_name
+        ,   EXTRACT(DATE FROM o.registered_at) as registered_date
+        ,   EXTRACT(TIME FROM o.registered_at) as registered_time
+        ,   o.is_pre_order
+        ,   o.order_status
+        ,   o.city.city_name
+        ,   o.qty_total_products
+        ,   o.qty_distinct_products
+        ,   o.country.country_name AS country_name
+        ,   o.business_type.business_type_name 
+    FROM `peya-bi-tools-pro.il_core.fact_orders` as o
+    WHERE
+            DATE(o.registered_date) >> (SELECT from_interval FROM configuration) 
+            and o.business_type_id <<>> 1
+    )
+SELECT
+        b.vendorId
+    ,   b.dayId
+    ,   b.week_day
+    ,   b.duration
+    ,   b.RANK as bucket_final
+    ,   b.size as size_bucket_final
+    ,   cast(b.new_start_interval as string) as start_bucket_final
+    ,   cast(b.new_end_interval as string)  as end_bucket_final
+    ,   fo.country_name
+    ,   fo.business_name
+    ,   fo.is_pre_order
+    ,   fo.order_status
+    ,   fo.qty_total_products
+    ,   fo.city_name
+    ,   o.order_id
+    ,   o.registered_date as registeted_date_capacity_table
+FROM buckets b
+LEFT JOIN orders o
+    ON  b.vendorId = o.vendorId
+    AND b.new_start_interval = o.bucket 
+    AND b.week_day = o.week_day   
+LEFT JOIN fact_orders fo  
+    ON fo.order_id = o.order_Id
+WHERE o.order_id is not null
+ORDER BY vendorId,registeted_date_capacity_table, dayId, start_bucket_final]]></relation>
+            </properties>
+            <properties context='extract'>
+              <relation name='Extract' table='[Extract].[Extract]' type='table' />
+            </properties>
+          </object>
+        </objects>
+      </_.fcp.ObjectModelEncapsulateLegacy.true...object-graph>
+    </datasource>
+  </datasources>
+  <shared-views>
+    <shared-view name='federated.1pcdexa0p9c2j71e3h8uu1iup1lx'>
+      <datasources>
+        <datasource caption='Consulta SQL personalizada (user_fernanda_ochoa)' name='federated.1pcdexa0p9c2j71e3h8uu1iup1lx' />
+      </datasources>
+      <datasource-dependencies datasource='federated.1pcdexa0p9c2j71e3h8uu1iup1lx'>
+        <column caption='Business name' datatype='string' name='[business_name]' role='dimension' type='nominal' />
+        <column caption='City name' datatype='string' name='[city_name]' role='dimension' semantic-role='[City].[Name]' type='nominal' />
+        <column caption='Country' datatype='string' name='[country_name]' role='dimension' semantic-role='[Country].[ISO3166_2]' type='nominal' />
+        <column aggregation='Sum' caption='Time duration bucket (min)' datatype='integer' name='[duration]' role='dimension' type='ordinal' />
+        <column caption='Is pre order' datatype='boolean' name='[is_pre_order]' role='dimension' type='nominal' />
+        <column-instance column='[business_name]' derivation='None' name='[none:business_name:nk]' pivot='key' type='nominal' />
+        <column-instance column='[city_name]' derivation='None' name='[none:city_name:nk]' pivot='key' type='nominal' />
+        <column-instance column='[country_name]' derivation='None' name='[none:country_name:nk]' pivot='key' type='nominal' />
+        <column-instance column='[duration]' derivation='None' name='[none:duration:ok]' pivot='key' type='ordinal' />
+        <column-instance column='[is_pre_order]' derivation='None' name='[none:is_pre_order:nk]' pivot='key' type='nominal' />
+        <column-instance column='[order_status]' derivation='None' name='[none:order_status:nk]' pivot='key' type='nominal' />
+        <column-instance column='[registeted_date_capacity_table]' derivation='None' name='[none:registeted_date_capacity_table:qk]' pivot='key' type='quantitative' />
+        <column-instance column='[vendorId]' derivation='None' name='[none:vendorId:ok]' pivot='key' type='ordinal' />
+        <column caption='Order status' datatype='string' name='[order_status]' role='dimension' type='nominal' />
+        <column caption='Registeted date capacity' datatype='date' name='[registeted_date_capacity_table]' role='dimension' type='ordinal' />
+        <column aggregation='Sum' caption='Vendor Id' datatype='integer' name='[vendorId]' role='dimension' type='ordinal' />
+      </datasource-dependencies>
+      <filter class='categorical' column='[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:business_name:nk]'>
+        <groupfilter from='&quot;Drinks&quot;' function='range' level='[none:business_name:nk]' to='&quot;Pharmacy&quot;' user:ui-domain='relevant' user:ui-enumeration='inclusive' user:ui-marker='enumerate' />
+      </filter>
+      <filter class='categorical' column='[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:city_name:nk]'>
+        <groupfilter function='union' user:ui-domain='relevant' user:ui-enumeration='inclusive' user:ui-marker='enumerate'>
+          <groupfilter from='&quot;3 de Febrero&quot;' function='range' level='[none:city_name:nk]' to='&quot;Florencio Varela&quot;' />
+          <groupfilter from='&quot;Funes&quot;' function='range' level='[none:city_name:nk]' to='&quot;Ituzaingó&quot;' />
+          <groupfilter from='&quot;Junín&quot;' function='range' level='[none:city_name:nk]' to='&quot;La Plata&quot;' />
+          <groupfilter from='&quot;La Romana&quot;' function='range' level='[none:city_name:nk]' to='&quot;Merlo&quot;' />
+          <groupfilter from='&quot;Montero&quot;' function='range' level='[none:city_name:nk]' to='&quot;Pilar&quot;' />
+          <groupfilter from='&quot;Posadas&quot;' function='range' level='[none:city_name:nk]' to='&quot;Santiago&quot;' />
+          <groupfilter function='member' level='[none:city_name:nk]' member='&quot;Santo Domingo D.N.&quot;' />
+          <groupfilter function='member' level='[none:city_name:nk]' member='&quot;Santo Domingo Este&quot;' />
+          <groupfilter function='member' level='[none:city_name:nk]' member='&quot;Sucre&quot;' />
+          <groupfilter function='member' level='[none:city_name:nk]' member='&quot;Talca&quot;' />
+          <groupfilter from='&quot;Tarija&quot;' function='range' level='[none:city_name:nk]' to='&quot;Yerba Buena&quot;' />
+        </groupfilter>
+      </filter>
+      <filter class='categorical' column='[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:country_name:nk]'>
+        <groupfilter from='&quot;Argentina&quot;' function='range' level='[none:country_name:nk]' to='&quot;Uruguay&quot;' user:ui-domain='relevant' user:ui-enumeration='inclusive' user:ui-marker='enumerate' />
+      </filter>
+      <filter class='categorical' column='[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:duration:ok]'>
+        <groupfilter function='level-members' level='[none:duration:ok]' user:ui-enumeration='all' user:ui-marker='enumerate' />
+      </filter>
+      <filter class='categorical' column='[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:is_pre_order:nk]'>
+        <groupfilter function='union' user:ui-domain='relevant' user:ui-enumeration='inclusive' user:ui-marker='enumerate'>
+          <groupfilter function='member' level='[none:is_pre_order:nk]' member='false' />
+          <groupfilter function='member' level='[none:is_pre_order:nk]' member='true' />
+        </groupfilter>
+      </filter>
+      <filter class='categorical' column='[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:order_status:nk]'>
+        <groupfilter from='&quot;CONFIRMED&quot;' function='range' level='[none:order_status:nk]' to='&quot;REJECTED&quot;' user:ui-domain='relevant' user:ui-enumeration='inclusive' user:ui-marker='enumerate' />
+      </filter>
+      <filter class='relative-date' column='[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:registeted_date_capacity_table:qk]' first-period='-1' include-future='true' include-null='false' last-period='-1' period-type-v2='week' />
+      <filter class='categorical' column='[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:vendorId:ok]'>
+        <groupfilter function='level-members' level='[none:vendorId:ok]' user:ui-enumeration='all' user:ui-marker='enumerate' />
+      </filter>
+    </shared-view>
+  </shared-views>
+  <worksheets>
+    <worksheet name='By country'>
+      <layout-options>
+        <title>
+          <formatted-text>
+            <run bold='true' fontcolor='#aa0000'>Control capacity  </run>
+            <run>Æ&#10;</run>
+            <run bold='true' fontcolor='#202124' fontsize='10'> % of orders that enter per bucket over the total of orders that can be received according to the size configured for each interval</run>
+          </formatted-text>
+        </title>
+      </layout-options>
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='Consulta SQL personalizada (user_fernanda_ochoa)' name='federated.1pcdexa0p9c2j71e3h8uu1iup1lx' />
+          </datasources>
+          <datasource-dependencies datasource='federated.1pcdexa0p9c2j71e3h8uu1iup1lx'>
+            <column caption='Qty orders' datatype='integer' name='[Calculation_1462262513611313152]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='COUNTD([order_id])' />
+            </column>
+            <column caption='Size ' datatype='integer' name='[Calculation_1462262513644072961]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='SUM([size_bucket_final])' />
+            </column>
+            <column caption='% orders/ Total size' datatype='real' name='[Calculation_1462262513645793282]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='[Calculation_1462262513611313152]/[Calculation_1462262513644072961]' />
+            </column>
+            <column caption='Business name' datatype='string' name='[business_name]' role='dimension' type='nominal' />
+            <column caption='City name' datatype='string' name='[city_name]' role='dimension' semantic-role='[City].[Name]' type='nominal' />
+            <column caption='Country' datatype='string' name='[country_name]' role='dimension' semantic-role='[Country].[ISO3166_2]' type='nominal' />
+            <column aggregation='Sum' caption='Time duration bucket (min)' datatype='integer' name='[duration]' role='dimension' type='ordinal' />
+            <column caption='End bucket' datatype='string' name='[end_bucket_final]' role='dimension' type='nominal' />
+            <column caption='Is pre order' datatype='boolean' name='[is_pre_order]' role='dimension' type='nominal' />
+            <column-instance column='[business_name]' derivation='None' name='[none:business_name:nk]' pivot='key' type='nominal' />
+            <column-instance column='[city_name]' derivation='None' name='[none:city_name:nk]' pivot='key' type='nominal' />
+            <column-instance column='[country_name]' derivation='None' name='[none:country_name:nk]' pivot='key' type='nominal' />
+            <column-instance column='[duration]' derivation='None' name='[none:duration:ok]' pivot='key' type='ordinal' />
+            <column-instance column='[end_bucket_final]' derivation='None' name='[none:end_bucket_final:nk]' pivot='key' type='nominal' />
+            <column-instance column='[is_pre_order]' derivation='None' name='[none:is_pre_order:nk]' pivot='key' type='nominal' />
+            <column-instance column='[order_status]' derivation='None' name='[none:order_status:nk]' pivot='key' type='nominal' />
+            <column-instance column='[registeted_date_capacity_table]' derivation='None' name='[none:registeted_date_capacity_table:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[start_bucket_final]' derivation='None' name='[none:start_bucket_final:nk]' pivot='key' type='nominal' />
+            <column-instance column='[vendorId]' derivation='None' name='[none:vendorId:ok]' pivot='key' type='ordinal' />
+            <column-instance column='[week_day]' derivation='None' name='[none:week_day:nk]' pivot='key' type='nominal' />
+            <column aggregation='Sum' datatype='integer' name='[order_id]' role='dimension' type='ordinal' />
+            <column caption='Order status' datatype='string' name='[order_status]' role='dimension' type='nominal' />
+            <column caption='Registeted date capacity' datatype='date' name='[registeted_date_capacity_table]' role='dimension' type='ordinal' />
+            <column aggregation='Sum' caption='Size' datatype='integer' name='[size_bucket_final]' role='dimension' type='ordinal' />
+            <column caption='Start bucket' datatype='string' name='[start_bucket_final]' role='dimension' type='nominal' />
+            <column-instance column='[Calculation_1462262513645793282]' derivation='User' name='[usr:Calculation_1462262513645793282:qk]' pivot='key' type='quantitative' />
+            <column aggregation='Sum' caption='Vendor Id' datatype='integer' name='[vendorId]' role='dimension' type='ordinal' />
+            <column caption='Week day' datatype='string' name='[week_day]' role='dimension' type='nominal' />
+          </datasource-dependencies>
+          <filter class='categorical' column='[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:end_bucket_final:nk]'>
+            <groupfilter function='union' user:ui-domain='relevant' user:ui-enumeration='inclusive' user:ui-marker='enumerate'>
+              <groupfilter from='&quot;00:00:00&quot;' function='range' level='[none:end_bucket_final:nk]' to='&quot;02:15:00&quot;' />
+              <groupfilter from='&quot;06:30:00&quot;' function='range' level='[none:end_bucket_final:nk]' to='&quot;23:45:00&quot;' />
+            </groupfilter>
+          </filter>
+          <filter class='categorical' column='[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:start_bucket_final:nk]'>
+            <groupfilter function='union' user:ui-domain='relevant' user:ui-enumeration='inclusive' user:ui-marker='enumerate'>
+              <groupfilter from='&quot;00:15:00&quot;' function='range' level='[none:start_bucket_final:nk]' to='&quot;02:00:00&quot;' />
+              <groupfilter from='&quot;06:15:00&quot;' function='range' level='[none:start_bucket_final:nk]' to='&quot;23:50:00&quot;' />
+            </groupfilter>
+          </filter>
+          <slices>
+            <column>[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:country_name:nk]</column>
+            <column>[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:is_pre_order:nk]</column>
+            <column>[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:order_status:nk]</column>
+            <column>[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:business_name:nk]</column>
+            <column>[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:registeted_date_capacity_table:qk]</column>
+            <column>[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:start_bucket_final:nk]</column>
+            <column>[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:end_bucket_final:nk]</column>
+            <column>[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:duration:ok]</column>
+            <column>[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:vendorId:ok]</column>
+            <column>[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:city_name:nk]</column>
+          </slices>
+          <aggregation value='true' />
+        </view>
+        <style>
+          <style-rule element='cell'>
+            <format attr='height' field='[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:week_day:nk]' value='35' />
+            <format attr='width' field='[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:country_name:nk]' value='92' />
+            <format attr='text-format' field='[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[usr:Calculation_1462262513645793282:qk]' value='p0.00%' />
+            <format attr='width' field='[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:week_day:nk]' value='104' />
+          </style-rule>
+          <style-rule element='header'>
+            <format attr='background-color' field='[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:country_name:nk]' value='#d4d4d4' />
+            <format attr='background-color' field='[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:week_day:nk]' value='#c0c0c0' />
+          </style-rule>
+          <style-rule element='field-labels'>
+            <format attr='color' value='#ffffff' />
+            <format attr='background-color' value='#aa0000' />
+          </style-rule>
+          <style-rule element='label'>
+            <format attr='text-format' field='[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[usr:Calculation_1462262513645793282:qk]' value='p0%' />
+            <format attr='color' field='[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:country_name:nk]' value='#000000' />
+          </style-rule>
+        </style>
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Automatic' />
+            <encodings>
+              <text column='[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[usr:Calculation_1462262513645793282:qk]' />
+            </encodings>
+            <style>
+              <style-rule element='mark'>
+                <format attr='mark-labels-show' value='true' />
+              </style-rule>
+              <style-rule element='pane'>
+                <format attr='minheight' value='-1' />
+                <format attr='maxheight' value='-1' />
+                <format attr='minwidth' value='-1' />
+                <format attr='maxwidth' value='-1' />
+              </style-rule>
+            </style>
+          </pane>
+        </panes>
+        <rows>([federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:country_name:nk] / [federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:city_name:nk])</rows>
+        <cols>[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:week_day:nk]</cols>
+      </table>
+      <simple-id uuid='{1D91D5AD-BEB5-4F44-9649-E362CF5F7478}' />
+    </worksheet>
+    <worksheet name='By partner'>
+      <layout-options>
+        <title>
+          <formatted-text>
+            <run bold='true' fontcolor='#aa0000'>Control capacity by partner </run>
+          </formatted-text>
+        </title>
+      </layout-options>
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='Consulta SQL personalizada (user_fernanda_ochoa)' name='federated.1pcdexa0p9c2j71e3h8uu1iup1lx' />
+          </datasources>
+          <datasource-dependencies datasource='federated.1pcdexa0p9c2j71e3h8uu1iup1lx'>
+            <column caption='Qty orders' datatype='integer' name='[Calculation_1462262513611313152]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='COUNTD([order_id])' />
+            </column>
+            <column caption='Qty rejected' datatype='integer' name='[Calculation_1462262513648861188]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='COUNTD( IF ([order_status]= &quot;REJECTED&quot;) THEN [order_id] ELSE NULL END)' />
+            </column>
+            <column caption='Qty confirmed' datatype='integer' name='[Qty rejected (copia)_1462262513649246213]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='COUNTD( IF ([order_status]= &quot;CONFIRMED&quot;) THEN [order_id] ELSE NULL END)' />
+            </column>
+            <column caption='Business name' datatype='string' name='[business_name]' role='dimension' type='nominal' />
+            <column caption='City name' datatype='string' name='[city_name]' role='dimension' semantic-role='[City].[Name]' type='nominal' />
+            <column caption='Country' datatype='string' name='[country_name]' role='dimension' semantic-role='[Country].[ISO3166_2]' type='nominal' />
+            <column aggregation='Sum' caption='Time duration bucket (min)' datatype='integer' name='[duration]' role='dimension' type='ordinal' />
+            <column caption='End bucket' datatype='string' name='[end_bucket_final]' role='dimension' type='nominal' />
+            <column caption='Is pre order' datatype='boolean' name='[is_pre_order]' role='dimension' type='nominal' />
+            <column-instance column='[business_name]' derivation='None' name='[none:business_name:nk]' pivot='key' type='nominal' />
+            <column-instance column='[city_name]' derivation='None' name='[none:city_name:nk]' pivot='key' type='nominal' />
+            <column-instance column='[country_name]' derivation='None' name='[none:country_name:nk]' pivot='key' type='nominal' />
+            <column-instance column='[duration]' derivation='None' name='[none:duration:ok]' pivot='key' type='ordinal' />
+            <column-instance column='[end_bucket_final]' derivation='None' name='[none:end_bucket_final:nk]' pivot='key' type='nominal' />
+            <column-instance column='[is_pre_order]' derivation='None' name='[none:is_pre_order:nk]' pivot='key' type='nominal' />
+            <column-instance column='[order_status]' derivation='None' name='[none:order_status:nk]' pivot='key' type='nominal' />
+            <column-instance column='[registeted_date_capacity_table]' derivation='None' name='[none:registeted_date_capacity_table:ok]' pivot='key' type='ordinal' />
+            <column-instance column='[registeted_date_capacity_table]' derivation='None' name='[none:registeted_date_capacity_table:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[size_bucket_final]' derivation='None' name='[none:size_bucket_final:ok]' pivot='key' type='ordinal' />
+            <column-instance column='[start_bucket_final]' derivation='None' name='[none:start_bucket_final:nk]' pivot='key' type='nominal' />
+            <column-instance column='[vendorId]' derivation='None' name='[none:vendorId:ok]' pivot='key' type='ordinal' />
+            <column-instance column='[week_day]' derivation='None' name='[none:week_day:nk]' pivot='key' type='nominal' />
+            <column aggregation='Sum' datatype='integer' name='[order_id]' role='dimension' type='ordinal' />
+            <column caption='Order status' datatype='string' name='[order_status]' role='dimension' type='nominal' />
+            <column caption='Registeted date capacity' datatype='date' name='[registeted_date_capacity_table]' role='dimension' type='ordinal' />
+            <column aggregation='Sum' caption='Size' datatype='integer' name='[size_bucket_final]' role='dimension' type='ordinal' />
+            <column caption='Start bucket' datatype='string' name='[start_bucket_final]' role='dimension' type='nominal' />
+            <column-instance column='[Calculation_1462262513611313152]' derivation='User' name='[usr:Calculation_1462262513611313152:ok]' pivot='key' type='ordinal' />
+            <column-instance column='[Calculation_1462262513648861188]' derivation='User' name='[usr:Calculation_1462262513648861188:ok]' pivot='key' type='ordinal' />
+            <column-instance column='[Qty rejected (copia)_1462262513649246213]' derivation='User' name='[usr:Qty rejected (copia)_1462262513649246213:ok]' pivot='key' type='ordinal' />
+            <column aggregation='Sum' caption='Vendor Id' datatype='integer' name='[vendorId]' role='dimension' type='ordinal' />
+            <column caption='Week day' datatype='string' name='[week_day]' role='dimension' type='nominal' />
+          </datasource-dependencies>
+          <slices>
+            <column>[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:country_name:nk]</column>
+            <column>[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:is_pre_order:nk]</column>
+            <column>[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:business_name:nk]</column>
+            <column>[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:order_status:nk]</column>
+            <column>[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:registeted_date_capacity_table:qk]</column>
+            <column>[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:duration:ok]</column>
+            <column>[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:vendorId:ok]</column>
+            <column>[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:city_name:nk]</column>
+          </slices>
+          <aggregation value='true' />
+        </view>
+        <style>
+          <style-rule element='cell'>
+            <format attr='width' value='5' />
+          </style-rule>
+          <style-rule element='header'>
+            <format attr='width' field='[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:vendorId:ok]' value='120' />
+            <format attr='width' field='[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[usr:Calculation_1462262513611313152:ok]' value='120' />
+            <format attr='width' field='[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:end_bucket_final:nk]' value='168' />
+            <format attr='width' field='[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:start_bucket_final:nk]' value='140' />
+            <format attr='width' field='[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:size_bucket_final:ok]' value='76' />
+            <format attr='width' field='[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[usr:Calculation_1462262513648861188:ok]' value='144' />
+            <format attr='width' field='[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[usr:Qty rejected (copia)_1462262513649246213:ok]' value='116' />
+            <format attr='width' field='[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:registeted_date_capacity_table:ok]' value='108' />
+            <format attr='width' field='[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:week_day:nk]' value='112' />
+          </style-rule>
+          <style-rule element='field-labels'>
+            <format attr='color' value='#ffffff' />
+            <format attr='background-color' value='#aa0000' />
+          </style-rule>
+        </style>
+        <panes>
+          <pane id='2' selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Automatic' />
+            <style>
+              <style-rule element='pane'>
+                <format attr='minwidth' value='-1' />
+                <format attr='maxwidth' value='-1' />
+                <format attr='minwidth' value='-1' />
+                <format attr='maxwidth' value='-1' />
+                <format attr='minwidth' value='-1' />
+                <format attr='maxwidth' value='-1' />
+              </style-rule>
+            </style>
+          </pane>
+        </panes>
+        <rows>([federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:vendorId:ok] / ([federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:week_day:nk] / ([federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:registeted_date_capacity_table:ok] / ([federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:size_bucket_final:ok] / ([federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:start_bucket_final:nk] / ([federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:end_bucket_final:nk] / ([federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[usr:Calculation_1462262513611313152:ok] / ([federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[usr:Qty rejected (copia)_1462262513649246213:ok] / [federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[usr:Calculation_1462262513648861188:ok]))))))))</rows>
+        <cols />
+      </table>
+      <simple-id uuid='{5667765F-4A23-4AAC-B32C-E68B5F4C9076}' />
+    </worksheet>
+    <worksheet name='Date up to'>
+      <layout-options>
+        <title>
+          <formatted-text />
+        </title>
+      </layout-options>
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='Consulta SQL personalizada (user_fernanda_ochoa)' name='federated.1pcdexa0p9c2j71e3h8uu1iup1lx' />
+          </datasources>
+          <datasource-dependencies datasource='federated.1pcdexa0p9c2j71e3h8uu1iup1lx'>
+            <column caption='Date up to' datatype='date' name='[Calculation_1462262513960374284]' role='dimension' type='ordinal'>
+              <calculation class='tableau' formula='DATE(TODAY()-1)' />
+            </column>
+            <column caption='Business name' datatype='string' name='[business_name]' role='dimension' type='nominal' />
+            <column caption='City name' datatype='string' name='[city_name]' role='dimension' semantic-role='[City].[Name]' type='nominal' />
+            <column caption='Country' datatype='string' name='[country_name]' role='dimension' semantic-role='[Country].[ISO3166_2]' type='nominal' />
+            <column aggregation='Sum' caption='Time duration bucket (min)' datatype='integer' name='[duration]' role='dimension' type='ordinal' />
+            <column caption='Is pre order' datatype='boolean' name='[is_pre_order]' role='dimension' type='nominal' />
+            <column-instance column='[Calculation_1462262513960374284]' derivation='None' name='[none:Calculation_1462262513960374284:ok]' pivot='key' type='ordinal' />
+            <column-instance column='[business_name]' derivation='None' name='[none:business_name:nk]' pivot='key' type='nominal' />
+            <column-instance column='[city_name]' derivation='None' name='[none:city_name:nk]' pivot='key' type='nominal' />
+            <column-instance column='[country_name]' derivation='None' name='[none:country_name:nk]' pivot='key' type='nominal' />
+            <column-instance column='[duration]' derivation='None' name='[none:duration:ok]' pivot='key' type='ordinal' />
+            <column-instance column='[is_pre_order]' derivation='None' name='[none:is_pre_order:nk]' pivot='key' type='nominal' />
+            <column-instance column='[order_status]' derivation='None' name='[none:order_status:nk]' pivot='key' type='nominal' />
+            <column-instance column='[registeted_date_capacity_table]' derivation='None' name='[none:registeted_date_capacity_table:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[vendorId]' derivation='None' name='[none:vendorId:ok]' pivot='key' type='ordinal' />
+            <column caption='Order status' datatype='string' name='[order_status]' role='dimension' type='nominal' />
+            <column caption='Registeted date capacity' datatype='date' name='[registeted_date_capacity_table]' role='dimension' type='ordinal' />
+            <column aggregation='Sum' caption='Vendor Id' datatype='integer' name='[vendorId]' role='dimension' type='ordinal' />
+          </datasource-dependencies>
+          <slices>
+            <column>[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:registeted_date_capacity_table:qk]</column>
+            <column>[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:country_name:nk]</column>
+            <column>[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:business_name:nk]</column>
+            <column>[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:is_pre_order:nk]</column>
+            <column>[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:order_status:nk]</column>
+            <column>[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:duration:ok]</column>
+            <column>[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:vendorId:ok]</column>
+            <column>[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:city_name:nk]</column>
+          </slices>
+          <aggregation value='true' />
+        </view>
+        <style>
+          <style-rule element='cell'>
+            <format attr='width' value='5' />
+          </style-rule>
+        </style>
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Automatic' />
+            <style>
+              <style-rule element='pane'>
+                <format attr='minwidth' value='-1' />
+                <format attr='maxwidth' value='-1' />
+              </style-rule>
+            </style>
+          </pane>
+        </panes>
+        <rows>[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:Calculation_1462262513960374284:ok]</rows>
+        <cols />
+      </table>
+      <simple-id uuid='{B579C9FA-E67C-4CE0-A3DC-F77128D5C698}' />
+    </worksheet>
+    <worksheet name='Qty orders in bucket'>
+      <layout-options>
+        <title>
+          <formatted-text>
+            <run bold='true' fontcolor='#aa0000'>Display of orders per backets  according to vendor id</run>
+          </formatted-text>
+        </title>
+      </layout-options>
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='Consulta SQL personalizada (user_fernanda_ochoa)' name='federated.1pcdexa0p9c2j71e3h8uu1iup1lx' />
+          </datasources>
+          <datasource-dependencies datasource='federated.1pcdexa0p9c2j71e3h8uu1iup1lx'>
+            <column caption='Qty orders' datatype='integer' name='[Calculation_1462262513611313152]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='COUNTD([order_id])' />
+            </column>
+            <column caption='Business name' datatype='string' name='[business_name]' role='dimension' type='nominal' />
+            <column caption='City name' datatype='string' name='[city_name]' role='dimension' semantic-role='[City].[Name]' type='nominal' />
+            <column caption='Country' datatype='string' name='[country_name]' role='dimension' semantic-role='[Country].[ISO3166_2]' type='nominal' />
+            <column aggregation='Sum' caption='Time duration bucket (min)' datatype='integer' name='[duration]' role='dimension' type='ordinal' />
+            <column caption='End bucket' datatype='string' name='[end_bucket_final]' role='dimension' type='nominal' />
+            <column caption='Is pre order' datatype='boolean' name='[is_pre_order]' role='dimension' type='nominal' />
+            <column-instance column='[business_name]' derivation='None' name='[none:business_name:nk]' pivot='key' type='nominal' />
+            <column-instance column='[city_name]' derivation='None' name='[none:city_name:nk]' pivot='key' type='nominal' />
+            <column-instance column='[country_name]' derivation='None' name='[none:country_name:nk]' pivot='key' type='nominal' />
+            <column-instance column='[duration]' derivation='None' name='[none:duration:ok]' pivot='key' type='ordinal' />
+            <column-instance column='[end_bucket_final]' derivation='None' name='[none:end_bucket_final:nk]' pivot='key' type='nominal' />
+            <column-instance column='[is_pre_order]' derivation='None' name='[none:is_pre_order:nk]' pivot='key' type='nominal' />
+            <column-instance column='[order_status]' derivation='None' name='[none:order_status:nk]' pivot='key' type='nominal' />
+            <column-instance column='[registeted_date_capacity_table]' derivation='None' name='[none:registeted_date_capacity_table:ok]' pivot='key' type='ordinal' />
+            <column-instance column='[registeted_date_capacity_table]' derivation='None' name='[none:registeted_date_capacity_table:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[size_bucket_final]' derivation='None' name='[none:size_bucket_final:ok]' pivot='key' type='ordinal' />
+            <column-instance column='[start_bucket_final]' derivation='None' name='[none:start_bucket_final:nk]' pivot='key' type='nominal' />
+            <column-instance column='[vendorId]' derivation='None' name='[none:vendorId:ok]' pivot='key' type='ordinal' />
+            <column-instance column='[week_day]' derivation='None' name='[none:week_day:nk]' pivot='key' type='nominal' />
+            <column aggregation='Sum' datatype='integer' name='[order_id]' role='dimension' type='ordinal' />
+            <column caption='Order status' datatype='string' name='[order_status]' role='dimension' type='nominal' />
+            <column caption='Registeted date capacity' datatype='date' name='[registeted_date_capacity_table]' role='dimension' type='ordinal' />
+            <column aggregation='Sum' caption='Size' datatype='integer' name='[size_bucket_final]' role='dimension' type='ordinal' />
+            <column caption='Start bucket' datatype='string' name='[start_bucket_final]' role='dimension' type='nominal' />
+            <column-instance column='[Calculation_1462262513611313152]' derivation='User' name='[usr:Calculation_1462262513611313152:qk]' pivot='key' type='quantitative' />
+            <column aggregation='Sum' caption='Vendor Id' datatype='integer' name='[vendorId]' role='dimension' type='ordinal' />
+            <column caption='Week day' datatype='string' name='[week_day]' role='dimension' type='nominal' />
+          </datasource-dependencies>
+          <filter class='categorical' column='[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:size_bucket_final:ok]'>
+            <groupfilter function='level-members' level='[none:size_bucket_final:ok]' user:ui-enumeration='all' user:ui-marker='enumerate' />
+          </filter>
+          <computed-sort column='[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:size_bucket_final:ok]' direction='ASC' using='[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[usr:Calculation_1462262513611313152:qk]'>
+            <groupfilter function='member' level='[none:registeted_date_capacity_table:ok]' member='#2021-08-19#' user:ui-domain='relevant' user:ui-enumeration='inclusive' user:ui-marker='enumerate' />
+            <groupfilter function='member' level='[none:week_day:nk]' member='&quot;Thursday&quot;' user:ui-domain='relevant' user:ui-enumeration='inclusive' user:ui-marker='enumerate' />
+          </computed-sort>
+          <slices>
+            <column>[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:vendorId:ok]</column>
+            <column>[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:size_bucket_final:ok]</column>
+            <column>[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:registeted_date_capacity_table:qk]</column>
+            <column>[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:country_name:nk]</column>
+            <column>[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:business_name:nk]</column>
+            <column>[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:is_pre_order:nk]</column>
+            <column>[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:order_status:nk]</column>
+            <column>[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:duration:ok]</column>
+            <column>[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:city_name:nk]</column>
+          </slices>
+          <aggregation value='true' />
+        </view>
+        <style>
+          <style-rule element='axis'>
+            <format attr='height' field='[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[usr:Calculation_1462262513611313152:qk]' value='43' />
+            <format attr='auto-subtitle' class='0' field='[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[usr:Calculation_1462262513611313152:qk]' scope='cols' value='true' />
+          </style-rule>
+          <style-rule element='cell'>
+            <format attr='width' field='[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:end_bucket_final:nk]' value='196' />
+            <format attr='height' field='[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:end_bucket_final:nk]' value='35' />
+          </style-rule>
+          <style-rule element='header'>
+            <format attr='height' field='[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:end_bucket_final:nk]' value='168' />
+            <format attr='width' field='[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:end_bucket_final:nk]' value='108' />
+            <format attr='width' field='[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:size_bucket_final:ok]' value='48' />
+            <format attr='width' field='[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:start_bucket_final:nk]' value='120' />
+            <format attr='width' field='[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:vendorId:ok]' value='96' />
+          </style-rule>
+        </style>
+        <panes>
+          <pane id='1' selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Automatic' />
+            <style>
+              <style-rule element='pane'>
+                <format attr='minwidth' value='115' />
+                <format attr='maxwidth' value='115' />
+                <format attr='minheight' value='31955' />
+                <format attr='maxheight' value='31955' />
+                <format attr='aspect' value='0' />
+                <format attr='minwidth' value='115' />
+                <format attr='maxwidth' value='115' />
+                <format attr='minheight' value='31955' />
+                <format attr='maxheight' value='31955' />
+                <format attr='aspect' value='0' />
+              </style-rule>
+            </style>
+          </pane>
+        </panes>
+        <rows>([federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:vendorId:ok] / ([federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:start_bucket_final:nk] / ([federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:end_bucket_final:nk] / [federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:size_bucket_final:ok])))</rows>
+        <cols>(([federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:week_day:nk] / [federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:registeted_date_capacity_table:ok]) * [federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[usr:Calculation_1462262513611313152:qk])</cols>
+      </table>
+      <simple-id uuid='{FD44BD82-30A8-45E8-87CC-E166E156932C}' />
+    </worksheet>
+    <worksheet name='Summary by country and vertical'>
+      <layout-options>
+        <title>
+          <formatted-text>
+            <run bold='true' fontcolor='#aa0000'>Summary by country and vertical</run>
+            <run>Æ&#10;</run>
+            <run bold='true' fontcolor='#000000' fontsize='10'>Qty of partners using the buckets and orders received </run>
+          </formatted-text>
+        </title>
+      </layout-options>
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='Consulta SQL personalizada (user_fernanda_ochoa)' name='federated.1pcdexa0p9c2j71e3h8uu1iup1lx' />
+          </datasources>
+          <datasource-dependencies datasource='federated.1pcdexa0p9c2j71e3h8uu1iup1lx'>
+            <column caption='Qty vendors' datatype='integer' name='[Calculation_1462262513648558083]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='COUNTD([vendorId])' />
+            </column>
+            <column caption='Qty rejected' datatype='integer' name='[Calculation_1462262513648861188]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='COUNTD( IF ([order_status]= &quot;REJECTED&quot;) THEN [order_id] ELSE NULL END)' />
+            </column>
+            <column caption='Qty confirmed' datatype='integer' name='[Qty rejected (copia)_1462262513649246213]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='COUNTD( IF ([order_status]= &quot;CONFIRMED&quot;) THEN [order_id] ELSE NULL END)' />
+            </column>
+            <column caption='Business name' datatype='string' name='[business_name]' role='dimension' type='nominal' />
+            <column caption='City name' datatype='string' name='[city_name]' role='dimension' semantic-role='[City].[Name]' type='nominal' />
+            <column caption='Country' datatype='string' name='[country_name]' role='dimension' semantic-role='[Country].[ISO3166_2]' type='nominal' />
+            <column aggregation='Sum' caption='Time duration bucket (min)' datatype='integer' name='[duration]' role='dimension' type='ordinal' />
+            <column caption='Is pre order' datatype='boolean' name='[is_pre_order]' role='dimension' type='nominal' />
+            <column-instance column='[business_name]' derivation='None' name='[none:business_name:nk]' pivot='key' type='nominal' />
+            <column-instance column='[city_name]' derivation='None' name='[none:city_name:nk]' pivot='key' type='nominal' />
+            <column-instance column='[country_name]' derivation='None' name='[none:country_name:nk]' pivot='key' type='nominal' />
+            <column-instance column='[duration]' derivation='None' name='[none:duration:ok]' pivot='key' type='ordinal' />
+            <column-instance column='[is_pre_order]' derivation='None' name='[none:is_pre_order:nk]' pivot='key' type='nominal' />
+            <column-instance column='[order_status]' derivation='None' name='[none:order_status:nk]' pivot='key' type='nominal' />
+            <column-instance column='[registeted_date_capacity_table]' derivation='None' name='[none:registeted_date_capacity_table:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[vendorId]' derivation='None' name='[none:vendorId:ok]' pivot='key' type='ordinal' />
+            <column aggregation='Sum' datatype='integer' name='[order_id]' role='dimension' type='ordinal' />
+            <column caption='Order status' datatype='string' name='[order_status]' role='dimension' type='nominal' />
+            <column caption='Registeted date capacity' datatype='date' name='[registeted_date_capacity_table]' role='dimension' type='ordinal' />
+            <column-instance column='[Calculation_1462262513648558083]' derivation='User' name='[usr:Calculation_1462262513648558083:ok]' pivot='key' type='ordinal' />
+            <column-instance column='[Calculation_1462262513648861188]' derivation='User' name='[usr:Calculation_1462262513648861188:ok]' pivot='key' type='ordinal' />
+            <column-instance column='[Qty rejected (copia)_1462262513649246213]' derivation='User' name='[usr:Qty rejected (copia)_1462262513649246213:ok]' pivot='key' type='ordinal' />
+            <column aggregation='Sum' caption='Vendor Id' datatype='integer' name='[vendorId]' role='dimension' type='ordinal' />
+          </datasource-dependencies>
+          <alphabetic-sort column='[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:business_name:nk]' direction='ASC' />
+          <slices>
+            <column>[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:country_name:nk]</column>
+            <column>[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:is_pre_order:nk]</column>
+            <column>[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:registeted_date_capacity_table:qk]</column>
+            <column>[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:duration:ok]</column>
+            <column>[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:business_name:nk]</column>
+            <column>[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:order_status:nk]</column>
+            <column>[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:vendorId:ok]</column>
+            <column>[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:city_name:nk]</column>
+          </slices>
+          <aggregation value='true' />
+        </view>
+        <style>
+          <style-rule element='cell'>
+            <format attr='width' value='246' />
+            <format attr='width' field='[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:country_name:nk]' value='87' />
+            <format attr='width' field='[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:business_name:nk]' value='177' />
+            <format attr='height' field='[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:country_name:nk]' value='76' />
+          </style-rule>
+          <style-rule element='header'>
+            <format attr='width' field='[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:business_name:nk]' value='176' />
+            <format attr='width' field='[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:country_name:nk]' value='176' />
+            <format attr='background-color' field='[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:business_name:nk]' value='#c0c0c0' />
+            <format attr='background-color' field='[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:country_name:nk]' value='#d4d4d4' />
+            <format attr='height' field='[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:business_name:nk]' value='28' />
+          </style-rule>
+          <style-rule element='field-labels'>
+            <format attr='color' value='#ffffff' />
+            <format attr='background-color' value='#aa0000' />
+          </style-rule>
+          <style-rule element='label'>
+            <format attr='color' field='[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:country_name:nk]' value='#000000' />
+          </style-rule>
+        </style>
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Text' />
+            <encodings>
+              <text column='[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[usr:Calculation_1462262513648558083:ok]' />
+              <text column='[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[usr:Qty rejected (copia)_1462262513649246213:ok]' />
+              <text column='[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[usr:Calculation_1462262513648861188:ok]' />
+            </encodings>
+            <customized-tooltip>
+              <formatted-text>
+                <run fontcolor='#787878'>Business name:&#9;</run>
+                <run bold='true'><![CDATA[<[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:business_name:nk]>]]></run>
+                <run>Æ&#10;</run>
+                <run fontcolor='#787878'>Country:&#9;</run>
+                <run bold='true'><![CDATA[<[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:country_name:nk]>]]></run>
+                <run>Æ&#10;</run>
+                <run fontcolor='#787878'>Qty vendors:&#9;</run>
+                <run bold='true'><![CDATA[<[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[usr:Calculation_1462262513648558083:ok]>]]></run>
+                <run>Æ&#10;</run>
+                <run fontcolor='#787878'>Qty confirmed:&#9;</run>
+                <run bold='true'><![CDATA[<[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[usr:Qty rejected (copia)_1462262513649246213:ok]>]]></run>
+                <run>Æ&#10;</run>
+                <run fontcolor='#787878'>Qty rejected:&#9;</run>
+                <run bold='true'><![CDATA[<[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[usr:Calculation_1462262513648861188:ok]>]]></run>
+                <run>Æ&#10;</run>
+              </formatted-text>
+            </customized-tooltip>
+            <style>
+              <style-rule element='mark'>
+                <format attr='mark-labels-show' value='true' />
+                <format attr='mark-labels-cull' value='true' />
+              </style-rule>
+              <style-rule element='pane'>
+                <format attr='minwidth' value='-1' />
+                <format attr='maxwidth' value='-1' />
+                <format attr='minheight' value='-1' />
+                <format attr='maxheight' value='-1' />
+              </style-rule>
+            </style>
+          </pane>
+        </panes>
+        <rows total='true'>[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:country_name:nk]</rows>
+        <cols total='true'>[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:business_name:nk]</cols>
+      </table>
+      <simple-id uuid='{BBC30563-3279-49A5-973B-880951359701}' />
+    </worksheet>
+  </worksheets>
+  <dashboards>
+    <dashboard name='Buckets by partner'>
+      <repository-location id='Bucketsbypartner' path='/t/Pedidosya/workbooks/Newverticals-Controlcapacity' revision='' site='Pedidosya' />
+      <style />
+      <size maxheight='800' maxwidth='1300' minheight='800' minwidth='1300' sizing-mode='fixed' />
+      <datasources>
+        <datasource caption='Consulta SQL personalizada (user_fernanda_ochoa)' name='federated.1pcdexa0p9c2j71e3h8uu1iup1lx' />
+      </datasources>
+      <datasource-dependencies datasource='federated.1pcdexa0p9c2j71e3h8uu1iup1lx'>
+        <column caption='City name' datatype='string' name='[city_name]' role='dimension' semantic-role='[City].[Name]' type='nominal' />
+        <column caption='Country' datatype='string' name='[country_name]' role='dimension' semantic-role='[Country].[ISO3166_2]' type='nominal' />
+        <column aggregation='Sum' caption='Time duration bucket (min)' datatype='integer' name='[duration]' role='dimension' type='ordinal' />
+        <column caption='Is pre order' datatype='boolean' name='[is_pre_order]' role='dimension' type='nominal' />
+        <column-instance column='[city_name]' derivation='None' name='[none:city_name:nk]' pivot='key' type='nominal' />
+        <column-instance column='[country_name]' derivation='None' name='[none:country_name:nk]' pivot='key' type='nominal' />
+        <column-instance column='[duration]' derivation='None' name='[none:duration:ok]' pivot='key' type='ordinal' />
+        <column-instance column='[is_pre_order]' derivation='None' name='[none:is_pre_order:nk]' pivot='key' type='nominal' />
+        <column-instance column='[order_status]' derivation='None' name='[none:order_status:nk]' pivot='key' type='nominal' />
+        <column-instance column='[registeted_date_capacity_table]' derivation='None' name='[none:registeted_date_capacity_table:qk]' pivot='key' type='quantitative' />
+        <column-instance column='[vendorId]' derivation='None' name='[none:vendorId:ok]' pivot='key' type='ordinal' />
+        <column caption='Order status' datatype='string' name='[order_status]' role='dimension' type='nominal' />
+        <column caption='Registeted date capacity' datatype='date' name='[registeted_date_capacity_table]' role='dimension' type='ordinal' />
+        <column aggregation='Sum' caption='Vendor Id' datatype='integer' name='[vendorId]' role='dimension' type='ordinal' />
+      </datasource-dependencies>
+      <zones>
+        <zone _.fcp.SetMembershipControl.false...type='layout-basic' _.fcp.SetMembershipControl.true...type-v2='layout-basic' h='100000' id='4' w='100000' x='0' y='0'>
+          <zone _.fcp.SetMembershipControl.false...type='layout-flow' _.fcp.SetMembershipControl.true...type-v2='layout-flow' h='98000' id='7' param='horz' w='98770' x='615' y='1000'>
+            <zone _.fcp.SetMembershipControl.false...type='layout-basic' _.fcp.SetMembershipControl.true...type-v2='layout-basic' h='98000' id='5' w='84155' x='615' y='1000'>
+              <zone h='98000' id='3' name='By partner' w='84155' x='615' y='1000'>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+            </zone>
+            <zone _.fcp.SetMembershipControl.false...type='layout-flow' _.fcp.SetMembershipControl.true...type-v2='layout-flow' fixed-size='190' h='98000' id='6' is-fixed='true' param='vert' w='14615' x='84770' y='1000'>
+              <zone _.fcp.SetMembershipControl.false...type='bitmap' _.fcp.SetMembershipControl.true...type-v2='bitmap' fixed-size='63' h='8875' id='13' is-centered='0' is-fixed='true' is-scaled='1' param='Image/Nuevo logo PYa.png' w='14615' x='84770' y='1000'>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+              <zone h='8000' id='18' name='Date up to' w='14615' x='84770' y='9875'>
+                <layout-cache fixed-size-h='56' fixed-size-w='107' type-h='fixed' type-w='fixed' />
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+              <zone _.fcp.SetMembershipControl.false...type='filter' _.fcp.SetMembershipControl.true...type-v2='filter' h='7250' id='9' name='By partner' param='[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:registeted_date_capacity_table:qk]' show-domain='false' show-null-ctrls='false' w='14615' x='84770' y='17875'>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+              <zone _.fcp.SetMembershipControl.false...type='filter' _.fcp.SetMembershipControl.true...type-v2='filter' h='8750' id='12' mode='checkdropdown' name='By partner' param='[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:country_name:nk]' w='14615' x='84770' y='25125'>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+              <zone _.fcp.SetMembershipControl.false...type='filter' _.fcp.SetMembershipControl.true...type-v2='filter' h='8750' id='28' mode='checkdropdown' name='By partner' param='[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:city_name:nk]' values='relevant' w='14615' x='84770' y='33875'>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+              <zone _.fcp.SetMembershipControl.false...type='filter' _.fcp.SetMembershipControl.true...type-v2='filter' h='8750' id='19' mode='checkdropdown' name='By partner' param='[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:vendorId:ok]' values='relevant' w='14615' x='84770' y='42625'>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+              <zone _.fcp.SetMembershipControl.false...type='filter' _.fcp.SetMembershipControl.true...type-v2='filter' h='8750' id='11' mode='checkdropdown' name='By partner' param='[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:is_pre_order:nk]' values='relevant' w='14615' x='84770' y='51375'>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+              <zone _.fcp.SetMembershipControl.false...type='filter' _.fcp.SetMembershipControl.true...type-v2='filter' h='8750' id='10' mode='checkdropdown' name='By partner' param='[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:order_status:nk]' values='relevant' w='14615' x='84770' y='60125'>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+              <zone _.fcp.SetMembershipControl.false...type='filter' _.fcp.SetMembershipControl.true...type-v2='filter' h='8750' id='8' mode='checkdropdown' name='By partner' param='[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:duration:ok]' values='relevant' w='14615' x='84770' y='68875'>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+            </zone>
+          </zone>
+          <zone-style>
+            <format attr='border-color' value='#000000' />
+            <format attr='border-style' value='none' />
+            <format attr='border-width' value='0' />
+            <format attr='margin' value='8' />
+          </zone-style>
+        </zone>
+      </zones>
+      <devicelayouts>
+        <devicelayout auto-generated='true' name='Phone'>
+          <size maxheight='850' minheight='850' sizing-mode='vscroll' />
+          <zones>
+            <zone _.fcp.SetMembershipControl.false...type='layout-basic' _.fcp.SetMembershipControl.true...type-v2='layout-basic' h='100000' id='36' w='100000' x='0' y='0'>
+              <zone _.fcp.SetMembershipControl.false...type='layout-flow' _.fcp.SetMembershipControl.true...type-v2='layout-flow' h='98000' id='35' param='vert' w='98770' x='615' y='1000'>
+                <zone _.fcp.SetMembershipControl.false...type='filter' _.fcp.SetMembershipControl.true...type-v2='filter' h='7250' id='9' name='By partner' param='[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:registeted_date_capacity_table:qk]' show-domain='false' show-null-ctrls='false' w='14615' x='84770' y='17875'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone _.fcp.SetMembershipControl.false...type='filter' _.fcp.SetMembershipControl.true...type-v2='filter' h='8750' id='12' mode='checkdropdown' name='By partner' param='[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:country_name:nk]' w='14615' x='84770' y='25125'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone _.fcp.SetMembershipControl.false...type='filter' _.fcp.SetMembershipControl.true...type-v2='filter' h='8750' id='28' mode='checkdropdown' name='By partner' param='[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:city_name:nk]' values='relevant' w='14615' x='84770' y='33875'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone _.fcp.SetMembershipControl.false...type='filter' _.fcp.SetMembershipControl.true...type-v2='filter' h='8750' id='19' mode='checkdropdown' name='By partner' param='[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:vendorId:ok]' values='relevant' w='14615' x='84770' y='42625'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone _.fcp.SetMembershipControl.false...type='filter' _.fcp.SetMembershipControl.true...type-v2='filter' h='8750' id='11' mode='checkdropdown' name='By partner' param='[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:is_pre_order:nk]' values='relevant' w='14615' x='84770' y='51375'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone _.fcp.SetMembershipControl.false...type='filter' _.fcp.SetMembershipControl.true...type-v2='filter' h='8750' id='10' mode='checkdropdown' name='By partner' param='[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:order_status:nk]' values='relevant' w='14615' x='84770' y='60125'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone _.fcp.SetMembershipControl.false...type='filter' _.fcp.SetMembershipControl.true...type-v2='filter' h='8750' id='8' mode='checkdropdown' name='By partner' param='[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:duration:ok]' values='relevant' w='14615' x='84770' y='68875'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone fixed-size='280' h='98000' id='3' is-fixed='true' name='By partner' w='84155' x='615' y='1000'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone _.fcp.SetMembershipControl.false...type='bitmap' _.fcp.SetMembershipControl.true...type-v2='bitmap' fixed-size='63' h='8875' id='13' is-centered='0' is-fixed='true' is-scaled='1' param='Image/Nuevo logo PYa.png' w='14615' x='84770' y='1000'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone fixed-size='56' h='8000' id='18' is-fixed='true' name='Date up to' w='14615' x='84770' y='9875'>
+                  <layout-cache fixed-size-h='56' fixed-size-w='107' type-h='fixed' type-w='fixed' />
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+              </zone>
+              <zone-style>
+                <format attr='border-color' value='#000000' />
+                <format attr='border-style' value='none' />
+                <format attr='border-width' value='0' />
+                <format attr='margin' value='8' />
+              </zone-style>
+            </zone>
+          </zones>
+        </devicelayout>
+      </devicelayouts>
+      <simple-id uuid='{B3A26C07-2D7C-4A31-A8B1-13E4734F5D34}' />
+    </dashboard>
+    <dashboard name='Control capacity'>
+      <repository-location id='Controlcapacity' path='/t/Pedidosya/workbooks/Newverticals-Controlcapacity' revision='' site='Pedidosya' />
+      <style />
+      <size maxheight='900' maxwidth='1300' minheight='900' minwidth='1300' sizing-mode='fixed' />
+      <datasources>
+        <datasource caption='Consulta SQL personalizada (user_fernanda_ochoa)' name='federated.1pcdexa0p9c2j71e3h8uu1iup1lx' />
+      </datasources>
+      <datasource-dependencies datasource='federated.1pcdexa0p9c2j71e3h8uu1iup1lx'>
+        <column caption='Business name' datatype='string' name='[business_name]' role='dimension' type='nominal' />
+        <column caption='City name' datatype='string' name='[city_name]' role='dimension' semantic-role='[City].[Name]' type='nominal' />
+        <column caption='Country' datatype='string' name='[country_name]' role='dimension' semantic-role='[Country].[ISO3166_2]' type='nominal' />
+        <column aggregation='Sum' caption='Time duration bucket (min)' datatype='integer' name='[duration]' role='dimension' type='ordinal' />
+        <column caption='Is pre order' datatype='boolean' name='[is_pre_order]' role='dimension' type='nominal' />
+        <column-instance column='[business_name]' derivation='None' name='[none:business_name:nk]' pivot='key' type='nominal' />
+        <column-instance column='[city_name]' derivation='None' name='[none:city_name:nk]' pivot='key' type='nominal' />
+        <column-instance column='[country_name]' derivation='None' name='[none:country_name:nk]' pivot='key' type='nominal' />
+        <column-instance column='[duration]' derivation='None' name='[none:duration:ok]' pivot='key' type='ordinal' />
+        <column-instance column='[is_pre_order]' derivation='None' name='[none:is_pre_order:nk]' pivot='key' type='nominal' />
+        <column-instance column='[order_status]' derivation='None' name='[none:order_status:nk]' pivot='key' type='nominal' />
+        <column-instance column='[registeted_date_capacity_table]' derivation='None' name='[none:registeted_date_capacity_table:qk]' pivot='key' type='quantitative' />
+        <column caption='Order status' datatype='string' name='[order_status]' role='dimension' type='nominal' />
+        <column caption='Registeted date capacity' datatype='date' name='[registeted_date_capacity_table]' role='dimension' type='ordinal' />
+      </datasource-dependencies>
+      <zones>
+        <zone _.fcp.SetMembershipControl.false...type='layout-basic' _.fcp.SetMembershipControl.true...type-v2='layout-basic' h='100000' id='4' w='100000' x='0' y='0'>
+          <zone _.fcp.SetMembershipControl.false...type='layout-flow' _.fcp.SetMembershipControl.true...type-v2='layout-flow' h='98222' id='7' param='horz' w='98770' x='615' y='889'>
+            <zone _.fcp.SetMembershipControl.false...type='layout-basic' _.fcp.SetMembershipControl.true...type-v2='layout-basic' h='98222' id='5' w='84462' x='615' y='889'>
+              <zone h='98222' id='3' name='By country' w='84462' x='615' y='889'>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+            </zone>
+            <zone _.fcp.SetMembershipControl.false...type='layout-flow' _.fcp.SetMembershipControl.true...type-v2='layout-flow' fixed-size='186' h='98222' id='6' is-fixed='true' param='vert' w='14308' x='85077' y='889'>
+              <zone _.fcp.SetMembershipControl.false...type='bitmap' _.fcp.SetMembershipControl.true...type-v2='bitmap' fixed-size='73' h='9000' id='15' is-centered='0' is-fixed='true' is-scaled='1' param='Image/Nuevo logo PYa.png' w='14308' x='85077' y='889'>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+              <zone h='7111' id='20' name='Date up to' w='14308' x='85077' y='9889'>
+                <layout-cache fixed-size-h='56' fixed-size-w='107' type-h='fixed' type-w='fixed' />
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+              <zone _.fcp.SetMembershipControl.false...type='filter' _.fcp.SetMembershipControl.true...type-v2='filter' h='6445' id='13' name='By country' param='[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:registeted_date_capacity_table:qk]' show-domain='false' show-null-ctrls='false' w='14308' x='85077' y='17000'>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+              <zone _.fcp.SetMembershipControl.false...type='filter' _.fcp.SetMembershipControl.true...type-v2='filter' h='7778' id='12' mode='checkdropdown' name='By country' param='[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:country_name:nk]' w='14308' x='85077' y='23445'>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+              <zone _.fcp.SetMembershipControl.false...type='filter' _.fcp.SetMembershipControl.true...type-v2='filter' h='7778' id='29' mode='checkdropdown' name='By country' param='[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:city_name:nk]' show-apply='true' values='relevant' w='14308' x='85077' y='31223'>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+              <zone _.fcp.SetMembershipControl.false...type='filter' _.fcp.SetMembershipControl.true...type-v2='filter' h='7778' id='9' mode='checkdropdown' name='By country' param='[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:business_name:nk]' show-apply='true' values='relevant' w='14308' x='85077' y='39001'>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+              <zone _.fcp.SetMembershipControl.false...type='filter' _.fcp.SetMembershipControl.true...type-v2='filter' h='7778' id='11' mode='checkdropdown' name='By country' param='[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:is_pre_order:nk]' values='relevant' w='14308' x='85077' y='46779'>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+              <zone _.fcp.SetMembershipControl.false...type='filter' _.fcp.SetMembershipControl.true...type-v2='filter' h='7778' id='10' mode='checkdropdown' name='By country' param='[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:order_status:nk]' values='relevant' w='14308' x='85077' y='54557'>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+              <zone _.fcp.SetMembershipControl.false...type='filter' _.fcp.SetMembershipControl.true...type-v2='filter' h='7778' id='8' mode='checkdropdown' name='By country' param='[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:duration:ok]' values='relevant' w='14308' x='85077' y='62335'>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+            </zone>
+          </zone>
+          <zone-style>
+            <format attr='border-color' value='#000000' />
+            <format attr='border-style' value='none' />
+            <format attr='border-width' value='0' />
+            <format attr='margin' value='8' />
+          </zone-style>
+        </zone>
+      </zones>
+      <devicelayouts>
+        <devicelayout auto-generated='true' name='Phone'>
+          <size maxheight='850' minheight='850' sizing-mode='vscroll' />
+          <zones>
+            <zone _.fcp.SetMembershipControl.false...type='layout-basic' _.fcp.SetMembershipControl.true...type-v2='layout-basic' h='100000' id='37' w='100000' x='0' y='0'>
+              <zone _.fcp.SetMembershipControl.false...type='layout-flow' _.fcp.SetMembershipControl.true...type-v2='layout-flow' h='98222' id='36' param='vert' w='98770' x='615' y='889'>
+                <zone _.fcp.SetMembershipControl.false...type='filter' _.fcp.SetMembershipControl.true...type-v2='filter' h='6445' id='13' name='By country' param='[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:registeted_date_capacity_table:qk]' show-domain='false' show-null-ctrls='false' w='14308' x='85077' y='17000'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone _.fcp.SetMembershipControl.false...type='filter' _.fcp.SetMembershipControl.true...type-v2='filter' h='7778' id='12' mode='checkdropdown' name='By country' param='[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:country_name:nk]' w='14308' x='85077' y='23445'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone _.fcp.SetMembershipControl.false...type='filter' _.fcp.SetMembershipControl.true...type-v2='filter' h='7778' id='29' mode='checkdropdown' name='By country' param='[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:city_name:nk]' show-apply='true' values='relevant' w='14308' x='85077' y='31223'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone _.fcp.SetMembershipControl.false...type='filter' _.fcp.SetMembershipControl.true...type-v2='filter' h='7778' id='9' mode='checkdropdown' name='By country' param='[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:business_name:nk]' show-apply='true' values='relevant' w='14308' x='85077' y='39001'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone _.fcp.SetMembershipControl.false...type='filter' _.fcp.SetMembershipControl.true...type-v2='filter' h='7778' id='11' mode='checkdropdown' name='By country' param='[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:is_pre_order:nk]' values='relevant' w='14308' x='85077' y='46779'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone _.fcp.SetMembershipControl.false...type='filter' _.fcp.SetMembershipControl.true...type-v2='filter' h='7778' id='10' mode='checkdropdown' name='By country' param='[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:order_status:nk]' values='relevant' w='14308' x='85077' y='54557'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone _.fcp.SetMembershipControl.false...type='filter' _.fcp.SetMembershipControl.true...type-v2='filter' h='7778' id='8' mode='checkdropdown' name='By country' param='[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:duration:ok]' values='relevant' w='14308' x='85077' y='62335'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone fixed-size='280' h='98222' id='3' is-fixed='true' name='By country' w='84462' x='615' y='889'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone _.fcp.SetMembershipControl.false...type='bitmap' _.fcp.SetMembershipControl.true...type-v2='bitmap' fixed-size='73' h='9000' id='15' is-centered='0' is-fixed='true' is-scaled='1' param='Image/Nuevo logo PYa.png' w='14308' x='85077' y='889'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone fixed-size='56' h='7111' id='20' is-fixed='true' name='Date up to' w='14308' x='85077' y='9889'>
+                  <layout-cache fixed-size-h='56' fixed-size-w='107' type-h='fixed' type-w='fixed' />
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+              </zone>
+              <zone-style>
+                <format attr='border-color' value='#000000' />
+                <format attr='border-style' value='none' />
+                <format attr='border-width' value='0' />
+                <format attr='margin' value='8' />
+              </zone-style>
+            </zone>
+          </zones>
+        </devicelayout>
+      </devicelayouts>
+      <simple-id uuid='{D10B7D0C-E4B8-420C-86AD-51FDF172EC84}' />
+    </dashboard>
+    <dashboard name='Qty orders per bucket'>
+      <repository-location id='Qtyordersperbucket' path='/t/Pedidosya/workbooks/Newverticals-Controlcapacity' revision='' site='Pedidosya' />
+      <style />
+      <size maxheight='800' maxwidth='1300' minheight='800' minwidth='1300' sizing-mode='fixed' />
+      <datasources>
+        <datasource caption='Consulta SQL personalizada (user_fernanda_ochoa)' name='federated.1pcdexa0p9c2j71e3h8uu1iup1lx' />
+      </datasources>
+      <datasource-dependencies datasource='federated.1pcdexa0p9c2j71e3h8uu1iup1lx'>
+        <column caption='Business name' datatype='string' name='[business_name]' role='dimension' type='nominal' />
+        <column caption='City name' datatype='string' name='[city_name]' role='dimension' semantic-role='[City].[Name]' type='nominal' />
+        <column caption='Country' datatype='string' name='[country_name]' role='dimension' semantic-role='[Country].[ISO3166_2]' type='nominal' />
+        <column aggregation='Sum' caption='Time duration bucket (min)' datatype='integer' name='[duration]' role='dimension' type='ordinal' />
+        <column-instance column='[business_name]' derivation='None' name='[none:business_name:nk]' pivot='key' type='nominal' />
+        <column-instance column='[city_name]' derivation='None' name='[none:city_name:nk]' pivot='key' type='nominal' />
+        <column-instance column='[country_name]' derivation='None' name='[none:country_name:nk]' pivot='key' type='nominal' />
+        <column-instance column='[duration]' derivation='None' name='[none:duration:ok]' pivot='key' type='ordinal' />
+        <column-instance column='[registeted_date_capacity_table]' derivation='None' name='[none:registeted_date_capacity_table:qk]' pivot='key' type='quantitative' />
+        <column-instance column='[size_bucket_final]' derivation='None' name='[none:size_bucket_final:ok]' pivot='key' type='ordinal' />
+        <column-instance column='[vendorId]' derivation='None' name='[none:vendorId:ok]' pivot='key' type='ordinal' />
+        <column caption='Registeted date capacity' datatype='date' name='[registeted_date_capacity_table]' role='dimension' type='ordinal' />
+        <column aggregation='Sum' caption='Size' datatype='integer' name='[size_bucket_final]' role='dimension' type='ordinal' />
+        <column aggregation='Sum' caption='Vendor Id' datatype='integer' name='[vendorId]' role='dimension' type='ordinal' />
+      </datasource-dependencies>
+      <zones>
+        <zone _.fcp.SetMembershipControl.false...type='layout-basic' _.fcp.SetMembershipControl.true...type-v2='layout-basic' h='100000' id='4' w='100000' x='0' y='0'>
+          <zone _.fcp.SetMembershipControl.false...type='layout-flow' _.fcp.SetMembershipControl.true...type-v2='layout-flow' h='98000' id='7' param='horz' w='98770' x='615' y='1000'>
+            <zone _.fcp.SetMembershipControl.false...type='layout-basic' _.fcp.SetMembershipControl.true...type-v2='layout-basic' h='98000' id='5' w='83924' x='615' y='1000'>
+              <zone h='98000' id='3' name='Qty orders in bucket' w='83924' x='615' y='1000'>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+            </zone>
+            <zone _.fcp.SetMembershipControl.false...type='layout-flow' _.fcp.SetMembershipControl.true...type-v2='layout-flow' fixed-size='193' h='98000' id='6' is-fixed='true' param='vert' w='14846' x='84539' y='1000'>
+              <zone _.fcp.SetMembershipControl.false...type='bitmap' _.fcp.SetMembershipControl.true...type-v2='bitmap' fixed-size='73' h='10125' id='14' is-centered='0' is-fixed='true' is-scaled='1' param='Image/Nuevo logo PYa.png' w='14846' x='84539' y='1000'>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+              <zone h='8000' id='13' name='Date up to' w='14846' x='84539' y='11125'>
+                <layout-cache fixed-size-h='56' fixed-size-w='107' type-h='fixed' type-w='fixed' />
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+              <zone _.fcp.SetMembershipControl.false...type='filter' _.fcp.SetMembershipControl.true...type-v2='filter' h='7500' id='10' name='Qty orders in bucket' param='[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:registeted_date_capacity_table:qk]' show-domain='false' show-null-ctrls='false' w='14846' x='84539' y='19125'>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+              <zone _.fcp.SetMembershipControl.false...type='filter' _.fcp.SetMembershipControl.true...type-v2='filter' h='8750' id='9' mode='checkdropdown' name='Qty orders in bucket' param='[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:country_name:nk]' w='14846' x='84539' y='26625'>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+              <zone _.fcp.SetMembershipControl.false...type='filter' _.fcp.SetMembershipControl.true...type-v2='filter' h='8750' id='21' mode='checkdropdown' name='Qty orders in bucket' param='[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:city_name:nk]' show-apply='true' values='relevant' w='14846' x='84539' y='35375'>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+              <zone _.fcp.SetMembershipControl.false...type='filter' _.fcp.SetMembershipControl.true...type-v2='filter' h='8750' id='8' mode='checkdropdown' name='Qty orders in bucket' param='[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:business_name:nk]' show-apply='true' w='14846' x='84539' y='44125'>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+              <zone _.fcp.SetMembershipControl.false...type='filter' _.fcp.SetMembershipControl.true...type-v2='filter' h='8750' id='12' mode='checkdropdown' name='Qty orders in bucket' param='[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:vendorId:ok]' show-apply='true' w='14846' x='84539' y='52875'>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+              <zone _.fcp.SetMembershipControl.false...type='filter' _.fcp.SetMembershipControl.true...type-v2='filter' h='8750' id='15' mode='checkdropdown' name='Qty orders in bucket' param='[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:size_bucket_final:ok]' values='database' w='14846' x='84539' y='61625'>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+              <zone _.fcp.SetMembershipControl.false...type='filter' _.fcp.SetMembershipControl.true...type-v2='filter' h='8750' id='16' mode='checkdropdown' name='Qty orders in bucket' param='[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:duration:ok]' values='database' w='14846' x='84539' y='70375'>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+            </zone>
+          </zone>
+          <zone-style>
+            <format attr='border-color' value='#000000' />
+            <format attr='border-style' value='none' />
+            <format attr='border-width' value='0' />
+            <format attr='margin' value='8' />
+          </zone-style>
+        </zone>
+      </zones>
+      <devicelayouts>
+        <devicelayout auto-generated='true' name='Phone'>
+          <size maxheight='850' minheight='850' sizing-mode='vscroll' />
+          <zones>
+            <zone _.fcp.SetMembershipControl.false...type='layout-basic' _.fcp.SetMembershipControl.true...type-v2='layout-basic' h='100000' id='29' w='100000' x='0' y='0'>
+              <zone _.fcp.SetMembershipControl.false...type='layout-flow' _.fcp.SetMembershipControl.true...type-v2='layout-flow' h='98000' id='28' param='vert' w='98770' x='615' y='1000'>
+                <zone _.fcp.SetMembershipControl.false...type='filter' _.fcp.SetMembershipControl.true...type-v2='filter' h='7500' id='10' name='Qty orders in bucket' param='[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:registeted_date_capacity_table:qk]' show-domain='false' show-null-ctrls='false' w='14846' x='84539' y='19125'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone _.fcp.SetMembershipControl.false...type='filter' _.fcp.SetMembershipControl.true...type-v2='filter' h='8750' id='9' mode='checkdropdown' name='Qty orders in bucket' param='[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:country_name:nk]' w='14846' x='84539' y='26625'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone _.fcp.SetMembershipControl.false...type='filter' _.fcp.SetMembershipControl.true...type-v2='filter' h='8750' id='21' mode='checkdropdown' name='Qty orders in bucket' param='[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:city_name:nk]' show-apply='true' values='relevant' w='14846' x='84539' y='35375'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone _.fcp.SetMembershipControl.false...type='filter' _.fcp.SetMembershipControl.true...type-v2='filter' h='8750' id='8' mode='checkdropdown' name='Qty orders in bucket' param='[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:business_name:nk]' show-apply='true' w='14846' x='84539' y='44125'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone _.fcp.SetMembershipControl.false...type='filter' _.fcp.SetMembershipControl.true...type-v2='filter' h='8750' id='12' mode='checkdropdown' name='Qty orders in bucket' param='[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:vendorId:ok]' show-apply='true' w='14846' x='84539' y='52875'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone _.fcp.SetMembershipControl.false...type='filter' _.fcp.SetMembershipControl.true...type-v2='filter' h='8750' id='15' mode='checkdropdown' name='Qty orders in bucket' param='[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:size_bucket_final:ok]' values='database' w='14846' x='84539' y='61625'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone _.fcp.SetMembershipControl.false...type='filter' _.fcp.SetMembershipControl.true...type-v2='filter' h='8750' id='16' mode='checkdropdown' name='Qty orders in bucket' param='[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:duration:ok]' values='database' w='14846' x='84539' y='70375'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone fixed-size='280' h='98000' id='3' is-fixed='true' name='Qty orders in bucket' w='83924' x='615' y='1000'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone _.fcp.SetMembershipControl.false...type='bitmap' _.fcp.SetMembershipControl.true...type-v2='bitmap' fixed-size='73' h='10125' id='14' is-centered='0' is-fixed='true' is-scaled='1' param='Image/Nuevo logo PYa.png' w='14846' x='84539' y='1000'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone fixed-size='56' h='8000' id='13' is-fixed='true' name='Date up to' w='14846' x='84539' y='11125'>
+                  <layout-cache fixed-size-h='56' fixed-size-w='107' type-h='fixed' type-w='fixed' />
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+              </zone>
+              <zone-style>
+                <format attr='border-color' value='#000000' />
+                <format attr='border-style' value='none' />
+                <format attr='border-width' value='0' />
+                <format attr='margin' value='8' />
+              </zone-style>
+            </zone>
+          </zones>
+        </devicelayout>
+      </devicelayouts>
+      <simple-id uuid='{2F7E4D0C-C729-43BD-BF98-7C7BB5C6232B}' />
+    </dashboard>
+    <dashboard name='Summary by country and vertical '>
+      <repository-location id='Summarybycountryandvertical' path='/t/Pedidosya/workbooks/Newverticals-Controlcapacity' revision='' site='Pedidosya' />
+      <style />
+      <size maxheight='900' maxwidth='1300' minheight='900' minwidth='1300' sizing-mode='fixed' />
+      <datasources>
+        <datasource caption='Consulta SQL personalizada (user_fernanda_ochoa)' name='federated.1pcdexa0p9c2j71e3h8uu1iup1lx' />
+      </datasources>
+      <datasource-dependencies datasource='federated.1pcdexa0p9c2j71e3h8uu1iup1lx'>
+        <column caption='Business name' datatype='string' name='[business_name]' role='dimension' type='nominal' />
+        <column caption='City name' datatype='string' name='[city_name]' role='dimension' semantic-role='[City].[Name]' type='nominal' />
+        <column caption='Country' datatype='string' name='[country_name]' role='dimension' semantic-role='[Country].[ISO3166_2]' type='nominal' />
+        <column aggregation='Sum' caption='Time duration bucket (min)' datatype='integer' name='[duration]' role='dimension' type='ordinal' />
+        <column caption='Is pre order' datatype='boolean' name='[is_pre_order]' role='dimension' type='nominal' />
+        <column-instance column='[business_name]' derivation='None' name='[none:business_name:nk]' pivot='key' type='nominal' />
+        <column-instance column='[city_name]' derivation='None' name='[none:city_name:nk]' pivot='key' type='nominal' />
+        <column-instance column='[country_name]' derivation='None' name='[none:country_name:nk]' pivot='key' type='nominal' />
+        <column-instance column='[duration]' derivation='None' name='[none:duration:ok]' pivot='key' type='ordinal' />
+        <column-instance column='[is_pre_order]' derivation='None' name='[none:is_pre_order:nk]' pivot='key' type='nominal' />
+        <column-instance column='[order_status]' derivation='None' name='[none:order_status:nk]' pivot='key' type='nominal' />
+        <column-instance column='[registeted_date_capacity_table]' derivation='None' name='[none:registeted_date_capacity_table:qk]' pivot='key' type='quantitative' />
+        <column caption='Order status' datatype='string' name='[order_status]' role='dimension' type='nominal' />
+        <column caption='Registeted date capacity' datatype='date' name='[registeted_date_capacity_table]' role='dimension' type='ordinal' />
+      </datasource-dependencies>
+      <zones>
+        <zone _.fcp.SetMembershipControl.false...type='layout-basic' _.fcp.SetMembershipControl.true...type-v2='layout-basic' h='100000' id='4' w='100000' x='0' y='0'>
+          <zone _.fcp.SetMembershipControl.false...type='layout-flow' _.fcp.SetMembershipControl.true...type-v2='layout-flow' h='98222' id='7' param='horz' w='98770' x='615' y='889'>
+            <zone _.fcp.SetMembershipControl.false...type='layout-basic' _.fcp.SetMembershipControl.true...type-v2='layout-basic' h='98222' id='5' w='84462' x='615' y='889'>
+              <zone h='98222' id='14' name='Summary by country and vertical' w='84462' x='615' y='889'>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+            </zone>
+            <zone _.fcp.SetMembershipControl.false...type='layout-flow' _.fcp.SetMembershipControl.true...type-v2='layout-flow' fixed-size='186' h='98222' id='6' is-fixed='true' param='vert' w='14308' x='85077' y='889'>
+              <zone _.fcp.SetMembershipControl.false...type='bitmap' _.fcp.SetMembershipControl.true...type-v2='bitmap' fixed-size='73' h='9000' id='15' is-centered='0' is-fixed='true' is-scaled='1' param='Image/Nuevo logo PYa.png' w='14308' x='85077' y='889'>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+              <zone h='7111' id='20' name='Date up to' w='14308' x='85077' y='9889'>
+                <layout-cache fixed-size-h='56' fixed-size-w='107' type-h='fixed' type-w='fixed' />
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+              <zone _.fcp.SetMembershipControl.false...type='filter' _.fcp.SetMembershipControl.true...type-v2='filter' h='6556' id='13' name='Date up to' param='[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:registeted_date_capacity_table:qk]' show-domain='false' show-null-ctrls='false' w='14308' x='85077' y='17000'>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+              <zone _.fcp.SetMembershipControl.false...type='filter' _.fcp.SetMembershipControl.true...type-v2='filter' h='7778' id='12' mode='checkdropdown' name='Date up to' param='[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:country_name:nk]' w='14308' x='85077' y='23556'>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+              <zone _.fcp.SetMembershipControl.false...type='filter' _.fcp.SetMembershipControl.true...type-v2='filter' h='7778' id='29' mode='checkdropdown' name='Summary by country and vertical' param='[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:city_name:nk]' show-apply='true' values='relevant' w='14308' x='85077' y='31334'>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+              <zone _.fcp.SetMembershipControl.false...type='filter' _.fcp.SetMembershipControl.true...type-v2='filter' h='7778' id='9' mode='checkdropdown' name='Date up to' param='[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:business_name:nk]' show-apply='true' values='relevant' w='14308' x='85077' y='39112'>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+              <zone _.fcp.SetMembershipControl.false...type='filter' _.fcp.SetMembershipControl.true...type-v2='filter' h='7778' id='11' mode='checkdropdown' name='Date up to' param='[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:is_pre_order:nk]' values='relevant' w='14308' x='85077' y='46890'>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+              <zone _.fcp.SetMembershipControl.false...type='filter' _.fcp.SetMembershipControl.true...type-v2='filter' h='7778' id='10' mode='checkdropdown' name='Date up to' param='[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:order_status:nk]' values='relevant' w='14308' x='85077' y='54668'>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+              <zone _.fcp.SetMembershipControl.false...type='filter' _.fcp.SetMembershipControl.true...type-v2='filter' h='7778' id='8' mode='checkdropdown' name='Date up to' param='[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:duration:ok]' values='relevant' w='14308' x='85077' y='62446'>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+            </zone>
+          </zone>
+          <zone-style>
+            <format attr='border-color' value='#000000' />
+            <format attr='border-style' value='none' />
+            <format attr='border-width' value='0' />
+            <format attr='margin' value='8' />
+          </zone-style>
+        </zone>
+      </zones>
+      <devicelayouts>
+        <devicelayout auto-generated='true' name='Phone'>
+          <size maxheight='850' minheight='850' sizing-mode='vscroll' />
+          <zones>
+            <zone _.fcp.SetMembershipControl.false...type='layout-basic' _.fcp.SetMembershipControl.true...type-v2='layout-basic' h='100000' id='37' w='100000' x='0' y='0'>
+              <zone _.fcp.SetMembershipControl.false...type='layout-flow' _.fcp.SetMembershipControl.true...type-v2='layout-flow' h='98222' id='36' param='vert' w='98770' x='615' y='889'>
+                <zone _.fcp.SetMembershipControl.false...type='filter' _.fcp.SetMembershipControl.true...type-v2='filter' h='7778' id='29' mode='checkdropdown' name='Summary by country and vertical' param='[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:city_name:nk]' show-apply='true' values='relevant' w='14308' x='85077' y='31334'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone fixed-size='280' h='98222' id='14' is-fixed='true' name='Summary by country and vertical' w='84462' x='615' y='889'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone _.fcp.SetMembershipControl.false...type='bitmap' _.fcp.SetMembershipControl.true...type-v2='bitmap' fixed-size='73' h='9000' id='15' is-centered='0' is-fixed='true' is-scaled='1' param='Image/Nuevo logo PYa.png' w='14308' x='85077' y='889'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone _.fcp.SetMembershipControl.false...type='filter' _.fcp.SetMembershipControl.true...type-v2='filter' h='6556' id='13' name='Date up to' param='[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:registeted_date_capacity_table:qk]' show-domain='false' show-null-ctrls='false' w='14308' x='85077' y='17000'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone _.fcp.SetMembershipControl.false...type='filter' _.fcp.SetMembershipControl.true...type-v2='filter' h='7778' id='12' mode='checkdropdown' name='Date up to' param='[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:country_name:nk]' w='14308' x='85077' y='23556'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone _.fcp.SetMembershipControl.false...type='filter' _.fcp.SetMembershipControl.true...type-v2='filter' h='7778' id='9' mode='checkdropdown' name='Date up to' param='[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:business_name:nk]' show-apply='true' values='relevant' w='14308' x='85077' y='39112'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone _.fcp.SetMembershipControl.false...type='filter' _.fcp.SetMembershipControl.true...type-v2='filter' h='7778' id='11' mode='checkdropdown' name='Date up to' param='[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:is_pre_order:nk]' values='relevant' w='14308' x='85077' y='46890'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone _.fcp.SetMembershipControl.false...type='filter' _.fcp.SetMembershipControl.true...type-v2='filter' h='7778' id='10' mode='checkdropdown' name='Date up to' param='[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:order_status:nk]' values='relevant' w='14308' x='85077' y='54668'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone _.fcp.SetMembershipControl.false...type='filter' _.fcp.SetMembershipControl.true...type-v2='filter' h='7778' id='8' mode='checkdropdown' name='Date up to' param='[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:duration:ok]' values='relevant' w='14308' x='85077' y='62446'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone fixed-size='56' h='7111' id='20' is-fixed='true' name='Date up to' w='14308' x='85077' y='9889'>
+                  <layout-cache fixed-size-h='56' fixed-size-w='107' type-h='fixed' type-w='fixed' />
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+              </zone>
+              <zone-style>
+                <format attr='border-color' value='#000000' />
+                <format attr='border-style' value='none' />
+                <format attr='border-width' value='0' />
+                <format attr='margin' value='8' />
+              </zone-style>
+            </zone>
+          </zones>
+        </devicelayout>
+      </devicelayouts>
+      <simple-id uuid='{53530504-025E-4813-BCB5-77436A40FECD}' />
+    </dashboard>
+  </dashboards>
+  <windows source-height='44'>
+    <window class='worksheet' name='By country'>
+      <cards>
+        <edge name='left'>
+          <strip size='160'>
+            <card type='pages' />
+            <card type='filters' />
+            <card type='marks' />
+          </strip>
+        </edge>
+        <edge name='top'>
+          <strip size='2147483647'>
+            <card type='columns' />
+          </strip>
+          <strip size='2147483647'>
+            <card type='rows' />
+          </strip>
+          <strip size='30'>
+            <card type='title' />
+          </strip>
+        </edge>
+        <edge name='right'>
+          <strip size='174'>
+            <card param='[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:city_name:nk]' type='filter' values='cascading' />
+            <card param='[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:duration:ok]' type='filter' />
+            <card param='[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:business_name:nk]' type='filter' />
+            <card param='[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:order_status:nk]' type='filter' />
+            <card param='[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:is_pre_order:nk]' type='filter' />
+            <card param='[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:country_name:nk]' type='filter' />
+            <card param='[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:registeted_date_capacity_table:qk]' show-domain='false' show-null-ctrls='false' type='filter' />
+          </strip>
+        </edge>
+      </cards>
+      <viewpoint>
+        <highlight>
+          <color-one-way>
+            <field>[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:business_name:nk]</field>
+            <field>[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:city_name:nk]</field>
+            <field>[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:country_name:nk]</field>
+            <field>[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:duration:ok]</field>
+            <field>[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:end_bucket_final:nk]</field>
+            <field>[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:is_pre_order:nk]</field>
+            <field>[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:order_status:nk]</field>
+            <field>[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:registeted_date_capacity_table:qk]</field>
+            <field>[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:size_bucket_final:ok]</field>
+            <field>[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:start_bucket_final:nk]</field>
+            <field>[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:week_day:nk]</field>
+            <field>[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[usr:Calculation_1462262513645793282:qk]</field>
+            <field>[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[usr:Qty confirmed (copia)_1462262513653452809:nk]</field>
+          </color-one-way>
+        </highlight>
+      </viewpoint>
+      <simple-id uuid='{D6657420-600A-41CC-8DF0-922E16F716E7}' />
+    </window>
+    <window class='worksheet' name='Summary by country and vertical'>
+      <cards>
+        <edge name='left'>
+          <strip size='218'>
+            <card type='pages' />
+            <card type='filters' />
+            <card type='marks' />
+          </strip>
+        </edge>
+        <edge name='top'>
+          <strip size='2147483647'>
+            <card type='columns' />
+          </strip>
+          <strip size='2147483647'>
+            <card type='rows' />
+          </strip>
+          <strip size='30'>
+            <card type='title' />
+          </strip>
+        </edge>
+        <edge name='right'>
+          <strip size='174'>
+            <card param='[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:city_name:nk]' type='filter' values='cascading' />
+            <card param='[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:registeted_date_capacity_table:qk]' show-domain='false' show-null-ctrls='false' type='filter' />
+            <card param='[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:country_name:nk]' type='filter' />
+            <card param='[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:is_pre_order:nk]' type='filter' />
+          </strip>
+        </edge>
+      </cards>
+      <viewpoint>
+        <highlight>
+          <color-one-way>
+            <field>[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[:Measure Names]</field>
+            <field>[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:business_name:nk]</field>
+            <field>[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:city_name:nk]</field>
+            <field>[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:country_name:nk]</field>
+            <field>[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:duration:ok]</field>
+            <field>[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:is_pre_order:nk]</field>
+            <field>[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:registeted_date_capacity_table:qk]</field>
+            <field>[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[usr:Calculation_1462262513648558083:ok]</field>
+            <field>[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[usr:Calculation_1462262513648861188:ok]</field>
+            <field>[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[usr:Qty confirmed (copia)_1462262513653452809:nk]</field>
+            <field>[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[usr:Qty rejected (copia)_1462262513649246213:ok]</field>
+          </color-one-way>
+        </highlight>
+      </viewpoint>
+      <simple-id uuid='{17448C6C-7AF2-41F0-8B3F-CCC2F0C135CC}' />
+    </window>
+    <window class='worksheet' name='By partner'>
+      <cards>
+        <edge name='left'>
+          <strip size='160'>
+            <card type='pages' />
+            <card type='filters' />
+            <card type='marks' />
+          </strip>
+        </edge>
+        <edge name='top'>
+          <strip size='2147483647'>
+            <card type='columns' />
+          </strip>
+          <strip size='2147483647'>
+            <card type='rows' />
+          </strip>
+          <strip size='30'>
+            <card type='title' />
+          </strip>
+        </edge>
+        <edge name='right'>
+          <strip size='174'>
+            <card param='[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:city_name:nk]' type='filter' values='cascading' />
+            <card param='[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:vendorId:ok]' type='filter' />
+            <card param='[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:business_name:nk]' type='filter' />
+            <card param='[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:duration:ok]' type='filter' />
+            <card param='[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:registeted_date_capacity_table:qk]' show-domain='false' show-null-ctrls='false' type='filter' />
+            <card param='[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:order_status:nk]' type='filter' />
+            <card param='[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:is_pre_order:nk]' type='filter' />
+            <card param='[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:country_name:nk]' type='filter' />
+          </strip>
+        </edge>
+      </cards>
+      <viewpoint>
+        <highlight>
+          <color-one-way>
+            <field>[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:business_name:nk]</field>
+            <field>[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:city_name:nk]</field>
+            <field>[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:country_name:nk]</field>
+            <field>[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:duration:ok]</field>
+            <field>[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:end_bucket_final:nk]</field>
+            <field>[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:is_pre_order:nk]</field>
+            <field>[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:order_id:ok]</field>
+            <field>[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:order_status:nk]</field>
+            <field>[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:registeted_date_capacity_table:ok]</field>
+            <field>[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:registeted_date_capacity_table:qk]</field>
+            <field>[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:size_bucket_final:ok]</field>
+            <field>[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:start_bucket_final:nk]</field>
+            <field>[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:vendorId:ok]</field>
+            <field>[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:week_day:nk]</field>
+            <field>[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[sum:size_bucket_final:ok]</field>
+            <field>[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[usr:Calculation_1462262513687785483:nk]</field>
+            <field>[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[yr:registeted_date_capacity_table:ok]</field>
+          </color-one-way>
+        </highlight>
+      </viewpoint>
+      <simple-id uuid='{1B7E456F-A34D-4444-8018-250509CFEF6A}' />
+    </window>
+    <window class='worksheet' name='Qty orders in bucket'>
+      <cards>
+        <edge name='left'>
+          <strip size='160'>
+            <card type='pages' />
+            <card type='filters' />
+            <card type='marks' />
+          </strip>
+        </edge>
+        <edge name='top'>
+          <strip size='2147483647'>
+            <card type='columns' />
+          </strip>
+          <strip size='2147483647'>
+            <card type='rows' />
+          </strip>
+          <strip size='30'>
+            <card type='title' />
+          </strip>
+        </edge>
+        <edge name='right'>
+          <strip size='174'>
+            <card param='[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:city_name:nk]' type='filter' values='cascading' />
+            <card param='[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:duration:ok]' type='filter' />
+            <card param='[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:business_name:nk]' type='filter' />
+            <card param='[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:country_name:nk]' type='filter' />
+            <card param='[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:registeted_date_capacity_table:qk]' show-domain='false' show-null-ctrls='false' type='filter' />
+            <card param='[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:size_bucket_final:ok]' type='filter' />
+            <card param='[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:vendorId:ok]' type='filter' />
+          </strip>
+        </edge>
+      </cards>
+      <viewpoint>
+        <highlight>
+          <color-one-way>
+            <field>[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:business_name:nk]</field>
+            <field>[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:city_name:nk]</field>
+            <field>[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:country_name:nk]</field>
+            <field>[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:end_bucket_final:nk]</field>
+            <field>[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:registeted_date_capacity_table:ok]</field>
+            <field>[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:registeted_date_capacity_table:qk]</field>
+            <field>[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:size_bucket_final:ok]</field>
+            <field>[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:start_bucket_final:nk]</field>
+            <field>[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:vendorId:ok]</field>
+            <field>[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[none:week_day:nk]</field>
+            <field>[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[usr:Calculation_1462262513687785483:nk]</field>
+            <field>[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[yr:registeted_date_capacity_table:ok]</field>
+          </color-one-way>
+        </highlight>
+      </viewpoint>
+      <simple-id uuid='{C5AEC24B-7D98-4D7D-8BC4-C21513AE5217}' />
+    </window>
+    <window class='dashboard' name='Control capacity'>
+      <viewpoints>
+        <viewpoint name='By country' />
+        <viewpoint name='Date up to' />
+      </viewpoints>
+      <active id='-1' />
+      <simple-id uuid='{4906B58F-071B-49AD-AFDE-8924F68B0B31}' />
+    </window>
+    <window class='dashboard' maximized='true' name='Summary by country and vertical '>
+      <viewpoints>
+        <viewpoint name='Date up to' />
+        <viewpoint name='Summary by country and vertical' />
+      </viewpoints>
+      <active id='-1' />
+      <simple-id uuid='{EC17D607-E501-4FD2-AE98-98A081565EF6}' />
+    </window>
+    <window class='dashboard' name='Qty orders per bucket'>
+      <viewpoints>
+        <viewpoint name='Date up to' />
+        <viewpoint name='Qty orders in bucket' />
+      </viewpoints>
+      <active id='-1' />
+      <simple-id uuid='{83B358E3-FAFF-469D-B297-4DAFDB70AAA8}' />
+    </window>
+    <window class='dashboard' name='Buckets by partner'>
+      <viewpoints>
+        <viewpoint name='By partner' />
+        <viewpoint name='Date up to' />
+      </viewpoints>
+      <active id='-1' />
+      <simple-id uuid='{D2F8BBB4-0E48-4102-A99E-36C1C5F5BC42}' />
+    </window>
+    <window class='worksheet' name='Date up to'>
+      <cards>
+        <edge name='left'>
+          <strip size='160'>
+            <card type='pages' />
+            <card type='filters' />
+            <card type='marks' />
+          </strip>
+        </edge>
+        <edge name='top'>
+          <strip size='2147483647'>
+            <card type='columns' />
+          </strip>
+          <strip size='2147483647'>
+            <card type='rows' />
+          </strip>
+        </edge>
+      </cards>
+      <viewpoint>
+        <highlight>
+          <color-one-way>
+            <field>[federated.1pcdexa0p9c2j71e3h8uu1iup1lx].[yr:Calculation_1462262513960374284:ok]</field>
+          </color-one-way>
+        </highlight>
+      </viewpoint>
+      <simple-id uuid='{70E721A7-EE2E-4363-8AF2-E96BCDFC5A0D}' />
+    </window>
+  </windows>
+</workbook>

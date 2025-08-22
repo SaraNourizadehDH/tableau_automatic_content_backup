@@ -1,0 +1,3015 @@
+<?xml version='1.0' encoding='utf-8' ?>
+
+<!-- build 20213.21.1217.2247                               -->
+<workbook source-build='2021.3.6 (20213.21.1217.2247)' version='18.1' xml:base='http://ip-172-31-0-78:8400' xmlns:user='http://www.tableausoftware.com/xml/user'>
+  <document-format-change-manifest>
+    <AutoCreateAndUpdateDSDPhoneLayouts />
+    <ISO8601PeriodTypes />
+    <_.fcp.MarkAnimation.true...MarkAnimation />
+    <_.fcp.ObjectModelEncapsulateLegacy.true...ObjectModelEncapsulateLegacy />
+    <_.fcp.ObjectModelExtractV2.true...ObjectModelExtractV2 />
+    <_.fcp.ObjectModelTableType.true...ObjectModelTableType />
+    <_.fcp.SchemaViewerObjectModel.true...SchemaViewerObjectModel />
+    <SetMembershipControl />
+    <SheetIdentifierTracking />
+    <SortTagCleanup />
+    <WindowsPersistSimpleIdentifiers />
+    <WorksheetBackgroundTransparency />
+    <ZoneBackgroundTransparency />
+  </document-format-change-manifest>
+  <repository-location derived-from='http://ip-172-31-0-72:8062/t/Pedidosya/workbooks/PartnerAcquisitionPerformance?rev=1.1' id='PartnerAcquisitionPerformance' path='/t/Pedidosya/workbooks' revision='1.2' site='Pedidosya' />
+  <preferences />
+  <style>
+    <_.fcp.MarkAnimation.true...style-rule element='animation'>
+      <format attr='animation-on' value='ao-on' />
+    </_.fcp.MarkAnimation.true...style-rule>
+  </style>
+  <datasources>
+    <datasource caption='Consulta SQL personalizada (user_matias_pita)' inline='true' name='federated.000m52b0vekifd1h73qth0nlcanr' version='18.1'>
+      <connection class='federated'>
+        <named-connections>
+          <named-connection caption='BigQuery' name='bigquery.1e21rp10ri2d0a128fit70z5ayrg'>
+            <connection CATALOG='peya-food-and-groceries' EXECCATALOG='peya-food-and-groceries' authentication='yes' bq-dataset-fetch-rows='' bq-fetch-rows='' bq-fetch-tasks='' bq-large-fetch-rows='' bq-project-fetch-rows='' bq-response-rows='' class='bigquery' connection-dialect='google-sql' project='peya-food-and-groceries' schema='user_matias_pita' server='' server-oauth='' username='matias.pita@pedidosya.com' workgroup-auth-mode='prompt' />
+          </named-connection>
+        </named-connections>
+        <_.fcp.ObjectModelEncapsulateLegacy.false...relation connection='bigquery.1e21rp10ri2d0a128fit70z5ayrg' name='Consulta SQL personalizada' type='text'><![CDATA[WITH    dates AS (      
+        SELECT 
+        DATE_TRUNC(date(date),month) AS dim_month,
+        FROM 
+        `peya-bi-tools-pro.il_core.dim_date` 
+        WHERE DATE_TRUNC(date(date),month) >>= DATE_TRUNC(date("2021-01-01"),month)
+        AND DATE_TRUNC(date(date),month) <<= DATE_TRUNC(current_date(),month)
+        GROUP BY 1
+  ),
+  business AS (SELECT business_type_name
+ FROM `peya-bi-tools-pro.il_core.dim_business_type`
+ GROUP BY 1),
+  
+  AccountSource AS(SELECT
+	        IFNULL(a.AccountSource,"Other") as Account_Source,
+	    FROM `peya-bi-tools-pro.il_core.fact_partners_monthly` pm
+LEFT JOIN `peya-bi-tools-pro.il_core.dim_partner` AS p 
+    ON 	pm.restaurant_id=p.partner_id	
+ LEFT JOIN `peya-data-origins-pro.cl_salesforce.account` a ON p.salesforce_id=a.GRID
+INNER JOIN `peya-bi-tools-pro.il_core.dim_country` dc
+        ON dc.country_id = pm.country_id 
+       AND dc.active
+WHERE DATE(pm.full_date) >>= "2021-01-01"
+AND DATE(pm.full_date) <<=CURRENT_DATE()
+GROUP BY 1
+ ),
+
+ Countries AS (
+    SELECT country_name
+ FROM `peya-bi-tools-pro.il_core.dim_country` 
+ WHERE country_name NOT IN ("Puerto Rico","México","Unknown","Brasil","Colombia")
+ GROUP BY 1
+ ),
+
+closedwon AS (SELECT  DATE_TRUNC(DATE(op.closedate),MONTH) AS date_month,
+                    dc.country_id,
+                    dc.country_name,
+                    p.business_type.business_type_name AS business_type,
+                    IFNULL(a.AccountSource,"Other") as Account_Source,
+                    COUNT(DISTINCT CASE WHEN op.StageName = "Closed Won"AND op.Business_Type = "New Business" THEN  op.salesforce_id ELSE NULL END) AS New_closed_won,
+                    COUNT(DISTINCT CASE WHEN op.StageName = "Closed Won"AND op.Business_Type = "Win Back" THEN  op.salesforce_id ELSE NULL END) AS Winbacks
+            FROM  `peya-data-origins-pro.cl_salesforce.opportunity` op
+            LEFT JOIN `peya-data-origins-pro.cl_salesforce.account` a ON a.Id=op.AccountId
+            LEFT JOIN `peya-bi-tools-pro.il_core.dim_country` as dc ON a.Account_Country_Code =dc.country_code
+            LEFT JOIN `peya-bi-tools-pro.il_core.dim_partner` AS p ON p.salesforce_id=a.GRID
+            WHERE DATE(op.closedate) >>= "2021-01-01"
+            AND DATE(op.closedate) <<=CURRENT_DATE()
+            GROUP BY 1,2,3,4,5
+    ),
+    newonline AS(SELECT
+	DATE_TRUNC(DATE(pm.full_date),MONTH) AS month,
+        dc.country_name AS country_name,
+        p.business_type.business_type_name AS business_type,
+        IFNULL(a.AccountSource,"Other") as Account_Source,
+	COUNT(DISTINCT CASE WHEN pm.is_new_online THEN pm.restaurant_id END) AS new_online
+    
+FROM `peya-bi-tools-pro.il_core.fact_partners_monthly` pm
+LEFT JOIN `peya-bi-tools-pro.il_core.dim_partner` AS p 
+    ON 	pm.restaurant_id=p.partner_id	
+ LEFT JOIN `peya-data-origins-pro.cl_salesforce.account` a ON p.salesforce_id=a.GRID
+INNER JOIN `peya-bi-tools-pro.il_core.dim_country` dc
+        ON dc.country_id = pm.country_id 
+       AND dc.active
+WHERE DATE(pm.full_date) >>= "2021-01-01"
+AND DATE(pm.full_date) <<=CURRENT_DATE()
+GROUP BY 1,2,3,4
+ORDER BY 1 DESC, 2
+    ),
+
+
+    Sellers AS (
+
+WITH dates AS (      
+        SELECT 
+        DATE_TRUNC(date(date),month) AS dim_month,
+        FROM 
+        `peya-bi-tools-pro.il_core.dim_date` 
+        WHERE DATE_TRUNC(date(date),month) >>= DATE_TRUNC(date("2021-01-01"),month)
+        AND DATE_TRUNC(date(date),month) <<= DATE_TRUNC(current_date(),month)
+        GROUP BY 1
+  ),
+  Sellers AS (SELECT 
+dc.country_name as country,
+u.Id,
+u.Alias,
+u.Title,
+u.Name,
+u.CreatedDate,
+u.LastModifiedDate,
+u.LastLoginDate
+FROM `peya-data-origins-pro.cl_salesforce.user` u
+LEFT JOIN   `peya-bi-tools-pro.il_core.dim_country` dc
+ON u.Country=dc.country_name_en
+WHERE DATE_TRUNC(DATE(_ingested_at),MONTH) = DATE_TRUNC(CURRENT_DATE(),MONTH) 
+AND Entity = "UY Pedidosya"
+AND Title IN ("Sales  Executive",
+"Sales Executive",
+"Sales Executive Senior",
+"Sales Executive Specialist",
+"Sales Executive Sr",
+"Sales Sr Executive") OR Alias IN ("ccort",
+"pvill",
+"FBarr",
+"VDoua",
+"MGodo"))
+
+
+
+SELECT 
+d.*,
+s.country,
+COUNT(DISTINCT s.Id) as Sales_Rep
+
+FROM dates AS d 
+JOIN Sellers AS s   
+ON d.dim_month >> date_trunc(date(s.CreatedDate),MONTH)
+AND d.dim_month <<= date_trunc(date(s.LastLoginDate),MONTH)
+GROUP BY 1,2
+ORDER BY 1,2
+
+    )
+
+SELECT
+d.*,
+c.*,
+b.*,
+a.*,
+cw.New_closed_won,
+cw.Winbacks,
+nw.new_online,
+se.Sales_Rep,
+current_date() AS last_update
+FROM dates  AS d 
+CROSS JOIN Countries AS c
+CROSS JOIN business AS b
+CROSS JOIN AccountSource AS a
+LEFT JOIN closedwon AS cw 
+ON cw.date_month=d.dim_month AND cw.country_name=c.country_name AND cw.business_type=b.business_type_name AND cw.Account_Source=a.Account_Source
+LEFT JOIN newonline AS nw 
+ON nw.month=d.dim_month AND nw.country_name=c.country_name AND nw.business_type=b.business_type_name AND nw.Account_Source=a.Account_Source
+LEFT JOIN Sellers AS se 
+ON se.dim_month=d.dim_month AND se.country=c.country_name]]></_.fcp.ObjectModelEncapsulateLegacy.false...relation>
+        <_.fcp.ObjectModelEncapsulateLegacy.true...relation connection='bigquery.1e21rp10ri2d0a128fit70z5ayrg' name='Consulta SQL personalizada' type='text'><![CDATA[WITH    dates AS (      
+        SELECT 
+        DATE_TRUNC(date(date),month) AS dim_month,
+        FROM 
+        `peya-bi-tools-pro.il_core.dim_date` 
+        WHERE DATE_TRUNC(date(date),month) >>= DATE_TRUNC(date("2021-01-01"),month)
+        AND DATE_TRUNC(date(date),month) <<= DATE_TRUNC(current_date(),month)
+        GROUP BY 1
+  ),
+  business AS (SELECT business_type_name
+ FROM `peya-bi-tools-pro.il_core.dim_business_type`
+ GROUP BY 1),
+  
+  AccountSource AS(SELECT
+	        IFNULL(a.AccountSource,"Other") as Account_Source,
+	    FROM `peya-bi-tools-pro.il_core.fact_partners_monthly` pm
+LEFT JOIN `peya-bi-tools-pro.il_core.dim_partner` AS p 
+    ON 	pm.restaurant_id=p.partner_id	
+ LEFT JOIN `peya-data-origins-pro.cl_salesforce.account` a ON p.salesforce_id=a.GRID
+INNER JOIN `peya-bi-tools-pro.il_core.dim_country` dc
+        ON dc.country_id = pm.country_id 
+       AND dc.active
+WHERE DATE(pm.full_date) >>= "2021-01-01"
+AND DATE(pm.full_date) <<=CURRENT_DATE()
+GROUP BY 1
+ ),
+
+ Countries AS (
+    SELECT country_name
+ FROM `peya-bi-tools-pro.il_core.dim_country` 
+ WHERE country_name NOT IN ("Puerto Rico","México","Unknown","Brasil","Colombia")
+ GROUP BY 1
+ ),
+
+closedwon AS (SELECT  DATE_TRUNC(DATE(op.closedate),MONTH) AS date_month,
+                    dc.country_id,
+                    dc.country_name,
+                    p.business_type.business_type_name AS business_type,
+                    IFNULL(a.AccountSource,"Other") as Account_Source,
+                    COUNT(DISTINCT CASE WHEN op.StageName = "Closed Won"AND op.Business_Type = "New Business" THEN  op.salesforce_id ELSE NULL END) AS New_closed_won,
+                    COUNT(DISTINCT CASE WHEN op.StageName = "Closed Won"AND op.Business_Type = "Win Back" THEN  op.salesforce_id ELSE NULL END) AS Winbacks
+            FROM  `peya-data-origins-pro.cl_salesforce.opportunity` op
+            LEFT JOIN `peya-data-origins-pro.cl_salesforce.account` a ON a.Id=op.AccountId
+            LEFT JOIN `peya-bi-tools-pro.il_core.dim_country` as dc ON a.Account_Country_Code =dc.country_code
+            LEFT JOIN `peya-bi-tools-pro.il_core.dim_partner` AS p ON p.salesforce_id=a.GRID
+            WHERE DATE(op.closedate) >>= "2021-01-01"
+            AND DATE(op.closedate) <<=CURRENT_DATE()
+            GROUP BY 1,2,3,4,5
+    ),
+    newonline AS(SELECT
+	DATE_TRUNC(DATE(pm.full_date),MONTH) AS month,
+        dc.country_name AS country_name,
+        p.business_type.business_type_name AS business_type,
+        IFNULL(a.AccountSource,"Other") as Account_Source,
+	COUNT(DISTINCT CASE WHEN pm.is_new_online THEN pm.restaurant_id END) AS new_online
+    
+FROM `peya-bi-tools-pro.il_core.fact_partners_monthly` pm
+LEFT JOIN `peya-bi-tools-pro.il_core.dim_partner` AS p 
+    ON 	pm.restaurant_id=p.partner_id	
+ LEFT JOIN `peya-data-origins-pro.cl_salesforce.account` a ON p.salesforce_id=a.GRID
+INNER JOIN `peya-bi-tools-pro.il_core.dim_country` dc
+        ON dc.country_id = pm.country_id 
+       AND dc.active
+WHERE DATE(pm.full_date) >>= "2021-01-01"
+AND DATE(pm.full_date) <<=CURRENT_DATE()
+GROUP BY 1,2,3,4
+ORDER BY 1 DESC, 2
+    ),
+
+
+    Sellers AS (
+
+WITH dates AS (      
+        SELECT 
+        DATE_TRUNC(date(date),month) AS dim_month,
+        FROM 
+        `peya-bi-tools-pro.il_core.dim_date` 
+        WHERE DATE_TRUNC(date(date),month) >>= DATE_TRUNC(date("2021-01-01"),month)
+        AND DATE_TRUNC(date(date),month) <<= DATE_TRUNC(current_date(),month)
+        GROUP BY 1
+  ),
+  Sellers AS (SELECT 
+dc.country_name as country,
+u.Id,
+u.Alias,
+u.Title,
+u.Name,
+u.CreatedDate,
+u.LastModifiedDate,
+u.LastLoginDate
+FROM `peya-data-origins-pro.cl_salesforce.user` u
+LEFT JOIN   `peya-bi-tools-pro.il_core.dim_country` dc
+ON u.Country=dc.country_name_en
+WHERE DATE_TRUNC(DATE(_ingested_at),MONTH) = DATE_TRUNC(CURRENT_DATE(),MONTH) 
+AND Entity = "UY Pedidosya"
+AND Title IN ("Sales  Executive",
+"Sales Executive",
+"Sales Executive Senior",
+"Sales Executive Specialist",
+"Sales Executive Sr",
+"Sales Sr Executive") OR Alias IN ("ccort",
+"pvill",
+"FBarr",
+"VDoua",
+"MGodo"))
+
+
+
+SELECT 
+d.*,
+s.country,
+COUNT(DISTINCT s.Id) as Sales_Rep
+
+FROM dates AS d 
+JOIN Sellers AS s   
+ON d.dim_month >> date_trunc(date(s.CreatedDate),MONTH)
+AND d.dim_month <<= date_trunc(date(s.LastLoginDate),MONTH)
+GROUP BY 1,2
+ORDER BY 1,2
+
+    )
+
+SELECT
+d.*,
+c.*,
+b.*,
+a.*,
+cw.New_closed_won,
+cw.Winbacks,
+nw.new_online,
+se.Sales_Rep,
+current_date() AS last_update
+FROM dates  AS d 
+CROSS JOIN Countries AS c
+CROSS JOIN business AS b
+CROSS JOIN AccountSource AS a
+LEFT JOIN closedwon AS cw 
+ON cw.date_month=d.dim_month AND cw.country_name=c.country_name AND cw.business_type=b.business_type_name AND cw.Account_Source=a.Account_Source
+LEFT JOIN newonline AS nw 
+ON nw.month=d.dim_month AND nw.country_name=c.country_name AND nw.business_type=b.business_type_name AND nw.Account_Source=a.Account_Source
+LEFT JOIN Sellers AS se 
+ON se.dim_month=d.dim_month AND se.country=c.country_name]]></_.fcp.ObjectModelEncapsulateLegacy.true...relation>
+        <metadata-records>
+          <metadata-record class='column'>
+            <remote-name>dim_month</remote-name>
+            <remote-type>7</remote-type>
+            <local-name>[dim_month]</local-name>
+            <parent-name>[Consulta SQL personalizada]</parent-name>
+            <remote-alias>dim_month</remote-alias>
+            <local-type>date</local-type>
+            <aggregation>Year</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_4D7EA9BB2A52416C928B2928C45BFC46]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>country_name</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[country_name]</local-name>
+            <parent-name>[Consulta SQL personalizada]</parent-name>
+            <remote-alias>country_name</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_4D7EA9BB2A52416C928B2928C45BFC46]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>business_type_name</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[business_type_name]</local-name>
+            <parent-name>[Consulta SQL personalizada]</parent-name>
+            <remote-alias>business_type_name</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_4D7EA9BB2A52416C928B2928C45BFC46]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>Account_Source</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[Account_Source]</local-name>
+            <parent-name>[Consulta SQL personalizada]</parent-name>
+            <remote-alias>Account_Source</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_4D7EA9BB2A52416C928B2928C45BFC46]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>New_closed_won</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[New_closed_won]</local-name>
+            <parent-name>[Consulta SQL personalizada]</parent-name>
+            <remote-alias>New_closed_won</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_4D7EA9BB2A52416C928B2928C45BFC46]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>Winbacks</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[Winbacks]</local-name>
+            <parent-name>[Consulta SQL personalizada]</parent-name>
+            <remote-alias>Winbacks</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_4D7EA9BB2A52416C928B2928C45BFC46]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>new_online</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[new_online]</local-name>
+            <parent-name>[Consulta SQL personalizada]</parent-name>
+            <remote-alias>new_online</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_4D7EA9BB2A52416C928B2928C45BFC46]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>Sales_Rep</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[Sales_Rep]</local-name>
+            <parent-name>[Consulta SQL personalizada]</parent-name>
+            <remote-alias>Sales_Rep</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_4D7EA9BB2A52416C928B2928C45BFC46]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>last_update</remote-name>
+            <remote-type>7</remote-type>
+            <local-name>[last_update]</local-name>
+            <parent-name>[Consulta SQL personalizada]</parent-name>
+            <remote-alias>last_update</remote-alias>
+            <local-type>date</local-type>
+            <aggregation>Year</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_4D7EA9BB2A52416C928B2928C45BFC46]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+        </metadata-records>
+      </connection>
+      <aliases enabled='yes' />
+      <column caption='#Sales Rep' datatype='integer' name='[Calculation_112871487713476611]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='MAX([Sales_Rep])' />
+      </column>
+      <column caption='Productivity' datatype='real' name='[Calculation_112871487713976324]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='[Calculation_435160334636273664] / [Sales_Rep]' />
+      </column>
+      <column caption='Fixed Sales Rep' datatype='integer' name='[Calculation_112871487717425157]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='{ INCLUDE [country_name] : MAX([Sales_Rep]) }' />
+      </column>
+      <column caption='Fixed productivity' datatype='real' name='[Calculation_112871487717818374]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='[Calculation_435160334636273664] / [Calculation_112871487718789127]' />
+      </column>
+      <column caption='Include sales rep' datatype='integer' name='[Calculation_112871487718789127]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='{ INCLUDE [country_name],[dim_month] : MAX([Sales_Rep]) }' />
+      </column>
+      <column caption='Productivity 2' datatype='real' name='[Calculation_112871487996629002]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='[Calculation_435160334636273664] / [Calculation_112871487717425157]' />
+      </column>
+      <column caption='Productivity 3' datatype='real' name='[Calculation_112871487996956683]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='{ INCLUDE [country_name] : SUM([Calculation_435160334636273664])} / { INCLUDE [country_name] : MAX([Sales_Rep])}' />
+      </column>
+      <column caption='Fixed total new' datatype='integer' name='[Calculation_112871488407343117]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='{ FIXED [dim_month], [Account_Source], [Calculation_435160334646165511], [business_type_name] : SUM([Calculation_435160334636273664])}' />
+      </column>
+      <column caption='Share' datatype='real' name='[Calculation_112871488407801870]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='SUM([Calculation_435160334636273664]) / SUM([Calculation_112871488407343117])' />
+      </column>
+      <column caption='Total new' datatype='integer' name='[Calculation_435160334636273664]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='[new_online]+[Winbacks]' />
+      </column>
+      <column caption='Short_Source' datatype='string' name='[Calculation_435160334638149636]' role='dimension' type='nominal'>
+        <calculation class='tableau' formula='IF [Account_Source] = &quot;Self Sign Up&quot; THEN &quot;Self Sign Up&quot;&#13;&#10;ELSEIF [Account_Source] = &quot;Inbound&quot; THEN &quot;Inbound&quot;              &#13;&#10;ELSE &quot;Field Sales Representative&quot;&#13;&#10;END' />
+      </column>
+      <column caption='Fixed Source' datatype='string' name='[Calculation_435160334640484358]' role='dimension' type='nominal'>
+        <calculation class='tableau' formula='IF [Account_Source] = &quot;IMPORT&quot; THEN &quot;Import&quot;&#13;&#10;ELSEIF [Account_Source] = &quot;Import&quot; THEN &quot;Import&quot;&#13;&#10;ELSEIF [Account_Source] = &quot;Cloned&quot; THEN &quot;Cloned&quot;&#13;&#10;ELSEIF [Account_Source] = &quot;Automated LeadGen&quot; THEN &quot;Automated LeadGen&quot;&#13;&#10;ELSEIF [Account_Source] = &quot;Busqueda Propia&quot; THEN &quot;Own Research&quot;&#13;&#10;ELSEIF [Account_Source] = &quot;Busqueda Propia&quot; THEN &quot;Own Research&quot;&#13;&#10;ELSEIF [Account_Source] = &quot;Own Research&quot; THEN &quot;Own Research&quot;&#13;&#10;ELSEIF [Account_Source] = &quot;Self Sign Up&quot; THEN &quot;Self Sign Up&quot;&#13;&#10;ELSEIF [Account_Source] = &quot;Other&quot; THEN &quot;Other&quot;&#13;&#10;ELSEIF [Account_Source] = &quot;Inbound&quot; THEN &quot;Inbound&quot;&#13;&#10;ELSE &quot;Other&quot;&#13;&#10;END' />
+      </column>
+      <column caption='Vertical' datatype='string' name='[Calculation_435160334646165511]' role='dimension' type='nominal'>
+        <calculation class='tableau' formula='IF [business_type_name] = &quot;Coffee&quot; THEN &quot;Food&quot;&#13;&#10;ELSEIF  [business_type_name] = &quot;Restaurant&quot; THEN &quot;Food&quot;&#13;&#10;ELSEIF [business_type_name] = &quot;Courier&quot; THEN &quot;Courier&quot;&#13;&#10;ELSEIF [business_type_name] = &quot;Courier Business&quot; THEN &quot;Courier&quot;&#13;&#10;ELSE &quot;Local Stores&quot;&#13;&#10;END' />
+      </column>
+      <_.fcp.ObjectModelTableType.true...column caption='Consulta SQL personalizada' datatype='table' name='[__tableau_internal_object_id__].[_4D7EA9BB2A52416C928B2928C45BFC46]' role='measure' type='quantitative' />
+      <column datatype='string' name='[business_type_name]' role='dimension' type='nominal' />
+      <column datatype='string' name='[country_name]' role='dimension' semantic-role='[Country].[ISO3166_2]' type='nominal' />
+      <column-instance column='[Calculation_435160334640484358]' derivation='None' name='[none:Calculation_435160334640484358:nk]' pivot='key' type='nominal' />
+      <column-instance column='[Calculation_435160334646165511]' derivation='None' name='[none:Calculation_435160334646165511:nk]' pivot='key' type='nominal' />
+      <column-instance column='[Forecast Indicator]' derivation='None' forecast-column-base='[Forecast Indicator]' forecast-column-type='forecast-indicator' name='[none:Forecast Indicator:nk]' pivot='key' type='nominal' />
+      <column-instance column='[business_type_name]' derivation='None' name='[none:business_type_name:nk]' pivot='key' type='nominal' />
+      <column-instance column='[country_name]' derivation='None' name='[none:country_name:nk]' pivot='key' type='nominal' />
+      <extract _.fcp.ObjectModelExtractV2.true...object-id='' count='-1' enabled='true' units='records'>
+        <connection access_mode='readonly' author-locale='en_US' class='hyper' dbname='extract/f5/15/{9B349646-4EFE-4DB6-8A4D-632BCCF51561}/federated_000m52b0vekifd1h73qth0.hyper' extract-engine='true' schema='Extract' sslmode='' tablename='Extract' update-time='01/03/2022 03:02:40 AM'>
+          <_.fcp.ObjectModelEncapsulateLegacy.false...relation name='Extract' table='[Extract].[Extract]' type='table' />
+          <_.fcp.ObjectModelEncapsulateLegacy.true...relation name='Extract' table='[Extract].[Extract]' type='table' />
+          <metadata-records>
+            <metadata-record class='column'>
+              <remote-name>dim_month</remote-name>
+              <remote-type>133</remote-type>
+              <local-name>[dim_month]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>dim_month</remote-alias>
+              <ordinal>0</ordinal>
+              <family>Consulta SQL personalizada</family>
+              <local-type>date</local-type>
+              <aggregation>Year</aggregation>
+              <approx-count>13</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_4D7EA9BB2A52416C928B2928C45BFC46]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>country_name</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[country_name]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>country_name</remote-alias>
+              <ordinal>1</ordinal>
+              <family>Consulta SQL personalizada</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>15</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_4D7EA9BB2A52416C928B2928C45BFC46]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>business_type_name</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[business_type_name]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>business_type_name</remote-alias>
+              <ordinal>2</ordinal>
+              <family>Consulta SQL personalizada</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>14</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_4D7EA9BB2A52416C928B2928C45BFC46]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>Account_Source</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[Account_Source]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>Account_Source</remote-alias>
+              <ordinal>3</ordinal>
+              <family>Consulta SQL personalizada</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>9</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_4D7EA9BB2A52416C928B2928C45BFC46]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>New_closed_won</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[New_closed_won]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>New_closed_won</remote-alias>
+              <ordinal>4</ordinal>
+              <family>Consulta SQL personalizada</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>159</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_4D7EA9BB2A52416C928B2928C45BFC46]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>Winbacks</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[Winbacks]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>Winbacks</remote-alias>
+              <ordinal>5</ordinal>
+              <family>Consulta SQL personalizada</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>24</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_4D7EA9BB2A52416C928B2928C45BFC46]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>new_online</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[new_online]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>new_online</remote-alias>
+              <ordinal>6</ordinal>
+              <family>Consulta SQL personalizada</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>134</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_4D7EA9BB2A52416C928B2928C45BFC46]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>Sales_Rep</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[Sales_Rep]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>Sales_Rep</remote-alias>
+              <ordinal>7</ordinal>
+              <family>Consulta SQL personalizada</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>59</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_4D7EA9BB2A52416C928B2928C45BFC46]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>last_update</remote-name>
+              <remote-type>133</remote-type>
+              <local-name>[last_update]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>last_update</remote-alias>
+              <ordinal>8</ordinal>
+              <family>Consulta SQL personalizada</family>
+              <local-type>date</local-type>
+              <aggregation>Year</aggregation>
+              <approx-count>1</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_4D7EA9BB2A52416C928B2928C45BFC46]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+          </metadata-records>
+        </connection>
+      </extract>
+      <layout _.fcp.SchemaViewerObjectModel.false...dim-percentage='0.5' _.fcp.SchemaViewerObjectModel.false...measure-percentage='0.4' dim-ordering='alphabetic' measure-ordering='alphabetic' show-structure='true' />
+      <style>
+        <style-rule element='mark'>
+          <encoding attr='color' field='[none:Forecast Indicator:nk]' type='palette'>
+            <map to='#4e79a7'>
+              <bucket>&quot;Actual&quot;</bucket>
+            </map>
+            <map to='#a0cbe8'>
+              <bucket>&quot;Estimación&quot;</bucket>
+            </map>
+          </encoding>
+          <encoding attr='color' field='[none:Calculation_435160334640484358:nk]' type='palette'>
+            <map to='#4e79a7'>
+              <bucket>&quot;Other&quot;</bucket>
+            </map>
+            <map to='#59a14f'>
+              <bucket>&quot;Own Research&quot;</bucket>
+            </map>
+            <map to='#76b7b2'>
+              <bucket>&quot;Import&quot;</bucket>
+            </map>
+            <map to='#b07aa1'>
+              <bucket>&quot;Self Sign Up&quot;</bucket>
+            </map>
+            <map to='#e15759'>
+              <bucket>&quot;Cloned&quot;</bucket>
+            </map>
+            <map to='#edc948'>
+              <bucket>&quot;Inbound&quot;</bucket>
+            </map>
+            <map to='#f28e2b'>
+              <bucket>&quot;Automated LeadGen&quot;</bucket>
+            </map>
+          </encoding>
+          <encoding attr='color' field='[none:country_name:nk]' type='palette'>
+            <map to='#499894'>
+              <bucket>&quot;Venezuela&quot;</bucket>
+            </map>
+            <map to='#4e79a7'>
+              <bucket>&quot;Nicaragua&quot;</bucket>
+            </map>
+            <map to='#59a14f'>
+              <bucket>&quot;El Salvador&quot;</bucket>
+            </map>
+            <map to='#79706e'>
+              <bucket>&quot;Perú&quot;</bucket>
+            </map>
+            <map to='#86bcb6'>
+              <bucket>&quot;República Dominicana&quot;</bucket>
+            </map>
+            <map to='#8cd17d'>
+              <bucket>&quot;Costa Rica&quot;</bucket>
+            </map>
+            <map to='#a0cbe8'>
+              <bucket>&quot;Honduras&quot;</bucket>
+            </map>
+            <map to='#b6992d'>
+              <bucket>&quot;Guatemala&quot;</bucket>
+            </map>
+            <map to='#bab0ac'>
+              <bucket>&quot;Chile&quot;</bucket>
+            </map>
+            <map to='#d37295'>
+              <bucket>&quot;Argentina&quot;</bucket>
+            </map>
+            <map to='#e15759'>
+              <bucket>&quot;Bolivia&quot;</bucket>
+            </map>
+            <map to='#f1ce63'>
+              <bucket>&quot;Paraguay&quot;</bucket>
+            </map>
+            <map to='#f28e2b'>
+              <bucket>&quot;Panamá&quot;</bucket>
+            </map>
+            <map to='#ff9d9a'>
+              <bucket>&quot;Ecuador&quot;</bucket>
+            </map>
+            <map to='#ffbe7d'>
+              <bucket>&quot;Uruguay&quot;</bucket>
+            </map>
+          </encoding>
+          <encoding attr='color' field='[none:business_type_name:nk]' type='palette'>
+            <map to='#499894'>
+              <bucket>&quot;Market&quot;</bucket>
+            </map>
+            <map to='#4e79a7'>
+              <bucket>&quot;Bills&quot;</bucket>
+            </map>
+            <map to='#59a14f'>
+              <bucket>&quot;Courier Business&quot;</bucket>
+            </map>
+            <map to='#79706e'>
+              <bucket>&quot;Restaurant&quot;</bucket>
+            </map>
+            <map to='#86bcb6'>
+              <bucket>&quot;Other&quot;</bucket>
+            </map>
+            <map to='#8cd17d'>
+              <bucket>&quot;Drinks&quot;</bucket>
+            </map>
+            <map to='#a0cbe8'>
+              <bucket>&quot;Cash&quot;</bucket>
+            </map>
+            <map to='#b6992d'>
+              <bucket>&quot;Flowers&quot;</bucket>
+            </map>
+            <map to='#bab0ac'>
+              <bucket>&quot;Shop&quot;</bucket>
+            </map>
+            <map to='#e15759'>
+              <bucket>&quot;Pets&quot;</bucket>
+            </map>
+            <map to='#f1ce63'>
+              <bucket>&quot;Kiosks&quot;</bucket>
+            </map>
+            <map to='#f28e2b'>
+              <bucket>&quot;Coffee&quot;</bucket>
+            </map>
+            <map to='#ff9d9a'>
+              <bucket>&quot;Pharmacy&quot;</bucket>
+            </map>
+            <map to='#ffbe7d'>
+              <bucket>&quot;Courier&quot;</bucket>
+            </map>
+          </encoding>
+          <encoding attr='color' field='[none:Calculation_435160334646165511:nk]' type='palette'>
+            <map to='#4e79a7'>
+              <bucket>&quot;Courier&quot;</bucket>
+            </map>
+            <map to='#e15759'>
+              <bucket>&quot;Local Stores&quot;</bucket>
+            </map>
+            <map to='#f28e2b'>
+              <bucket>&quot;Food&quot;</bucket>
+            </map>
+          </encoding>
+        </style-rule>
+      </style>
+      <semantic-values>
+        <semantic-value key='[Country].[Name]' value='&quot;Argentina&quot;' />
+      </semantic-values>
+      <default-sorts>
+        <manual-sort column='[none:Forecast Indicator:nk]' direction='ASC'>
+          <dictionary>
+            <bucket>&quot;Actual&quot;</bucket>
+            <bucket>&quot;Estimación&quot;</bucket>
+          </dictionary>
+        </manual-sort>
+      </default-sorts>
+      <_.fcp.ObjectModelEncapsulateLegacy.true...object-graph>
+        <objects>
+          <object caption='Consulta SQL personalizada' id='_4D7EA9BB2A52416C928B2928C45BFC46'>
+            <properties context=''>
+              <relation connection='bigquery.1e21rp10ri2d0a128fit70z5ayrg' name='Consulta SQL personalizada' type='text'><![CDATA[WITH    dates AS (      
+        SELECT 
+        DATE_TRUNC(date(date),month) AS dim_month,
+        FROM 
+        `peya-bi-tools-pro.il_core.dim_date` 
+        WHERE DATE_TRUNC(date(date),month) >>= DATE_TRUNC(date("2021-01-01"),month)
+        AND DATE_TRUNC(date(date),month) <<= DATE_TRUNC(current_date(),month)
+        GROUP BY 1
+  ),
+  business AS (SELECT business_type_name
+ FROM `peya-bi-tools-pro.il_core.dim_business_type`
+ GROUP BY 1),
+  
+  AccountSource AS(SELECT
+	        IFNULL(a.AccountSource,"Other") as Account_Source,
+	    FROM `peya-bi-tools-pro.il_core.fact_partners_monthly` pm
+LEFT JOIN `peya-bi-tools-pro.il_core.dim_partner` AS p 
+    ON 	pm.restaurant_id=p.partner_id	
+ LEFT JOIN `peya-data-origins-pro.cl_salesforce.account` a ON p.salesforce_id=a.GRID
+INNER JOIN `peya-bi-tools-pro.il_core.dim_country` dc
+        ON dc.country_id = pm.country_id 
+       AND dc.active
+WHERE DATE(pm.full_date) >>= "2021-01-01"
+AND DATE(pm.full_date) <<=CURRENT_DATE()
+GROUP BY 1
+ ),
+
+ Countries AS (
+    SELECT country_name
+ FROM `peya-bi-tools-pro.il_core.dim_country` 
+ WHERE country_name NOT IN ("Puerto Rico","México","Unknown","Brasil","Colombia")
+ GROUP BY 1
+ ),
+
+closedwon AS (SELECT  DATE_TRUNC(DATE(op.closedate),MONTH) AS date_month,
+                    dc.country_id,
+                    dc.country_name,
+                    p.business_type.business_type_name AS business_type,
+                    IFNULL(a.AccountSource,"Other") as Account_Source,
+                    COUNT(DISTINCT CASE WHEN op.StageName = "Closed Won"AND op.Business_Type = "New Business" THEN  op.salesforce_id ELSE NULL END) AS New_closed_won,
+                    COUNT(DISTINCT CASE WHEN op.StageName = "Closed Won"AND op.Business_Type = "Win Back" THEN  op.salesforce_id ELSE NULL END) AS Winbacks
+            FROM  `peya-data-origins-pro.cl_salesforce.opportunity` op
+            LEFT JOIN `peya-data-origins-pro.cl_salesforce.account` a ON a.Id=op.AccountId
+            LEFT JOIN `peya-bi-tools-pro.il_core.dim_country` as dc ON a.Account_Country_Code =dc.country_code
+            LEFT JOIN `peya-bi-tools-pro.il_core.dim_partner` AS p ON p.salesforce_id=a.GRID
+            WHERE DATE(op.closedate) >>= "2021-01-01"
+            AND DATE(op.closedate) <<=CURRENT_DATE()
+            GROUP BY 1,2,3,4,5
+    ),
+    newonline AS(SELECT
+	DATE_TRUNC(DATE(pm.full_date),MONTH) AS month,
+        dc.country_name AS country_name,
+        p.business_type.business_type_name AS business_type,
+        IFNULL(a.AccountSource,"Other") as Account_Source,
+	COUNT(DISTINCT CASE WHEN pm.is_new_online THEN pm.restaurant_id END) AS new_online
+    
+FROM `peya-bi-tools-pro.il_core.fact_partners_monthly` pm
+LEFT JOIN `peya-bi-tools-pro.il_core.dim_partner` AS p 
+    ON 	pm.restaurant_id=p.partner_id	
+ LEFT JOIN `peya-data-origins-pro.cl_salesforce.account` a ON p.salesforce_id=a.GRID
+INNER JOIN `peya-bi-tools-pro.il_core.dim_country` dc
+        ON dc.country_id = pm.country_id 
+       AND dc.active
+WHERE DATE(pm.full_date) >>= "2021-01-01"
+AND DATE(pm.full_date) <<=CURRENT_DATE()
+GROUP BY 1,2,3,4
+ORDER BY 1 DESC, 2
+    ),
+
+
+    Sellers AS (
+
+WITH dates AS (      
+        SELECT 
+        DATE_TRUNC(date(date),month) AS dim_month,
+        FROM 
+        `peya-bi-tools-pro.il_core.dim_date` 
+        WHERE DATE_TRUNC(date(date),month) >>= DATE_TRUNC(date("2021-01-01"),month)
+        AND DATE_TRUNC(date(date),month) <<= DATE_TRUNC(current_date(),month)
+        GROUP BY 1
+  ),
+  Sellers AS (SELECT 
+dc.country_name as country,
+u.Id,
+u.Alias,
+u.Title,
+u.Name,
+u.CreatedDate,
+u.LastModifiedDate,
+u.LastLoginDate
+FROM `peya-data-origins-pro.cl_salesforce.user` u
+LEFT JOIN   `peya-bi-tools-pro.il_core.dim_country` dc
+ON u.Country=dc.country_name_en
+WHERE DATE_TRUNC(DATE(_ingested_at),MONTH) = DATE_TRUNC(CURRENT_DATE(),MONTH) 
+AND Entity = "UY Pedidosya"
+AND Title IN ("Sales  Executive",
+"Sales Executive",
+"Sales Executive Senior",
+"Sales Executive Specialist",
+"Sales Executive Sr",
+"Sales Sr Executive") OR Alias IN ("ccort",
+"pvill",
+"FBarr",
+"VDoua",
+"MGodo"))
+
+
+
+SELECT 
+d.*,
+s.country,
+COUNT(DISTINCT s.Id) as Sales_Rep
+
+FROM dates AS d 
+JOIN Sellers AS s   
+ON d.dim_month >> date_trunc(date(s.CreatedDate),MONTH)
+AND d.dim_month <<= date_trunc(date(s.LastLoginDate),MONTH)
+GROUP BY 1,2
+ORDER BY 1,2
+
+    )
+
+SELECT
+d.*,
+c.*,
+b.*,
+a.*,
+cw.New_closed_won,
+cw.Winbacks,
+nw.new_online,
+se.Sales_Rep,
+current_date() AS last_update
+FROM dates  AS d 
+CROSS JOIN Countries AS c
+CROSS JOIN business AS b
+CROSS JOIN AccountSource AS a
+LEFT JOIN closedwon AS cw 
+ON cw.date_month=d.dim_month AND cw.country_name=c.country_name AND cw.business_type=b.business_type_name AND cw.Account_Source=a.Account_Source
+LEFT JOIN newonline AS nw 
+ON nw.month=d.dim_month AND nw.country_name=c.country_name AND nw.business_type=b.business_type_name AND nw.Account_Source=a.Account_Source
+LEFT JOIN Sellers AS se 
+ON se.dim_month=d.dim_month AND se.country=c.country_name]]></relation>
+            </properties>
+            <properties context='extract'>
+              <relation name='Extract' table='[Extract].[Extract]' type='table' />
+            </properties>
+          </object>
+        </objects>
+      </_.fcp.ObjectModelEncapsulateLegacy.true...object-graph>
+    </datasource>
+    <datasource caption='Consulta SQL personalizada (user_matias_pita) (2)' inline='true' name='federated.0ma56di1ywr3sr0zxknj2028e1gw' version='18.1'>
+      <connection class='federated'>
+        <named-connections>
+          <named-connection caption='BigQuery' name='bigquery.0vtcaa806a8nyd11b4is510dl13q'>
+            <connection CATALOG='peya-food-and-groceries' EXECCATALOG='peya-food-and-groceries' authentication='yes' bq-dataset-fetch-rows='' bq-fetch-rows='' bq-fetch-tasks='' bq-large-fetch-rows='' bq-project-fetch-rows='' bq-response-rows='' class='bigquery' connection-dialect='google-sql' project='peya-food-and-groceries' schema='user_matias_pita' server-oauth='' username='matias.pita@pedidosya.com' workgroup-auth-mode='prompt' />
+          </named-connection>
+        </named-connections>
+        <_.fcp.ObjectModelEncapsulateLegacy.false...relation connection='bigquery.0vtcaa806a8nyd11b4is510dl13q' name='Consulta SQL personalizada' type='text'>SELECT &#13;
+su.Country,&#13;
+su.Company_Name,&#13;
+su.Entity,&#13;
+su.CountryCode,&#13;
+su.Id,&#13;
+su.Alias,&#13;
+su.Title,&#13;
+su.Name,&#13;
+su.Central_Job_Role,&#13;
+su.CreatedDate,&#13;
+su.LastModifiedDate,&#13;
+su.LastLoginDate,&#13;
+su.IsActive,&#13;
+DATE_TRUNC(date(su.CreatedDate),MONTH) AS Created_month&#13;
+ FROM `peya-data-origins-pro.cl_salesforce.user` as su&#13;
+ JOIN `peya-bi-tools-pro.il_core.dim_country` as dc&#13;
+    ON dc.country_name_en=su.country&#13;
+WHERE DATE_TRUNC(DATE(_ingested_at),MONTH) = DATE_TRUNC(CURRENT_DATE(),MONTH) &#13;
+AND Company_Name = &quot;PY&quot;</_.fcp.ObjectModelEncapsulateLegacy.false...relation>
+        <_.fcp.ObjectModelEncapsulateLegacy.true...relation connection='bigquery.0vtcaa806a8nyd11b4is510dl13q' name='Consulta SQL personalizada' type='text'>SELECT &#13;
+su.Country,&#13;
+su.Company_Name,&#13;
+su.Entity,&#13;
+su.CountryCode,&#13;
+su.Id,&#13;
+su.Alias,&#13;
+su.Title,&#13;
+su.Name,&#13;
+su.Central_Job_Role,&#13;
+su.CreatedDate,&#13;
+su.LastModifiedDate,&#13;
+su.LastLoginDate,&#13;
+su.IsActive,&#13;
+DATE_TRUNC(date(su.CreatedDate),MONTH) AS Created_month&#13;
+ FROM `peya-data-origins-pro.cl_salesforce.user` as su&#13;
+ JOIN `peya-bi-tools-pro.il_core.dim_country` as dc&#13;
+    ON dc.country_name_en=su.country&#13;
+WHERE DATE_TRUNC(DATE(_ingested_at),MONTH) = DATE_TRUNC(CURRENT_DATE(),MONTH) &#13;
+AND Company_Name = &quot;PY&quot;</_.fcp.ObjectModelEncapsulateLegacy.true...relation>
+        <metadata-records>
+          <metadata-record class='column'>
+            <remote-name>Country</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[Country]</local-name>
+            <parent-name>[Consulta SQL personalizada]</parent-name>
+            <remote-alias>Country</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_E891339AA11D4830B3F3F8F5CBD03E77]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>Company_Name</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[Company_Name]</local-name>
+            <parent-name>[Consulta SQL personalizada]</parent-name>
+            <remote-alias>Company_Name</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_E891339AA11D4830B3F3F8F5CBD03E77]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>Entity</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[Entity]</local-name>
+            <parent-name>[Consulta SQL personalizada]</parent-name>
+            <remote-alias>Entity</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_E891339AA11D4830B3F3F8F5CBD03E77]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>CountryCode</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[CountryCode]</local-name>
+            <parent-name>[Consulta SQL personalizada]</parent-name>
+            <remote-alias>CountryCode</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_E891339AA11D4830B3F3F8F5CBD03E77]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>Id</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[Id]</local-name>
+            <parent-name>[Consulta SQL personalizada]</parent-name>
+            <remote-alias>Id</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_E891339AA11D4830B3F3F8F5CBD03E77]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>Alias</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[Alias]</local-name>
+            <parent-name>[Consulta SQL personalizada]</parent-name>
+            <remote-alias>Alias</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_E891339AA11D4830B3F3F8F5CBD03E77]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>Title</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[Title]</local-name>
+            <parent-name>[Consulta SQL personalizada]</parent-name>
+            <remote-alias>Title</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_E891339AA11D4830B3F3F8F5CBD03E77]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>Name</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[Name]</local-name>
+            <parent-name>[Consulta SQL personalizada]</parent-name>
+            <remote-alias>Name</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_E891339AA11D4830B3F3F8F5CBD03E77]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>Central_Job_Role</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[Central_Job_Role]</local-name>
+            <parent-name>[Consulta SQL personalizada]</parent-name>
+            <remote-alias>Central_Job_Role</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_E891339AA11D4830B3F3F8F5CBD03E77]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>CreatedDate</remote-name>
+            <remote-type>7</remote-type>
+            <local-name>[CreatedDate]</local-name>
+            <parent-name>[Consulta SQL personalizada]</parent-name>
+            <remote-alias>CreatedDate</remote-alias>
+            <local-type>datetime</local-type>
+            <aggregation>Year</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_E891339AA11D4830B3F3F8F5CBD03E77]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>LastModifiedDate</remote-name>
+            <remote-type>7</remote-type>
+            <local-name>[LastModifiedDate]</local-name>
+            <parent-name>[Consulta SQL personalizada]</parent-name>
+            <remote-alias>LastModifiedDate</remote-alias>
+            <local-type>datetime</local-type>
+            <aggregation>Year</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_E891339AA11D4830B3F3F8F5CBD03E77]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>LastLoginDate</remote-name>
+            <remote-type>7</remote-type>
+            <local-name>[LastLoginDate]</local-name>
+            <parent-name>[Consulta SQL personalizada]</parent-name>
+            <remote-alias>LastLoginDate</remote-alias>
+            <local-type>datetime</local-type>
+            <aggregation>Year</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_E891339AA11D4830B3F3F8F5CBD03E77]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>IsActive</remote-name>
+            <remote-type>11</remote-type>
+            <local-name>[IsActive]</local-name>
+            <parent-name>[Consulta SQL personalizada]</parent-name>
+            <remote-alias>IsActive</remote-alias>
+            <local-type>boolean</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_E891339AA11D4830B3F3F8F5CBD03E77]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>Created_month</remote-name>
+            <remote-type>7</remote-type>
+            <local-name>[Created_month]</local-name>
+            <parent-name>[Consulta SQL personalizada]</parent-name>
+            <remote-alias>Created_month</remote-alias>
+            <local-type>date</local-type>
+            <aggregation>Year</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_E891339AA11D4830B3F3F8F5CBD03E77]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+        </metadata-records>
+      </connection>
+      <aliases enabled='yes' />
+      <column caption='Antiguedad' datatype='integer' name='[Calculation_112871486563332097]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='DATEDIFF(&quot;day&quot;,[CreatedDate],TODAY())' />
+      </column>
+      <column datatype='string' name='[CountryCode]' role='dimension' semantic-role='[Country].[ISO3166_2]' type='nominal' />
+      <column datatype='string' name='[Country]' role='dimension' semantic-role='[Country].[ISO3166_2]' type='nominal' />
+      <column datatype='string' name='[Title]' role='dimension' type='nominal' />
+      <_.fcp.ObjectModelTableType.true...column caption='Consulta SQL personalizada' datatype='table' name='[__tableau_internal_object_id__].[_E891339AA11D4830B3F3F8F5CBD03E77]' role='measure' type='quantitative' />
+      <group caption='Sellers' name='[Sellers]' name-style='unqualified' user:ui-builder='filter-group'>
+        <groupfilter function='union' user:ui-domain='database' user:ui-enumeration='inclusive' user:ui-marker='enumerate'>
+          <groupfilter function='member' level='[Title]' member='&quot;Sales  Executive&quot;' />
+          <groupfilter function='member' level='[Title]' member='&quot;Sales Executive&quot;' />
+          <groupfilter function='member' level='[Title]' member='&quot;Sales Executive Senior&quot;' />
+          <groupfilter function='member' level='[Title]' member='&quot;Sales Executive Specialist&quot;' />
+          <groupfilter function='member' level='[Title]' member='&quot;Sales Executive Sr&quot;' />
+          <groupfilter function='member' level='[Title]' member='&quot;Sales Sr Executive&quot;' />
+        </groupfilter>
+      </group>
+      <extract _.fcp.ObjectModelExtractV2.true...object-id='' count='-1' enabled='true' units='records'>
+        <connection access_mode='readonly' author-locale='en_US' class='hyper' dbname='extract/f5/15/{9B349646-4EFE-4DB6-8A4D-632BCCF51561}/federated_0ma56di1ywr3sr0zxknj20.hyper' extract-engine='true' schema='Extract' sslmode='' tablename='Extract' update-time='01/03/2022 03:02:45 AM'>
+          <_.fcp.ObjectModelEncapsulateLegacy.false...relation name='Extract' table='[Extract].[Extract]' type='table' />
+          <_.fcp.ObjectModelEncapsulateLegacy.true...relation name='Extract' table='[Extract].[Extract]' type='table' />
+          <metadata-records>
+            <metadata-record class='column'>
+              <remote-name>Country</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[Country]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>Country</remote-alias>
+              <ordinal>0</ordinal>
+              <family>Consulta SQL personalizada</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>16</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_E891339AA11D4830B3F3F8F5CBD03E77]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>Company_Name</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[Company_Name]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>Company_Name</remote-alias>
+              <ordinal>1</ordinal>
+              <family>Consulta SQL personalizada</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>1</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_E891339AA11D4830B3F3F8F5CBD03E77]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>Entity</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[Entity]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>Entity</remote-alias>
+              <ordinal>2</ordinal>
+              <family>Consulta SQL personalizada</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>2</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_E891339AA11D4830B3F3F8F5CBD03E77]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>CountryCode</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[CountryCode]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>CountryCode</remote-alias>
+              <ordinal>3</ordinal>
+              <family>Consulta SQL personalizada</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>39</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_E891339AA11D4830B3F3F8F5CBD03E77]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>Id</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[Id]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>Id</remote-alias>
+              <ordinal>4</ordinal>
+              <family>Consulta SQL personalizada</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>7035</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_E891339AA11D4830B3F3F8F5CBD03E77]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>Alias</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[Alias]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>Alias</remote-alias>
+              <ordinal>5</ordinal>
+              <family>Consulta SQL personalizada</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>3288</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_E891339AA11D4830B3F3F8F5CBD03E77]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>Title</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[Title]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>Title</remote-alias>
+              <ordinal>6</ordinal>
+              <family>Consulta SQL personalizada</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>533</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_E891339AA11D4830B3F3F8F5CBD03E77]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>Name</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[Name]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>Name</remote-alias>
+              <ordinal>7</ordinal>
+              <family>Consulta SQL personalizada</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>7035</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_E891339AA11D4830B3F3F8F5CBD03E77]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>Central_Job_Role</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[Central_Job_Role]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>Central_Job_Role</remote-alias>
+              <ordinal>8</ordinal>
+              <family>Consulta SQL personalizada</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>17</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_E891339AA11D4830B3F3F8F5CBD03E77]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>CreatedDate</remote-name>
+              <remote-type>135</remote-type>
+              <local-name>[CreatedDate]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>CreatedDate</remote-alias>
+              <ordinal>9</ordinal>
+              <family>Consulta SQL personalizada</family>
+              <local-type>datetime</local-type>
+              <aggregation>Year</aggregation>
+              <approx-count>4484</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_E891339AA11D4830B3F3F8F5CBD03E77]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>LastModifiedDate</remote-name>
+              <remote-type>135</remote-type>
+              <local-name>[LastModifiedDate]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>LastModifiedDate</remote-alias>
+              <ordinal>10</ordinal>
+              <family>Consulta SQL personalizada</family>
+              <local-type>datetime</local-type>
+              <aggregation>Year</aggregation>
+              <approx-count>3170</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_E891339AA11D4830B3F3F8F5CBD03E77]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>LastLoginDate</remote-name>
+              <remote-type>135</remote-type>
+              <local-name>[LastLoginDate]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>LastLoginDate</remote-alias>
+              <ordinal>11</ordinal>
+              <family>Consulta SQL personalizada</family>
+              <local-type>datetime</local-type>
+              <aggregation>Year</aggregation>
+              <approx-count>5957</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_E891339AA11D4830B3F3F8F5CBD03E77]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>IsActive</remote-name>
+              <remote-type>11</remote-type>
+              <local-name>[IsActive]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>IsActive</remote-alias>
+              <ordinal>12</ordinal>
+              <family>Consulta SQL personalizada</family>
+              <local-type>boolean</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>2</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_E891339AA11D4830B3F3F8F5CBD03E77]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>Created_month</remote-name>
+              <remote-type>133</remote-type>
+              <local-name>[Created_month]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>Created_month</remote-alias>
+              <ordinal>13</ordinal>
+              <family>Consulta SQL personalizada</family>
+              <local-type>date</local-type>
+              <aggregation>Year</aggregation>
+              <approx-count>45</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_E891339AA11D4830B3F3F8F5CBD03E77]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+          </metadata-records>
+        </connection>
+      </extract>
+      <layout _.fcp.SchemaViewerObjectModel.false...dim-percentage='0.5' _.fcp.SchemaViewerObjectModel.false...measure-percentage='0.4' dim-ordering='alphabetic' measure-ordering='alphabetic' show-structure='true' />
+      <semantic-values>
+        <semantic-value key='[Country].[Name]' value='&quot;Argentina&quot;' />
+      </semantic-values>
+      <_.fcp.ObjectModelEncapsulateLegacy.true...object-graph>
+        <objects>
+          <object caption='Consulta SQL personalizada' id='_E891339AA11D4830B3F3F8F5CBD03E77'>
+            <properties context=''>
+              <relation connection='bigquery.0vtcaa806a8nyd11b4is510dl13q' name='Consulta SQL personalizada' type='text'>SELECT &#13;
+su.Country,&#13;
+su.Company_Name,&#13;
+su.Entity,&#13;
+su.CountryCode,&#13;
+su.Id,&#13;
+su.Alias,&#13;
+su.Title,&#13;
+su.Name,&#13;
+su.Central_Job_Role,&#13;
+su.CreatedDate,&#13;
+su.LastModifiedDate,&#13;
+su.LastLoginDate,&#13;
+su.IsActive,&#13;
+DATE_TRUNC(date(su.CreatedDate),MONTH) AS Created_month&#13;
+ FROM `peya-data-origins-pro.cl_salesforce.user` as su&#13;
+ JOIN `peya-bi-tools-pro.il_core.dim_country` as dc&#13;
+    ON dc.country_name_en=su.country&#13;
+WHERE DATE_TRUNC(DATE(_ingested_at),MONTH) = DATE_TRUNC(CURRENT_DATE(),MONTH) &#13;
+AND Company_Name = &quot;PY&quot;</relation>
+            </properties>
+            <properties context='extract'>
+              <relation name='Extract' table='[Extract].[Extract]' type='table' />
+            </properties>
+          </object>
+        </objects>
+      </_.fcp.ObjectModelEncapsulateLegacy.true...object-graph>
+    </datasource>
+  </datasources>
+  <worksheets>
+    <worksheet name='Account Source Share'>
+      <layout-options>
+        <title>
+          <formatted-text>
+            <run bold='true' fontalignment='1' fontcolor='#ffffff' fontsize='12'>&lt;</run>
+            <run bold='true' fontalignment='1' fontcolor='#ffffff' fontsize='12'>Sheet Name</run>
+            <run bold='true' fontalignment='1' fontcolor='#ffffff' fontsize='12'>&gt;</run>
+          </formatted-text>
+        </title>
+      </layout-options>
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='Consulta SQL personalizada (user_matias_pita)' name='federated.000m52b0vekifd1h73qth0nlcanr' />
+          </datasources>
+          <datasource-dependencies datasource='federated.000m52b0vekifd1h73qth0nlcanr'>
+            <column datatype='string' name='[Account_Source]' role='dimension' type='nominal' />
+            <column caption='Total new' datatype='integer' name='[Calculation_435160334636273664]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='[new_online]+[Winbacks]' />
+            </column>
+            <column caption='Fixed Source' datatype='string' name='[Calculation_435160334640484358]' role='dimension' type='nominal'>
+              <calculation class='tableau' formula='IF [Account_Source] = &quot;IMPORT&quot; THEN &quot;Import&quot;&#13;&#10;ELSEIF [Account_Source] = &quot;Import&quot; THEN &quot;Import&quot;&#13;&#10;ELSEIF [Account_Source] = &quot;Cloned&quot; THEN &quot;Cloned&quot;&#13;&#10;ELSEIF [Account_Source] = &quot;Automated LeadGen&quot; THEN &quot;Automated LeadGen&quot;&#13;&#10;ELSEIF [Account_Source] = &quot;Busqueda Propia&quot; THEN &quot;Own Research&quot;&#13;&#10;ELSEIF [Account_Source] = &quot;Busqueda Propia&quot; THEN &quot;Own Research&quot;&#13;&#10;ELSEIF [Account_Source] = &quot;Own Research&quot; THEN &quot;Own Research&quot;&#13;&#10;ELSEIF [Account_Source] = &quot;Self Sign Up&quot; THEN &quot;Self Sign Up&quot;&#13;&#10;ELSEIF [Account_Source] = &quot;Other&quot; THEN &quot;Other&quot;&#13;&#10;ELSEIF [Account_Source] = &quot;Inbound&quot; THEN &quot;Inbound&quot;&#13;&#10;ELSE &quot;Other&quot;&#13;&#10;END' />
+            </column>
+            <column caption='Vertical' datatype='string' name='[Calculation_435160334646165511]' role='dimension' type='nominal'>
+              <calculation class='tableau' formula='IF [business_type_name] = &quot;Coffee&quot; THEN &quot;Food&quot;&#13;&#10;ELSEIF  [business_type_name] = &quot;Restaurant&quot; THEN &quot;Food&quot;&#13;&#10;ELSEIF [business_type_name] = &quot;Courier&quot; THEN &quot;Courier&quot;&#13;&#10;ELSEIF [business_type_name] = &quot;Courier Business&quot; THEN &quot;Courier&quot;&#13;&#10;ELSE &quot;Local Stores&quot;&#13;&#10;END' />
+            </column>
+            <column datatype='integer' name='[Winbacks]' role='measure' type='quantitative' />
+            <column datatype='string' name='[business_type_name]' role='dimension' type='nominal' />
+            <column datatype='string' name='[country_name]' role='dimension' semantic-role='[Country].[ISO3166_2]' type='nominal' />
+            <column datatype='date' name='[dim_month]' role='dimension' type='ordinal' />
+            <column-instance column='[dim_month]' derivation='Month' name='[mn:dim_month:ok]' pivot='key' type='ordinal' />
+            <column datatype='integer' name='[new_online]' role='measure' type='quantitative' />
+            <column-instance column='[Calculation_435160334640484358]' derivation='None' name='[none:Calculation_435160334640484358:nk]' pivot='key' type='nominal' />
+            <column-instance column='[Calculation_435160334646165511]' derivation='None' name='[none:Calculation_435160334646165511:nk]' pivot='key' type='nominal' />
+            <column-instance column='[business_type_name]' derivation='None' name='[none:business_type_name:nk]' pivot='key' type='nominal' />
+            <column-instance column='[country_name]' derivation='None' name='[none:country_name:nk]' pivot='key' type='nominal' />
+            <column-instance column='[dim_month]' derivation='None' name='[none:dim_month:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[Calculation_435160334636273664]' derivation='Sum' name='[pcto:sum:Calculation_435160334636273664:qk:7]' pivot='key' type='quantitative'>
+              <table-calc ordering-field='[federated.000m52b0vekifd1h73qth0nlcanr].[none:Calculation_435160334640484358:nk]' ordering-type='Field' type='PctTotal' />
+            </column-instance>
+            <column-instance column='[Calculation_435160334636273664]' derivation='Sum' name='[sum:Calculation_435160334636273664:qk]' pivot='key' type='quantitative' />
+          </datasource-dependencies>
+          <filter class='categorical' column='[federated.000m52b0vekifd1h73qth0nlcanr].[none:Calculation_435160334640484358:nk]' filter-group='4'>
+            <groupfilter function='level-members' level='[none:Calculation_435160334640484358:nk]' user:ui-enumeration='all' user:ui-marker='enumerate' />
+          </filter>
+          <manual-sort column='[federated.000m52b0vekifd1h73qth0nlcanr].[none:Calculation_435160334640484358:nk]' direction='ASC'>
+            <dictionary>
+              <bucket>&quot;Other&quot;</bucket>
+              <bucket>&quot;Cloned&quot;</bucket>
+              <bucket>&quot;Automated LeadGen&quot;</bucket>
+              <bucket>&quot;Import&quot;</bucket>
+              <bucket>&quot;Inbound&quot;</bucket>
+              <bucket>&quot;Self Sign Up&quot;</bucket>
+              <bucket>&quot;Own Research&quot;</bucket>
+            </dictionary>
+          </manual-sort>
+          <filter class='categorical' column='[federated.000m52b0vekifd1h73qth0nlcanr].[none:Calculation_435160334646165511:nk]' filter-group='6'>
+            <groupfilter function='union' user:ui-domain='relevant' user:ui-enumeration='inclusive' user:ui-marker='enumerate'>
+              <groupfilter function='member' level='[none:Calculation_435160334646165511:nk]' member='&quot;Food&quot;' />
+              <groupfilter function='member' level='[none:Calculation_435160334646165511:nk]' member='&quot;Local Stores&quot;' />
+            </groupfilter>
+          </filter>
+          <filter class='categorical' column='[federated.000m52b0vekifd1h73qth0nlcanr].[none:business_type_name:nk]' filter-group='5'>
+            <groupfilter function='level-members' level='[none:business_type_name:nk]' user:ui-enumeration='all' user:ui-marker='enumerate' />
+          </filter>
+          <filter class='categorical' column='[federated.000m52b0vekifd1h73qth0nlcanr].[none:country_name:nk]' filter-group='7'>
+            <groupfilter function='level-members' level='[none:country_name:nk]' user:ui-enumeration='all' user:ui-marker='enumerate' />
+          </filter>
+          <filter class='relative-date' column='[federated.000m52b0vekifd1h73qth0nlcanr].[none:dim_month:qk]' filter-group='3' first-period='-5' include-future='true' include-null='false' last-period='0' period-type-v2='month' />
+          <filter class='quantitative' column='[federated.000m52b0vekifd1h73qth0nlcanr].[pcto:sum:Calculation_435160334636273664:qk:7]' included-values='non-null' />
+          <slices>
+            <column>[federated.000m52b0vekifd1h73qth0nlcanr].[pcto:sum:Calculation_435160334636273664:qk:7]</column>
+            <column>[federated.000m52b0vekifd1h73qth0nlcanr].[none:dim_month:qk]</column>
+            <column>[federated.000m52b0vekifd1h73qth0nlcanr].[none:Calculation_435160334640484358:nk]</column>
+            <column>[federated.000m52b0vekifd1h73qth0nlcanr].[none:business_type_name:nk]</column>
+            <column>[federated.000m52b0vekifd1h73qth0nlcanr].[none:country_name:nk]</column>
+            <column>[federated.000m52b0vekifd1h73qth0nlcanr].[none:Calculation_435160334646165511:nk]</column>
+          </slices>
+          <aggregation value='true' />
+        </view>
+        <style>
+          <style-rule element='axis'>
+            <format attr='title' class='0' field='[federated.000m52b0vekifd1h73qth0nlcanr].[pcto:sum:Calculation_435160334636273664:qk:7]' scope='rows' value='' />
+            <format attr='display' class='0' field='[federated.000m52b0vekifd1h73qth0nlcanr].[pcto:sum:Calculation_435160334636273664:qk:7]' scope='rows' value='false' />
+          </style-rule>
+          <style-rule element='worksheet'>
+            <format attr='display-field-labels' scope='cols' value='false' />
+          </style-rule>
+          <style-rule element='title'>
+            <format attr='background-color' value='#fa0050' />
+          </style-rule>
+          <style-rule element='legend'>
+            <format attr='font-size' value='8' />
+            <format attr='font-style' value='normal' />
+          </style-rule>
+          <style-rule element='legend-title'>
+            <format attr='font-size' value='8' />
+          </style-rule>
+        </style>
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Bar' />
+            <encodings>
+              <color column='[federated.000m52b0vekifd1h73qth0nlcanr].[none:Calculation_435160334640484358:nk]' />
+              <tooltip column='[federated.000m52b0vekifd1h73qth0nlcanr].[sum:Calculation_435160334636273664:qk]' />
+            </encodings>
+            <style>
+              <style-rule element='datalabel'>
+                <format attr='color-mode' value='user' />
+                <format attr='color' value='#333333' />
+                <format attr='font-size' value='5' />
+              </style-rule>
+              <style-rule element='mark'>
+                <format attr='mark-labels-show' value='true' />
+                <format attr='mark-labels-cull' value='true' />
+              </style-rule>
+            </style>
+          </pane>
+        </panes>
+        <rows>[federated.000m52b0vekifd1h73qth0nlcanr].[pcto:sum:Calculation_435160334636273664:qk:7]</rows>
+        <cols>[federated.000m52b0vekifd1h73qth0nlcanr].[mn:dim_month:ok]</cols>
+      </table>
+      <simple-id uuid='{EBE1E3BD-EEB3-4CF0-B635-488680458F5B}' />
+    </worksheet>
+    <worksheet name='Business Share'>
+      <layout-options>
+        <title>
+          <formatted-text>
+            <run bold='true' fontalignment='1' fontcolor='#ffffff' fontsize='12'>&lt;</run>
+            <run bold='true' fontalignment='1' fontcolor='#ffffff' fontsize='12'>Sheet Name</run>
+            <run bold='true' fontalignment='1' fontcolor='#ffffff' fontsize='12'>&gt;</run>
+          </formatted-text>
+        </title>
+      </layout-options>
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='Consulta SQL personalizada (user_matias_pita)' name='federated.000m52b0vekifd1h73qth0nlcanr' />
+          </datasources>
+          <datasource-dependencies datasource='federated.000m52b0vekifd1h73qth0nlcanr'>
+            <column datatype='string' name='[Account_Source]' role='dimension' type='nominal' />
+            <column caption='Total new' datatype='integer' name='[Calculation_435160334636273664]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='[new_online]+[Winbacks]' />
+            </column>
+            <column caption='Fixed Source' datatype='string' name='[Calculation_435160334640484358]' role='dimension' type='nominal'>
+              <calculation class='tableau' formula='IF [Account_Source] = &quot;IMPORT&quot; THEN &quot;Import&quot;&#13;&#10;ELSEIF [Account_Source] = &quot;Import&quot; THEN &quot;Import&quot;&#13;&#10;ELSEIF [Account_Source] = &quot;Cloned&quot; THEN &quot;Cloned&quot;&#13;&#10;ELSEIF [Account_Source] = &quot;Automated LeadGen&quot; THEN &quot;Automated LeadGen&quot;&#13;&#10;ELSEIF [Account_Source] = &quot;Busqueda Propia&quot; THEN &quot;Own Research&quot;&#13;&#10;ELSEIF [Account_Source] = &quot;Busqueda Propia&quot; THEN &quot;Own Research&quot;&#13;&#10;ELSEIF [Account_Source] = &quot;Own Research&quot; THEN &quot;Own Research&quot;&#13;&#10;ELSEIF [Account_Source] = &quot;Self Sign Up&quot; THEN &quot;Self Sign Up&quot;&#13;&#10;ELSEIF [Account_Source] = &quot;Other&quot; THEN &quot;Other&quot;&#13;&#10;ELSEIF [Account_Source] = &quot;Inbound&quot; THEN &quot;Inbound&quot;&#13;&#10;ELSE &quot;Other&quot;&#13;&#10;END' />
+            </column>
+            <column caption='Vertical' datatype='string' name='[Calculation_435160334646165511]' role='dimension' type='nominal'>
+              <calculation class='tableau' formula='IF [business_type_name] = &quot;Coffee&quot; THEN &quot;Food&quot;&#13;&#10;ELSEIF  [business_type_name] = &quot;Restaurant&quot; THEN &quot;Food&quot;&#13;&#10;ELSEIF [business_type_name] = &quot;Courier&quot; THEN &quot;Courier&quot;&#13;&#10;ELSEIF [business_type_name] = &quot;Courier Business&quot; THEN &quot;Courier&quot;&#13;&#10;ELSE &quot;Local Stores&quot;&#13;&#10;END' />
+            </column>
+            <column datatype='integer' name='[Winbacks]' role='measure' type='quantitative' />
+            <column datatype='string' name='[business_type_name]' role='dimension' type='nominal' />
+            <column datatype='string' name='[country_name]' role='dimension' semantic-role='[Country].[ISO3166_2]' type='nominal' />
+            <column datatype='date' name='[dim_month]' role='dimension' type='ordinal' />
+            <column-instance column='[dim_month]' derivation='Month' name='[mn:dim_month:ok]' pivot='key' type='ordinal' />
+            <column datatype='integer' name='[new_online]' role='measure' type='quantitative' />
+            <column-instance column='[Calculation_435160334640484358]' derivation='None' name='[none:Calculation_435160334640484358:nk]' pivot='key' type='nominal' />
+            <column-instance column='[Calculation_435160334646165511]' derivation='None' name='[none:Calculation_435160334646165511:nk]' pivot='key' type='nominal' />
+            <column-instance column='[business_type_name]' derivation='None' name='[none:business_type_name:nk]' pivot='key' type='nominal' />
+            <column-instance column='[country_name]' derivation='None' name='[none:country_name:nk]' pivot='key' type='nominal' />
+            <column-instance column='[dim_month]' derivation='None' name='[none:dim_month:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[Calculation_435160334636273664]' derivation='Sum' name='[pcto:sum:Calculation_435160334636273664:qk:1]' pivot='key' type='quantitative'>
+              <table-calc ordering-field='[federated.000m52b0vekifd1h73qth0nlcanr].[none:business_type_name:nk]' ordering-type='Field' type='PctTotal' />
+            </column-instance>
+            <column-instance column='[Calculation_435160334636273664]' derivation='Sum' name='[sum:Calculation_435160334636273664:qk]' pivot='key' type='quantitative' />
+          </datasource-dependencies>
+          <filter class='categorical' column='[federated.000m52b0vekifd1h73qth0nlcanr].[none:Calculation_435160334640484358:nk]' filter-group='4'>
+            <groupfilter function='level-members' level='[none:Calculation_435160334640484358:nk]' user:ui-enumeration='all' user:ui-marker='enumerate' />
+          </filter>
+          <filter class='categorical' column='[federated.000m52b0vekifd1h73qth0nlcanr].[none:Calculation_435160334646165511:nk]' filter-group='6'>
+            <groupfilter function='union' user:ui-domain='relevant' user:ui-enumeration='inclusive' user:ui-marker='enumerate'>
+              <groupfilter function='member' level='[none:Calculation_435160334646165511:nk]' member='&quot;Food&quot;' />
+              <groupfilter function='member' level='[none:Calculation_435160334646165511:nk]' member='&quot;Local Stores&quot;' />
+            </groupfilter>
+          </filter>
+          <filter class='categorical' column='[federated.000m52b0vekifd1h73qth0nlcanr].[none:business_type_name:nk]' filter-group='5'>
+            <groupfilter function='level-members' level='[none:business_type_name:nk]' user:ui-enumeration='all' user:ui-marker='enumerate' />
+          </filter>
+          <manual-sort column='[federated.000m52b0vekifd1h73qth0nlcanr].[none:business_type_name:nk]' direction='ASC'>
+            <dictionary>
+              <bucket>&quot;Bills&quot;</bucket>
+              <bucket>&quot;Cash&quot;</bucket>
+              <bucket>&quot;Courier Business&quot;</bucket>
+              <bucket>&quot;Courier&quot;</bucket>
+              <bucket>&quot;Flowers&quot;</bucket>
+              <bucket>&quot;Other&quot;</bucket>
+              <bucket>&quot;Pets&quot;</bucket>
+              <bucket>&quot;Pharmacy&quot;</bucket>
+              <bucket>&quot;Kiosks&quot;</bucket>
+              <bucket>&quot;Shop&quot;</bucket>
+              <bucket>&quot;Drinks&quot;</bucket>
+              <bucket>&quot;Market&quot;</bucket>
+              <bucket>&quot;Coffee&quot;</bucket>
+              <bucket>&quot;Restaurant&quot;</bucket>
+            </dictionary>
+          </manual-sort>
+          <filter class='categorical' column='[federated.000m52b0vekifd1h73qth0nlcanr].[none:country_name:nk]' filter-group='7'>
+            <groupfilter function='level-members' level='[none:country_name:nk]' user:ui-enumeration='all' user:ui-marker='enumerate' />
+          </filter>
+          <filter class='relative-date' column='[federated.000m52b0vekifd1h73qth0nlcanr].[none:dim_month:qk]' filter-group='3' first-period='-5' include-future='true' include-null='false' last-period='0' period-type-v2='month' />
+          <filter class='quantitative' column='[federated.000m52b0vekifd1h73qth0nlcanr].[pcto:sum:Calculation_435160334636273664:qk:1]' included-values='non-null' />
+          <slices>
+            <column>[federated.000m52b0vekifd1h73qth0nlcanr].[none:business_type_name:nk]</column>
+            <column>[federated.000m52b0vekifd1h73qth0nlcanr].[pcto:sum:Calculation_435160334636273664:qk:1]</column>
+            <column>[federated.000m52b0vekifd1h73qth0nlcanr].[none:dim_month:qk]</column>
+            <column>[federated.000m52b0vekifd1h73qth0nlcanr].[none:Calculation_435160334640484358:nk]</column>
+            <column>[federated.000m52b0vekifd1h73qth0nlcanr].[none:country_name:nk]</column>
+            <column>[federated.000m52b0vekifd1h73qth0nlcanr].[none:Calculation_435160334646165511:nk]</column>
+          </slices>
+          <aggregation value='true' />
+        </view>
+        <style>
+          <style-rule element='axis'>
+            <format attr='display' class='0' field='[federated.000m52b0vekifd1h73qth0nlcanr].[pcto:sum:Calculation_435160334636273664:qk:1]' scope='rows' value='false' />
+          </style-rule>
+          <style-rule element='cell'>
+            <format attr='text-format' field='[federated.000m52b0vekifd1h73qth0nlcanr].[pcto:sum:Calculation_435160334636273664:qk:1]' value='p0.0%' />
+          </style-rule>
+          <style-rule element='worksheet'>
+            <format attr='display-field-labels' scope='cols' value='false' />
+          </style-rule>
+          <style-rule element='title'>
+            <format attr='background-color' value='#fa0050' />
+          </style-rule>
+        </style>
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Bar' />
+            <encodings>
+              <color column='[federated.000m52b0vekifd1h73qth0nlcanr].[none:business_type_name:nk]' />
+              <tooltip column='[federated.000m52b0vekifd1h73qth0nlcanr].[sum:Calculation_435160334636273664:qk]' />
+            </encodings>
+            <style>
+              <style-rule element='datalabel'>
+                <format attr='color-mode' value='user' />
+                <format attr='color' value='#333333' />
+                <format attr='font-size' value='5' />
+              </style-rule>
+              <style-rule element='mark'>
+                <format attr='mark-labels-show' value='true' />
+                <format attr='mark-labels-cull' value='true' />
+              </style-rule>
+            </style>
+          </pane>
+        </panes>
+        <rows>[federated.000m52b0vekifd1h73qth0nlcanr].[pcto:sum:Calculation_435160334636273664:qk:1]</rows>
+        <cols>[federated.000m52b0vekifd1h73qth0nlcanr].[mn:dim_month:ok]</cols>
+      </table>
+      <simple-id uuid='{164A7F6C-74B0-402F-9892-B3A3C71AEF66}' />
+    </worksheet>
+    <worksheet name='Data up to'>
+      <layout-options>
+        <title>
+          <formatted-text>
+            <run bold='true' fontalignment='1' fontcolor='#ffffff' fontsize='8'>&lt;</run>
+            <run bold='true' fontalignment='1' fontcolor='#ffffff' fontsize='8'>Sheet Name</run>
+            <run bold='true' fontalignment='1' fontcolor='#ffffff' fontsize='8'>&gt;</run>
+          </formatted-text>
+        </title>
+      </layout-options>
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='Consulta SQL personalizada (user_matias_pita)' name='federated.000m52b0vekifd1h73qth0nlcanr' />
+          </datasources>
+          <datasource-dependencies datasource='federated.000m52b0vekifd1h73qth0nlcanr'>
+            <column datatype='date' name='[last_update]' role='dimension' type='ordinal' />
+            <column-instance column='[last_update]' derivation='Day-Trunc' name='[tdy:last_update:qk]' pivot='key' type='quantitative' />
+          </datasource-dependencies>
+          <aggregation value='true' />
+        </view>
+        <style>
+          <style-rule element='axis'>
+            <format attr='tick-color' field='[federated.000m52b0vekifd1h73qth0nlcanr].[tdy:last_update:qk]' value='#fa0050' />
+          </style-rule>
+          <style-rule element='cell'>
+            <format attr='width' value='107' />
+            <format attr='height' value='24' />
+            <format attr='text-format' field='[federated.000m52b0vekifd1h73qth0nlcanr].[tdy:last_update:qk]' value='*d/m/yy' />
+            <format attr='color' value='#ffffff' />
+            <format attr='color' data-class='subtotal' value='#ffffff' />
+            <format attr='text-align' value='left' />
+            <format attr='vertical-align' value='top' />
+          </style-rule>
+          <style-rule element='header'>
+            <format attr='background-color' field='[federated.000m52b0vekifd1h73qth0nlcanr].[tdy:last_update:qk]' value='#fa0050' />
+            <format attr='background-color' data-class='subtotal' scope='cols' value='#fa0050' />
+            <format attr='band-color' scope='cols' value='#fa0050' />
+          </style-rule>
+          <style-rule element='label'>
+            <format attr='text-align' scope='cols' value='left' />
+            <format attr='vertical-align' scope='cols' value='top' />
+          </style-rule>
+          <style-rule element='pane'>
+            <format attr='background-color' data-class='subtotal' scope='cols' value='#fa0050' />
+            <format attr='band-color' scope='cols' value='#fa0050' />
+          </style-rule>
+          <style-rule element='table'>
+            <format attr='band-size' scope='cols' value='1' />
+            <format attr='background-color' value='#fa0050' />
+          </style-rule>
+          <style-rule element='worksheet'>
+            <format attr='color' value='#ffffff' />
+            <format attr='font-size' value='8' />
+          </style-rule>
+          <style-rule element='title'>
+            <format attr='background-color' value='#fa0050' />
+          </style-rule>
+          <style-rule element='axis-title'>
+            <format attr='color' field='[federated.000m52b0vekifd1h73qth0nlcanr].[tdy:last_update:qk]' value='#fa0050' />
+          </style-rule>
+        </style>
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Automatic' />
+            <encodings>
+              <text column='[federated.000m52b0vekifd1h73qth0nlcanr].[tdy:last_update:qk]' />
+            </encodings>
+            <style>
+              <style-rule element='mark'>
+                <format attr='mark-labels-show' value='true' />
+                <format attr='mark-labels-cull' value='true' />
+              </style-rule>
+              <style-rule element='pane'>
+                <format attr='minwidth' value='-1' />
+                <format attr='maxwidth' value='-1' />
+                <format attr='minheight' value='-1' />
+                <format attr='maxheight' value='-1' />
+              </style-rule>
+            </style>
+          </pane>
+        </panes>
+        <rows />
+        <cols />
+      </table>
+      <simple-id uuid='{FA72E65A-F398-4A44-B108-203BC0887DE6}' />
+    </worksheet>
+    <worksheet name='New Online Partner'>
+      <layout-options>
+        <title>
+          <formatted-text>
+            <run bold='true' fontalignment='1' fontcolor='#ffffff' fontsize='12'>&lt;</run>
+            <run bold='true' fontalignment='1' fontcolor='#ffffff' fontsize='12'>Sheet Name</run>
+            <run bold='true' fontalignment='1' fontcolor='#ffffff' fontsize='12'>&gt;</run>
+          </formatted-text>
+        </title>
+      </layout-options>
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='Consulta SQL personalizada (user_matias_pita)' name='federated.000m52b0vekifd1h73qth0nlcanr' />
+          </datasources>
+          <datasource-dependencies datasource='federated.000m52b0vekifd1h73qth0nlcanr'>
+            <column datatype='string' name='[Account_Source]' role='dimension' type='nominal' />
+            <column caption='Total new' datatype='integer' name='[Calculation_435160334636273664]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='[new_online]+[Winbacks]' />
+            </column>
+            <column caption='Fixed Source' datatype='string' name='[Calculation_435160334640484358]' role='dimension' type='nominal'>
+              <calculation class='tableau' formula='IF [Account_Source] = &quot;IMPORT&quot; THEN &quot;Import&quot;&#13;&#10;ELSEIF [Account_Source] = &quot;Import&quot; THEN &quot;Import&quot;&#13;&#10;ELSEIF [Account_Source] = &quot;Cloned&quot; THEN &quot;Cloned&quot;&#13;&#10;ELSEIF [Account_Source] = &quot;Automated LeadGen&quot; THEN &quot;Automated LeadGen&quot;&#13;&#10;ELSEIF [Account_Source] = &quot;Busqueda Propia&quot; THEN &quot;Own Research&quot;&#13;&#10;ELSEIF [Account_Source] = &quot;Busqueda Propia&quot; THEN &quot;Own Research&quot;&#13;&#10;ELSEIF [Account_Source] = &quot;Own Research&quot; THEN &quot;Own Research&quot;&#13;&#10;ELSEIF [Account_Source] = &quot;Self Sign Up&quot; THEN &quot;Self Sign Up&quot;&#13;&#10;ELSEIF [Account_Source] = &quot;Other&quot; THEN &quot;Other&quot;&#13;&#10;ELSEIF [Account_Source] = &quot;Inbound&quot; THEN &quot;Inbound&quot;&#13;&#10;ELSE &quot;Other&quot;&#13;&#10;END' />
+            </column>
+            <column caption='Vertical' datatype='string' name='[Calculation_435160334646165511]' role='dimension' type='nominal'>
+              <calculation class='tableau' formula='IF [business_type_name] = &quot;Coffee&quot; THEN &quot;Food&quot;&#13;&#10;ELSEIF  [business_type_name] = &quot;Restaurant&quot; THEN &quot;Food&quot;&#13;&#10;ELSEIF [business_type_name] = &quot;Courier&quot; THEN &quot;Courier&quot;&#13;&#10;ELSEIF [business_type_name] = &quot;Courier Business&quot; THEN &quot;Courier&quot;&#13;&#10;ELSE &quot;Local Stores&quot;&#13;&#10;END' />
+            </column>
+            <column datatype='integer' name='[Winbacks]' role='measure' type='quantitative' />
+            <column datatype='string' name='[business_type_name]' role='dimension' type='nominal' />
+            <column datatype='string' name='[country_name]' role='dimension' semantic-role='[Country].[ISO3166_2]' type='nominal' />
+            <column datatype='date' name='[dim_month]' role='dimension' type='ordinal' />
+            <column-instance column='[dim_month]' derivation='Month' name='[mn:dim_month:ok]' pivot='key' type='ordinal' />
+            <column datatype='integer' name='[new_online]' role='measure' type='quantitative' />
+            <column-instance column='[Calculation_435160334640484358]' derivation='None' name='[none:Calculation_435160334640484358:nk]' pivot='key' type='nominal' />
+            <column-instance column='[Calculation_435160334646165511]' derivation='None' name='[none:Calculation_435160334646165511:nk]' pivot='key' type='nominal' />
+            <column-instance column='[business_type_name]' derivation='None' name='[none:business_type_name:nk]' pivot='key' type='nominal' />
+            <column-instance column='[country_name]' derivation='None' name='[none:country_name:nk]' pivot='key' type='nominal' />
+            <column-instance column='[dim_month]' derivation='None' name='[none:dim_month:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[Calculation_435160334636273664]' derivation='Sum' name='[sum:Calculation_435160334636273664:qk]' pivot='key' type='quantitative' />
+          </datasource-dependencies>
+          <filter class='categorical' column='[federated.000m52b0vekifd1h73qth0nlcanr].[none:Calculation_435160334640484358:nk]' filter-group='4'>
+            <groupfilter function='level-members' level='[none:Calculation_435160334640484358:nk]' user:ui-enumeration='all' user:ui-marker='enumerate' />
+          </filter>
+          <filter class='categorical' column='[federated.000m52b0vekifd1h73qth0nlcanr].[none:Calculation_435160334646165511:nk]' filter-group='6'>
+            <groupfilter function='union' user:ui-domain='relevant' user:ui-enumeration='inclusive' user:ui-marker='enumerate'>
+              <groupfilter function='member' level='[none:Calculation_435160334646165511:nk]' member='&quot;Food&quot;' />
+              <groupfilter function='member' level='[none:Calculation_435160334646165511:nk]' member='&quot;Local Stores&quot;' />
+            </groupfilter>
+          </filter>
+          <filter class='categorical' column='[federated.000m52b0vekifd1h73qth0nlcanr].[none:business_type_name:nk]' filter-group='5'>
+            <groupfilter function='level-members' level='[none:business_type_name:nk]' user:ui-enumeration='all' user:ui-marker='enumerate' />
+          </filter>
+          <filter class='relative-date' column='[federated.000m52b0vekifd1h73qth0nlcanr].[none:dim_month:qk]' filter-group='3' first-period='-5' include-future='true' include-null='false' last-period='0' period-type-v2='month' />
+          <filter class='quantitative' column='[federated.000m52b0vekifd1h73qth0nlcanr].[sum:Calculation_435160334636273664:qk]' included-values='non-null' />
+          <slices>
+            <column>[federated.000m52b0vekifd1h73qth0nlcanr].[sum:Calculation_435160334636273664:qk]</column>
+            <column>[federated.000m52b0vekifd1h73qth0nlcanr].[none:dim_month:qk]</column>
+            <column>[federated.000m52b0vekifd1h73qth0nlcanr].[none:Calculation_435160334640484358:nk]</column>
+            <column>[federated.000m52b0vekifd1h73qth0nlcanr].[none:business_type_name:nk]</column>
+            <column>[federated.000m52b0vekifd1h73qth0nlcanr].[none:Calculation_435160334646165511:nk]</column>
+          </slices>
+          <aggregation value='true' />
+        </view>
+        <style>
+          <style-rule element='axis'>
+            <format attr='width' field='[federated.000m52b0vekifd1h73qth0nlcanr].[sum:Calculation_435160334636273664:qk]' value='100' />
+            <format attr='display' class='0' field='[federated.000m52b0vekifd1h73qth0nlcanr].[sum:Calculation_435160334636273664:qk]' scope='rows' value='false' />
+          </style-rule>
+          <style-rule element='cell'>
+            <format attr='color' data-class='total' scope='cols' value='#000000' />
+          </style-rule>
+          <style-rule element='label'>
+            <format attr='display' field='[federated.000m52b0vekifd1h73qth0nlcanr].[mn:dim_month:ok]' value='false' />
+          </style-rule>
+          <style-rule element='worksheet'>
+            <format attr='display-field-labels' scope='cols' value='false' />
+          </style-rule>
+          <style-rule element='title'>
+            <format attr='background-color' value='#fa0050' />
+          </style-rule>
+        </style>
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Bar' />
+            <encodings>
+              <text column='[federated.000m52b0vekifd1h73qth0nlcanr].[sum:Calculation_435160334636273664:qk]' />
+            </encodings>
+            <style>
+              <style-rule element='datalabel'>
+                <format attr='color-mode' value='user' />
+                <format attr='color' value='#333333' />
+                <format attr='font-size' value='5' />
+              </style-rule>
+              <style-rule element='mark'>
+                <format attr='mark-labels-cull' value='true' />
+                <format attr='mark-labels-show' value='true' />
+                <format attr='mark-color' value='#fa0050' />
+              </style-rule>
+            </style>
+          </pane>
+        </panes>
+        <rows>[federated.000m52b0vekifd1h73qth0nlcanr].[sum:Calculation_435160334636273664:qk]</rows>
+        <cols>([federated.000m52b0vekifd1h73qth0nlcanr].[none:country_name:nk] / [federated.000m52b0vekifd1h73qth0nlcanr].[mn:dim_month:ok])</cols>
+      </table>
+      <simple-id uuid='{ED13EAF2-63FB-4044-AE2C-05831018251C}' />
+    </worksheet>
+    <worksheet name='New Online Partners (2)'>
+      <layout-options>
+        <title>
+          <formatted-text>
+            <run bold='true' fontalignment='1' fontcolor='#ffffff' fontsize='12'>Total</run>
+          </formatted-text>
+        </title>
+      </layout-options>
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='Consulta SQL personalizada (user_matias_pita)' name='federated.000m52b0vekifd1h73qth0nlcanr' />
+          </datasources>
+          <datasource-dependencies datasource='federated.000m52b0vekifd1h73qth0nlcanr'>
+            <column datatype='string' name='[Account_Source]' role='dimension' type='nominal' />
+            <column caption='Total new' datatype='integer' name='[Calculation_435160334636273664]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='[new_online]+[Winbacks]' />
+            </column>
+            <column caption='Fixed Source' datatype='string' name='[Calculation_435160334640484358]' role='dimension' type='nominal'>
+              <calculation class='tableau' formula='IF [Account_Source] = &quot;IMPORT&quot; THEN &quot;Import&quot;&#13;&#10;ELSEIF [Account_Source] = &quot;Import&quot; THEN &quot;Import&quot;&#13;&#10;ELSEIF [Account_Source] = &quot;Cloned&quot; THEN &quot;Cloned&quot;&#13;&#10;ELSEIF [Account_Source] = &quot;Automated LeadGen&quot; THEN &quot;Automated LeadGen&quot;&#13;&#10;ELSEIF [Account_Source] = &quot;Busqueda Propia&quot; THEN &quot;Own Research&quot;&#13;&#10;ELSEIF [Account_Source] = &quot;Busqueda Propia&quot; THEN &quot;Own Research&quot;&#13;&#10;ELSEIF [Account_Source] = &quot;Own Research&quot; THEN &quot;Own Research&quot;&#13;&#10;ELSEIF [Account_Source] = &quot;Self Sign Up&quot; THEN &quot;Self Sign Up&quot;&#13;&#10;ELSEIF [Account_Source] = &quot;Other&quot; THEN &quot;Other&quot;&#13;&#10;ELSEIF [Account_Source] = &quot;Inbound&quot; THEN &quot;Inbound&quot;&#13;&#10;ELSE &quot;Other&quot;&#13;&#10;END' />
+            </column>
+            <column caption='Vertical' datatype='string' name='[Calculation_435160334646165511]' role='dimension' type='nominal'>
+              <calculation class='tableau' formula='IF [business_type_name] = &quot;Coffee&quot; THEN &quot;Food&quot;&#13;&#10;ELSEIF  [business_type_name] = &quot;Restaurant&quot; THEN &quot;Food&quot;&#13;&#10;ELSEIF [business_type_name] = &quot;Courier&quot; THEN &quot;Courier&quot;&#13;&#10;ELSEIF [business_type_name] = &quot;Courier Business&quot; THEN &quot;Courier&quot;&#13;&#10;ELSE &quot;Local Stores&quot;&#13;&#10;END' />
+            </column>
+            <column datatype='integer' name='[Winbacks]' role='measure' type='quantitative' />
+            <column datatype='string' name='[business_type_name]' role='dimension' type='nominal' />
+            <column datatype='string' name='[country_name]' role='dimension' semantic-role='[Country].[ISO3166_2]' type='nominal' />
+            <column datatype='date' name='[dim_month]' role='dimension' type='ordinal' />
+            <column datatype='integer' name='[new_online]' role='measure' type='quantitative' />
+            <column-instance column='[Calculation_435160334640484358]' derivation='None' name='[none:Calculation_435160334640484358:nk]' pivot='key' type='nominal' />
+            <column-instance column='[Calculation_435160334646165511]' derivation='None' name='[none:Calculation_435160334646165511:nk]' pivot='key' type='nominal' />
+            <column-instance column='[business_type_name]' derivation='None' name='[none:business_type_name:nk]' pivot='key' type='nominal' />
+            <column-instance column='[country_name]' derivation='None' name='[none:country_name:nk]' pivot='key' type='nominal' />
+            <column-instance column='[dim_month]' derivation='None' name='[none:dim_month:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[Calculation_435160334636273664]' derivation='Sum' name='[pcto:sum:Calculation_435160334636273664:qk:2]' pivot='key' type='quantitative'>
+              <table-calc ordering-type='Columns' type='PctTotal' />
+            </column-instance>
+            <column-instance column='[Calculation_435160334636273664]' derivation='Sum' name='[sum:Calculation_435160334636273664:qk]' pivot='key' type='quantitative' />
+          </datasource-dependencies>
+          <filter class='categorical' column='[federated.000m52b0vekifd1h73qth0nlcanr].[none:Calculation_435160334640484358:nk]' filter-group='4'>
+            <groupfilter function='level-members' level='[none:Calculation_435160334640484358:nk]' user:ui-enumeration='all' user:ui-marker='enumerate' />
+          </filter>
+          <filter class='categorical' column='[federated.000m52b0vekifd1h73qth0nlcanr].[none:Calculation_435160334646165511:nk]' filter-group='6'>
+            <groupfilter function='union' user:ui-domain='relevant' user:ui-enumeration='inclusive' user:ui-marker='enumerate'>
+              <groupfilter function='member' level='[none:Calculation_435160334646165511:nk]' member='&quot;Food&quot;' />
+              <groupfilter function='member' level='[none:Calculation_435160334646165511:nk]' member='&quot;Local Stores&quot;' />
+            </groupfilter>
+          </filter>
+          <computed-sort column='[federated.000m52b0vekifd1h73qth0nlcanr].[none:Calculation_435160334646165511:nk]' direction='ASC' using='[federated.000m52b0vekifd1h73qth0nlcanr].[sum:Calculation_435160334636273664:qk]' />
+          <filter class='categorical' column='[federated.000m52b0vekifd1h73qth0nlcanr].[none:business_type_name:nk]' filter-group='5'>
+            <groupfilter function='level-members' level='[none:business_type_name:nk]' user:ui-enumeration='all' user:ui-marker='enumerate' />
+          </filter>
+          <filter class='categorical' column='[federated.000m52b0vekifd1h73qth0nlcanr].[none:country_name:nk]' filter-group='7'>
+            <groupfilter function='level-members' level='[none:country_name:nk]' user:ui-enumeration='all' user:ui-marker='enumerate' />
+          </filter>
+          <filter class='relative-date' column='[federated.000m52b0vekifd1h73qth0nlcanr].[none:dim_month:qk]' filter-group='3' first-period='-5' include-future='true' include-null='false' last-period='0' period-type-v2='month' />
+          <filter class='quantitative' column='[federated.000m52b0vekifd1h73qth0nlcanr].[sum:Calculation_435160334636273664:qk]' included-values='non-null' />
+          <slices>
+            <column>[federated.000m52b0vekifd1h73qth0nlcanr].[none:dim_month:qk]</column>
+            <column>[federated.000m52b0vekifd1h73qth0nlcanr].[none:Calculation_435160334640484358:nk]</column>
+            <column>[federated.000m52b0vekifd1h73qth0nlcanr].[none:business_type_name:nk]</column>
+            <column>[federated.000m52b0vekifd1h73qth0nlcanr].[none:country_name:nk]</column>
+            <column>[federated.000m52b0vekifd1h73qth0nlcanr].[sum:Calculation_435160334636273664:qk]</column>
+            <column>[federated.000m52b0vekifd1h73qth0nlcanr].[none:Calculation_435160334646165511:nk]</column>
+          </slices>
+          <aggregation value='true' />
+        </view>
+        <style>
+          <style-rule element='axis'>
+            <encoding attr='space' class='1' field='[federated.000m52b0vekifd1h73qth0nlcanr].[sum:Calculation_435160334636273664:qk]' field-type='quantitative' fold='true' scope='rows' synchronized='true' type='space' />
+            <format attr='display' class='0' field='[federated.000m52b0vekifd1h73qth0nlcanr].[sum:Calculation_435160334636273664:qk]' scope='rows' value='false' />
+            <format attr='display' class='1' field='[federated.000m52b0vekifd1h73qth0nlcanr].[sum:Calculation_435160334636273664:qk]' scope='rows' value='false' />
+            <format attr='display' class='0' field='[federated.000m52b0vekifd1h73qth0nlcanr].[pcto:sum:Calculation_435160334636273664:qk:2]' scope='rows' value='false' />
+            <format attr='display' class='1' field='[federated.000m52b0vekifd1h73qth0nlcanr].[pcto:sum:Calculation_435160334636273664:qk:2]' scope='rows' value='false' />
+          </style-rule>
+          <style-rule element='worksheet'>
+            <format attr='display-field-labels' scope='cols' value='false' />
+          </style-rule>
+          <style-rule element='title'>
+            <format attr='color' value='#fa0050' />
+            <format attr='background-color' value='#fa0050' />
+          </style-rule>
+          <style-rule element='legend'>
+            <format attr='font-size' value='8' />
+          </style-rule>
+          <style-rule element='legend-title'>
+            <format attr='font-size' value='9' />
+          </style-rule>
+        </style>
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Bar' />
+            <style>
+              <style-rule element='mark'>
+                <format attr='mark-labels-cull' value='true' />
+                <format attr='mark-labels-show' value='false' />
+              </style-rule>
+              <style-rule element='pane'>
+                <format attr='minwidth' value='-1' />
+                <format attr='maxwidth' value='-1' />
+              </style-rule>
+            </style>
+          </pane>
+          <pane id='1' selection-relaxation-option='selection-relaxation-allow' y-axis-name='[federated.000m52b0vekifd1h73qth0nlcanr].[sum:Calculation_435160334636273664:qk]'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Bar' />
+            <encodings>
+              <text column='[federated.000m52b0vekifd1h73qth0nlcanr].[sum:Calculation_435160334636273664:qk]' />
+            </encodings>
+            <style>
+              <style-rule element='datalabel'>
+                <format attr='color-mode' value='user' />
+                <format attr='font-weight' value='bold' />
+                <format attr='color' value='#333333' />
+              </style-rule>
+              <style-rule element='mark'>
+                <format attr='mark-labels-cull' value='true' />
+                <format attr='mark-labels-show' value='true' />
+                <format attr='mark-transparency' value='0' />
+              </style-rule>
+            </style>
+          </pane>
+          <pane id='3' selection-relaxation-option='selection-relaxation-allow' y-axis-name='[federated.000m52b0vekifd1h73qth0nlcanr].[sum:Calculation_435160334636273664:qk]' y-index='1'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Bar' />
+            <encodings>
+              <color column='[federated.000m52b0vekifd1h73qth0nlcanr].[none:Calculation_435160334646165511:nk]' />
+              <lod column='[federated.000m52b0vekifd1h73qth0nlcanr].[pcto:sum:Calculation_435160334636273664:qk:2]' />
+            </encodings>
+            <style>
+              <style-rule element='datalabel'>
+                <format attr='color-mode' value='auto' />
+                <format attr='font-weight' value='normal' />
+              </style-rule>
+              <style-rule element='mark'>
+                <format attr='mark-labels-cull' value='true' />
+                <format attr='mark-labels-show' value='false' />
+              </style-rule>
+            </style>
+          </pane>
+        </panes>
+        <rows>([federated.000m52b0vekifd1h73qth0nlcanr].[sum:Calculation_435160334636273664:qk] + [federated.000m52b0vekifd1h73qth0nlcanr].[sum:Calculation_435160334636273664:qk])</rows>
+        <cols />
+      </table>
+      <simple-id uuid='{51080367-3E58-4F1B-B001-F72D17AA6E10}' />
+    </worksheet>
+    <worksheet name='New Online Partners Monthly'>
+      <layout-options>
+        <title>
+          <formatted-text>
+            <run bold='true' fontalignment='1' fontcolor='#ffffff' fontsize='12'>&lt;</run>
+            <run bold='true' fontalignment='1' fontcolor='#ffffff' fontsize='12'>Sheet Name</run>
+            <run bold='true' fontalignment='1' fontcolor='#ffffff' fontsize='12'>&gt;</run>
+          </formatted-text>
+        </title>
+      </layout-options>
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='Consulta SQL personalizada (user_matias_pita)' name='federated.000m52b0vekifd1h73qth0nlcanr' />
+          </datasources>
+          <datasource-dependencies datasource='federated.000m52b0vekifd1h73qth0nlcanr'>
+            <column datatype='string' name='[Account_Source]' role='dimension' type='nominal' />
+            <column caption='Total new' datatype='integer' name='[Calculation_435160334636273664]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='[new_online]+[Winbacks]' />
+            </column>
+            <column caption='Fixed Source' datatype='string' name='[Calculation_435160334640484358]' role='dimension' type='nominal'>
+              <calculation class='tableau' formula='IF [Account_Source] = &quot;IMPORT&quot; THEN &quot;Import&quot;&#13;&#10;ELSEIF [Account_Source] = &quot;Import&quot; THEN &quot;Import&quot;&#13;&#10;ELSEIF [Account_Source] = &quot;Cloned&quot; THEN &quot;Cloned&quot;&#13;&#10;ELSEIF [Account_Source] = &quot;Automated LeadGen&quot; THEN &quot;Automated LeadGen&quot;&#13;&#10;ELSEIF [Account_Source] = &quot;Busqueda Propia&quot; THEN &quot;Own Research&quot;&#13;&#10;ELSEIF [Account_Source] = &quot;Busqueda Propia&quot; THEN &quot;Own Research&quot;&#13;&#10;ELSEIF [Account_Source] = &quot;Own Research&quot; THEN &quot;Own Research&quot;&#13;&#10;ELSEIF [Account_Source] = &quot;Self Sign Up&quot; THEN &quot;Self Sign Up&quot;&#13;&#10;ELSEIF [Account_Source] = &quot;Other&quot; THEN &quot;Other&quot;&#13;&#10;ELSEIF [Account_Source] = &quot;Inbound&quot; THEN &quot;Inbound&quot;&#13;&#10;ELSE &quot;Other&quot;&#13;&#10;END' />
+            </column>
+            <column caption='Vertical' datatype='string' name='[Calculation_435160334646165511]' role='dimension' type='nominal'>
+              <calculation class='tableau' formula='IF [business_type_name] = &quot;Coffee&quot; THEN &quot;Food&quot;&#13;&#10;ELSEIF  [business_type_name] = &quot;Restaurant&quot; THEN &quot;Food&quot;&#13;&#10;ELSEIF [business_type_name] = &quot;Courier&quot; THEN &quot;Courier&quot;&#13;&#10;ELSEIF [business_type_name] = &quot;Courier Business&quot; THEN &quot;Courier&quot;&#13;&#10;ELSE &quot;Local Stores&quot;&#13;&#10;END' />
+            </column>
+            <column datatype='integer' name='[Winbacks]' role='measure' type='quantitative' />
+            <column datatype='string' name='[business_type_name]' role='dimension' type='nominal' />
+            <column datatype='string' name='[country_name]' role='dimension' semantic-role='[Country].[ISO3166_2]' type='nominal' />
+            <column datatype='date' name='[dim_month]' role='dimension' type='ordinal' />
+            <column datatype='integer' name='[new_online]' role='measure' type='quantitative' />
+            <column-instance column='[Calculation_435160334640484358]' derivation='None' name='[none:Calculation_435160334640484358:nk]' pivot='key' type='nominal' />
+            <column-instance column='[Calculation_435160334646165511]' derivation='None' name='[none:Calculation_435160334646165511:nk]' pivot='key' type='nominal' />
+            <column-instance column='[business_type_name]' derivation='None' name='[none:business_type_name:nk]' pivot='key' type='nominal' />
+            <column-instance column='[country_name]' derivation='None' name='[none:country_name:nk]' pivot='key' type='nominal' />
+            <column-instance column='[dim_month]' derivation='None' name='[none:dim_month:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[Calculation_435160334636273664]' derivation='Sum' name='[pcto:sum:Calculation_435160334636273664:qk:2]' pivot='key' type='quantitative'>
+              <table-calc ordering-type='Columns' type='PctTotal' />
+            </column-instance>
+            <column-instance column='[Calculation_435160334636273664]' derivation='Sum' name='[sum:Calculation_435160334636273664:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[dim_month]' derivation='Month-Trunc' name='[tmn:dim_month:ok]' pivot='key' type='ordinal' />
+          </datasource-dependencies>
+          <filter class='categorical' column='[federated.000m52b0vekifd1h73qth0nlcanr].[none:Calculation_435160334640484358:nk]' filter-group='4'>
+            <groupfilter function='level-members' level='[none:Calculation_435160334640484358:nk]' user:ui-enumeration='all' user:ui-marker='enumerate' />
+          </filter>
+          <filter class='categorical' column='[federated.000m52b0vekifd1h73qth0nlcanr].[none:Calculation_435160334646165511:nk]' filter-group='6'>
+            <groupfilter function='union' user:ui-domain='relevant' user:ui-enumeration='inclusive' user:ui-marker='enumerate'>
+              <groupfilter function='member' level='[none:Calculation_435160334646165511:nk]' member='&quot;Food&quot;' />
+              <groupfilter function='member' level='[none:Calculation_435160334646165511:nk]' member='&quot;Local Stores&quot;' />
+            </groupfilter>
+          </filter>
+          <computed-sort column='[federated.000m52b0vekifd1h73qth0nlcanr].[none:Calculation_435160334646165511:nk]' direction='ASC' using='[federated.000m52b0vekifd1h73qth0nlcanr].[sum:Calculation_435160334636273664:qk]' />
+          <filter class='categorical' column='[federated.000m52b0vekifd1h73qth0nlcanr].[none:business_type_name:nk]' filter-group='5'>
+            <groupfilter function='level-members' level='[none:business_type_name:nk]' user:ui-enumeration='all' user:ui-marker='enumerate' />
+          </filter>
+          <filter class='categorical' column='[federated.000m52b0vekifd1h73qth0nlcanr].[none:country_name:nk]' filter-group='7'>
+            <groupfilter function='level-members' level='[none:country_name:nk]' user:ui-enumeration='all' user:ui-marker='enumerate' />
+          </filter>
+          <filter class='relative-date' column='[federated.000m52b0vekifd1h73qth0nlcanr].[none:dim_month:qk]' filter-group='3' first-period='-5' include-future='true' include-null='false' last-period='0' period-type-v2='month' />
+          <filter class='quantitative' column='[federated.000m52b0vekifd1h73qth0nlcanr].[sum:Calculation_435160334636273664:qk]' included-values='non-null' />
+          <slices>
+            <column>[federated.000m52b0vekifd1h73qth0nlcanr].[none:dim_month:qk]</column>
+            <column>[federated.000m52b0vekifd1h73qth0nlcanr].[none:Calculation_435160334640484358:nk]</column>
+            <column>[federated.000m52b0vekifd1h73qth0nlcanr].[none:business_type_name:nk]</column>
+            <column>[federated.000m52b0vekifd1h73qth0nlcanr].[none:country_name:nk]</column>
+            <column>[federated.000m52b0vekifd1h73qth0nlcanr].[sum:Calculation_435160334636273664:qk]</column>
+            <column>[federated.000m52b0vekifd1h73qth0nlcanr].[none:Calculation_435160334646165511:nk]</column>
+          </slices>
+          <aggregation value='true' />
+        </view>
+        <style>
+          <style-rule element='axis'>
+            <encoding attr='space' class='1' field='[federated.000m52b0vekifd1h73qth0nlcanr].[sum:Calculation_435160334636273664:qk]' field-type='quantitative' fold='true' scope='rows' synchronized='true' type='space' />
+            <format attr='display' class='0' field='[federated.000m52b0vekifd1h73qth0nlcanr].[sum:Calculation_435160334636273664:qk]' scope='rows' value='false' />
+            <format attr='display' class='1' field='[federated.000m52b0vekifd1h73qth0nlcanr].[sum:Calculation_435160334636273664:qk]' scope='rows' value='false' />
+            <format attr='display' class='0' field='[federated.000m52b0vekifd1h73qth0nlcanr].[pcto:sum:Calculation_435160334636273664:qk:2]' scope='rows' value='false' />
+            <format attr='display' class='1' field='[federated.000m52b0vekifd1h73qth0nlcanr].[pcto:sum:Calculation_435160334636273664:qk:2]' scope='rows' value='false' />
+          </style-rule>
+          <style-rule element='cell'>
+            <format attr='width' field='[federated.000m52b0vekifd1h73qth0nlcanr].[tmn:dim_month:ok]' value='67' />
+          </style-rule>
+          <style-rule element='worksheet'>
+            <format attr='display-field-labels' scope='cols' value='false' />
+          </style-rule>
+          <style-rule element='title'>
+            <format attr='color' value='#fa0050' />
+            <format attr='background-color' value='#fa0050' />
+          </style-rule>
+          <style-rule element='legend'>
+            <format attr='font-size' value='8' />
+          </style-rule>
+          <style-rule element='legend-title'>
+            <format attr='font-size' value='9' />
+          </style-rule>
+          <style-rule element='quick-filter'>
+            <format attr='background-color' value='#d4d4d4' />
+          </style-rule>
+          <style-rule element='quick-filter-title'>
+            <format attr='text-align' value='center' />
+          </style-rule>
+        </style>
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Bar' />
+            <style>
+              <style-rule element='mark'>
+                <format attr='mark-labels-cull' value='true' />
+                <format attr='mark-labels-show' value='false' />
+              </style-rule>
+              <style-rule element='pane'>
+                <format attr='minwidth' value='-1' />
+                <format attr='maxwidth' value='-1' />
+              </style-rule>
+            </style>
+          </pane>
+          <pane id='1' selection-relaxation-option='selection-relaxation-allow' y-axis-name='[federated.000m52b0vekifd1h73qth0nlcanr].[sum:Calculation_435160334636273664:qk]'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Bar' />
+            <encodings>
+              <text column='[federated.000m52b0vekifd1h73qth0nlcanr].[sum:Calculation_435160334636273664:qk]' />
+            </encodings>
+            <style>
+              <style-rule element='datalabel'>
+                <format attr='color-mode' value='user' />
+                <format attr='font-weight' value='bold' />
+                <format attr='color' value='#333333' />
+              </style-rule>
+              <style-rule element='mark'>
+                <format attr='mark-labels-cull' value='true' />
+                <format attr='mark-labels-show' value='true' />
+                <format attr='mark-transparency' value='0' />
+              </style-rule>
+            </style>
+          </pane>
+          <pane id='3' selection-relaxation-option='selection-relaxation-allow' y-axis-name='[federated.000m52b0vekifd1h73qth0nlcanr].[sum:Calculation_435160334636273664:qk]' y-index='1'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Bar' />
+            <encodings>
+              <color column='[federated.000m52b0vekifd1h73qth0nlcanr].[none:Calculation_435160334646165511:nk]' />
+              <lod column='[federated.000m52b0vekifd1h73qth0nlcanr].[pcto:sum:Calculation_435160334636273664:qk:2]' />
+            </encodings>
+            <style>
+              <style-rule element='datalabel'>
+                <format attr='color-mode' value='auto' />
+                <format attr='font-weight' value='normal' />
+              </style-rule>
+              <style-rule element='mark'>
+                <format attr='mark-labels-cull' value='true' />
+                <format attr='mark-labels-show' value='false' />
+              </style-rule>
+            </style>
+          </pane>
+        </panes>
+        <rows>([federated.000m52b0vekifd1h73qth0nlcanr].[sum:Calculation_435160334636273664:qk] + [federated.000m52b0vekifd1h73qth0nlcanr].[sum:Calculation_435160334636273664:qk])</rows>
+        <cols>[federated.000m52b0vekifd1h73qth0nlcanr].[tmn:dim_month:ok]</cols>
+      </table>
+      <simple-id uuid='{99B8AABE-6269-43C4-902B-E6B096EE0F7D}' />
+    </worksheet>
+    <worksheet name='Share Total New Online Partner Latam'>
+      <layout-options>
+        <title>
+          <formatted-text>
+            <run bold='true' fontalignment='1' fontcolor='#ffffff' fontsize='12'>&lt;</run>
+            <run bold='true' fontalignment='1' fontcolor='#ffffff' fontsize='12'>Sheet Name</run>
+            <run bold='true' fontalignment='1' fontcolor='#ffffff' fontsize='12'>&gt;</run>
+          </formatted-text>
+        </title>
+      </layout-options>
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='Consulta SQL personalizada (user_matias_pita)' name='federated.000m52b0vekifd1h73qth0nlcanr' />
+          </datasources>
+          <datasource-dependencies datasource='federated.000m52b0vekifd1h73qth0nlcanr'>
+            <column datatype='string' name='[Account_Source]' role='dimension' type='nominal' />
+            <column caption='Fixed total new' datatype='integer' name='[Calculation_112871488407343117]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='{ FIXED [dim_month], [Account_Source], [Calculation_435160334646165511], [business_type_name] : SUM([Calculation_435160334636273664])}' />
+            </column>
+            <column caption='Share' datatype='real' name='[Calculation_112871488407801870]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='SUM([Calculation_435160334636273664]) / SUM([Calculation_112871488407343117])' />
+            </column>
+            <column caption='Total new' datatype='integer' name='[Calculation_435160334636273664]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='[new_online]+[Winbacks]' />
+            </column>
+            <column caption='Fixed Source' datatype='string' name='[Calculation_435160334640484358]' role='dimension' type='nominal'>
+              <calculation class='tableau' formula='IF [Account_Source] = &quot;IMPORT&quot; THEN &quot;Import&quot;&#13;&#10;ELSEIF [Account_Source] = &quot;Import&quot; THEN &quot;Import&quot;&#13;&#10;ELSEIF [Account_Source] = &quot;Cloned&quot; THEN &quot;Cloned&quot;&#13;&#10;ELSEIF [Account_Source] = &quot;Automated LeadGen&quot; THEN &quot;Automated LeadGen&quot;&#13;&#10;ELSEIF [Account_Source] = &quot;Busqueda Propia&quot; THEN &quot;Own Research&quot;&#13;&#10;ELSEIF [Account_Source] = &quot;Busqueda Propia&quot; THEN &quot;Own Research&quot;&#13;&#10;ELSEIF [Account_Source] = &quot;Own Research&quot; THEN &quot;Own Research&quot;&#13;&#10;ELSEIF [Account_Source] = &quot;Self Sign Up&quot; THEN &quot;Self Sign Up&quot;&#13;&#10;ELSEIF [Account_Source] = &quot;Other&quot; THEN &quot;Other&quot;&#13;&#10;ELSEIF [Account_Source] = &quot;Inbound&quot; THEN &quot;Inbound&quot;&#13;&#10;ELSE &quot;Other&quot;&#13;&#10;END' />
+            </column>
+            <column caption='Vertical' datatype='string' name='[Calculation_435160334646165511]' role='dimension' type='nominal'>
+              <calculation class='tableau' formula='IF [business_type_name] = &quot;Coffee&quot; THEN &quot;Food&quot;&#13;&#10;ELSEIF  [business_type_name] = &quot;Restaurant&quot; THEN &quot;Food&quot;&#13;&#10;ELSEIF [business_type_name] = &quot;Courier&quot; THEN &quot;Courier&quot;&#13;&#10;ELSEIF [business_type_name] = &quot;Courier Business&quot; THEN &quot;Courier&quot;&#13;&#10;ELSE &quot;Local Stores&quot;&#13;&#10;END' />
+            </column>
+            <column datatype='integer' name='[Winbacks]' role='measure' type='quantitative' />
+            <column datatype='string' name='[business_type_name]' role='dimension' type='nominal' />
+            <column datatype='string' name='[country_name]' role='dimension' semantic-role='[Country].[ISO3166_2]' type='nominal' />
+            <column datatype='date' name='[dim_month]' role='dimension' type='ordinal' />
+            <column datatype='integer' name='[new_online]' role='measure' type='quantitative' />
+            <column-instance column='[Calculation_435160334640484358]' derivation='None' name='[none:Calculation_435160334640484358:nk]' pivot='key' type='nominal' />
+            <column-instance column='[Calculation_435160334646165511]' derivation='None' name='[none:Calculation_435160334646165511:nk]' pivot='key' type='nominal' />
+            <column-instance column='[business_type_name]' derivation='None' name='[none:business_type_name:nk]' pivot='key' type='nominal' />
+            <column-instance column='[country_name]' derivation='None' name='[none:country_name:nk]' pivot='key' type='nominal' />
+            <column-instance column='[dim_month]' derivation='None' name='[none:dim_month:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[Calculation_435160334636273664]' derivation='Sum' name='[sum:Calculation_435160334636273664:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[dim_month]' derivation='Month-Trunc' name='[tmn:dim_month:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[Calculation_112871488407801870]' derivation='User' name='[usr:Calculation_112871488407801870:qk]' pivot='key' type='quantitative' />
+          </datasource-dependencies>
+          <filter class='categorical' column='[federated.000m52b0vekifd1h73qth0nlcanr].[none:Calculation_435160334640484358:nk]' filter-group='4'>
+            <groupfilter function='level-members' level='[none:Calculation_435160334640484358:nk]' user:ui-enumeration='all' user:ui-marker='enumerate' />
+          </filter>
+          <filter class='categorical' column='[federated.000m52b0vekifd1h73qth0nlcanr].[none:Calculation_435160334646165511:nk]' filter-group='6'>
+            <groupfilter function='union' user:ui-domain='relevant' user:ui-enumeration='inclusive' user:ui-marker='enumerate'>
+              <groupfilter function='member' level='[none:Calculation_435160334646165511:nk]' member='&quot;Food&quot;' />
+              <groupfilter function='member' level='[none:Calculation_435160334646165511:nk]' member='&quot;Local Stores&quot;' />
+            </groupfilter>
+          </filter>
+          <filter class='categorical' column='[federated.000m52b0vekifd1h73qth0nlcanr].[none:business_type_name:nk]' filter-group='5'>
+            <groupfilter function='level-members' level='[none:business_type_name:nk]' user:ui-enumeration='all' user:ui-marker='enumerate' />
+          </filter>
+          <filter class='categorical' column='[federated.000m52b0vekifd1h73qth0nlcanr].[none:country_name:nk]' filter-group='7'>
+            <groupfilter function='level-members' level='[none:country_name:nk]' user:ui-enumeration='all' user:ui-marker='enumerate' />
+          </filter>
+          <manual-sort column='[federated.000m52b0vekifd1h73qth0nlcanr].[none:country_name:nk]' direction='ASC'>
+            <dictionary>
+              <bucket>&quot;Panamá&quot;</bucket>
+              <bucket>&quot;Honduras&quot;</bucket>
+              <bucket>&quot;Uruguay&quot;</bucket>
+              <bucket>&quot;Nicaragua&quot;</bucket>
+              <bucket>&quot;República Dominicana&quot;</bucket>
+              <bucket>&quot;El Salvador&quot;</bucket>
+              <bucket>&quot;Costa Rica&quot;</bucket>
+              <bucket>&quot;Venezuela&quot;</bucket>
+              <bucket>&quot;Guatemala&quot;</bucket>
+              <bucket>&quot;Paraguay&quot;</bucket>
+              <bucket>&quot;Ecuador&quot;</bucket>
+              <bucket>&quot;Perú&quot;</bucket>
+              <bucket>&quot;Bolivia&quot;</bucket>
+              <bucket>&quot;Chile&quot;</bucket>
+              <bucket>&quot;Argentina&quot;</bucket>
+            </dictionary>
+          </manual-sort>
+          <filter class='relative-date' column='[federated.000m52b0vekifd1h73qth0nlcanr].[none:dim_month:qk]' filter-group='3' first-period='-5' include-future='true' include-null='false' last-period='0' period-type-v2='month' />
+          <filter class='quantitative' column='[federated.000m52b0vekifd1h73qth0nlcanr].[usr:Calculation_112871488407801870:qk]' included-values='non-null' />
+          <slices>
+            <column>[federated.000m52b0vekifd1h73qth0nlcanr].[none:dim_month:qk]</column>
+            <column>[federated.000m52b0vekifd1h73qth0nlcanr].[none:Calculation_435160334640484358:nk]</column>
+            <column>[federated.000m52b0vekifd1h73qth0nlcanr].[none:business_type_name:nk]</column>
+            <column>[federated.000m52b0vekifd1h73qth0nlcanr].[none:country_name:nk]</column>
+            <column>[federated.000m52b0vekifd1h73qth0nlcanr].[usr:Calculation_112871488407801870:qk]</column>
+            <column>[federated.000m52b0vekifd1h73qth0nlcanr].[none:Calculation_435160334646165511:nk]</column>
+          </slices>
+          <aggregation value='true' />
+        </view>
+        <style>
+          <style-rule element='axis'>
+            <format attr='title' class='0' field='[federated.000m52b0vekifd1h73qth0nlcanr].[tmn:dim_month:qk]' scope='cols' value='' />
+            <format attr='display' class='0' field='[federated.000m52b0vekifd1h73qth0nlcanr].[usr:Calculation_112871488407801870:qk]' scope='rows' value='false' />
+          </style-rule>
+          <style-rule element='cell'>
+            <format attr='text-format' field='[federated.000m52b0vekifd1h73qth0nlcanr].[usr:Calculation_112871488407801870:qk]' value='p0.0%' />
+          </style-rule>
+          <style-rule element='worksheet'>
+            <format attr='display-field-labels' scope='cols' value='false' />
+          </style-rule>
+          <style-rule element='title'>
+            <format attr='background-color' value='#fa0050' />
+          </style-rule>
+          <style-rule element='legend'>
+            <format attr='font-size' value='8' />
+            <format attr='font-style' value='normal' />
+          </style-rule>
+          <style-rule element='legend-title'>
+            <format attr='font-size' value='8' />
+          </style-rule>
+          <style-rule element='quick-filter'>
+            <format attr='title' field='[federated.000m52b0vekifd1h73qth0nlcanr].[none:Calculation_435160334640484358:nk]' value='Account Source' />
+            <format attr='background-color' value='#d4d4d4' />
+            <format attr='title' field='[federated.000m52b0vekifd1h73qth0nlcanr].[none:business_type_name:nk]' value='Business Type'>
+              <formatted-text>
+                <run>Business Type</run>
+              </formatted-text>
+            </format>
+            <format attr='title' field='[federated.000m52b0vekifd1h73qth0nlcanr].[none:dim_month:qk]' value='Month'>
+              <formatted-text>
+                <run>Month</run>
+              </formatted-text>
+            </format>
+            <format attr='title' field='[federated.000m52b0vekifd1h73qth0nlcanr].[none:country_name:nk]' value='Country'>
+              <formatted-text>
+                <run>Country</run>
+              </formatted-text>
+            </format>
+          </style-rule>
+          <style-rule element='quick-filter-title'>
+            <format attr='color' value='#333333' />
+            <format attr='text-align' value='center' />
+          </style-rule>
+        </style>
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Automatic' />
+            <encodings>
+              <color column='[federated.000m52b0vekifd1h73qth0nlcanr].[none:country_name:nk]' />
+              <tooltip column='[federated.000m52b0vekifd1h73qth0nlcanr].[sum:Calculation_435160334636273664:qk]' />
+            </encodings>
+            <style>
+              <style-rule element='datalabel'>
+                <format attr='color-mode' value='user' />
+                <format attr='font-size' value='5' />
+                <format attr='color' value='#333333' />
+              </style-rule>
+              <style-rule element='mark'>
+                <format attr='mark-labels-show' value='true' />
+                <format attr='mark-labels-cull' value='true' />
+              </style-rule>
+            </style>
+          </pane>
+        </panes>
+        <rows>[federated.000m52b0vekifd1h73qth0nlcanr].[usr:Calculation_112871488407801870:qk]</rows>
+        <cols>[federated.000m52b0vekifd1h73qth0nlcanr].[tmn:dim_month:qk]</cols>
+      </table>
+      <simple-id uuid='{EE04AF6E-11BD-4BF2-80AE-5F20613456B7}' />
+    </worksheet>
+    <worksheet name='Vertical Share'>
+      <layout-options>
+        <title>
+          <formatted-text>
+            <run bold='true' fontalignment='1' fontcolor='#ffffff' fontsize='12'>&lt;</run>
+            <run bold='true' fontalignment='1' fontcolor='#ffffff' fontsize='12'>Sheet Name</run>
+            <run bold='true' fontalignment='1' fontcolor='#ffffff' fontsize='12'>&gt;</run>
+          </formatted-text>
+        </title>
+      </layout-options>
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='Consulta SQL personalizada (user_matias_pita)' name='federated.000m52b0vekifd1h73qth0nlcanr' />
+          </datasources>
+          <datasource-dependencies datasource='federated.000m52b0vekifd1h73qth0nlcanr'>
+            <column datatype='string' name='[Account_Source]' role='dimension' type='nominal' />
+            <column caption='Total new' datatype='integer' name='[Calculation_435160334636273664]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='[new_online]+[Winbacks]' />
+            </column>
+            <column caption='Fixed Source' datatype='string' name='[Calculation_435160334640484358]' role='dimension' type='nominal'>
+              <calculation class='tableau' formula='IF [Account_Source] = &quot;IMPORT&quot; THEN &quot;Import&quot;&#13;&#10;ELSEIF [Account_Source] = &quot;Import&quot; THEN &quot;Import&quot;&#13;&#10;ELSEIF [Account_Source] = &quot;Cloned&quot; THEN &quot;Cloned&quot;&#13;&#10;ELSEIF [Account_Source] = &quot;Automated LeadGen&quot; THEN &quot;Automated LeadGen&quot;&#13;&#10;ELSEIF [Account_Source] = &quot;Busqueda Propia&quot; THEN &quot;Own Research&quot;&#13;&#10;ELSEIF [Account_Source] = &quot;Busqueda Propia&quot; THEN &quot;Own Research&quot;&#13;&#10;ELSEIF [Account_Source] = &quot;Own Research&quot; THEN &quot;Own Research&quot;&#13;&#10;ELSEIF [Account_Source] = &quot;Self Sign Up&quot; THEN &quot;Self Sign Up&quot;&#13;&#10;ELSEIF [Account_Source] = &quot;Other&quot; THEN &quot;Other&quot;&#13;&#10;ELSEIF [Account_Source] = &quot;Inbound&quot; THEN &quot;Inbound&quot;&#13;&#10;ELSE &quot;Other&quot;&#13;&#10;END' />
+            </column>
+            <column caption='Vertical' datatype='string' name='[Calculation_435160334646165511]' role='dimension' type='nominal'>
+              <calculation class='tableau' formula='IF [business_type_name] = &quot;Coffee&quot; THEN &quot;Food&quot;&#13;&#10;ELSEIF  [business_type_name] = &quot;Restaurant&quot; THEN &quot;Food&quot;&#13;&#10;ELSEIF [business_type_name] = &quot;Courier&quot; THEN &quot;Courier&quot;&#13;&#10;ELSEIF [business_type_name] = &quot;Courier Business&quot; THEN &quot;Courier&quot;&#13;&#10;ELSE &quot;Local Stores&quot;&#13;&#10;END' />
+            </column>
+            <column datatype='integer' name='[Winbacks]' role='measure' type='quantitative' />
+            <column datatype='string' name='[business_type_name]' role='dimension' type='nominal' />
+            <column datatype='string' name='[country_name]' role='dimension' semantic-role='[Country].[ISO3166_2]' type='nominal' />
+            <column datatype='date' name='[dim_month]' role='dimension' type='ordinal' />
+            <column-instance column='[dim_month]' derivation='Month' name='[mn:dim_month:ok]' pivot='key' type='ordinal' />
+            <column datatype='integer' name='[new_online]' role='measure' type='quantitative' />
+            <column-instance column='[Calculation_435160334640484358]' derivation='None' name='[none:Calculation_435160334640484358:nk]' pivot='key' type='nominal' />
+            <column-instance column='[Calculation_435160334646165511]' derivation='None' name='[none:Calculation_435160334646165511:nk]' pivot='key' type='nominal' />
+            <column-instance column='[business_type_name]' derivation='None' name='[none:business_type_name:nk]' pivot='key' type='nominal' />
+            <column-instance column='[country_name]' derivation='None' name='[none:country_name:nk]' pivot='key' type='nominal' />
+            <column-instance column='[dim_month]' derivation='None' name='[none:dim_month:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[Calculation_435160334636273664]' derivation='Sum' name='[pcto:sum:Calculation_435160334636273664:qk:3]' pivot='key' type='quantitative'>
+              <table-calc ordering-field='[federated.000m52b0vekifd1h73qth0nlcanr].[none:Calculation_435160334646165511:nk]' ordering-type='Field' type='PctTotal' />
+            </column-instance>
+            <column-instance column='[Calculation_435160334636273664]' derivation='Sum' name='[sum:Calculation_435160334636273664:qk]' pivot='key' type='quantitative' />
+          </datasource-dependencies>
+          <filter class='categorical' column='[federated.000m52b0vekifd1h73qth0nlcanr].[none:Calculation_435160334640484358:nk]' filter-group='4'>
+            <groupfilter function='level-members' level='[none:Calculation_435160334640484358:nk]' user:ui-enumeration='all' user:ui-marker='enumerate' />
+          </filter>
+          <filter class='categorical' column='[federated.000m52b0vekifd1h73qth0nlcanr].[none:Calculation_435160334646165511:nk]' filter-group='6'>
+            <groupfilter function='union' user:ui-domain='relevant' user:ui-enumeration='inclusive' user:ui-marker='enumerate'>
+              <groupfilter function='member' level='[none:Calculation_435160334646165511:nk]' member='&quot;Food&quot;' />
+              <groupfilter function='member' level='[none:Calculation_435160334646165511:nk]' member='&quot;Local Stores&quot;' />
+            </groupfilter>
+          </filter>
+          <computed-sort column='[federated.000m52b0vekifd1h73qth0nlcanr].[none:Calculation_435160334646165511:nk]' direction='ASC' using='[federated.000m52b0vekifd1h73qth0nlcanr].[sum:Calculation_435160334636273664:qk]' />
+          <filter class='categorical' column='[federated.000m52b0vekifd1h73qth0nlcanr].[none:business_type_name:nk]' filter-group='5'>
+            <groupfilter function='level-members' level='[none:business_type_name:nk]' user:ui-enumeration='all' user:ui-marker='enumerate' />
+          </filter>
+          <filter class='categorical' column='[federated.000m52b0vekifd1h73qth0nlcanr].[none:country_name:nk]' filter-group='7'>
+            <groupfilter function='level-members' level='[none:country_name:nk]' user:ui-enumeration='all' user:ui-marker='enumerate' />
+          </filter>
+          <filter class='relative-date' column='[federated.000m52b0vekifd1h73qth0nlcanr].[none:dim_month:qk]' filter-group='3' first-period='-5' include-future='true' include-null='false' last-period='0' period-type-v2='month' />
+          <filter class='quantitative' column='[federated.000m52b0vekifd1h73qth0nlcanr].[pcto:sum:Calculation_435160334636273664:qk:3]' included-values='non-null' />
+          <slices>
+            <column>[federated.000m52b0vekifd1h73qth0nlcanr].[none:business_type_name:nk]</column>
+            <column>[federated.000m52b0vekifd1h73qth0nlcanr].[none:dim_month:qk]</column>
+            <column>[federated.000m52b0vekifd1h73qth0nlcanr].[none:Calculation_435160334640484358:nk]</column>
+            <column>[federated.000m52b0vekifd1h73qth0nlcanr].[none:country_name:nk]</column>
+            <column>[federated.000m52b0vekifd1h73qth0nlcanr].[pcto:sum:Calculation_435160334636273664:qk:3]</column>
+            <column>[federated.000m52b0vekifd1h73qth0nlcanr].[none:Calculation_435160334646165511:nk]</column>
+          </slices>
+          <aggregation value='true' />
+        </view>
+        <style>
+          <style-rule element='axis'>
+            <format attr='display' class='0' field='[federated.000m52b0vekifd1h73qth0nlcanr].[pcto:sum:Calculation_435160334636273664:qk:3]' scope='rows' value='false' />
+          </style-rule>
+          <style-rule element='worksheet'>
+            <format attr='display-field-labels' scope='cols' value='false' />
+          </style-rule>
+          <style-rule element='title'>
+            <format attr='background-color' value='#fa0050' />
+          </style-rule>
+        </style>
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Bar' />
+            <encodings>
+              <color column='[federated.000m52b0vekifd1h73qth0nlcanr].[none:Calculation_435160334646165511:nk]' />
+              <tooltip column='[federated.000m52b0vekifd1h73qth0nlcanr].[sum:Calculation_435160334636273664:qk]' />
+            </encodings>
+            <style>
+              <style-rule element='datalabel'>
+                <format attr='color-mode' value='user' />
+                <format attr='font-size' value='5' />
+                <format attr='color' value='#333333' />
+              </style-rule>
+              <style-rule element='mark'>
+                <format attr='mark-labels-show' value='true' />
+                <format attr='mark-labels-cull' value='true' />
+              </style-rule>
+            </style>
+          </pane>
+        </panes>
+        <rows>[federated.000m52b0vekifd1h73qth0nlcanr].[pcto:sum:Calculation_435160334636273664:qk:3]</rows>
+        <cols>[federated.000m52b0vekifd1h73qth0nlcanr].[mn:dim_month:ok]</cols>
+      </table>
+      <simple-id uuid='{93C9F4FD-7D00-424C-A67D-F92292A3357E}' />
+    </worksheet>
+  </worksheets>
+  <dashboards>
+    <dashboard name='Acquisition Performance'>
+      <layout-options>
+        <title>
+          <formatted-text>
+            <run>Acquisition Performance</run>
+          </formatted-text>
+        </title>
+      </layout-options>
+      <repository-location derived-from='http://ip-172-31-0-72:8062/t/Pedidosya/workbooks/PartnerAcquisitionPerformance/AcquisitionPerformance?rev=' id='AcquisitionPerformance' path='/t/Pedidosya/workbooks/PartnerAcquisitionPerformance' revision='' site='Pedidosya' />
+      <style>
+        <style-rule element='table'>
+          <format attr='background-color' value='#00000000' />
+        </style-rule>
+        <style-rule element='dash-title'>
+          <format attr='color' value='#ffffff' />
+          <format attr='font-weight' value='bold' />
+          <format attr='text-align' value='center' />
+          <format attr='border-color' value='#fa0050' />
+          <format attr='border-width' value='0' />
+          <format attr='border-style' value='none' />
+          <format attr='background-color' value='#fa0050' />
+        </style-rule>
+        <style-rule element='dash-text'>
+          <format attr='text-align' id='dash-text_27' value='center' />
+          <format attr='vertical-align' id='dash-text_27' value='center' />
+          <format attr='text-align' id='dash-text_53' value='center' />
+          <format attr='vertical-align' id='dash-text_53' value='center' />
+          <format attr='text-orientation' id='dash-text_53' value='0' />
+          <format attr='wrap' id='dash-text_53' value='on' />
+        </style-rule>
+      </style>
+      <size maxheight='2200' maxwidth='1000' minheight='2200' minwidth='1000' sizing-mode='fixed' />
+      <datasources>
+        <datasource caption='Consulta SQL personalizada (user_matias_pita)' name='federated.000m52b0vekifd1h73qth0nlcanr' />
+      </datasources>
+      <datasource-dependencies datasource='federated.000m52b0vekifd1h73qth0nlcanr'>
+        <column caption='Fixed Source' datatype='string' name='[Calculation_435160334640484358]' role='dimension' type='nominal'>
+          <calculation class='tableau' formula='IF [Account_Source] = &quot;IMPORT&quot; THEN &quot;Import&quot;&#13;&#10;ELSEIF [Account_Source] = &quot;Import&quot; THEN &quot;Import&quot;&#13;&#10;ELSEIF [Account_Source] = &quot;Cloned&quot; THEN &quot;Cloned&quot;&#13;&#10;ELSEIF [Account_Source] = &quot;Automated LeadGen&quot; THEN &quot;Automated LeadGen&quot;&#13;&#10;ELSEIF [Account_Source] = &quot;Busqueda Propia&quot; THEN &quot;Own Research&quot;&#13;&#10;ELSEIF [Account_Source] = &quot;Busqueda Propia&quot; THEN &quot;Own Research&quot;&#13;&#10;ELSEIF [Account_Source] = &quot;Own Research&quot; THEN &quot;Own Research&quot;&#13;&#10;ELSEIF [Account_Source] = &quot;Self Sign Up&quot; THEN &quot;Self Sign Up&quot;&#13;&#10;ELSEIF [Account_Source] = &quot;Other&quot; THEN &quot;Other&quot;&#13;&#10;ELSEIF [Account_Source] = &quot;Inbound&quot; THEN &quot;Inbound&quot;&#13;&#10;ELSE &quot;Other&quot;&#13;&#10;END' />
+        </column>
+        <column caption='Vertical' datatype='string' name='[Calculation_435160334646165511]' role='dimension' type='nominal'>
+          <calculation class='tableau' formula='IF [business_type_name] = &quot;Coffee&quot; THEN &quot;Food&quot;&#13;&#10;ELSEIF  [business_type_name] = &quot;Restaurant&quot; THEN &quot;Food&quot;&#13;&#10;ELSEIF [business_type_name] = &quot;Courier&quot; THEN &quot;Courier&quot;&#13;&#10;ELSEIF [business_type_name] = &quot;Courier Business&quot; THEN &quot;Courier&quot;&#13;&#10;ELSE &quot;Local Stores&quot;&#13;&#10;END' />
+        </column>
+        <column datatype='string' name='[business_type_name]' role='dimension' type='nominal' />
+        <column datatype='string' name='[country_name]' role='dimension' semantic-role='[Country].[ISO3166_2]' type='nominal' />
+        <column datatype='date' name='[dim_month]' role='dimension' type='ordinal' />
+        <column-instance column='[Calculation_435160334640484358]' derivation='None' name='[none:Calculation_435160334640484358:nk]' pivot='key' type='nominal' />
+        <column-instance column='[Calculation_435160334646165511]' derivation='None' name='[none:Calculation_435160334646165511:nk]' pivot='key' type='nominal' />
+        <column-instance column='[business_type_name]' derivation='None' name='[none:business_type_name:nk]' pivot='key' type='nominal' />
+        <column-instance column='[country_name]' derivation='None' name='[none:country_name:nk]' pivot='key' type='nominal' />
+        <column-instance column='[dim_month]' derivation='None' name='[none:dim_month:qk]' pivot='key' type='quantitative' />
+      </datasource-dependencies>
+      <zones>
+        <zone h='100000' id='4' type-v2='layout-basic' w='100000' x='0' y='0'>
+          <zone h='99272' id='44' param='vert' type-v2='layout-flow' w='98400' x='800' y='364'>
+            <zone fixed-size='66' h='3364' id='45' is-fixed='true' type-v2='title' w='98400' x='800' y='364'>
+              <zone-style>
+                <format attr='border-color' value='#000000' />
+                <format attr='border-style' value='none' />
+                <format attr='border-width' value='0' />
+                <format attr='margin' value='4' />
+              </zone-style>
+            </zone>
+            <zone h='95908' id='42' param='vert' type-v2='layout-flow' w='98400' x='800' y='3728'>
+              <zone h='95908' id='19' param='horz' type-v2='layout-flow' w='98400' x='800' y='3728'>
+                <zone h='95908' id='17' type-v2='layout-basic' w='98400' x='800' y='3728'>
+                  <zone h='95908' id='24' type-v2='empty' w='98400' x='800' y='3728'>
+                    <zone-style>
+                      <format attr='border-color' value='#000000' />
+                      <format attr='border-style' value='none' />
+                      <format attr='border-width' value='0' />
+                      <format attr='margin' value='4' />
+                    </zone-style>
+                  </zone>
+                </zone>
+              </zone>
+            </zone>
+          </zone>
+          <zone-style>
+            <format attr='border-color' value='#000000' />
+            <format attr='border-style' value='none' />
+            <format attr='border-width' value='0' />
+            <format attr='margin' value='8' />
+          </zone-style>
+        </zone>
+        <zone h='4773' id='53' type-v2='empty' w='97300' x='1200' y='3682'>
+          <zone-style>
+            <format attr='border-color' value='#000000' />
+            <format attr='border-style' value='none' />
+            <format attr='border-width' value='0' />
+            <format attr='background-color' value='#e6e6e6' />
+          </zone-style>
+        </zone>
+        <zone h='11500' id='25' name='New Online Partners Monthly' w='75400' x='3700' y='8636' />
+        <zone h='909' id='26' leg-item-layout='horz' name='New Online Partners Monthly' pane-specification-id='3' param='[federated.000m52b0vekifd1h73qth0nlcanr].[none:Calculation_435160334646165511:nk]' type-v2='color' w='81300' x='5400' y='19818' />
+        <zone h='17227' id='27' name='Share Total New Online Partner Latam' w='93200' x='4100' y='21000' />
+        <zone h='2591' id='28' mode='checkdropdown' name='Share Total New Online Partner Latam' param='[federated.000m52b0vekifd1h73qth0nlcanr].[none:country_name:nk]' type-v2='filter' w='17800' x='19100' y='4682' />
+        <zone h='2500' id='29' mode='checkdropdown' name='Share Total New Online Partner Latam' param='[federated.000m52b0vekifd1h73qth0nlcanr].[none:business_type_name:nk]' type-v2='filter' w='22200' x='56800' y='4636' />
+        <zone h='2500' id='30' mode='checkdropdown' name='Share Total New Online Partner Latam' param='[federated.000m52b0vekifd1h73qth0nlcanr].[none:Calculation_435160334640484358:nk]' type-v2='filter' w='15600' x='81000' y='4636' />
+        <zone h='2636' id='31' name='Share Total New Online Partner Latam' param='[federated.000m52b0vekifd1h73qth0nlcanr].[none:dim_month:qk]' show-domain='false' show-null-ctrls='false' show-reldate-picker='false' type-v2='filter' w='15800' x='1700' y='4682' />
+        <zone h='1045' id='32' name='Share Total New Online Partner Latam' pane-specification-id='0' param='[federated.000m52b0vekifd1h73qth0nlcanr].[none:country_name:nk]' type-v2='color' w='91600' x='4900' y='38636' />
+        <zone h='14091' id='33' name='Business Share' w='45400' x='52200' y='40318' />
+        <zone h='14000' id='35' name='Vertical Share' w='47400' x='3900' y='40318' />
+        <zone h='12864' id='36' name='Account Source Share' w='93700' x='3800' y='55000' />
+        <zone h='1182' id='37' name='Account Source Share' pane-specification-id='0' param='[federated.000m52b0vekifd1h73qth0nlcanr].[none:Calculation_435160334640484358:nk]' type-v2='color' w='90600' x='5100' y='68500' />
+        <zone h='12682' id='38' name='New Online Partner' w='91300' x='5200' y='70136' />
+        <zone h='2909' id='39' name='Data up to' w='9200' x='1700' y='591' />
+        <zone h='2318' id='46' is-scaled='1' param='Image/logo_peya.png' type-v2='bitmap' w='20400' x='77900' y='955' />
+        <zone h='11091' id='51' name='New Online Partners (2)' w='16900' x='80400' y='8636' />
+        <zone h='2591' id='52' mode='checkdropdown' name='New Online Partners Monthly' param='[federated.000m52b0vekifd1h73qth0nlcanr].[none:Calculation_435160334646165511:nk]' type-v2='filter' values='database' w='15500' x='38800' y='4636' />
+      </zones>
+      <devicelayouts>
+        <devicelayout auto-generated='true' name='Phone'>
+          <layout-options>
+            <title>
+              <formatted-text>
+                <run>Acquisition Performance</run>
+              </formatted-text>
+            </title>
+          </layout-options>
+          <size maxheight='2700' minheight='2700' sizing-mode='vscroll' />
+          <zones>
+            <zone h='100000' id='59' type-v2='layout-basic' w='100000' x='0' y='0'>
+              <zone h='99272' id='58' param='vert' type-v2='layout-flow' w='98400' x='800' y='364'>
+                <zone fixed-size='66' h='3364' id='45' type-v2='title' w='98400' x='800' y='364'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone fixed-size='64' h='2909' id='39' is-fixed='true' name='Data up to' w='9200' x='1700' y='591'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone fixed-size='51' h='2318' id='46' is-fixed='true' is-scaled='1' param='Image/logo_peya.png' type-v2='bitmap' w='20400' x='77900' y='955'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone h='2591' id='52' mode='checkdropdown' name='New Online Partners Monthly' param='[federated.000m52b0vekifd1h73qth0nlcanr].[none:Calculation_435160334646165511:nk]' type-v2='filter' values='database' w='15500' x='38800' y='4636'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone fixed-size='253' h='11500' id='25' is-fixed='true' name='New Online Partners Monthly' w='75400' x='3700' y='8636'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone h='909' id='26' leg-item-layout='horz' name='New Online Partners Monthly' pane-specification-id='3' param='[federated.000m52b0vekifd1h73qth0nlcanr].[none:Calculation_435160334646165511:nk]' type-v2='color' w='81300' x='5400' y='19818'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone fixed-size='244' h='11091' id='51' is-fixed='true' name='New Online Partners (2)' w='16900' x='80400' y='8636'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone h='2591' id='28' mode='checkdropdown' name='Share Total New Online Partner Latam' param='[federated.000m52b0vekifd1h73qth0nlcanr].[none:country_name:nk]' type-v2='filter' w='17800' x='19100' y='4682'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone h='2500' id='29' mode='checkdropdown' name='Share Total New Online Partner Latam' param='[federated.000m52b0vekifd1h73qth0nlcanr].[none:business_type_name:nk]' type-v2='filter' w='22200' x='56800' y='4636'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone h='2500' id='30' mode='checkdropdown' name='Share Total New Online Partner Latam' param='[federated.000m52b0vekifd1h73qth0nlcanr].[none:Calculation_435160334640484358:nk]' type-v2='filter' w='15600' x='81000' y='4636'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone h='2636' id='31' name='Share Total New Online Partner Latam' param='[federated.000m52b0vekifd1h73qth0nlcanr].[none:dim_month:qk]' show-domain='false' show-null-ctrls='false' show-reldate-picker='false' type-v2='filter' w='15800' x='1700' y='4682'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone fixed-size='280' h='17227' id='27' is-fixed='true' name='Share Total New Online Partner Latam' w='93200' x='4100' y='21000'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone h='1045' id='32' name='Share Total New Online Partner Latam' pane-specification-id='0' param='[federated.000m52b0vekifd1h73qth0nlcanr].[none:country_name:nk]' type-v2='color' w='91600' x='4900' y='38636'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone fixed-size='280' h='14000' id='35' is-fixed='true' name='Vertical Share' w='47400' x='3900' y='40318'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone fixed-size='280' h='14091' id='33' is-fixed='true' name='Business Share' w='45400' x='52200' y='40318'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone fixed-size='280' h='12864' id='36' is-fixed='true' name='Account Source Share' w='93700' x='3800' y='55000'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone h='1182' id='37' name='Account Source Share' pane-specification-id='0' param='[federated.000m52b0vekifd1h73qth0nlcanr].[none:Calculation_435160334640484358:nk]' type-v2='color' w='90600' x='5100' y='68500'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone fixed-size='279' h='12682' id='38' is-fixed='true' name='New Online Partner' w='91300' x='5200' y='70136'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+              </zone>
+              <zone-style>
+                <format attr='border-color' value='#000000' />
+                <format attr='border-style' value='none' />
+                <format attr='border-width' value='0' />
+                <format attr='margin' value='8' />
+              </zone-style>
+            </zone>
+          </zones>
+        </devicelayout>
+      </devicelayouts>
+      <simple-id uuid='{436DE20A-8173-4DEB-B3FE-1DBC0BE9CE8E}' />
+    </dashboard>
+  </dashboards>
+  <windows show-side-pane='false' source-height='75'>
+    <window class='dashboard' maximized='true' name='Acquisition Performance'>
+      <viewpoints>
+        <viewpoint name='Account Source Share'>
+          <zoom type='entire-view' />
+          <highlight field='[federated.000m52b0vekifd1h73qth0nlcanr].[none:Calculation_435160334640484358:nk]'>
+            <bucket-selection />
+          </highlight>
+        </viewpoint>
+        <viewpoint name='Business Share'>
+          <zoom type='entire-view' />
+        </viewpoint>
+        <viewpoint name='Data up to'>
+          <zoom type='entire-view' />
+        </viewpoint>
+        <viewpoint name='New Online Partner'>
+          <zoom type='entire-view' />
+        </viewpoint>
+        <viewpoint name='New Online Partners (2)'>
+          <zoom type='entire-view' />
+        </viewpoint>
+        <viewpoint name='New Online Partners Monthly'>
+          <zoom type='entire-view' />
+        </viewpoint>
+        <viewpoint name='Share Total New Online Partner Latam'>
+          <zoom type='entire-view' />
+        </viewpoint>
+        <viewpoint name='Vertical Share'>
+          <zoom type='entire-view' />
+        </viewpoint>
+      </viewpoints>
+      <active id='27' />
+      <simple-id uuid='{E1115E07-1A86-4AEA-A6F1-69E54212CD7D}' />
+    </window>
+    <window class='worksheet' hidden='true' name='Account Source Share' tab-color='#4f779a'>
+      <cards>
+        <edge name='left'>
+          <strip size='160'>
+            <card type='pages' />
+            <card type='filters' />
+            <card type='marks' />
+          </strip>
+        </edge>
+        <edge name='top'>
+          <strip size='2147483647'>
+            <card type='columns' />
+          </strip>
+          <strip size='2147483647'>
+            <card type='rows' />
+          </strip>
+          <strip size='30'>
+            <card type='title' />
+          </strip>
+        </edge>
+        <edge name='right'>
+          <strip size='174'>
+            <card pane-specification-id='0' param='[federated.000m52b0vekifd1h73qth0nlcanr].[none:Calculation_435160334640484358:nk]' type='color' />
+          </strip>
+        </edge>
+      </cards>
+      <simple-id uuid='{8BC1A353-5EA5-41A2-858B-C96A3ED5C2AC}' />
+    </window>
+    <window class='worksheet' hidden='true' name='Business Share' tab-color='#4f779a'>
+      <cards>
+        <edge name='left'>
+          <strip size='160'>
+            <card type='pages' />
+            <card type='filters' />
+            <card type='marks' />
+          </strip>
+        </edge>
+        <edge name='top'>
+          <strip size='2147483647'>
+            <card type='columns' />
+          </strip>
+          <strip size='2147483647'>
+            <card type='rows' />
+          </strip>
+          <strip size='30'>
+            <card type='title' />
+          </strip>
+        </edge>
+        <edge name='right'>
+          <strip size='174'>
+            <card pane-specification-id='0' param='[federated.000m52b0vekifd1h73qth0nlcanr].[none:business_type_name:nk]' type='color' />
+          </strip>
+        </edge>
+      </cards>
+      <simple-id uuid='{546ADC25-5ABA-4574-8F0D-8DD9062A7813}' />
+    </window>
+    <window class='worksheet' hidden='true' name='Data up to'>
+      <cards>
+        <edge name='left'>
+          <strip size='160'>
+            <card type='pages' />
+            <card type='filters' />
+            <card type='marks' />
+          </strip>
+        </edge>
+        <edge name='top'>
+          <strip size='2147483647'>
+            <card type='columns' />
+          </strip>
+          <strip size='2147483647'>
+            <card type='rows' />
+          </strip>
+          <strip size='30'>
+            <card type='title' />
+          </strip>
+        </edge>
+      </cards>
+      <viewpoint>
+        <highlight>
+          <color-one-way>
+            <field>[federated.000m52b0vekifd1h73qth0nlcanr].[yr:last_update:ok]</field>
+          </color-one-way>
+        </highlight>
+      </viewpoint>
+      <simple-id uuid='{AE893730-7DED-49EC-801B-B83453033767}' />
+    </window>
+    <window class='worksheet' hidden='true' name='New Online Partner' tab-color='#4f779a'>
+      <cards>
+        <edge name='left'>
+          <strip size='160'>
+            <card type='pages' />
+            <card type='filters' />
+            <card type='marks' />
+          </strip>
+        </edge>
+        <edge name='top'>
+          <strip size='2147483647'>
+            <card type='columns' />
+          </strip>
+          <strip size='2147483647'>
+            <card type='rows' />
+          </strip>
+          <strip size='30'>
+            <card type='title' />
+          </strip>
+        </edge>
+      </cards>
+      <viewpoint>
+        <highlight>
+          <color-one-way>
+            <field>[federated.000m52b0vekifd1h73qth0nlcanr].[none:country_name:nk]</field>
+          </color-one-way>
+        </highlight>
+      </viewpoint>
+      <simple-id uuid='{60C94AAE-B0E6-48D8-89F5-0B705FF1230D}' />
+    </window>
+    <window class='worksheet' hidden='true' name='New Online Partners (2)' tab-color='#4f779a'>
+      <cards>
+        <edge name='left'>
+          <strip size='160'>
+            <card type='pages' />
+            <card type='filters' />
+            <card type='marks' />
+          </strip>
+        </edge>
+        <edge name='top'>
+          <strip size='2147483647'>
+            <card type='columns' />
+          </strip>
+          <strip size='2147483647'>
+            <card type='rows' />
+          </strip>
+          <strip size='2147483647'>
+            <card type='title' />
+          </strip>
+        </edge>
+        <edge name='right'>
+          <strip size='174'>
+            <card pane-specification-id='3' param='[federated.000m52b0vekifd1h73qth0nlcanr].[none:Calculation_435160334646165511:nk]' type='color' />
+          </strip>
+        </edge>
+      </cards>
+      <simple-id uuid='{E151D6F3-713A-44B3-9ACC-BFC2E13EFDF9}' />
+    </window>
+    <window class='worksheet' hidden='true' name='New Online Partners Monthly' tab-color='#4f779a'>
+      <cards>
+        <edge name='left'>
+          <strip size='160'>
+            <card type='pages' />
+            <card type='filters' />
+            <card type='marks' />
+          </strip>
+        </edge>
+        <edge name='top'>
+          <strip size='2147483647'>
+            <card type='columns' />
+          </strip>
+          <strip size='2147483647'>
+            <card type='rows' />
+          </strip>
+          <strip size='2147483647'>
+            <card type='title' />
+          </strip>
+        </edge>
+        <edge name='right'>
+          <strip size='174'>
+            <card pane-specification-id='3' param='[federated.000m52b0vekifd1h73qth0nlcanr].[none:Calculation_435160334646165511:nk]' type='color' />
+          </strip>
+        </edge>
+      </cards>
+      <viewpoint>
+        <highlight>
+          <color-one-way>
+            <field>[federated.000m52b0vekifd1h73qth0nlcanr].[none:Calculation_435160334646165511:nk]</field>
+          </color-one-way>
+        </highlight>
+      </viewpoint>
+      <simple-id uuid='{57DE785A-5470-4E20-921D-5061B720DD13}' />
+    </window>
+    <window class='worksheet' hidden='true' name='Share Total New Online Partner Latam' tab-color='#4f779a'>
+      <cards>
+        <edge name='left'>
+          <strip size='160'>
+            <card type='pages' />
+            <card type='filters' />
+            <card type='marks' />
+          </strip>
+        </edge>
+        <edge name='top'>
+          <strip size='2147483647'>
+            <card type='columns' />
+          </strip>
+          <strip size='2147483647'>
+            <card type='rows' />
+          </strip>
+        </edge>
+        <edge name='right'>
+          <strip size='174'>
+            <card param='[federated.000m52b0vekifd1h73qth0nlcanr].[none:country_name:nk]' type='filter' />
+            <card param='[federated.000m52b0vekifd1h73qth0nlcanr].[none:business_type_name:nk]' type='filter' />
+            <card param='[federated.000m52b0vekifd1h73qth0nlcanr].[none:Calculation_435160334640484358:nk]' type='filter' />
+            <card param='[federated.000m52b0vekifd1h73qth0nlcanr].[none:dim_month:qk]' show-domain='false' show-null-ctrls='false' type='filter' />
+            <card pane-specification-id='0' param='[federated.000m52b0vekifd1h73qth0nlcanr].[none:country_name:nk]' type='color' />
+          </strip>
+        </edge>
+      </cards>
+      <viewpoint>
+        <highlight>
+          <color-one-way>
+            <field>[federated.000m52b0vekifd1h73qth0nlcanr].[none:Calculation_435160334640484358:nk]</field>
+            <field>[federated.000m52b0vekifd1h73qth0nlcanr].[none:business_type_name:nk]</field>
+            <field>[federated.000m52b0vekifd1h73qth0nlcanr].[none:country_name:nk]</field>
+            <field>[federated.000m52b0vekifd1h73qth0nlcanr].[none:dim_month:qk]</field>
+            <field>[federated.000m52b0vekifd1h73qth0nlcanr].[yr:dim_month:ok]</field>
+          </color-one-way>
+        </highlight>
+      </viewpoint>
+      <simple-id uuid='{2B292BE8-873F-475D-B660-31256282A0D5}' />
+    </window>
+    <window class='worksheet' hidden='true' name='Vertical Share' tab-color='#4f779a'>
+      <cards>
+        <edge name='left'>
+          <strip size='161'>
+            <card type='pages' />
+            <card type='filters' />
+            <card type='marks' />
+          </strip>
+        </edge>
+        <edge name='top'>
+          <strip size='2147483647'>
+            <card type='columns' />
+          </strip>
+          <strip size='2147483647'>
+            <card type='rows' />
+          </strip>
+        </edge>
+        <edge name='right'>
+          <strip size='174'>
+            <card pane-specification-id='0' param='[federated.000m52b0vekifd1h73qth0nlcanr].[none:Calculation_435160334646165511:nk]' type='color' />
+          </strip>
+        </edge>
+      </cards>
+      <viewpoint>
+        <highlight>
+          <color-one-way>
+            <field>[federated.000m52b0vekifd1h73qth0nlcanr].[none:Calculation_435160334646165511:nk]</field>
+          </color-one-way>
+        </highlight>
+      </viewpoint>
+      <simple-id uuid='{21A67C4A-1C10-4430-996D-50F65195E59F}' />
+    </window>
+  </windows>
+</workbook>

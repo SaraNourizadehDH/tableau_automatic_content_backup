@@ -1,0 +1,2590 @@
+<?xml version='1.0' encoding='utf-8' ?>
+
+<!-- build 20221.22.1108.1355                               -->
+<workbook original-version='18.1' source-build='2022.1.9 (20221.22.1108.1355)' source-platform='win' version='18.1' xml:base='https://tableau.deliveryhero.net' xmlns:user='http://www.tableausoftware.com/xml/user'>
+  <document-format-change-manifest>
+    <_.fcp.AccessibleZoneTabOrder.true...AccessibleZoneTabOrder />
+    <_.fcp.AnimationOnByDefault.true...AnimationOnByDefault />
+    <AutoCreateAndUpdateDSDPhoneLayouts />
+    <CascadingFilters />
+    <CascadingFiltersHamburgerUI />
+    <_.fcp.MarkAnimation.true...MarkAnimation />
+    <_.fcp.ObjectModelEncapsulateLegacy.true...ObjectModelEncapsulateLegacy />
+    <_.fcp.ObjectModelExtractV2.true...ObjectModelExtractV2 />
+    <_.fcp.ObjectModelTableType.true...ObjectModelTableType />
+    <_.fcp.SchemaViewerObjectModel.true...SchemaViewerObjectModel />
+    <SetMembershipControl />
+    <SheetIdentifierTracking />
+    <SortTagCleanup />
+    <WindowsPersistSimpleIdentifiers />
+    <ZoneBackgroundTransparency />
+  </document-format-change-manifest>
+  <repository-location derived-from='https://tableau.deliveryhero.net/t/Pedidosya/workbooks/Riderbatchsperformance?rev=1.0' id='Riderbatchsperformance' path='/t/Pedidosya/workbooks' revision='1.1' site='Pedidosya' />
+  <preferences>
+    <preference name='ui.encoding.shelf.height' value='24' />
+    <preference name='ui.shelf.height' value='26' />
+  </preferences>
+  <_.fcp.AnimationOnByDefault.false...style>
+    <_.fcp.AnimationOnByDefault.false..._.fcp.MarkAnimation.true...style-rule element='animation'>
+      <_.fcp.AnimationOnByDefault.false...format attr='animation-on' value='ao-on' />
+    </_.fcp.AnimationOnByDefault.false..._.fcp.MarkAnimation.true...style-rule>
+  </_.fcp.AnimationOnByDefault.false...style>
+  <datasources>
+    <datasource hasconnection='false' inline='true' name='Parameters' version='18.1'>
+      <aliases enabled='yes' />
+      <column caption='KPI' datatype='string' name='[Parámetro 1]' param-domain-type='list' role='measure' type='nominal' value='&quot;Acceptance rate&quot;'>
+        <calculation class='tableau' formula='&quot;Acceptance rate&quot;' />
+        <members>
+          <member value='&quot;Acceptance rate&quot;' />
+          <member value='&quot;Actual hours&quot;' />
+          <member value='&quot;Planned hours&quot;' />
+          <member value='&quot;Actual vs planned hours&quot;' />
+          <member value='&quot;Total shifts&quot;' />
+          <member value='&quot;No shows \%&quot;' />
+          <member value='&quot;No show shifts&quot;' />
+          <member value='&quot;Special hours&quot;' />
+          <member value='&quot;Special hours \%&quot;' />
+        </members>
+      </column>
+    </datasource>
+    <datasource caption='Consulta SQL personalizada (automated_tables_reports)' inline='true' name='federated.1ff3jgj1wm8as41br7sni1oy5zo5' version='18.1'>
+      <connection class='federated'>
+        <named-connections>
+          <named-connection caption='BigQuery' name='bigquery.05r2oqc0ptgvk212sni6k0f2pxl5'>
+            <connection CATALOG='peya-fraud-and-fintech' EXECCATALOG='peya-fraud-and-fintech' authentication='oauth' bq-dataset-fetch-rows='' bq-fetch-rows='' bq-fetch-tasks='' bq-large-fetch-rows='' bq-project-fetch-rows='' bq-response-rows='' class='bigquery' connection-dialect='google-sql' project='peya-fraud-and-fintech' schema='automated_tables_reports' server-oauth='' username='bruno.marchese@pedidosya.com' workgroup-auth-mode='prompt' />
+          </named-connection>
+        </named-connections>
+        <_.fcp.ObjectModelEncapsulateLegacy.false...relation connection='bigquery.05r2oqc0ptgvk212sni6k0f2pxl5' name='Consulta SQL personalizada' type='text'><![CDATA[WITH datos AS (
+    SELECT
+        DATE("2022-12-12") AS start_date,
+        CURRENT_DATE() AS end_date,
+
+),
+
+slots AS (
+
+    SELECT
+        country_code,
+        FORMAT_DATE("%G-%V", DATE(created_date_local)) as week_year,
+        MIN(created_date_local) AS created_date_local,
+        ROUND(SUM(open_slots_size) / 4, 2) AS open_slots_hours,
+        ROUND(SUM(open_slots_assigned) / 4, 2) AS assigned_hours
+    FROM `peya-data-origins-pro.cl_hurrier.staffing_kpi`, datos
+    WHERE created_date_local BETWEEN start_date AND end_date
+    -- HAY CASOS NULL
+        AND open_slots_size IS NOT NULL
+    GROUP BY 1,2
+    ORDER BY 1,4,3,created_date_local
+
+),
+
+rider_acceptance AS (
+
+    SELECT 
+        t.rider_id
+        , o.city.city_id
+        , FORMAT_DATE("%G-%V", DATE(created_date_local)) as week_year
+        , SUM(t.transition_notified) AS transition_notified
+        , SUM(t.transition_accepted) AS transition_accepted
+        , COUNT(DISTINCT CASE WHEN order_cancelled = 0 THEN peya_order_id END) AS orders
+    FROM `peya-bi-tools-pro.il_logistics.fact_logistic_orders` o, datos
+        LEFT JOIN UNNEST(o.deliveries) d
+        LEFT JOIN UNNEST(d.transitions) t
+    WHERE created_date_local BETWEEN start_date AND end_date
+    GROUP BY 1,2,3
+
+
+),
+
+rider_shifts AS (
+
+    SELECT
+        a1.rider_id,
+        a1.shift_state,
+        FORMAT_DATE("%G-%V", DATE(a1.shift_start_at)) as week_year,
+        a1.shift_id,
+        TIMESTAMP(a1.shift_start_at) as inicio,
+        TIMESTAMP(a1.shift_end_at) as fin,
+        ROUND((a1.actual_working_time / 3600),4) as actual_hours,
+        ROUND((planned_shift_duration / 3600),4) AS planned_hours
+    FROM `peya-data-origins-pro.cl_hurrier.shifts` as a1, datos
+        left join unnest(evaluations) as eva
+    WHERE
+        -- shift_state<<>>"NO_SHOW"
+        shift_state<<>>"CANCELLED"
+        and date(shift_start_at,timezone) BETWEEN start_date AND end_date
+        -- AND (login_difference,3600) >>2
+
+),
+
+rider_hours AS (
+
+    SELECT
+        s.rider_id
+        , city_id
+        , s.week_year
+        , transition_notified
+        , transition_accepted
+        , orders
+        , ROUND(SUM(CASE WHEN shift_state = 'EVALUATED' THEN actual_hours END),4) AS actual_hours
+        , ROUND(SUM(planned_hours),4) AS planned_hours
+        , SAFE_DIVIDE( SUM(CASE WHEN shift_state = 'EVALUATED' THEN actual_hours END) , SUM(planned_hours) ) AS planned_vs_actual_hours
+        , ROUND(SUM(CASE WHEN (TIME(inicio) >>= '19:00:00' OR TIME(inicio) << '00:30:00') THEN planned_hours END),4) AS planned_special_hours
+        , ROUND(COUNT(CASE WHEN shift_state = 'NO_SHOW' THEN shift_id END),4) AS no_show
+        , ROUND(COUNT(shift_id),4) AS total_shifts
+    FROM rider_shifts s
+        LEFT JOIN rider_acceptance a
+            ON s.rider_id = a.rider_id
+            AND s.week_year = a.week_year
+    GROUP BY 1,2,3,4,5,6
+
+),
+
+batch AS (
+
+    SELECT 
+        COALESCE(h.city_id,r.city_id) AS city_id,
+        country_code,
+        --b.active_from,
+        --b.active_until,
+        FORMAT_DATE("%G-%V", DATE(b.active_from)) as week_year_from,
+        FORMAT_DATE("%G-%V", DATE(b.active_until)) as week_year_until,
+        b.number AS batch,
+        DATE_DIFF(DATE_TRUNC(b.active_until, DAY), DATE_TRUNC(b.active_from, DAY), DAY) AS dif_days,
+        b.rider_id,
+        transition_notified,
+        transition_accepted,
+        orders,
+        actual_hours,
+        planned_hours,
+        planned_vs_actual_hours,
+        planned_special_hours,
+        no_show,
+        total_shifts
+    FROM `peya-bi-tools-pro.il_logistics.dim_rider_batches` b
+        INNER JOIN (
+                    SELECT DISTINCT rider_id, city_id, country_code, c.status
+                    FROM `peya-data-origins-pro.cl_hurrier.riders` r
+                        LEFT JOIN UNNEST(r.contracts) c
+                    WHERE c.status = "VALID"
+        ) r
+            ON r.rider_id = b.rider_id
+        LEFT JOIN rider_hours h
+            ON h.rider_id = b.rider_id
+            AND h.week_year = FORMAT_DATE("%G-%V", DATE(b.active_from))
+    -- HAY CASOS NULL
+    WHERE b.number IS NOT NULL
+    -- HABRIA QUE VER DE FILTRAR POR CANTIDAD DE DIAS QUE DURA EL BATCH
+        AND DATE_DIFF(DATE_TRUNC(b.active_until, DAY), DATE_TRUNC(b.active_from, DAY), DAY) <<= 7
+        AND DATE_DIFF(DATE_TRUNC(b.active_until, DAY), DATE_TRUNC(b.active_from, DAY), DAY) >>= 4
+    ORDER BY batch
+
+
+)
+
+SELECT DISTINCT
+    *
+FROM (
+    SELECT DISTINCT
+        b.country_code,
+        city_id,
+        rider_id,
+        s.week_year AS previous_week,
+        LEAD(week_year) OVER (PARTITION BY rider_id ORDER BY week_year ASC) AS analyzed_week,
+        batch AS previous_batch,
+        LEAD(batch) OVER (PARTITION BY rider_id ORDER BY week_year ASC) AS analyzed_batch,
+        CASE WHEN LEAD(batch) OVER (PARTITION BY rider_id ORDER BY week_year ASC) = 7 AND batch != 7 THEN 1 ELSE 0 END AS churned_rider,
+        SAFE_DIVIDE(transition_accepted, transition_notified) AS acceptance_rate,
+        orders,
+        actual_hours,
+        planned_hours,
+        planned_vs_actual_hours,
+        planned_special_hours,
+        no_show AS no_show_shifts,
+        total_shifts,
+    FROM slots s
+        LEFT JOIN batch b
+            ON b.country_code = s.country_code
+    WHERE s.week_year >>= b.week_year_from
+        AND s.week_year << week_year_until
+        
+    -- NO ESTABAN INACTIVOS
+    ORDER BY rider_id, week_year)
+WHERE analyzed_week IS NOT NULL
+ORDER BY rider_id, previous_week]]></_.fcp.ObjectModelEncapsulateLegacy.false...relation>
+        <_.fcp.ObjectModelEncapsulateLegacy.true...relation connection='bigquery.05r2oqc0ptgvk212sni6k0f2pxl5' name='Consulta SQL personalizada' type='text'><![CDATA[WITH datos AS (
+    SELECT
+        DATE("2022-12-12") AS start_date,
+        CURRENT_DATE() AS end_date,
+
+),
+
+slots AS (
+
+    SELECT
+        country_code,
+        FORMAT_DATE("%G-%V", DATE(created_date_local)) as week_year,
+        MIN(created_date_local) AS created_date_local,
+        ROUND(SUM(open_slots_size) / 4, 2) AS open_slots_hours,
+        ROUND(SUM(open_slots_assigned) / 4, 2) AS assigned_hours
+    FROM `peya-data-origins-pro.cl_hurrier.staffing_kpi`, datos
+    WHERE created_date_local BETWEEN start_date AND end_date
+    -- HAY CASOS NULL
+        AND open_slots_size IS NOT NULL
+    GROUP BY 1,2
+    ORDER BY 1,4,3,created_date_local
+
+),
+
+rider_acceptance AS (
+
+    SELECT 
+        t.rider_id
+        , o.city.city_id
+        , FORMAT_DATE("%G-%V", DATE(created_date_local)) as week_year
+        , SUM(t.transition_notified) AS transition_notified
+        , SUM(t.transition_accepted) AS transition_accepted
+        , COUNT(DISTINCT CASE WHEN order_cancelled = 0 THEN peya_order_id END) AS orders
+    FROM `peya-bi-tools-pro.il_logistics.fact_logistic_orders` o, datos
+        LEFT JOIN UNNEST(o.deliveries) d
+        LEFT JOIN UNNEST(d.transitions) t
+    WHERE created_date_local BETWEEN start_date AND end_date
+    GROUP BY 1,2,3
+
+
+),
+
+rider_shifts AS (
+
+    SELECT
+        a1.rider_id,
+        a1.shift_state,
+        FORMAT_DATE("%G-%V", DATE(a1.shift_start_at)) as week_year,
+        a1.shift_id,
+        TIMESTAMP(a1.shift_start_at) as inicio,
+        TIMESTAMP(a1.shift_end_at) as fin,
+        ROUND((a1.actual_working_time / 3600),4) as actual_hours,
+        ROUND((planned_shift_duration / 3600),4) AS planned_hours
+    FROM `peya-data-origins-pro.cl_hurrier.shifts` as a1, datos
+        left join unnest(evaluations) as eva
+    WHERE
+        -- shift_state<<>>"NO_SHOW"
+        shift_state<<>>"CANCELLED"
+        and date(shift_start_at,timezone) BETWEEN start_date AND end_date
+        -- AND (login_difference,3600) >>2
+
+),
+
+rider_hours AS (
+
+    SELECT
+        s.rider_id
+        , city_id
+        , s.week_year
+        , transition_notified
+        , transition_accepted
+        , orders
+        , ROUND(SUM(CASE WHEN shift_state = 'EVALUATED' THEN actual_hours END),4) AS actual_hours
+        , ROUND(SUM(planned_hours),4) AS planned_hours
+        , SAFE_DIVIDE( SUM(CASE WHEN shift_state = 'EVALUATED' THEN actual_hours END) , SUM(planned_hours) ) AS planned_vs_actual_hours
+        , ROUND(SUM(CASE WHEN (TIME(inicio) >>= '19:00:00' OR TIME(inicio) << '00:30:00') THEN planned_hours END),4) AS planned_special_hours
+        , ROUND(COUNT(CASE WHEN shift_state = 'NO_SHOW' THEN shift_id END),4) AS no_show
+        , ROUND(COUNT(shift_id),4) AS total_shifts
+    FROM rider_shifts s
+        LEFT JOIN rider_acceptance a
+            ON s.rider_id = a.rider_id
+            AND s.week_year = a.week_year
+    GROUP BY 1,2,3,4,5,6
+
+),
+
+batch AS (
+
+    SELECT 
+        COALESCE(h.city_id,r.city_id) AS city_id,
+        country_code,
+        --b.active_from,
+        --b.active_until,
+        FORMAT_DATE("%G-%V", DATE(b.active_from)) as week_year_from,
+        FORMAT_DATE("%G-%V", DATE(b.active_until)) as week_year_until,
+        b.number AS batch,
+        DATE_DIFF(DATE_TRUNC(b.active_until, DAY), DATE_TRUNC(b.active_from, DAY), DAY) AS dif_days,
+        b.rider_id,
+        transition_notified,
+        transition_accepted,
+        orders,
+        actual_hours,
+        planned_hours,
+        planned_vs_actual_hours,
+        planned_special_hours,
+        no_show,
+        total_shifts
+    FROM `peya-bi-tools-pro.il_logistics.dim_rider_batches` b
+        INNER JOIN (
+                    SELECT DISTINCT rider_id, city_id, country_code, c.status
+                    FROM `peya-data-origins-pro.cl_hurrier.riders` r
+                        LEFT JOIN UNNEST(r.contracts) c
+                    WHERE c.status = "VALID"
+        ) r
+            ON r.rider_id = b.rider_id
+        LEFT JOIN rider_hours h
+            ON h.rider_id = b.rider_id
+            AND h.week_year = FORMAT_DATE("%G-%V", DATE(b.active_from))
+    -- HAY CASOS NULL
+    WHERE b.number IS NOT NULL
+    -- HABRIA QUE VER DE FILTRAR POR CANTIDAD DE DIAS QUE DURA EL BATCH
+        AND DATE_DIFF(DATE_TRUNC(b.active_until, DAY), DATE_TRUNC(b.active_from, DAY), DAY) <<= 7
+        AND DATE_DIFF(DATE_TRUNC(b.active_until, DAY), DATE_TRUNC(b.active_from, DAY), DAY) >>= 4
+    ORDER BY batch
+
+
+)
+
+SELECT DISTINCT
+    *
+FROM (
+    SELECT DISTINCT
+        b.country_code,
+        city_id,
+        rider_id,
+        s.week_year AS previous_week,
+        LEAD(week_year) OVER (PARTITION BY rider_id ORDER BY week_year ASC) AS analyzed_week,
+        batch AS previous_batch,
+        LEAD(batch) OVER (PARTITION BY rider_id ORDER BY week_year ASC) AS analyzed_batch,
+        CASE WHEN LEAD(batch) OVER (PARTITION BY rider_id ORDER BY week_year ASC) = 7 AND batch != 7 THEN 1 ELSE 0 END AS churned_rider,
+        SAFE_DIVIDE(transition_accepted, transition_notified) AS acceptance_rate,
+        orders,
+        actual_hours,
+        planned_hours,
+        planned_vs_actual_hours,
+        planned_special_hours,
+        no_show AS no_show_shifts,
+        total_shifts,
+    FROM slots s
+        LEFT JOIN batch b
+            ON b.country_code = s.country_code
+    WHERE s.week_year >>= b.week_year_from
+        AND s.week_year << week_year_until
+        
+    -- NO ESTABAN INACTIVOS
+    ORDER BY rider_id, week_year)
+WHERE analyzed_week IS NOT NULL
+ORDER BY rider_id, previous_week]]></_.fcp.ObjectModelEncapsulateLegacy.true...relation>
+        <metadata-records>
+          <metadata-record class='column'>
+            <remote-name>country_code</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[country_code]</local-name>
+            <parent-name>[Consulta SQL personalizada]</parent-name>
+            <remote-alias>country_code</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_53837630B35E46249A510A6D424EBFB4]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>city_id</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[city_id]</local-name>
+            <parent-name>[Consulta SQL personalizada]</parent-name>
+            <remote-alias>city_id</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_53837630B35E46249A510A6D424EBFB4]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>rider_id</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[rider_id]</local-name>
+            <parent-name>[Consulta SQL personalizada]</parent-name>
+            <remote-alias>rider_id</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_53837630B35E46249A510A6D424EBFB4]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>previous_week</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[previous_week]</local-name>
+            <parent-name>[Consulta SQL personalizada]</parent-name>
+            <remote-alias>previous_week</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_53837630B35E46249A510A6D424EBFB4]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>analyzed_week</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[analyzed_week]</local-name>
+            <parent-name>[Consulta SQL personalizada]</parent-name>
+            <remote-alias>analyzed_week</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_53837630B35E46249A510A6D424EBFB4]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>previous_batch</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[previous_batch]</local-name>
+            <parent-name>[Consulta SQL personalizada]</parent-name>
+            <remote-alias>previous_batch</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_53837630B35E46249A510A6D424EBFB4]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>analyzed_batch</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[analyzed_batch]</local-name>
+            <parent-name>[Consulta SQL personalizada]</parent-name>
+            <remote-alias>analyzed_batch</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_53837630B35E46249A510A6D424EBFB4]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>churned_rider</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[churned_rider]</local-name>
+            <parent-name>[Consulta SQL personalizada]</parent-name>
+            <remote-alias>churned_rider</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_53837630B35E46249A510A6D424EBFB4]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>acceptance_rate</remote-name>
+            <remote-type>5</remote-type>
+            <local-name>[acceptance_rate]</local-name>
+            <parent-name>[Consulta SQL personalizada]</parent-name>
+            <remote-alias>acceptance_rate</remote-alias>
+            <local-type>real</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_53837630B35E46249A510A6D424EBFB4]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>orders</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[orders]</local-name>
+            <parent-name>[Consulta SQL personalizada]</parent-name>
+            <remote-alias>orders</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_53837630B35E46249A510A6D424EBFB4]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>actual_hours</remote-name>
+            <remote-type>5</remote-type>
+            <local-name>[actual_hours]</local-name>
+            <parent-name>[Consulta SQL personalizada]</parent-name>
+            <remote-alias>actual_hours</remote-alias>
+            <local-type>real</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_53837630B35E46249A510A6D424EBFB4]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>planned_hours</remote-name>
+            <remote-type>5</remote-type>
+            <local-name>[planned_hours]</local-name>
+            <parent-name>[Consulta SQL personalizada]</parent-name>
+            <remote-alias>planned_hours</remote-alias>
+            <local-type>real</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_53837630B35E46249A510A6D424EBFB4]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>planned_vs_actual_hours</remote-name>
+            <remote-type>5</remote-type>
+            <local-name>[planned_vs_actual_hours]</local-name>
+            <parent-name>[Consulta SQL personalizada]</parent-name>
+            <remote-alias>planned_vs_actual_hours</remote-alias>
+            <local-type>real</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_53837630B35E46249A510A6D424EBFB4]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>planned_special_hours</remote-name>
+            <remote-type>5</remote-type>
+            <local-name>[planned_special_hours]</local-name>
+            <parent-name>[Consulta SQL personalizada]</parent-name>
+            <remote-alias>planned_special_hours</remote-alias>
+            <local-type>real</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_53837630B35E46249A510A6D424EBFB4]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>no_show_shifts</remote-name>
+            <remote-type>5</remote-type>
+            <local-name>[no_show_shifts]</local-name>
+            <parent-name>[Consulta SQL personalizada]</parent-name>
+            <remote-alias>no_show_shifts</remote-alias>
+            <local-type>real</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_53837630B35E46249A510A6D424EBFB4]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>total_shifts</remote-name>
+            <remote-type>5</remote-type>
+            <local-name>[total_shifts]</local-name>
+            <parent-name>[Consulta SQL personalizada]</parent-name>
+            <remote-alias>total_shifts</remote-alias>
+            <local-type>real</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_53837630B35E46249A510A6D424EBFB4]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+        </metadata-records>
+      </connection>
+      <aliases enabled='yes' />
+      <column caption='planned vs actual hours' datatype='real' default-format='p0.00%' name='[Calculation_2314850263936958464]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='SUM([actual_hours]) / SUM([planned_hours])' />
+      </column>
+      <column caption='No shows %' datatype='real' name='[Calculation_2314850264723763204]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='SUM([no_show_shifts])/SUM([total_shifts])' />
+      </column>
+      <column aggregation='Sum' caption='batch variation' datatype='integer' name='[Calculation_2314850264732487685]' role='dimension' type='ordinal'>
+        <calculation class='tableau' formula='[previous_batch]-[analyzed_batch]' />
+      </column>
+      <column caption='Variación de batches' datatype='string' name='[Calculation_2314850264732688390]' role='dimension' type='nominal'>
+        <calculation class='tableau' formula='IF [previous_batch]-[Calculation_2314850264732487685] = 7 THEN &quot;Inactive&quot;&#13;&#10;ELSEIF [Calculation_2314850264732487685] &gt; 0 THEN &quot;Mejoró&quot;&#13;&#10;ELSEIF[Calculation_2314850264732487685] = 0 THEN  &quot;Se mantuvo&quot;&#13;&#10;ELSEIF[Calculation_2314850264732487685] &lt; 0 THEN  &quot;Empeoró&quot; END' />
+      </column>
+      <column caption='Sankey arm size' datatype='real' name='[Calculation_2314850264823984136]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='COUNT([rider_id])/TOTAL(COUNT([rider_id]))'>
+          <table-calc ordering-type='Rows' />
+        </calculation>
+      </column>
+      <column caption='riders' datatype='integer' name='[Calculation_2314850264827416589]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='COUNT([rider_id])' />
+      </column>
+      <column caption='path index' datatype='integer' name='[Calculation_2314850264828096526]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='INDEX()'>
+          <table-calc ordering-type='Rows' />
+        </calculation>
+      </column>
+      <column caption='KPI' datatype='real' name='[Calculation_2314850264923025425]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='CASE [Parameters].[Parámetro 1]&#13;&#10;    WHEN &apos;Acceptance rate&apos; THEN [acceptance_rate]*100&#13;&#10;    WHEN &apos;No shows %&apos; THEN ([no_show_shifts]/[total_shifts])*100&#13;&#10;    WHEN &apos;No shows shifts&apos; THEN [no_show_shifts]&#13;&#10;    WHEN &apos;Actual hours&apos; THEN [actual_hours]&#13;&#10;    WHEN &apos;Planned hours&apos; THEN [planned_hours]&#13;&#10;    WHEN &apos;Actual vs planned hours&apos; THEN ([actual_hours] / [planned_hours])*100&#13;&#10;    WHEN &apos;Special hours %&apos; THEN ([planned_special_hours] / [planned_hours])*100&#13;&#10;    WHEN &apos;Special hours&apos; THEN [planned_special_hours]&#13;&#10;END' />
+      </column>
+      <column caption='KPI logo' datatype='string' name='[KPI (copia)_2314850264926982163]' role='dimension' type='nominal'>
+        <calculation class='tableau' formula='CASE [Parameters].[Parámetro 1]&#13;&#10;    WHEN &apos;Acceptance rate&apos; THEN &apos;%&apos;&#13;&#10;    WHEN &apos;No shows %&apos; THEN &apos;%&apos;&#13;&#10;    WHEN &apos;No shows shifts&apos; THEN &apos;&apos;&#13;&#10;    WHEN &apos;Actual hours&apos; THEN &apos;&apos;&#13;&#10;    WHEN &apos;Planned hours&apos; THEN &apos;&apos;&#13;&#10;    WHEN &apos;Actual vs planned hours&apos; THEN &apos;%&apos;&#13;&#10;    WHEN &apos;Special hours %&apos; THEN &apos;%&apos;&#13;&#10;    WHEN &apos;Special hours&apos; THEN &apos;&apos;&#13;&#10;END' />
+      </column>
+      <_.fcp.ObjectModelTableType.true...column caption='Consulta SQL personalizada' datatype='table' name='[__tableau_internal_object_id__].[_53837630B35E46249A510A6D424EBFB4]' role='measure' type='quantitative' />
+      <column caption='Acceptance rate' datatype='real' name='[acceptance_rate]' role='measure' type='quantitative' />
+      <column caption='Actual hours' datatype='real' name='[actual_hours]' role='measure' type='quantitative' />
+      <column aggregation='Sum' caption='N+1 week batch' datatype='integer' name='[analyzed_batch]' role='dimension' type='ordinal' />
+      <column caption='N+1 week' datatype='string' name='[analyzed_week]' role='dimension' type='nominal' />
+      <column aggregation='Sum' datatype='integer' name='[churned_rider]' role='dimension' type='ordinal'>
+        <aliases>
+          <alias key='0' value='Active' />
+          <alias key='1' value='Churned' />
+        </aliases>
+      </column>
+      <column aggregation='Sum' datatype='integer' name='[city_id]' role='dimension' type='ordinal' />
+      <column datatype='string' name='[country_code]' role='dimension' semantic-role='[Country].[ISO3166_2]' type='nominal' />
+      <column caption='No show shifts' datatype='real' name='[no_show_shifts]' role='measure' type='quantitative' />
+      <column datatype='integer' name='[orders]' role='measure' type='quantitative' />
+      <column caption='% planned special hours' datatype='real' default-format='p0.00%' name='[planned vs actual hours (copia)_2314850263938015233]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='SUM([planned_special_hours]) / SUM([planned_hours])' />
+      </column>
+      <column caption='Planned hours' datatype='real' name='[planned_hours]' role='measure' type='quantitative' />
+      <column caption='Planned special hours' datatype='real' name='[planned_special_hours]' role='measure' type='quantitative' />
+      <column caption='Actual vs planned hours' datatype='real' name='[planned_vs_actual_hours]' role='measure' type='quantitative' />
+      <column aggregation='Sum' caption='N week batch' datatype='integer' name='[previous_batch]' role='dimension' type='ordinal' />
+      <column caption='N week' datatype='string' name='[previous_week]' role='dimension' type='nominal' />
+      <column aggregation='None' caption='rider_id (agrupación)' datatype='integer' name='[rider_id (agrupación)]' role='dimension' type='ordinal'>
+        <calculation class='bin' decimals='0' formula='[rider_id]' peg='0' size='1' />
+      </column>
+      <column datatype='integer' name='[rider_id]' role='measure' type='quantitative' />
+      <column caption='Total shifts' datatype='real' name='[total_shifts]' role='measure' type='quantitative' />
+      <column-instance column='[__tableau_internal_object_id__].[_53837630B35E46249A510A6D424EBFB4]' derivation='Count' name='[__tableau_internal_object_id__].[cnt:_53837630B35E46249A510A6D424EBFB4:qk]' pivot='key' type='quantitative' />
+      <column-instance column='[Calculation_2314850264923025425]' derivation='Avg' name='[avg:Calculation_2314850264923025425:qk]' pivot='key' type='quantitative' />
+      <column-instance column='[acceptance_rate]' derivation='Avg' name='[avg:acceptance_rate:qk]' pivot='key' type='quantitative' />
+      <column-instance column='[rider_id]' derivation='Count' name='[cnt:rider_id:qk]' pivot='key' type='quantitative' />
+      <column-instance column='[rider_id]' derivation='CountD' name='[ctd:rider_id:qk]' pivot='key' type='quantitative' />
+      <column-instance column='[Calculation_2314850264923025425]' derivation='Avg' name='[diff:avg:Calculation_2314850264923025425:qk]' pivot='key' type='quantitative'>
+        <table-calc diff-options='Relative' ordering-type='Rows' type='Difference'>
+          <address>
+            <value>-1</value>
+          </address>
+        </table-calc>
+      </column-instance>
+      <column-instance column='[acceptance_rate]' derivation='Avg' name='[diff:avg:acceptance_rate:qk:2]' pivot='key' type='quantitative'>
+        <table-calc diff-options='Relative' ordering-type='Pane' type='Difference'>
+          <address>
+            <value>-1</value>
+          </address>
+        </table-calc>
+      </column-instance>
+      <column-instance column='[acceptance_rate]' derivation='Avg' name='[diff:avg:acceptance_rate:qk:4]' pivot='key' type='quantitative'>
+        <table-calc diff-options='Relative' ordering-type='Rows' type='Difference'>
+          <address>
+            <value>-1</value>
+          </address>
+        </table-calc>
+      </column-instance>
+      <column-instance column='[acceptance_rate]' derivation='Avg' name='[diff:avg:acceptance_rate:qk]' pivot='key' type='quantitative'>
+        <table-calc diff-options='Relative' ordering-type='Columns' type='Difference'>
+          <address>
+            <value>-1</value>
+          </address>
+        </table-calc>
+      </column-instance>
+      <column-instance column='[Calculation_2314850264923025425]' derivation='Sum' name='[diff:sum:Calculation_2314850264923025425:qk]' pivot='key' type='quantitative'>
+        <table-calc diff-options='Relative' ordering-type='Rows' type='Difference'>
+          <address>
+            <value>-1</value>
+          </address>
+        </table-calc>
+      </column-instance>
+      <column-instance column='[acceptance_rate]' derivation='Avg' name='[pcdf:avg:acceptance_rate:qk]' pivot='key' type='quantitative'>
+        <table-calc diff-options='Relative' ordering-type='Rows' type='PctDiff'>
+          <address>
+            <value>-1</value>
+          </address>
+        </table-calc>
+      </column-instance>
+      <column-instance column='[rider_id]' derivation='Count' name='[pcto:cnt:rider_id:qk:3]' pivot='key' type='quantitative'>
+        <table-calc ordering-type='Columns' type='PctTotal' />
+      </column-instance>
+      <column-instance column='[rider_id]' derivation='Count' name='[pcto:cnt:rider_id:qk:5]' pivot='key' type='quantitative'>
+        <table-calc ordering-type='Table' type='PctTotal' />
+      </column-instance>
+      <column-instance column='[rider_id]' derivation='Count' name='[pcto:cnt:rider_id:qk:6]' pivot='key' type='quantitative'>
+        <table-calc ordering-type='ColumnInPane' type='PctTotal' />
+      </column-instance>
+      <column-instance column='[rider_id]' derivation='Count' name='[pcto:cnt:rider_id:qk]' pivot='key' type='quantitative'>
+        <table-calc ordering-type='Rows' type='PctTotal' />
+      </column-instance>
+      <column-instance column='[Calculation_2314850264827416589]' derivation='User' name='[pcto:usr:Calculation_2314850264827416589:qk]' pivot='key' type='quantitative'>
+        <table-calc ordering-type='Rows' type='PctTotal' />
+      </column-instance>
+      <column-instance column='[Calculation_2314850264923025425]' derivation='Sum' name='[sum:Calculation_2314850264923025425:qk]' pivot='key' type='quantitative' />
+      <column-instance column='[acceptance_rate]' derivation='Sum' name='[sum:acceptance_rate:qk]' pivot='key' type='quantitative' />
+      <column-instance column='[actual_hours]' derivation='Sum' name='[sum:actual_hours:qk]' pivot='key' type='quantitative' />
+      <column-instance column='[no_show_shifts]' derivation='Sum' name='[sum:no_show_shifts:qk]' pivot='key' type='quantitative' />
+      <column-instance column='[orders]' derivation='Sum' name='[sum:orders:qk]' pivot='key' type='quantitative' />
+      <column-instance column='[planned_hours]' derivation='Sum' name='[sum:planned_hours:qk]' pivot='key' type='quantitative' />
+      <column-instance column='[planned_special_hours]' derivation='Sum' name='[sum:planned_special_hours:qk]' pivot='key' type='quantitative' />
+      <column-instance column='[planned_vs_actual_hours]' derivation='Sum' name='[sum:planned_vs_actual_hours:qk]' pivot='key' type='quantitative' />
+      <column-instance column='[rider_id]' derivation='Sum' name='[sum:rider_id:qk]' pivot='key' type='quantitative' />
+      <column-instance column='[total_shifts]' derivation='Sum' name='[sum:total_shifts:qk]' pivot='key' type='quantitative' />
+      <column-instance column='[Calculation_2314850263936958464]' derivation='User' name='[usr:Calculation_2314850263936958464:qk]' pivot='key' type='quantitative' />
+      <column-instance column='[Calculation_2314850264723763204]' derivation='User' name='[usr:Calculation_2314850264723763204:qk]' pivot='key' type='quantitative' />
+      <column-instance column='[Calculation_2314850264827416589]' derivation='User' name='[usr:Calculation_2314850264827416589:qk]' pivot='key' type='quantitative' />
+      <column-instance column='[planned vs actual hours (copia)_2314850263938015233]' derivation='User' name='[usr:planned vs actual hours (copia)_2314850263938015233:qk]' pivot='key' type='quantitative' />
+      <drill-paths>
+        <drill-path name='country_code, city_name'>
+          <field>[country_code]</field>
+        </drill-path>
+      </drill-paths>
+      <extract _.fcp.ObjectModelExtractV2.true...object-id='' count='-1' enabled='true' units='records'>
+        <connection class='hyper' dbname='extract/00/0d/{FF9B5E8A-1ADF-4BAA-B106-26E624C1F891}/federated_1ff3jgj1wm8as41br7sni1.hyper' default-settings='yes' extract-engine='true' schema='Extract' tablename='Extract' update-time='01/26/2023 09:36:51 AM'>
+          <_.fcp.ObjectModelEncapsulateLegacy.false...relation name='Extract' table='[Extract].[Extract]' type='table' />
+          <_.fcp.ObjectModelEncapsulateLegacy.true...relation name='Extract' table='[Extract].[Extract]' type='table' />
+          <refresh>
+            <refresh-event add-from-file-path='Consulta SQL personalizada (automated_tables_reports)' increment-value='%null%' refresh-type='create' rows-inserted='983119' timestamp-start='2023-01-26 09:35:28.513' />
+          </refresh>
+          <metadata-records>
+            <metadata-record class='column'>
+              <remote-name>country_code</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[country_code]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>country_code</remote-alias>
+              <ordinal>0</ordinal>
+              <family>Consulta SQL personalizada</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>15</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>city_id</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[city_id]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>city_id</remote-alias>
+              <ordinal>1</ordinal>
+              <family>Consulta SQL personalizada</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>173</approx-count>
+              <contains-null>true</contains-null>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>rider_id</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[rider_id]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>rider_id</remote-alias>
+              <ordinal>2</ordinal>
+              <family>Consulta SQL personalizada</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>449067</approx-count>
+              <contains-null>true</contains-null>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>previous_week</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[previous_week]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>previous_week</remote-alias>
+              <ordinal>3</ordinal>
+              <family>Consulta SQL personalizada</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>6</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>analyzed_week</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[analyzed_week]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>analyzed_week</remote-alias>
+              <ordinal>4</ordinal>
+              <family>Consulta SQL personalizada</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>6</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>previous_batch</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[previous_batch]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>previous_batch</remote-alias>
+              <ordinal>5</ordinal>
+              <family>Consulta SQL personalizada</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>8</approx-count>
+              <contains-null>true</contains-null>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>analyzed_batch</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[analyzed_batch]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>analyzed_batch</remote-alias>
+              <ordinal>6</ordinal>
+              <family>Consulta SQL personalizada</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>8</approx-count>
+              <contains-null>true</contains-null>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>churned_rider</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[churned_rider]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>churned_rider</remote-alias>
+              <ordinal>7</ordinal>
+              <family>Consulta SQL personalizada</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>2</approx-count>
+              <contains-null>true</contains-null>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>acceptance_rate</remote-name>
+              <remote-type>5</remote-type>
+              <local-name>[acceptance_rate]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>acceptance_rate</remote-alias>
+              <ordinal>8</ordinal>
+              <family>Consulta SQL personalizada</family>
+              <local-type>real</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>12774</approx-count>
+              <contains-null>true</contains-null>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>orders</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[orders]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>orders</remote-alias>
+              <ordinal>9</ordinal>
+              <family>Consulta SQL personalizada</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>2198</approx-count>
+              <contains-null>true</contains-null>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>actual_hours</remote-name>
+              <remote-type>5</remote-type>
+              <local-name>[actual_hours]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>actual_hours</remote-alias>
+              <ordinal>10</ordinal>
+              <family>Consulta SQL personalizada</family>
+              <local-type>real</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>436000</approx-count>
+              <contains-null>true</contains-null>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>planned_hours</remote-name>
+              <remote-type>5</remote-type>
+              <local-name>[planned_hours]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>planned_hours</remote-alias>
+              <ordinal>11</ordinal>
+              <family>Consulta SQL personalizada</family>
+              <local-type>real</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>7842</approx-count>
+              <contains-null>true</contains-null>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>planned_vs_actual_hours</remote-name>
+              <remote-type>5</remote-type>
+              <local-name>[planned_vs_actual_hours]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>planned_vs_actual_hours</remote-alias>
+              <ordinal>12</ordinal>
+              <family>Consulta SQL personalizada</family>
+              <local-type>real</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>497106</approx-count>
+              <contains-null>true</contains-null>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>planned_special_hours</remote-name>
+              <remote-type>5</remote-type>
+              <local-name>[planned_special_hours]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>planned_special_hours</remote-alias>
+              <ordinal>13</ordinal>
+              <family>Consulta SQL personalizada</family>
+              <local-type>real</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>4260</approx-count>
+              <contains-null>true</contains-null>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>no_show_shifts</remote-name>
+              <remote-type>5</remote-type>
+              <local-name>[no_show_shifts]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>no_show_shifts</remote-alias>
+              <ordinal>14</ordinal>
+              <family>Consulta SQL personalizada</family>
+              <local-type>real</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>44</approx-count>
+              <contains-null>true</contains-null>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>total_shifts</remote-name>
+              <remote-type>5</remote-type>
+              <local-name>[total_shifts]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>total_shifts</remote-alias>
+              <ordinal>15</ordinal>
+              <family>Consulta SQL personalizada</family>
+              <local-type>real</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>160</approx-count>
+              <contains-null>true</contains-null>
+            </metadata-record>
+          </metadata-records>
+        </connection>
+      </extract>
+      <layout _.fcp.SchemaViewerObjectModel.false...dim-percentage='0.5' _.fcp.SchemaViewerObjectModel.false...measure-percentage='0.4' dim-ordering='alphabetic' measure-ordering='alphabetic' show-structure='true' />
+      <style>
+        <style-rule element='mark'>
+          <encoding attr='color' field='[:Measure Names]' type='palette'>
+            <map to='#009cf9'>
+              <bucket>&quot;[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[sum:total_shifts:qk]&quot;</bucket>
+            </map>
+            <map to='#00d9fc'>
+              <bucket>&quot;[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[usr:Calculation_2314850263936958464:qk]&quot;</bucket>
+            </map>
+            <map to='#0659ff'>
+              <bucket>&quot;[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[avg:acceptance_rate:qk]&quot;</bucket>
+            </map>
+            <map to='#08af7f'>
+              <bucket>&quot;[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[sum:actual_hours:qk]&quot;</bucket>
+            </map>
+            <map to='#4e79a7'>
+              <bucket>&quot;[federated.1ff3jgj1wm8as41br7sni1oy5zo5]&quot;</bucket>
+            </map>
+            <map to='#59a14f'>
+              <bucket>&quot;[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[avg:Calculation_2314850264923025425:qk]&quot;</bucket>
+            </map>
+            <map to='#59a14f'>
+              <bucket>&quot;[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[diff:avg:acceptance_rate:qk:2]&quot;</bucket>
+            </map>
+            <map to='#59a14f'>
+              <bucket>&quot;[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[diff:avg:acceptance_rate:qk:4]&quot;</bucket>
+            </map>
+            <map to='#59a14f'>
+              <bucket>&quot;[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[diff:avg:acceptance_rate:qk]&quot;</bucket>
+            </map>
+            <map to='#59a14f'>
+              <bucket>&quot;[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[diff:avg:Calculation_2314850264923025425:qk]&quot;</bucket>
+            </map>
+            <map to='#59a14f'>
+              <bucket>&quot;[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[diff:sum:Calculation_2314850264923025425:qk]&quot;</bucket>
+            </map>
+            <map to='#59a14f'>
+              <bucket>&quot;[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[pcdf:avg:acceptance_rate:qk]&quot;</bucket>
+            </map>
+            <map to='#59a14f'>
+              <bucket>&quot;[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[pcto:usr:Calculation_2314850264827416589:qk]&quot;</bucket>
+            </map>
+            <map to='#59a14f'>
+              <bucket>&quot;[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[sum:acceptance_rate:qk]&quot;</bucket>
+            </map>
+            <map to='#59a14f'>
+              <bucket>&quot;[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[sum:Calculation_2314850264923025425:qk]&quot;</bucket>
+            </map>
+            <map to='#59a14f'>
+              <bucket>&quot;[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[usr:Calculation_2314850264827416589:qk]&quot;</bucket>
+            </map>
+            <map to='#59a14f'>
+              <bucket>&quot;[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[usr:Cálculo1:qk]&quot;</bucket>
+            </map>
+            <map to='#59a14f'>
+              <bucket>&quot;[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[usr:Cálculo3:qk]&quot;</bucket>
+            </map>
+            <map to='#661ec8'>
+              <bucket>&quot;[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[sum:no_show_shifts:qk]&quot;</bucket>
+            </map>
+            <map to='#79706e'>
+              <bucket>&quot;[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[cnt:rider_id:qk]&quot;</bucket>
+            </map>
+            <map to='#79706e'>
+              <bucket>&quot;[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[ctd:rider_id:qk]&quot;</bucket>
+            </map>
+            <map to='#79706e'>
+              <bucket>&quot;[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[pcto:cnt:rider_id:qk:3]&quot;</bucket>
+            </map>
+            <map to='#79706e'>
+              <bucket>&quot;[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[pcto:cnt:rider_id:qk:5]&quot;</bucket>
+            </map>
+            <map to='#79706e'>
+              <bucket>&quot;[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[pcto:cnt:rider_id:qk:6]&quot;</bucket>
+            </map>
+            <map to='#79706e'>
+              <bucket>&quot;[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[pcto:cnt:rider_id:qk]&quot;</bucket>
+            </map>
+            <map to='#79706e'>
+              <bucket>&quot;[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[sum:rider_id:qk]&quot;</bucket>
+            </map>
+            <map to='#79706e'>
+              <bucket>&quot;[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[usr:Cálculo4:qk]&quot;</bucket>
+            </map>
+            <map to='#a0cbe8'>
+              <bucket>&quot;[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[usr:Avg total shifts (copia)_2314850263941681155:qk]&quot;</bucket>
+            </map>
+            <map to='#d3ecef'>
+              <bucket>&quot;[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[usr:planned vs actual hours (copia)_2314850263938015233:qk]&quot;</bucket>
+            </map>
+            <map to='#f1ce63'>
+              <bucket>&quot;[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[sum:orders:qk]&quot;</bucket>
+            </map>
+            <map to='#f28e2b'>
+              <bucket>&quot;[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[usr:Calculation_2314850263941308418:qk]&quot;</bucket>
+            </map>
+            <map to='#fa0050'>
+              <bucket>&quot;[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[usr:Calculation_2314850264723763204:qk]&quot;</bucket>
+            </map>
+            <map to='#ff99be'>
+              <bucket>&quot;[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[sum:planned_special_hours:qk]&quot;</bucket>
+            </map>
+            <map to='#ff9d9a'>
+              <bucket>&quot;[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[sum:planned_vs_actual_hours:qk]&quot;</bucket>
+            </map>
+            <map to='#ffbe7d'>
+              <bucket>&quot;[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[__tableau_internal_object_id__].[cnt:_53837630B35E46249A510A6D424EBFB4:qk]&quot;</bucket>
+            </map>
+            <map to='#ffe438'>
+              <bucket>&quot;[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[sum:planned_hours:qk]&quot;</bucket>
+            </map>
+          </encoding>
+        </style-rule>
+      </style>
+      <semantic-values>
+        <semantic-value key='[Country].[Name]' value='&quot;República Oriental de Uruguay&quot;' />
+      </semantic-values>
+      <date-options start-of-week='monday' />
+      <datasource-dependencies datasource='Parameters'>
+        <column caption='KPI' datatype='string' name='[Parámetro 1]' param-domain-type='list' role='measure' type='nominal' value='&quot;Acceptance rate&quot;'>
+          <calculation class='tableau' formula='&quot;Acceptance rate&quot;' />
+        </column>
+      </datasource-dependencies>
+      <_.fcp.ObjectModelEncapsulateLegacy.true...object-graph>
+        <objects>
+          <object caption='Consulta SQL personalizada' id='_53837630B35E46249A510A6D424EBFB4'>
+            <properties context=''>
+              <relation connection='bigquery.05r2oqc0ptgvk212sni6k0f2pxl5' name='Consulta SQL personalizada' type='text'><![CDATA[WITH datos AS (
+    SELECT
+        DATE("2022-12-12") AS start_date,
+        CURRENT_DATE() AS end_date,
+
+),
+
+slots AS (
+
+    SELECT
+        country_code,
+        FORMAT_DATE("%G-%V", DATE(created_date_local)) as week_year,
+        MIN(created_date_local) AS created_date_local,
+        ROUND(SUM(open_slots_size) / 4, 2) AS open_slots_hours,
+        ROUND(SUM(open_slots_assigned) / 4, 2) AS assigned_hours
+    FROM `peya-data-origins-pro.cl_hurrier.staffing_kpi`, datos
+    WHERE created_date_local BETWEEN start_date AND end_date
+    -- HAY CASOS NULL
+        AND open_slots_size IS NOT NULL
+    GROUP BY 1,2
+    ORDER BY 1,4,3,created_date_local
+
+),
+
+rider_acceptance AS (
+
+    SELECT 
+        t.rider_id
+        , o.city.city_id
+        , FORMAT_DATE("%G-%V", DATE(created_date_local)) as week_year
+        , SUM(t.transition_notified) AS transition_notified
+        , SUM(t.transition_accepted) AS transition_accepted
+        , COUNT(DISTINCT CASE WHEN order_cancelled = 0 THEN peya_order_id END) AS orders
+    FROM `peya-bi-tools-pro.il_logistics.fact_logistic_orders` o, datos
+        LEFT JOIN UNNEST(o.deliveries) d
+        LEFT JOIN UNNEST(d.transitions) t
+    WHERE created_date_local BETWEEN start_date AND end_date
+    GROUP BY 1,2,3
+
+
+),
+
+rider_shifts AS (
+
+    SELECT
+        a1.rider_id,
+        a1.shift_state,
+        FORMAT_DATE("%G-%V", DATE(a1.shift_start_at)) as week_year,
+        a1.shift_id,
+        TIMESTAMP(a1.shift_start_at) as inicio,
+        TIMESTAMP(a1.shift_end_at) as fin,
+        ROUND((a1.actual_working_time / 3600),4) as actual_hours,
+        ROUND((planned_shift_duration / 3600),4) AS planned_hours
+    FROM `peya-data-origins-pro.cl_hurrier.shifts` as a1, datos
+        left join unnest(evaluations) as eva
+    WHERE
+        -- shift_state<<>>"NO_SHOW"
+        shift_state<<>>"CANCELLED"
+        and date(shift_start_at,timezone) BETWEEN start_date AND end_date
+        -- AND (login_difference,3600) >>2
+
+),
+
+rider_hours AS (
+
+    SELECT
+        s.rider_id
+        , city_id
+        , s.week_year
+        , transition_notified
+        , transition_accepted
+        , orders
+        , ROUND(SUM(CASE WHEN shift_state = 'EVALUATED' THEN actual_hours END),4) AS actual_hours
+        , ROUND(SUM(planned_hours),4) AS planned_hours
+        , SAFE_DIVIDE( SUM(CASE WHEN shift_state = 'EVALUATED' THEN actual_hours END) , SUM(planned_hours) ) AS planned_vs_actual_hours
+        , ROUND(SUM(CASE WHEN (TIME(inicio) >>= '19:00:00' OR TIME(inicio) << '00:30:00') THEN planned_hours END),4) AS planned_special_hours
+        , ROUND(COUNT(CASE WHEN shift_state = 'NO_SHOW' THEN shift_id END),4) AS no_show
+        , ROUND(COUNT(shift_id),4) AS total_shifts
+    FROM rider_shifts s
+        LEFT JOIN rider_acceptance a
+            ON s.rider_id = a.rider_id
+            AND s.week_year = a.week_year
+    GROUP BY 1,2,3,4,5,6
+
+),
+
+batch AS (
+
+    SELECT 
+        COALESCE(h.city_id,r.city_id) AS city_id,
+        country_code,
+        --b.active_from,
+        --b.active_until,
+        FORMAT_DATE("%G-%V", DATE(b.active_from)) as week_year_from,
+        FORMAT_DATE("%G-%V", DATE(b.active_until)) as week_year_until,
+        b.number AS batch,
+        DATE_DIFF(DATE_TRUNC(b.active_until, DAY), DATE_TRUNC(b.active_from, DAY), DAY) AS dif_days,
+        b.rider_id,
+        transition_notified,
+        transition_accepted,
+        orders,
+        actual_hours,
+        planned_hours,
+        planned_vs_actual_hours,
+        planned_special_hours,
+        no_show,
+        total_shifts
+    FROM `peya-bi-tools-pro.il_logistics.dim_rider_batches` b
+        INNER JOIN (
+                    SELECT DISTINCT rider_id, city_id, country_code, c.status
+                    FROM `peya-data-origins-pro.cl_hurrier.riders` r
+                        LEFT JOIN UNNEST(r.contracts) c
+                    WHERE c.status = "VALID"
+        ) r
+            ON r.rider_id = b.rider_id
+        LEFT JOIN rider_hours h
+            ON h.rider_id = b.rider_id
+            AND h.week_year = FORMAT_DATE("%G-%V", DATE(b.active_from))
+    -- HAY CASOS NULL
+    WHERE b.number IS NOT NULL
+    -- HABRIA QUE VER DE FILTRAR POR CANTIDAD DE DIAS QUE DURA EL BATCH
+        AND DATE_DIFF(DATE_TRUNC(b.active_until, DAY), DATE_TRUNC(b.active_from, DAY), DAY) <<= 7
+        AND DATE_DIFF(DATE_TRUNC(b.active_until, DAY), DATE_TRUNC(b.active_from, DAY), DAY) >>= 4
+    ORDER BY batch
+
+
+)
+
+SELECT DISTINCT
+    *
+FROM (
+    SELECT DISTINCT
+        b.country_code,
+        city_id,
+        rider_id,
+        s.week_year AS previous_week,
+        LEAD(week_year) OVER (PARTITION BY rider_id ORDER BY week_year ASC) AS analyzed_week,
+        batch AS previous_batch,
+        LEAD(batch) OVER (PARTITION BY rider_id ORDER BY week_year ASC) AS analyzed_batch,
+        CASE WHEN LEAD(batch) OVER (PARTITION BY rider_id ORDER BY week_year ASC) = 7 AND batch != 7 THEN 1 ELSE 0 END AS churned_rider,
+        SAFE_DIVIDE(transition_accepted, transition_notified) AS acceptance_rate,
+        orders,
+        actual_hours,
+        planned_hours,
+        planned_vs_actual_hours,
+        planned_special_hours,
+        no_show AS no_show_shifts,
+        total_shifts,
+    FROM slots s
+        LEFT JOIN batch b
+            ON b.country_code = s.country_code
+    WHERE s.week_year >>= b.week_year_from
+        AND s.week_year << week_year_until
+        
+    -- NO ESTABAN INACTIVOS
+    ORDER BY rider_id, week_year)
+WHERE analyzed_week IS NOT NULL
+ORDER BY rider_id, previous_week]]></relation>
+            </properties>
+            <properties context='extract'>
+              <relation name='Extract' table='[Extract].[Extract]' type='table' />
+            </properties>
+          </object>
+        </objects>
+      </_.fcp.ObjectModelEncapsulateLegacy.true...object-graph>
+    </datasource>
+  </datasources>
+  <shared-views>
+    <shared-view name='federated.1ff3jgj1wm8as41br7sni1oy5zo5'>
+      <datasources>
+        <datasource caption='Consulta SQL personalizada (automated_tables_reports)' name='federated.1ff3jgj1wm8as41br7sni1oy5zo5' />
+      </datasources>
+      <datasource-dependencies datasource='federated.1ff3jgj1wm8as41br7sni1oy5zo5'>
+        <column aggregation='Sum' caption='N+1 week batch' datatype='integer' name='[analyzed_batch]' role='dimension' type='ordinal' />
+        <column aggregation='Sum' datatype='integer' name='[city_id]' role='dimension' type='ordinal' />
+        <column datatype='string' name='[country_code]' role='dimension' semantic-role='[Country].[ISO3166_2]' type='nominal' />
+        <column-instance column='[analyzed_batch]' derivation='None' name='[none:analyzed_batch:ok]' pivot='key' type='ordinal' />
+        <column-instance column='[city_id]' derivation='None' name='[none:city_id:ok]' pivot='key' type='ordinal' />
+        <column-instance column='[country_code]' derivation='None' name='[none:country_code:nk]' pivot='key' type='nominal' />
+        <column-instance column='[previous_batch]' derivation='None' name='[none:previous_batch:ok]' pivot='key' type='ordinal' />
+        <column-instance column='[previous_week]' derivation='None' name='[none:previous_week:nk]' pivot='key' type='nominal' />
+        <column aggregation='Sum' caption='N week batch' datatype='integer' name='[previous_batch]' role='dimension' type='ordinal' />
+        <column caption='N week' datatype='string' name='[previous_week]' role='dimension' type='nominal' />
+      </datasource-dependencies>
+      <filter class='categorical' column='[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[none:analyzed_batch:ok]'>
+        <groupfilter function='level-members' level='[none:analyzed_batch:ok]' />
+      </filter>
+      <filter class='categorical' column='[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[none:city_id:ok]'>
+        <groupfilter function='member' level='[none:city_id:ok]' member='1' user:ui-domain='database' user:ui-enumeration='inclusive' user:ui-marker='enumerate' />
+      </filter>
+      <filter class='categorical' column='[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[none:country_code:nk]'>
+        <groupfilter function='member' level='[none:country_code:nk]' member='&quot;ar&quot;' user:ui-domain='cascading' user:ui-enumeration='inclusive' user:ui-marker='enumerate' />
+      </filter>
+      <filter class='categorical' column='[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[none:previous_batch:ok]'>
+        <groupfilter function='union' user:ui-domain='database' user:ui-enumeration='inclusive' user:ui-marker='enumerate'>
+          <groupfilter from='1' function='range' level='[none:previous_batch:ok]' to='6' />
+          <groupfilter function='member' level='[none:previous_batch:ok]' member='8' />
+        </groupfilter>
+      </filter>
+      <filter class='categorical' column='[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[none:previous_week:nk]'>
+        <groupfilter from='&quot;2022-50&quot;' function='range' level='[none:previous_week:nk]' to='&quot;2023-02&quot;' user:ui-domain='database' user:ui-enumeration='inclusive' user:ui-marker='enumerate' />
+      </filter>
+    </shared-view>
+  </shared-views>
+  <worksheets>
+    <worksheet name='Batch contributions WoW'>
+      <layout-options>
+        <title>
+          <formatted-text>
+            <run fontalignment='1' fontcolor='#100423'>Batch contribution WoW (N to N+1 week)</run>
+          </formatted-text>
+        </title>
+      </layout-options>
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='Consulta SQL personalizada (automated_tables_reports)' name='federated.1ff3jgj1wm8as41br7sni1oy5zo5' />
+          </datasources>
+          <datasource-dependencies datasource='federated.1ff3jgj1wm8as41br7sni1oy5zo5'>
+            <column aggregation='Sum' caption='N+1 week batch' datatype='integer' name='[analyzed_batch]' role='dimension' type='ordinal' />
+            <column aggregation='Sum' datatype='integer' name='[city_id]' role='dimension' type='ordinal' />
+            <column-instance column='[rider_id]' derivation='Count' name='[cnt:rider_id:qk]' pivot='key' type='quantitative' />
+            <column datatype='string' name='[country_code]' role='dimension' semantic-role='[Country].[ISO3166_2]' type='nominal' />
+            <column-instance column='[analyzed_batch]' derivation='None' name='[none:analyzed_batch:ok]' pivot='key' type='ordinal' />
+            <column-instance column='[city_id]' derivation='None' name='[none:city_id:ok]' pivot='key' type='ordinal' />
+            <column-instance column='[country_code]' derivation='None' name='[none:country_code:nk]' pivot='key' type='nominal' />
+            <column-instance column='[previous_batch]' derivation='None' name='[none:previous_batch:ok]' pivot='key' type='ordinal' />
+            <column-instance column='[previous_week]' derivation='None' name='[none:previous_week:nk]' pivot='key' type='nominal' />
+            <column-instance column='[rider_id]' derivation='Count' name='[pcto:cnt:rider_id:qk]' pivot='key' type='quantitative'>
+              <table-calc ordering-type='Rows' type='PctTotal' />
+            </column-instance>
+            <column aggregation='Sum' caption='N week batch' datatype='integer' name='[previous_batch]' role='dimension' type='ordinal' />
+            <column caption='N week' datatype='string' name='[previous_week]' role='dimension' type='nominal' />
+            <column datatype='integer' name='[rider_id]' role='measure' type='quantitative' />
+          </datasource-dependencies>
+          <slices>
+            <column>[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[none:previous_week:nk]</column>
+            <column>[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[none:previous_batch:ok]</column>
+            <column>[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[none:analyzed_batch:ok]</column>
+            <column>[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[none:city_id:ok]</column>
+            <column>[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[none:country_code:nk]</column>
+          </slices>
+          <aggregation value='true' />
+        </view>
+        <style>
+          <style-rule element='axis'>
+            <format attr='tick-color' value='#00000000' />
+          </style-rule>
+          <style-rule element='cell'>
+            <format attr='text-align' value='center' />
+            <format attr='color' value='#100423' />
+            <format attr='border-style' value='solid' />
+            <format attr='border-color' value='#ffffff' />
+            <format attr='border-width' value='2' />
+          </style-rule>
+          <style-rule element='header'>
+            <format attr='border-color' value='#100423' />
+            <format attr='border-width' value='0' />
+            <format attr='border-style' value='none' />
+            <format attr='border-style' data-class='subtotal' value='none' />
+          </style-rule>
+          <style-rule element='field-labels'>
+            <format attr='font-size' value='9' />
+          </style-rule>
+          <style-rule element='label'>
+            <format attr='font-weight' field='[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[none:analyzed_batch:ok]' value='bold' />
+            <format attr='font-size' field='[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[none:analyzed_batch:ok]' value='12' />
+            <format attr='font-size' field='[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[none:previous_batch:ok]' value='12' />
+            <format attr='font-weight' field='[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[none:previous_batch:ok]' value='bold' />
+            <format attr='text-align' field='[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[none:previous_batch:ok]' value='right' />
+            <format attr='color' field='[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[none:previous_batch:ok]' value='#100423' />
+            <format attr='color' field='[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[none:analyzed_batch:ok]' value='#100423' />
+          </style-rule>
+          <style-rule element='mark'>
+            <encoding attr='size-bar' field='[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[cnt:rider_id:qk]' field-type='quantitative' max-size='1' min-size='0.005' type='centersize' />
+            <encoding attr='size-bar' field='[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[pcto:cnt:rider_id:qk]' field-type='quantitative' max-size='1' min-size='0.005' type='centersize' />
+            <encoding attr='color' field='[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[cnt:rider_id:qk]' num-steps='20' type='custom-interpolated'>
+              <color-palette custom='true' name='' type='ordered-sequential'>
+                <color>#f1f1f1</color>
+                <color>#dae2f2</color>
+                <color>#c4d4f3</color>
+                <color>#adc5f5</color>
+                <color>#96b6f6</color>
+                <color>#7ea7f8</color>
+                <color>#6797f9</color>
+                <color>#4f88fa</color>
+                <color>#3778fc</color>
+                <color>#1e69fd</color>
+                <color>#0659ff</color>
+              </color-palette>
+            </encoding>
+          </style-rule>
+          <style-rule element='pane'>
+            <format attr='border-color' value='#100423' />
+            <format attr='border-width' value='0' />
+            <format attr='border-style' value='none' />
+            <format attr='border-width' data-class='subtotal' value='1' />
+            <format attr='border-style' data-class='subtotal' value='solid' />
+          </style-rule>
+          <style-rule element='worksheet'>
+            <format attr='color' value='#100423' />
+          </style-rule>
+          <style-rule element='dropline'>
+            <format attr='stroke-size' value='0' />
+            <format attr='line-visibility' value='off' />
+          </style-rule>
+          <style-rule element='refline'>
+            <format attr='stroke-color' id='refline0' value='#000000' />
+            <format attr='stroke-size' value='0' />
+            <format attr='line-visibility' value='off' />
+          </style-rule>
+          <style-rule element='zeroline'>
+            <format attr='stroke-size' value='0' />
+            <format attr='line-visibility' value='off' />
+          </style-rule>
+          <style-rule element='table-div'>
+            <format attr='stroke-size' scope='rows' value='0' />
+            <format attr='line-visibility' scope='rows' value='off' />
+          </style-rule>
+          <style-rule element='title'>
+            <format attr='border-style' value='solid' />
+            <format attr='border-width' value='1' />
+            <format attr='border-color' value='#100423' />
+            <format attr='background-color' value='#ffffff' />
+          </style-rule>
+          <style-rule element='quick-filter'>
+            <format attr='title' field='[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[none:previous_week:nk]' value='N week'>
+              <formatted-text>
+                <run fontalignment='1'>N week</run>
+              </formatted-text>
+            </format>
+            <format attr='title' field='[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[none:previous_batch:ok]' value='N week batch'>
+              <formatted-text>
+                <run fontalignment='1'>N week batch</run>
+              </formatted-text>
+            </format>
+            <format attr='title' field='[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[none:analyzed_batch:ok]' value='N+1 week batch'>
+              <formatted-text>
+                <run fontalignment='1'>N+1 week batch</run>
+              </formatted-text>
+            </format>
+            <format attr='title' field='[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[none:country_code:nk]' value='Country code'>
+              <formatted-text>
+                <run fontalignment='1'>Country code</run>
+              </formatted-text>
+            </format>
+            <format attr='title' field='[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[none:city_id:ok]' value='City ID'>
+              <formatted-text>
+                <run fontalignment='1'>City ID</run>
+              </formatted-text>
+            </format>
+          </style-rule>
+        </style>
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Square' />
+            <encodings>
+              <color column='[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[cnt:rider_id:qk]' />
+              <text column='[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[pcto:cnt:rider_id:qk]' />
+              <text column='[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[cnt:rider_id:qk]' />
+            </encodings>
+            <customized-label>
+              <formatted-text>
+                <run fontsize='11'><![CDATA[<[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[pcto:cnt:rider_id:qk]>]]></run>
+                <run><![CDATA[
+<[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[cnt:rider_id:qk]>]]></run>
+              </formatted-text>
+            </customized-label>
+            <style>
+              <style-rule element='mark'>
+                <format attr='mark-labels-show' value='true' />
+                <format attr='mark-labels-cull' value='true' />
+                <format attr='mark-labels-line-first' value='true' />
+                <format attr='mark-labels-line-last' value='true' />
+                <format attr='mark-labels-range-min' value='true' />
+                <format attr='mark-labels-range-max' value='true' />
+                <format attr='mark-labels-mode' value='all' />
+                <format attr='mark-labels-range-scope' value='pane' />
+                <format attr='mark-labels-range-field' value='' />
+                <format attr='has-stroke' value='false' />
+              </style-rule>
+              <style-rule element='trendline'>
+                <format attr='stroke-size' value='0' />
+                <format attr='line-visibility' value='off' />
+              </style-rule>
+            </style>
+          </pane>
+        </panes>
+        <rows total='true'>[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[none:previous_batch:ok]</rows>
+        <cols total='true'>[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[none:analyzed_batch:ok]</cols>
+      </table>
+      <simple-id uuid='{F2AE5F0C-9A3C-4308-8563-41DF9895F6E8}' />
+    </worksheet>
+    <worksheet name='KPI performance'>
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='Consulta SQL personalizada (automated_tables_reports)' name='federated.1ff3jgj1wm8as41br7sni1oy5zo5' />
+          </datasources>
+          <datasource-dependencies datasource='federated.1ff3jgj1wm8as41br7sni1oy5zo5'>
+            <column caption='planned vs actual hours' datatype='real' default-format='p0.00%' name='[Calculation_2314850263936958464]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='SUM([actual_hours]) / SUM([planned_hours])' />
+            </column>
+            <column caption='No shows %' datatype='real' name='[Calculation_2314850264723763204]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='SUM([no_show_shifts])/SUM([total_shifts])' />
+            </column>
+            <column caption='Acceptance rate' datatype='real' name='[acceptance_rate]' role='measure' type='quantitative' />
+            <column caption='Actual hours' datatype='real' name='[actual_hours]' role='measure' type='quantitative' />
+            <column aggregation='Sum' caption='N+1 week batch' datatype='integer' name='[analyzed_batch]' role='dimension' type='ordinal' />
+            <column-instance column='[acceptance_rate]' derivation='Avg' name='[avg:acceptance_rate:qk]' pivot='key' type='quantitative' />
+            <column aggregation='Sum' datatype='integer' name='[city_id]' role='dimension' type='ordinal' />
+            <column datatype='string' name='[country_code]' role='dimension' semantic-role='[Country].[ISO3166_2]' type='nominal' />
+            <column caption='No show shifts' datatype='real' name='[no_show_shifts]' role='measure' type='quantitative' />
+            <column-instance column='[analyzed_batch]' derivation='None' name='[none:analyzed_batch:ok]' pivot='key' type='ordinal' />
+            <column-instance column='[city_id]' derivation='None' name='[none:city_id:ok]' pivot='key' type='ordinal' />
+            <column-instance column='[country_code]' derivation='None' name='[none:country_code:nk]' pivot='key' type='nominal' />
+            <column-instance column='[previous_batch]' derivation='None' name='[none:previous_batch:ok]' pivot='key' type='ordinal' />
+            <column-instance column='[previous_week]' derivation='None' name='[none:previous_week:nk]' pivot='key' type='nominal' />
+            <column caption='% planned special hours' datatype='real' default-format='p0.00%' name='[planned vs actual hours (copia)_2314850263938015233]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='SUM([planned_special_hours]) / SUM([planned_hours])' />
+            </column>
+            <column caption='Planned hours' datatype='real' name='[planned_hours]' role='measure' type='quantitative' />
+            <column caption='Planned special hours' datatype='real' name='[planned_special_hours]' role='measure' type='quantitative' />
+            <column aggregation='Sum' caption='N week batch' datatype='integer' name='[previous_batch]' role='dimension' type='ordinal' />
+            <column caption='N week' datatype='string' name='[previous_week]' role='dimension' type='nominal' />
+            <column-instance column='[acceptance_rate]' derivation='Sum' name='[sum:acceptance_rate:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[actual_hours]' derivation='Sum' name='[sum:actual_hours:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[no_show_shifts]' derivation='Sum' name='[sum:no_show_shifts:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[planned_hours]' derivation='Sum' name='[sum:planned_hours:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[planned_special_hours]' derivation='Sum' name='[sum:planned_special_hours:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[total_shifts]' derivation='Sum' name='[sum:total_shifts:qk]' pivot='key' type='quantitative' />
+            <column caption='Total shifts' datatype='real' name='[total_shifts]' role='measure' type='quantitative' />
+            <column-instance column='[Calculation_2314850263936958464]' derivation='User' name='[usr:Calculation_2314850263936958464:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[Calculation_2314850264723763204]' derivation='User' name='[usr:Calculation_2314850264723763204:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[planned vs actual hours (copia)_2314850263938015233]' derivation='User' name='[usr:planned vs actual hours (copia)_2314850263938015233:qk]' pivot='key' type='quantitative' />
+          </datasource-dependencies>
+          <filter class='categorical' column='[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[:Measure Names]'>
+            <groupfilter function='union' user:op='manual'>
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[usr:planned vs actual hours (copia)_2314850263938015233:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[usr:Calculation_2314850264723763204:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[avg:acceptance_rate:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[sum:acceptance_rate:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[sum:actual_hours:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[sum:no_show_shifts:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[usr:Calculation_2314850263936958464:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[sum:planned_hours:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[sum:planned_special_hours:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[sum:total_shifts:qk]&quot;' />
+            </groupfilter>
+          </filter>
+          <manual-sort column='[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[:Measure Names]' direction='ASC'>
+            <dictionary>
+              <bucket>&quot;[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[usr:Avg total shifts (copia)_2314850263941681155:qk]&quot;</bucket>
+              <bucket>&quot;[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[usr:Calculation_2314850263941308418:qk]&quot;</bucket>
+              <bucket>&quot;[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[avg:acceptance_rate:qk]&quot;</bucket>
+              <bucket>&quot;[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[sum:actual_hours:qk]&quot;</bucket>
+              <bucket>&quot;[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[sum:planned_hours:qk]&quot;</bucket>
+              <bucket>&quot;[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[usr:Calculation_2314850263936958464:qk]&quot;</bucket>
+              <bucket>&quot;[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[sum:planned_special_hours:qk]&quot;</bucket>
+              <bucket>&quot;[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[usr:planned vs actual hours (copia)_2314850263938015233:qk]&quot;</bucket>
+              <bucket>&quot;[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[sum:no_show_shifts:qk]&quot;</bucket>
+              <bucket>&quot;[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[sum:total_shifts:qk]&quot;</bucket>
+              <bucket>&quot;[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[usr:Calculation_2314850264723763204:qk]&quot;</bucket>
+            </dictionary>
+          </manual-sort>
+          <slices>
+            <column>[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[:Measure Names]</column>
+            <column>[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[none:analyzed_batch:ok]</column>
+            <column>[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[none:previous_batch:ok]</column>
+            <column>[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[none:previous_week:nk]</column>
+            <column>[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[none:country_code:nk]</column>
+            <column>[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[none:city_id:ok]</column>
+          </slices>
+          <aggregation value='true' />
+        </view>
+        <style>
+          <style-rule element='axis'>
+            <format attr='title' class='0' field='[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[Multiple Values]' scope='rows' value='' />
+            <format attr='width' field='[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[Multiple Values]' value='80' />
+          </style-rule>
+          <style-rule element='cell'>
+            <format attr='text-align' value='center' />
+            <format attr='text-format' field='[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[usr:Calculation_2314850264723763204:qk]' value='p0.00%' />
+            <format attr='text-format' field='[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[avg:acceptance_rate:qk]' value='p0.00%' />
+          </style-rule>
+          <style-rule element='header'>
+            <format attr='width' field='[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[:Measure Names]' value='160' />
+          </style-rule>
+          <style-rule element='label'>
+            <format attr='font-size' field='[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[:Measure Names]' value='12' />
+            <format attr='color' field='[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[:Measure Names]' value='#100423' />
+            <format attr='font-weight' field='[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[:Measure Names]' value='bold' />
+          </style-rule>
+          <style-rule element='quick-filter'>
+            <format attr='title' field='[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[none:previous_week:nk]' value='N week'>
+              <formatted-text>
+                <run fontalignment='1'>N week</run>
+              </formatted-text>
+            </format>
+            <format attr='title' field='[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[none:previous_batch:ok]' value='N week batch'>
+              <formatted-text>
+                <run fontalignment='1' fontcolor='#100423'>N week batch</run>
+              </formatted-text>
+            </format>
+            <format attr='title' field='[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[none:analyzed_batch:ok]' value='N+1 week batch'>
+              <formatted-text>
+                <run fontalignment='1'>N+1 week batch</run>
+              </formatted-text>
+            </format>
+            <format attr='title' field='[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[none:country_code:nk]' value='Country Code'>
+              <formatted-text>
+                <run fontalignment='1'>Country Code</run>
+              </formatted-text>
+            </format>
+            <format attr='title' field='[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[none:city_id:ok]' value='City ID'>
+              <formatted-text>
+                <run fontalignment='1'>City ID</run>
+              </formatted-text>
+            </format>
+          </style-rule>
+        </style>
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Automatic' />
+            <encodings>
+              <color column='[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[:Measure Names]' />
+            </encodings>
+            <style>
+              <style-rule element='cell'>
+                <format attr='vertical-align' value='center' />
+              </style-rule>
+              <style-rule element='datalabel'>
+                <format attr='color-mode' value='user' />
+                <format attr='color' value='#ffffff' />
+                <format attr='font-weight' value='bold' />
+              </style-rule>
+              <style-rule element='mark'>
+                <format attr='mark-labels-show' value='true' />
+                <format attr='mark-labels-cull' value='true' />
+                <format attr='has-stroke' value='true' />
+                <format attr='stroke-color' value='#000000' />
+              </style-rule>
+            </style>
+          </pane>
+        </panes>
+        <rows>([federated.1ff3jgj1wm8as41br7sni1oy5zo5].[:Measure Names] * [federated.1ff3jgj1wm8as41br7sni1oy5zo5].[Multiple Values])</rows>
+        <cols>[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[none:previous_batch:ok]</cols>
+      </table>
+      <simple-id uuid='{E1CE97C6-4F36-41F6-86B2-B79902BBACF7}' />
+    </worksheet>
+    <worksheet name='Metrics sensibility by batch'>
+      <layout-options>
+        <title>
+          <formatted-text>
+            <run bold='true' fontalignment='1' fontcolor='#ffffff'>Metric sensibility &amp; batch evolution</run>
+          </formatted-text>
+        </title>
+      </layout-options>
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='Consulta SQL personalizada (automated_tables_reports)' name='federated.1ff3jgj1wm8as41br7sni1oy5zo5' />
+            <datasource caption='Parámetros' name='Parameters' />
+          </datasources>
+          <datasource-dependencies datasource='Parameters'>
+            <column caption='KPI' datatype='string' name='[Parámetro 1]' param-domain-type='list' role='measure' type='nominal' value='&quot;Acceptance rate&quot;'>
+              <calculation class='tableau' formula='&quot;Acceptance rate&quot;' />
+            </column>
+          </datasource-dependencies>
+          <datasource-dependencies datasource='federated.1ff3jgj1wm8as41br7sni1oy5zo5'>
+            <column caption='TOTAL(AVG([Acceptance rate]))' datatype='real' name='[Calculation_2314850264833871888]' role='measure' type='quantitative' user:unnamed='Metrics sensibility by batch (3)'>
+              <calculation class='tableau' formula='TOTAL(AVG([acceptance_rate]))'>
+                <table-calc ordering-type='Rows' />
+              </calculation>
+            </column>
+            <column caption='KPI' datatype='real' name='[Calculation_2314850264923025425]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='CASE [Parameters].[Parámetro 1]&#13;&#10;    WHEN &apos;Acceptance rate&apos; THEN [acceptance_rate]*100&#13;&#10;    WHEN &apos;No shows %&apos; THEN ([no_show_shifts]/[total_shifts])*100&#13;&#10;    WHEN &apos;No shows shifts&apos; THEN [no_show_shifts]&#13;&#10;    WHEN &apos;Actual hours&apos; THEN [actual_hours]&#13;&#10;    WHEN &apos;Planned hours&apos; THEN [planned_hours]&#13;&#10;    WHEN &apos;Actual vs planned hours&apos; THEN ([actual_hours] / [planned_hours])*100&#13;&#10;    WHEN &apos;Special hours %&apos; THEN ([planned_special_hours] / [planned_hours])*100&#13;&#10;    WHEN &apos;Special hours&apos; THEN [planned_special_hours]&#13;&#10;END' />
+            </column>
+            <column caption='KPI logo' datatype='string' name='[KPI (copia)_2314850264926982163]' role='dimension' type='nominal'>
+              <calculation class='tableau' formula='CASE [Parameters].[Parámetro 1]&#13;&#10;    WHEN &apos;Acceptance rate&apos; THEN &apos;%&apos;&#13;&#10;    WHEN &apos;No shows %&apos; THEN &apos;%&apos;&#13;&#10;    WHEN &apos;No shows shifts&apos; THEN &apos;&apos;&#13;&#10;    WHEN &apos;Actual hours&apos; THEN &apos;&apos;&#13;&#10;    WHEN &apos;Planned hours&apos; THEN &apos;&apos;&#13;&#10;    WHEN &apos;Actual vs planned hours&apos; THEN &apos;%&apos;&#13;&#10;    WHEN &apos;Special hours %&apos; THEN &apos;%&apos;&#13;&#10;    WHEN &apos;Special hours&apos; THEN &apos;&apos;&#13;&#10;END' />
+            </column>
+            <column caption='Acceptance rate' datatype='real' name='[acceptance_rate]' role='measure' type='quantitative' />
+            <column caption='Actual hours' datatype='real' name='[actual_hours]' role='measure' type='quantitative' />
+            <column aggregation='Sum' caption='N+1 week batch' datatype='integer' name='[analyzed_batch]' role='dimension' type='ordinal' />
+            <column-instance column='[Calculation_2314850264923025425]' derivation='Avg' name='[avg:Calculation_2314850264923025425:qk]' pivot='key' type='quantitative' />
+            <column aggregation='Sum' datatype='integer' name='[city_id]' role='dimension' type='ordinal' />
+            <column datatype='string' name='[country_code]' role='dimension' semantic-role='[Country].[ISO3166_2]' type='nominal' />
+            <column-instance column='[Calculation_2314850264923025425]' derivation='Avg' name='[diff:avg:Calculation_2314850264923025425:qk]' pivot='key' type='quantitative'>
+              <table-calc diff-options='Relative' ordering-type='Rows' type='Difference'>
+                <address>
+                  <value>-1</value>
+                </address>
+              </table-calc>
+            </column-instance>
+            <column caption='No show shifts' datatype='real' name='[no_show_shifts]' role='measure' type='quantitative' />
+            <column-instance column='[KPI (copia)_2314850264926982163]' derivation='None' name='[none:KPI (copia)_2314850264926982163:nk]' pivot='key' type='nominal' />
+            <column-instance column='[analyzed_batch]' derivation='None' name='[none:analyzed_batch:ok]' pivot='key' type='ordinal' />
+            <column-instance column='[city_id]' derivation='None' name='[none:city_id:ok]' pivot='key' type='ordinal' />
+            <column-instance column='[country_code]' derivation='None' name='[none:country_code:nk]' pivot='key' type='nominal' />
+            <column-instance column='[previous_batch]' derivation='None' name='[none:previous_batch:ok]' pivot='key' type='ordinal' />
+            <column-instance column='[previous_week]' derivation='None' name='[none:previous_week:nk]' pivot='key' type='nominal' />
+            <column caption='Planned hours' datatype='real' name='[planned_hours]' role='measure' type='quantitative' />
+            <column caption='Planned special hours' datatype='real' name='[planned_special_hours]' role='measure' type='quantitative' />
+            <column aggregation='Sum' caption='N week batch' datatype='integer' name='[previous_batch]' role='dimension' type='ordinal' />
+            <column caption='N week' datatype='string' name='[previous_week]' role='dimension' type='nominal' />
+            <column caption='Total shifts' datatype='real' name='[total_shifts]' role='measure' type='quantitative' />
+            <column-instance column='[Calculation_2314850264833871888]' derivation='User' name='[usr:Calculation_2314850264833871888:ok]' pivot='key' type='ordinal'>
+              <table-calc ordering-type='Rows' />
+            </column-instance>
+          </datasource-dependencies>
+          <slices>
+            <column>[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[none:analyzed_batch:ok]</column>
+            <column>[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[none:previous_batch:ok]</column>
+            <column>[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[none:previous_week:nk]</column>
+            <column>[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[none:city_id:ok]</column>
+            <column>[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[none:country_code:nk]</column>
+          </slices>
+          <aggregation value='true' />
+        </view>
+        <style>
+          <style-rule element='cell'>
+            <format attr='text-align' value='center' />
+            <format attr='border-color' value='#ffffff' />
+            <format attr='border-style' value='solid' />
+            <format attr='border-width' value='2' />
+            <format attr='width' field='[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[none:analyzed_batch:ok]' value='94' />
+          </style-rule>
+          <style-rule element='header'>
+            <format attr='height' field='[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[none:analyzed_batch:ok]' value='32' />
+            <format attr='width' field='[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[none:previous_batch:ok]' value='64' />
+            <format attr='width' field='[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[usr:Calculation_2314850264833871888:ok]' value='84' />
+            <format attr='border-width' data-class='subtotal' value='0' />
+            <format attr='border-style' data-class='subtotal' value='none' />
+          </style-rule>
+          <style-rule element='field-labels'>
+            <format attr='color' value='#100423' />
+            <format attr='font-size' value='9' />
+          </style-rule>
+          <style-rule element='label'>
+            <format attr='font-weight' field='[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[none:analyzed_batch:ok]' value='bold' />
+            <format attr='font-size' field='[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[none:analyzed_batch:ok]' value='12' />
+            <format attr='font-size' field='[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[none:previous_batch:ok]' value='12' />
+            <format attr='font-weight' field='[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[none:previous_batch:ok]' value='bold' />
+            <format attr='text-format' field='[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[usr:Calculation_2314850264833871888:ok]' value='p0.00%' />
+            <format attr='text-align' field='[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[usr:Calculation_2314850264833871888:ok]' value='center' />
+            <format attr='font-weight' field='[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[usr:Calculation_2314850264833871888:ok]' value='bold' />
+            <format attr='color' field='[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[none:analyzed_batch:ok]' value='#100423' />
+            <format attr='color' field='[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[none:previous_batch:ok]' value='#100423' />
+            <format attr='color' field='[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[usr:Calculation_2314850264833871888:ok]' value='#100423' />
+            <format attr='text-align' field='[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[none:previous_batch:ok]' value='right' />
+            <format attr='font-size' field='[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[usr:Calculation_2314850264833871888:ok]' value='11' />
+          </style-rule>
+          <style-rule element='mark'>
+            <encoding attr='color' field='[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[diff:avg:Calculation_2314850264923025425:qk]' type='custom-interpolated'>
+              <color-palette custom='true' name='' type='ordered-sequential'>
+                <color>#f1f1f1</color>
+                <color>#d9eef2</color>
+                <color>#c2ecf3</color>
+                <color>#abeaf4</color>
+                <color>#93e7f5</color>
+                <color>#7be5f6</color>
+                <color>#63e2f7</color>
+                <color>#4ae0f8</color>
+                <color>#31def9</color>
+                <color>#19dbfa</color>
+                <color>#00d9fc</color>
+              </color-palette>
+            </encoding>
+          </style-rule>
+          <style-rule element='pane'>
+            <format attr='border-width' data-class='subtotal' value='0' />
+            <format attr='border-style' data-class='subtotal' value='none' />
+          </style-rule>
+          <style-rule element='dropline'>
+            <format attr='stroke-size' value='0' />
+            <format attr='line-visibility' value='off' />
+          </style-rule>
+          <style-rule element='refline'>
+            <format attr='stroke-color' id='refline0' value='#000000' />
+            <format attr='stroke-size' value='0' />
+            <format attr='line-visibility' value='off' />
+          </style-rule>
+          <style-rule element='zeroline'>
+            <format attr='stroke-size' value='0' />
+            <format attr='line-visibility' value='off' />
+          </style-rule>
+          <style-rule element='table-div'>
+            <format attr='stroke-size' scope='rows' value='0' />
+            <format attr='line-visibility' scope='rows' value='off' />
+            <format attr='stroke-size' scope='cols' value='0' />
+            <format attr='line-visibility' scope='cols' value='off' />
+          </style-rule>
+          <style-rule element='title'>
+            <format attr='background-color' value='#fb0050' />
+          </style-rule>
+        </style>
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Square' />
+            <encodings>
+              <color column='[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[diff:avg:Calculation_2314850264923025425:qk]' />
+              <text column='[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[diff:avg:Calculation_2314850264923025425:qk]' />
+              <text column='[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[avg:Calculation_2314850264923025425:qk]' />
+              <text column='[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[none:KPI (copia)_2314850264926982163:nk]' />
+            </encodings>
+            <customized-label>
+              <formatted-text>
+                <run fontcolor='#100423' fontsize='11'><![CDATA[<[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[avg:Calculation_2314850264923025425:qk]><[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[none:KPI (copia)_2314850264926982163:nk]>]]></run>
+                <run><![CDATA[
+<[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[diff:avg:Calculation_2314850264923025425:qk]>]]></run>
+                <run fontcolor='#100423'><![CDATA[<[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[none:KPI (copia)_2314850264926982163:nk]>]]></run>
+                <run>Æ&#10;</run>
+              </formatted-text>
+            </customized-label>
+            <style>
+              <style-rule element='datalabel'>
+                <format attr='color-mode' value='auto' />
+              </style-rule>
+              <style-rule element='mark'>
+                <format attr='mark-labels-show' value='true' />
+                <format attr='mark-labels-cull' value='true' />
+                <format attr='mark-labels-line-first' value='true' />
+                <format attr='mark-labels-line-last' value='true' />
+                <format attr='mark-labels-range-min' value='true' />
+                <format attr='mark-labels-range-max' value='true' />
+                <format attr='mark-labels-mode' value='all' />
+                <format attr='mark-labels-range-scope' value='pane' />
+                <format attr='mark-labels-range-field' value='' />
+                <format attr='has-stroke' value='false' />
+              </style-rule>
+              <style-rule element='pane'>
+                <format attr='minwidth' value='-1' />
+                <format attr='maxwidth' value='-1' />
+              </style-rule>
+              <style-rule element='trendline'>
+                <format attr='stroke-size' value='0' />
+                <format attr='line-visibility' value='off' />
+              </style-rule>
+            </style>
+          </pane>
+        </panes>
+        <rows>([federated.1ff3jgj1wm8as41br7sni1oy5zo5].[none:previous_batch:ok] / [federated.1ff3jgj1wm8as41br7sni1oy5zo5].[usr:Calculation_2314850264833871888:ok])</rows>
+        <cols>[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[none:analyzed_batch:ok]</cols>
+      </table>
+      <simple-id uuid='{E57D211C-BB98-4935-A236-D3809B7B7D6C}' />
+    </worksheet>
+    <worksheet name='Qty riders'>
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='Consulta SQL personalizada (automated_tables_reports)' name='federated.1ff3jgj1wm8as41br7sni1oy5zo5' />
+          </datasources>
+          <datasource-dependencies datasource='federated.1ff3jgj1wm8as41br7sni1oy5zo5'>
+            <column caption='riders' datatype='integer' name='[Calculation_2314850264827416589]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='COUNT([rider_id])' />
+            </column>
+            <column aggregation='Sum' caption='N+1 week batch' datatype='integer' name='[analyzed_batch]' role='dimension' type='ordinal' />
+            <column aggregation='Sum' datatype='integer' name='[city_id]' role='dimension' type='ordinal' />
+            <column datatype='string' name='[country_code]' role='dimension' semantic-role='[Country].[ISO3166_2]' type='nominal' />
+            <column-instance column='[analyzed_batch]' derivation='None' name='[none:analyzed_batch:ok]' pivot='key' type='ordinal' />
+            <column-instance column='[city_id]' derivation='None' name='[none:city_id:ok]' pivot='key' type='ordinal' />
+            <column-instance column='[country_code]' derivation='None' name='[none:country_code:nk]' pivot='key' type='nominal' />
+            <column-instance column='[previous_batch]' derivation='None' name='[none:previous_batch:ok]' pivot='key' type='ordinal' />
+            <column-instance column='[previous_week]' derivation='None' name='[none:previous_week:nk]' pivot='key' type='nominal' />
+            <column-instance column='[Calculation_2314850264827416589]' derivation='User' name='[pcto:usr:Calculation_2314850264827416589:qk]' pivot='key' type='quantitative'>
+              <table-calc ordering-type='Rows' type='PctTotal' />
+            </column-instance>
+            <column aggregation='Sum' caption='N week batch' datatype='integer' name='[previous_batch]' role='dimension' type='ordinal' />
+            <column caption='N week' datatype='string' name='[previous_week]' role='dimension' type='nominal' />
+            <column datatype='integer' name='[rider_id]' role='measure' type='quantitative' />
+            <column-instance column='[Calculation_2314850264827416589]' derivation='User' name='[usr:Calculation_2314850264827416589:qk]' pivot='key' type='quantitative' />
+          </datasource-dependencies>
+          <slices>
+            <column>[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[none:analyzed_batch:ok]</column>
+            <column>[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[none:previous_batch:ok]</column>
+            <column>[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[none:previous_week:nk]</column>
+            <column>[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[none:city_id:ok]</column>
+            <column>[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[none:country_code:nk]</column>
+          </slices>
+          <aggregation value='true' />
+        </view>
+        <style>
+          <style-rule element='cell'>
+            <format attr='text-align' value='center' />
+          </style-rule>
+          <style-rule element='header'>
+            <format attr='height' field='[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[none:previous_batch:ok]' value='36' />
+          </style-rule>
+          <style-rule element='label'>
+            <format attr='font-size' field='[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[none:previous_batch:ok]' value='15' />
+            <format attr='font-weight' field='[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[none:previous_batch:ok]' value='bold' />
+          </style-rule>
+          <style-rule element='mark'>
+            <encoding attr='size-bar' field='[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[usr:Calculation_2314850264827416589:qk]' field-type='quantitative' max-size='1' min-size='0.005' type='centersize' />
+            <encoding attr='size-bar' field='[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[pcto:usr:Calculation_2314850264827416589:qk]' field-type='quantitative' max-size='1' min-size='0.005' type='centersize' />
+            <encoding attr='color' field='[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[usr:Calculation_2314850264827416589:qk]' type='custom-interpolated'>
+              <color-palette custom='true' name='' type='ordered-sequential'>
+                <color>#f1f1f1</color>
+                <color>#f1d9e1</color>
+                <color>#f2c2d1</color>
+                <color>#f3aac1</color>
+                <color>#f492b2</color>
+                <color>#f57aa2</color>
+                <color>#f66291</color>
+                <color>#f74a81</color>
+                <color>#f83171</color>
+                <color>#f91860</color>
+                <color>#fa0050</color>
+              </color-palette>
+            </encoding>
+          </style-rule>
+          <style-rule element='worksheet'>
+            <format attr='display-field-labels' scope='cols' value='false' />
+          </style-rule>
+        </style>
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Square' />
+            <encodings>
+              <color column='[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[usr:Calculation_2314850264827416589:qk]' />
+              <text column='[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[usr:Calculation_2314850264827416589:qk]' />
+              <text column='[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[pcto:usr:Calculation_2314850264827416589:qk]' />
+            </encodings>
+            <customized-label>
+              <formatted-text>
+                <run bold='true' fontcolor='#100423' fontsize='12'><![CDATA[<[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[pcto:usr:Calculation_2314850264827416589:qk]>]]></run>
+                <run>Æ&#10;</run>
+                <run fontcolor='#100423'><![CDATA[<[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[usr:Calculation_2314850264827416589:qk]>]]></run>
+              </formatted-text>
+            </customized-label>
+            <style>
+              <style-rule element='mark'>
+                <format attr='mark-labels-show' value='true' />
+                <format attr='mark-labels-cull' value='true' />
+                <format attr='mark-labels-line-first' value='true' />
+                <format attr='mark-labels-line-last' value='true' />
+                <format attr='mark-labels-range-min' value='true' />
+                <format attr='mark-labels-range-max' value='true' />
+                <format attr='mark-labels-mode' value='all' />
+                <format attr='mark-labels-range-scope' value='pane' />
+                <format attr='mark-labels-range-field' value='' />
+                <format attr='has-stroke' value='false' />
+                <format attr='mark-transparency' value='86' />
+              </style-rule>
+            </style>
+          </pane>
+        </panes>
+        <rows />
+        <cols>[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[none:previous_batch:ok]</cols>
+      </table>
+      <simple-id uuid='{8F98F342-1C1B-4CFB-913B-08F2A64EE449}' />
+    </worksheet>
+  </worksheets>
+  <dashboards>
+    <dashboard _.fcp.AccessibleZoneTabOrder.true...enable-sort-zone-taborder='true' name='Batch performance'>
+      <repository-location id='Batchperformance' path='/t/Pedidosya/workbooks/Riderbatchsperformance' revision='' site='Pedidosya' />
+      <style />
+      <size maxheight='1600' maxwidth='1100' minheight='1600' minwidth='1100' sizing-mode='fixed' />
+      <datasources>
+        <datasource caption='Consulta SQL personalizada (automated_tables_reports)' name='federated.1ff3jgj1wm8as41br7sni1oy5zo5' />
+      </datasources>
+      <datasource-dependencies datasource='federated.1ff3jgj1wm8as41br7sni1oy5zo5'>
+        <column aggregation='Sum' caption='N+1 week batch' datatype='integer' name='[analyzed_batch]' role='dimension' type='ordinal' />
+        <column aggregation='Sum' datatype='integer' name='[city_id]' role='dimension' type='ordinal' />
+        <column datatype='string' name='[country_code]' role='dimension' semantic-role='[Country].[ISO3166_2]' type='nominal' />
+        <column-instance column='[analyzed_batch]' derivation='None' name='[none:analyzed_batch:ok]' pivot='key' type='ordinal' />
+        <column-instance column='[city_id]' derivation='None' name='[none:city_id:ok]' pivot='key' type='ordinal' />
+        <column-instance column='[country_code]' derivation='None' name='[none:country_code:nk]' pivot='key' type='nominal' />
+        <column-instance column='[previous_batch]' derivation='None' name='[none:previous_batch:ok]' pivot='key' type='ordinal' />
+        <column-instance column='[previous_week]' derivation='None' name='[none:previous_week:nk]' pivot='key' type='nominal' />
+        <column aggregation='Sum' caption='N week batch' datatype='integer' name='[previous_batch]' role='dimension' type='ordinal' />
+        <column caption='N week' datatype='string' name='[previous_week]' role='dimension' type='nominal' />
+      </datasource-dependencies>
+      <zones>
+        <zone h='100000' id='4' type-v2='layout-basic' w='100000' x='0' y='0'>
+          <zone h='99000' id='19' param='horz' type-v2='layout-flow' w='98546' x='727' y='500'>
+            <zone h='99000' id='6' type-v2='layout-basic' w='98546' x='727' y='500'>
+              <zone h='81500' id='5' name='KPI performance' show-title='false' w='98546' x='727' y='18000'>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+              <zone h='4188' id='9' type-v2='text' w='98546' x='727' y='500'>
+                <formatted-text>
+                  <run bold='true' fontalignment='1' fontcolor='#ffffff' fontsize='16'>BATCHS PERFORMANCE</run>
+                </formatted-text>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                  <format attr='background-color' value='#fb0050' />
+                </zone-style>
+              </zone>
+              <zone h='9187' id='10' name='Qty riders' show-title='false' w='98546' x='727' y='8813'>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+              <zone h='4125' id='17' mode='checkdropdown' name='KPI performance' param='[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[none:previous_week:nk]' show-apply='true' type-v2='filter' values='database' w='19637' x='727' y='4688'>
+                <zone-style>
+                  <format attr='border-color' value='#100423' />
+                  <format attr='border-style' value='solid' />
+                  <format attr='border-width' value='1' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+              <zone h='4125' id='15' mode='checkdropdown' name='KPI performance' param='[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[none:previous_batch:ok]' show-apply='true' type-v2='filter' values='database' w='19818' x='20364' y='4688'>
+                <zone-style>
+                  <format attr='border-color' value='#100423' />
+                  <format attr='border-style' value='solid' />
+                  <format attr='border-width' value='1' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+              <zone h='4125' id='16' mode='checkdropdown' name='KPI performance' param='[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[none:analyzed_batch:ok]' show-apply='true' type-v2='filter' values='database' w='19727' x='40182' y='4688'>
+                <zone-style>
+                  <format attr='border-color' value='#100423' />
+                  <format attr='border-style' value='solid' />
+                  <format attr='border-width' value='1' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+              <zone h='4125' id='20' mode='checkdropdown' name='KPI performance' param='[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[none:country_code:nk]' show-apply='true' type-v2='filter' values='cascading' w='19636' x='59909' y='4688'>
+                <zone-style>
+                  <format attr='border-color' value='#100423' />
+                  <format attr='border-style' value='solid' />
+                  <format attr='border-width' value='1' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+              <zone h='4125' id='21' mode='checkdropdown' name='KPI performance' param='[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[none:city_id:ok]' show-apply='true' type-v2='filter' values='database' w='19728' x='79545' y='4688'>
+                <zone-style>
+                  <format attr='border-color' value='#100423' />
+                  <format attr='border-style' value='solid' />
+                  <format attr='border-width' value='1' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+            </zone>
+          </zone>
+          <zone-style>
+            <format attr='border-color' value='#000000' />
+            <format attr='border-style' value='none' />
+            <format attr='border-width' value='0' />
+            <format attr='margin' value='8' />
+          </zone-style>
+        </zone>
+      </zones>
+      <devicelayouts>
+        <devicelayout auto-generated='true' name='Phone'>
+          <size maxheight='800' minheight='800' sizing-mode='vscroll' />
+          <zones>
+            <zone h='100000' id='27' type-v2='layout-basic' w='100000' x='0' y='0'>
+              <zone h='99000' id='26' param='vert' type-v2='layout-flow' w='98546' x='727' y='500'>
+                <zone h='4188' id='9' type-v2='text' w='98546' x='727' y='500'>
+                  <formatted-text>
+                    <run bold='true' fontalignment='1' fontcolor='#ffffff' fontsize='16'>BATCHS PERFORMANCE</run>
+                  </formatted-text>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                    <format attr='background-color' value='#fb0050' />
+                  </zone-style>
+                </zone>
+                <zone fixed-size='139' h='9187' id='10' is-fixed='true' name='Qty riders' show-title='false' w='98546' x='727' y='8813'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone h='4125' id='17' mode='checkdropdown' name='KPI performance' param='[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[none:previous_week:nk]' show-apply='true' type-v2='filter' values='database' w='19637' x='727' y='4688'>
+                  <zone-style>
+                    <format attr='border-color' value='#100423' />
+                    <format attr='border-style' value='solid' />
+                    <format attr='border-width' value='1' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone h='4125' id='15' mode='checkdropdown' name='KPI performance' param='[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[none:previous_batch:ok]' show-apply='true' type-v2='filter' values='database' w='19818' x='20364' y='4688'>
+                  <zone-style>
+                    <format attr='border-color' value='#100423' />
+                    <format attr='border-style' value='solid' />
+                    <format attr='border-width' value='1' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone h='4125' id='16' mode='checkdropdown' name='KPI performance' param='[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[none:analyzed_batch:ok]' show-apply='true' type-v2='filter' values='database' w='19727' x='40182' y='4688'>
+                  <zone-style>
+                    <format attr='border-color' value='#100423' />
+                    <format attr='border-style' value='solid' />
+                    <format attr='border-width' value='1' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone h='4125' id='20' mode='checkdropdown' name='KPI performance' param='[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[none:country_code:nk]' show-apply='true' type-v2='filter' values='cascading' w='19636' x='59909' y='4688'>
+                  <zone-style>
+                    <format attr='border-color' value='#100423' />
+                    <format attr='border-style' value='solid' />
+                    <format attr='border-width' value='1' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone h='4125' id='21' mode='checkdropdown' name='KPI performance' param='[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[none:city_id:ok]' show-apply='true' type-v2='filter' values='database' w='19728' x='79545' y='4688'>
+                  <zone-style>
+                    <format attr='border-color' value='#100423' />
+                    <format attr='border-style' value='solid' />
+                    <format attr='border-width' value='1' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone fixed-size='280' h='81500' id='5' is-fixed='true' name='KPI performance' show-title='false' w='98546' x='727' y='18000'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+              </zone>
+              <zone-style>
+                <format attr='border-color' value='#000000' />
+                <format attr='border-style' value='none' />
+                <format attr='border-width' value='0' />
+                <format attr='margin' value='8' />
+              </zone-style>
+            </zone>
+          </zones>
+        </devicelayout>
+      </devicelayouts>
+      <simple-id uuid='{FE82CC5C-0D81-405D-B052-A9E250C1F9C7}' />
+    </dashboard>
+    <dashboard _.fcp.AccessibleZoneTabOrder.true...enable-sort-zone-taborder='true' name='WoW contributions'>
+      <repository-location id='WoWcontributions' path='/t/Pedidosya/workbooks/Riderbatchsperformance' revision='' site='Pedidosya' />
+      <style />
+      <size maxheight='1300' maxwidth='1100' minheight='1300' minwidth='1100' sizing-mode='fixed' />
+      <datasources>
+        <datasource caption='Parámetros' name='Parameters' />
+        <datasource caption='Consulta SQL personalizada (automated_tables_reports)' name='federated.1ff3jgj1wm8as41br7sni1oy5zo5' />
+      </datasources>
+      <datasource-dependencies datasource='Parameters'>
+        <column caption='KPI' datatype='string' name='[Parámetro 1]' param-domain-type='list' role='measure' type='nominal' value='&quot;Acceptance rate&quot;'>
+          <calculation class='tableau' formula='&quot;Acceptance rate&quot;' />
+          <members>
+            <member value='&quot;Acceptance rate&quot;' />
+            <member value='&quot;Actual hours&quot;' />
+            <member value='&quot;Planned hours&quot;' />
+            <member value='&quot;Actual vs planned hours&quot;' />
+            <member value='&quot;Total shifts&quot;' />
+            <member value='&quot;No shows \%&quot;' />
+            <member value='&quot;No show shifts&quot;' />
+            <member value='&quot;Special hours&quot;' />
+            <member value='&quot;Special hours \%&quot;' />
+          </members>
+        </column>
+      </datasource-dependencies>
+      <datasource-dependencies datasource='federated.1ff3jgj1wm8as41br7sni1oy5zo5'>
+        <column aggregation='Sum' caption='N+1 week batch' datatype='integer' name='[analyzed_batch]' role='dimension' type='ordinal' />
+        <column aggregation='Sum' datatype='integer' name='[city_id]' role='dimension' type='ordinal' />
+        <column datatype='string' name='[country_code]' role='dimension' semantic-role='[Country].[ISO3166_2]' type='nominal' />
+        <column-instance column='[analyzed_batch]' derivation='None' name='[none:analyzed_batch:ok]' pivot='key' type='ordinal' />
+        <column-instance column='[city_id]' derivation='None' name='[none:city_id:ok]' pivot='key' type='ordinal' />
+        <column-instance column='[country_code]' derivation='None' name='[none:country_code:nk]' pivot='key' type='nominal' />
+        <column-instance column='[previous_batch]' derivation='None' name='[none:previous_batch:ok]' pivot='key' type='ordinal' />
+        <column-instance column='[previous_week]' derivation='None' name='[none:previous_week:nk]' pivot='key' type='nominal' />
+        <column aggregation='Sum' caption='N week batch' datatype='integer' name='[previous_batch]' role='dimension' type='ordinal' />
+        <column caption='N week' datatype='string' name='[previous_week]' role='dimension' type='nominal' />
+      </datasource-dependencies>
+      <zones>
+        <zone h='100000' id='4' type-v2='layout-basic' w='100000' x='0' y='0'>
+          <zone h='98770' id='30' param='horz' type-v2='layout-flow' w='98546' x='727' y='615'>
+            <zone h='98770' id='28' type-v2='layout-basic' w='98546' x='727' y='615'>
+              <zone h='93923' id='24' param='horz' type-v2='layout-flow' w='98546' x='727' y='5462'>
+                <zone h='93923' id='5' type-v2='layout-basic' w='98546' x='727' y='5462'>
+                  <zone h='38154' id='3' name='Batch contributions WoW' show-title='false' w='98546' x='727' y='13846'>
+                    <zone-style>
+                      <format attr='border-color' value='#000000' />
+                      <format attr='border-style' value='none' />
+                      <format attr='border-width' value='0' />
+                      <format attr='margin' value='4' />
+                    </zone-style>
+                  </zone>
+                  <zone h='38923' id='10' name='Metrics sensibility by batch' show-title='false' w='98546' x='727' y='60462'>
+                    <zone-style>
+                      <format attr='border-color' value='#000000' />
+                      <format attr='border-style' value='none' />
+                      <format attr='border-width' value='0' />
+                      <format attr='margin' value='4' />
+                    </zone-style>
+                  </zone>
+                  <zone h='4923' id='15' mode='checkdropdown' name='Batch contributions WoW' param='[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[none:previous_week:nk]' show-apply='true' type-v2='filter' values='database' w='19636' x='727' y='5462'>
+                    <zone-style>
+                      <format attr='border-color' value='#100423' />
+                      <format attr='border-style' value='solid' />
+                      <format attr='border-width' value='1' />
+                      <format attr='margin' value='4' />
+                    </zone-style>
+                  </zone>
+                  <zone h='4923' id='16' mode='checkdropdown' name='Batch contributions WoW' param='[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[none:previous_batch:ok]' show-apply='true' type-v2='filter' values='database' w='19636' x='20363' y='5462'>
+                    <zone-style>
+                      <format attr='border-color' value='#100423' />
+                      <format attr='border-style' value='solid' />
+                      <format attr='border-width' value='1' />
+                      <format attr='margin' value='4' />
+                    </zone-style>
+                  </zone>
+                  <zone h='4923' id='17' mode='checkdropdown' name='Batch contributions WoW' param='[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[none:analyzed_batch:ok]' show-apply='true' type-v2='filter' values='database' w='19728' x='39999' y='5462'>
+                    <zone-style>
+                      <format attr='border-color' value='#100423' />
+                      <format attr='border-style' value='solid' />
+                      <format attr='border-width' value='1' />
+                      <format attr='margin' value='4' />
+                    </zone-style>
+                  </zone>
+                  <zone h='4923' id='19' mode='checkdropdown' name='Batch contributions WoW' param='[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[none:country_code:nk]' show-apply='true' type-v2='filter' values='cascading' w='19817' x='59727' y='5462'>
+                    <zone-style>
+                      <format attr='border-color' value='#100423' />
+                      <format attr='border-style' value='solid' />
+                      <format attr='border-width' value='1' />
+                      <format attr='margin' value='4' />
+                    </zone-style>
+                  </zone>
+                  <zone h='4923' id='22' mode='checkdropdown' name='Batch contributions WoW' param='[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[none:city_id:ok]' show-apply='true' type-v2='filter' values='database' w='19729' x='79544' y='5462'>
+                    <zone-style>
+                      <format attr='border-color' value='#100423' />
+                      <format attr='border-style' value='solid' />
+                      <format attr='border-width' value='1' />
+                      <format attr='margin' value='4' />
+                    </zone-style>
+                  </zone>
+                  <zone h='3461' id='26' type-v2='text' w='98546' x='727' y='10385'>
+                    <formatted-text>
+                      <run fontalignment='1' fontcolor='#100423' fontsize='15'>Batch contribution WoW (N to N+1 week)</run>
+                    </formatted-text>
+                    <zone-style>
+                      <format attr='border-color' value='#100423' />
+                      <format attr='border-style' value='solid' />
+                      <format attr='border-width' value='1' />
+                      <format attr='margin' value='4' />
+                    </zone-style>
+                  </zone>
+                  <zone h='4077' id='27' type-v2='text' w='98546' x='727' y='52000'>
+                    <formatted-text>
+                      <run fontalignment='1' fontcolor='#100423' fontsize='15'>Metric sensibility &amp; batch evolution</run>
+                    </formatted-text>
+                    <zone-style>
+                      <format attr='border-color' value='#100423' />
+                      <format attr='border-style' value='solid' />
+                      <format attr='border-width' value='1' />
+                      <format attr='margin' value='4' />
+                    </zone-style>
+                  </zone>
+                  <zone custom-title='true' h='4385' id='31' mode='compact' param='[Parameters].[Parámetro 1]' type-v2='paramctrl' w='98546' x='727' y='56077'>
+                    <formatted-text>
+                      <run fontcolor='#100423' fontsize='12'>   AVG KPI</run>
+                    </formatted-text>
+                    <zone-style>
+                      <format attr='border-color' value='#100423' />
+                      <format attr='border-style' value='solid' />
+                      <format attr='border-width' value='1' />
+                      <format attr='margin' value='4' />
+                    </zone-style>
+                  </zone>
+                </zone>
+              </zone>
+              <zone h='4847' id='25' type-v2='text' w='98546' x='727' y='615'>
+                <formatted-text>
+                  <run bold='true' fontalignment='1' fontcolor='#ffffff' fontsize='16'>Weekly batch contributions</run>
+                </formatted-text>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                  <format attr='background-color' value='#fb0050' />
+                </zone-style>
+              </zone>
+            </zone>
+          </zone>
+          <zone-style>
+            <format attr='border-color' value='#000000' />
+            <format attr='border-style' value='none' />
+            <format attr='border-width' value='0' />
+            <format attr='margin' value='8' />
+          </zone-style>
+        </zone>
+      </zones>
+      <devicelayouts>
+        <devicelayout auto-generated='true' name='Phone'>
+          <size maxheight='1150' minheight='1150' sizing-mode='vscroll' />
+          <zones>
+            <zone h='100000' id='37' type-v2='layout-basic' w='100000' x='0' y='0'>
+              <zone h='98770' id='36' param='vert' type-v2='layout-flow' w='98546' x='727' y='615'>
+                <zone h='4847' id='25' type-v2='text' w='98546' x='727' y='615'>
+                  <formatted-text>
+                    <run bold='true' fontalignment='1' fontcolor='#ffffff' fontsize='16'>Weekly batch contributions</run>
+                  </formatted-text>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                    <format attr='background-color' value='#fb0050' />
+                  </zone-style>
+                </zone>
+                <zone h='3461' id='26' type-v2='text' w='98546' x='727' y='10385'>
+                  <formatted-text>
+                    <run fontalignment='1' fontcolor='#100423' fontsize='15'>Batch contribution WoW (N to N+1 week)</run>
+                  </formatted-text>
+                  <zone-style>
+                    <format attr='border-color' value='#100423' />
+                    <format attr='border-style' value='solid' />
+                    <format attr='border-width' value='1' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone h='4923' id='15' mode='checkdropdown' name='Batch contributions WoW' param='[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[none:previous_week:nk]' show-apply='true' type-v2='filter' values='database' w='19636' x='727' y='5462'>
+                  <zone-style>
+                    <format attr='border-color' value='#100423' />
+                    <format attr='border-style' value='solid' />
+                    <format attr='border-width' value='1' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone h='4923' id='16' mode='checkdropdown' name='Batch contributions WoW' param='[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[none:previous_batch:ok]' show-apply='true' type-v2='filter' values='database' w='19636' x='20363' y='5462'>
+                  <zone-style>
+                    <format attr='border-color' value='#100423' />
+                    <format attr='border-style' value='solid' />
+                    <format attr='border-width' value='1' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone h='4923' id='17' mode='checkdropdown' name='Batch contributions WoW' param='[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[none:analyzed_batch:ok]' show-apply='true' type-v2='filter' values='database' w='19728' x='39999' y='5462'>
+                  <zone-style>
+                    <format attr='border-color' value='#100423' />
+                    <format attr='border-style' value='solid' />
+                    <format attr='border-width' value='1' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone h='4923' id='19' mode='checkdropdown' name='Batch contributions WoW' param='[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[none:country_code:nk]' show-apply='true' type-v2='filter' values='cascading' w='19817' x='59727' y='5462'>
+                  <zone-style>
+                    <format attr='border-color' value='#100423' />
+                    <format attr='border-style' value='solid' />
+                    <format attr='border-width' value='1' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone h='4923' id='22' mode='checkdropdown' name='Batch contributions WoW' param='[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[none:city_id:ok]' show-apply='true' type-v2='filter' values='database' w='19729' x='79544' y='5462'>
+                  <zone-style>
+                    <format attr='border-color' value='#100423' />
+                    <format attr='border-style' value='solid' />
+                    <format attr='border-width' value='1' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone fixed-size='280' h='38154' id='3' is-fixed='true' name='Batch contributions WoW' show-title='false' w='98546' x='727' y='13846'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone h='4077' id='27' type-v2='text' w='98546' x='727' y='52000'>
+                  <formatted-text>
+                    <run fontalignment='1' fontcolor='#100423' fontsize='15'>Metric sensibility &amp; batch evolution</run>
+                  </formatted-text>
+                  <zone-style>
+                    <format attr='border-color' value='#100423' />
+                    <format attr='border-style' value='solid' />
+                    <format attr='border-width' value='1' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone custom-title='true' h='4385' id='31' mode='compact' param='[Parameters].[Parámetro 1]' type-v2='paramctrl' w='98546' x='727' y='56077'>
+                  <formatted-text>
+                    <run fontcolor='#100423' fontsize='12'>   AVG KPI</run>
+                  </formatted-text>
+                  <zone-style>
+                    <format attr='border-color' value='#100423' />
+                    <format attr='border-style' value='solid' />
+                    <format attr='border-width' value='1' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone fixed-size='280' h='38923' id='10' is-fixed='true' name='Metrics sensibility by batch' show-title='false' w='98546' x='727' y='60462'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+              </zone>
+              <zone-style>
+                <format attr='border-color' value='#000000' />
+                <format attr='border-style' value='none' />
+                <format attr='border-width' value='0' />
+                <format attr='margin' value='8' />
+              </zone-style>
+            </zone>
+          </zones>
+        </devicelayout>
+      </devicelayouts>
+      <simple-id uuid='{B12645D9-46AC-46DA-A93B-84F398F9F792}' />
+    </dashboard>
+  </dashboards>
+  <windows source-height='44'>
+    <window class='worksheet' name='Batch contributions WoW'>
+      <cards>
+        <edge name='left'>
+          <strip size='300'>
+            <card type='pages' />
+            <card type='filters' />
+            <card type='marks' />
+          </strip>
+        </edge>
+        <edge name='top'>
+          <strip size='44'>
+            <card type='columns' />
+          </strip>
+          <strip size='44'>
+            <card type='rows' />
+          </strip>
+          <strip size='31'>
+            <card type='title' />
+          </strip>
+        </edge>
+        <edge name='right'>
+          <strip size='175'>
+            <card param='[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[none:country_code:nk]' type='filter' values='cascading' />
+            <card param='[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[none:city_id:ok]' type='filter' />
+            <card param='[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[none:analyzed_batch:ok]' type='filter' />
+            <card param='[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[none:previous_batch:ok]' type='filter' />
+            <card param='[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[none:previous_week:nk]' type='filter' />
+            <card pane-specification-id='0' param='[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[cnt:rider_id:qk]' type='color' />
+          </strip>
+        </edge>
+      </cards>
+      <viewpoint>
+        <highlight>
+          <color-one-way>
+            <field>[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[:Measure Names]</field>
+            <field>[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[Multiple Values]</field>
+            <field>[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[cnt:rider_id:qk]</field>
+            <field>[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[none:Calculation_2314850264732487685:ok]</field>
+            <field>[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[none:Calculation_2314850264732688390:nk]</field>
+            <field>[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[none:analyzed_batch:ok]</field>
+            <field>[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[none:city_id:ok]</field>
+            <field>[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[none:previous_batch:ok]</field>
+            <field>[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[usr:Cálculo3:qk]</field>
+          </color-one-way>
+        </highlight>
+      </viewpoint>
+      <simple-id uuid='{3D172ACE-5597-430F-8004-882D91C02E56}' />
+    </window>
+    <window class='worksheet' name='KPI performance'>
+      <cards>
+        <edge name='left'>
+          <strip size='266'>
+            <card type='pages' />
+            <card type='filters' />
+            <card type='marks' />
+            <card type='measures' />
+          </strip>
+        </edge>
+        <edge name='top'>
+          <strip size='48'>
+            <card type='columns' />
+          </strip>
+          <strip size='48'>
+            <card type='rows' />
+          </strip>
+          <strip size='45'>
+            <card type='title' />
+          </strip>
+        </edge>
+        <edge name='right'>
+          <strip size='175'>
+            <card param='[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[none:city_id:ok]' type='filter' />
+            <card param='[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[none:country_code:nk]' type='filter' values='cascading' />
+            <card pane-specification-id='0' param='[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[:Measure Names]' type='color' />
+          </strip>
+        </edge>
+      </cards>
+      <viewpoint>
+        <highlight>
+          <color-one-way>
+            <field>[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[:Measure Names]</field>
+            <field>[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[none:analyzed_batch:ok]</field>
+            <field>[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[none:churned_rider:ok]</field>
+            <field>[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[none:previous_batch:ok]</field>
+            <field>[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[none:rider_id (agrupación):ok]</field>
+          </color-one-way>
+        </highlight>
+      </viewpoint>
+      <simple-id uuid='{6BACF087-DD0C-4800-B8B1-36A0B1B87BAD}' />
+    </window>
+    <window class='worksheet' name='Qty riders'>
+      <cards>
+        <edge name='left'>
+          <strip size='266'>
+            <card type='pages' />
+            <card type='filters' />
+            <card type='marks' />
+          </strip>
+        </edge>
+        <edge name='top'>
+          <strip size='48'>
+            <card type='columns' />
+          </strip>
+          <strip size='48'>
+            <card type='rows' />
+          </strip>
+          <strip size='45'>
+            <card type='title' />
+          </strip>
+        </edge>
+        <edge name='right'>
+          <strip size='175'>
+            <card pane-specification-id='0' param='[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[usr:Calculation_2314850264827416589:qk]' type='color' />
+            <card param='[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[none:previous_batch:ok]' type='highlighter' />
+          </strip>
+        </edge>
+      </cards>
+      <viewpoint>
+        <highlight>
+          <color-one-way>
+            <field>[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[none:analyzed_batch:ok]</field>
+            <field>[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[none:churned_rider:ok]</field>
+            <field>[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[none:previous_batch:ok]</field>
+            <field>[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[none:rider_id (agrupación):ok]</field>
+          </color-one-way>
+        </highlight>
+      </viewpoint>
+      <simple-id uuid='{03A14F32-B8D3-4908-AFAA-788AA6C40DC6}' />
+    </window>
+    <window class='worksheet' name='Metrics sensibility by batch'>
+      <cards>
+        <edge name='left'>
+          <strip size='300'>
+            <card type='pages' />
+            <card type='filters' />
+            <card type='marks' />
+          </strip>
+        </edge>
+        <edge name='top'>
+          <strip size='44'>
+            <card type='columns' />
+          </strip>
+          <strip size='44'>
+            <card type='rows' />
+          </strip>
+          <strip size='31'>
+            <card type='title' />
+          </strip>
+        </edge>
+        <edge name='right'>
+          <strip size='175'>
+            <card pane-specification-id='0' param='[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[diff:avg:Calculation_2314850264923025425:qk]' type='color' />
+            <card mode='compact' param='[Parameters].[Parámetro 1]' type='parameter' />
+          </strip>
+        </edge>
+      </cards>
+      <viewpoint>
+        <highlight>
+          <color-one-way>
+            <field>[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[:Measure Names]</field>
+            <field>[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[Multiple Values]</field>
+            <field>[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[diff:avg:Calculation_2314850264923025425:qk]</field>
+            <field>[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[none:Calculation_2314850264732487685:ok]</field>
+            <field>[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[none:Calculation_2314850264732688390:nk]</field>
+            <field>[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[none:KPI (copia)_2314850264926982163:nk]</field>
+            <field>[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[none:analyzed_batch:ok]</field>
+            <field>[federated.1ff3jgj1wm8as41br7sni1oy5zo5].[none:previous_batch:ok]</field>
+          </color-one-way>
+        </highlight>
+      </viewpoint>
+      <simple-id uuid='{F17C04A4-D302-42D0-9266-2E4828298A80}' />
+    </window>
+    <window class='dashboard' maximized='true' name='Batch performance'>
+      <viewpoints>
+        <viewpoint name='KPI performance'>
+          <zoom type='entire-view' />
+        </viewpoint>
+        <viewpoint name='Qty riders'>
+          <zoom type='entire-view' />
+        </viewpoint>
+      </viewpoints>
+      <active id='-1' />
+      <simple-id uuid='{A75BEB48-DA73-4F54-8159-DDA281BFE542}' />
+    </window>
+    <window class='dashboard' name='WoW contributions'>
+      <viewpoints>
+        <viewpoint name='Batch contributions WoW'>
+          <zoom type='entire-view' />
+        </viewpoint>
+        <viewpoint name='Metrics sensibility by batch'>
+          <zoom type='entire-view' />
+        </viewpoint>
+      </viewpoints>
+      <active id='-1' />
+      <simple-id uuid='{4E6E1FE4-D11B-4FE5-93A4-EB7A5AADB34C}' />
+    </window>
+  </windows>
+</workbook>
