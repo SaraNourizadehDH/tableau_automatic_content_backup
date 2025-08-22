@@ -1,0 +1,3486 @@
+<?xml version='1.0' encoding='utf-8' ?>
+
+<!-- build 20214.22.0213.1102                               -->
+<workbook original-version='18.1' source-build='2021.4.4 (20214.22.0213.1102)' version='18.1' xml:base='https://tableau.deliveryhero.net' xmlns:user='http://www.tableausoftware.com/xml/user'>
+  <document-format-change-manifest>
+    <_.fcp.AnimationOnByDefault.true...AnimationOnByDefault />
+    <AutoCreateAndUpdateDSDPhoneLayouts />
+    <ISO8601PeriodTypes />
+    <_.fcp.MarkAnimation.true...MarkAnimation />
+    <_.fcp.ObjectModelEncapsulateLegacy.true...ObjectModelEncapsulateLegacy />
+    <_.fcp.ObjectModelExtractV2.true...ObjectModelExtractV2 />
+    <_.fcp.ObjectModelTableType.true...ObjectModelTableType />
+    <_.fcp.SchemaViewerObjectModel.true...SchemaViewerObjectModel />
+    <SetMembershipControl />
+    <SheetIdentifierTracking />
+    <SortTagCleanup />
+    <WindowsPersistSimpleIdentifiers />
+    <WorksheetBackgroundTransparency />
+    <ZoneBackgroundTransparency />
+  </document-format-change-manifest>
+  <repository-location derived-from='https://tableau.deliveryhero.net/t/Austria/workbooks/ATDealsOverview-Tabular_16391377467250?rev=1.5' id='ATDealsOverview-Tabular_16391377467250' path='/t/Austria/workbooks' revision='1.6' site='Austria' />
+  <preferences />
+  <style>
+    <_.fcp.MarkAnimation.true...style-rule element='animation'>
+      <format attr='animation-on' value='ao-off' />
+    </_.fcp.MarkAnimation.true...style-rule>
+  </style>
+  <datasources>
+    <datasource caption='Custom SQL Query (pandata_curated)' inline='true' name='federated.12fkbze1nux58d15q2nc01bv4uk1' version='18.1'>
+      <connection class='federated'>
+        <named-connections>
+          <named-connection caption='BigQuery' name='bigquery.0ja9gbu15j02n810qf1li0bjf1rn'>
+            <connection CATALOG='fulfillment-dwh-production' EXECCATALOG='dha---bi-485' authentication='oauth' bq-dataset-fetch-rows='' bq-fetch-rows='' bq-fetch-tasks='' bq-large-fetch-rows='' bq-project-fetch-rows='' bq-response-rows='' class='bigquery' connection-dialect='google-sql' project='fulfillment-dwh-production' schema='pandata_curated' server-oauth='' username='sirinthip.narula@deliveryhero.at' workgroup-auth-mode='prompt' />
+          </named-connection>
+        </named-connections>
+        <_.fcp.ObjectModelEncapsulateLegacy.false...relation connection='bigquery.0ja9gbu15j02n810qf1li0bjf1rn' name='Custom SQL Query' type='text'><![CDATA[WITH
+  order_discount AS (
+  SELECT
+    DISTINCT pd_orders.code AS order_code,
+    pd_orders.uuid AS order_uuid,
+    pd_vendor_uuid,
+    pd_orders.global_entity_id,
+    pd_orders.created_date_utc AS created_date,
+    DATE_TRUNC(pd_orders.created_date_utc, month) AS report_month,
+    pd_orders_agg_discounts.discount_used AS discount_used,
+    max (pd_orders_agg_discounts.discount_type) as discount_type,
+    max (pd_orders_agg_discounts.discount_title) as discount_title,
+    avg(discount_ratio) as discount_ratio,
+    SUM(discount_value_local) as discount_value_local,
+  FROM
+    `fulfillment-dwh-production.pandata_curated.pd_orders` AS pd_orders
+  LEFT JOIN
+    `dha---bi-485.local_schedules.pd_order_discount_mmt_selected_dishes_v2` AS pd_orders_agg_discounts
+  ON
+    pd_orders_agg_discounts.order_code = pd_orders.code
+    AND pd_orders_agg_discounts.created_date BETWEEN DATE_SUB(DATE_TRUNC(CURRENT_DATE-1,MONTH),INTERVAL 11 MONTH)
+    AND CURRENT_DATE - 1
+  LEFT JOIN
+    `fulfillment-dwh-production.pandata_curated.pd_discounts` pd_discounts
+  ON
+    pd_discounts.uuid = pd_orders_agg_discounts.pd_discount_uuid
+  WHERE
+    pd_orders.created_date_utc BETWEEN DATE_SUB(DATE_TRUNC(CURRENT_DATE-1,MONTH),INTERVAL 11 MONTH)
+    AND CURRENT_DATE - 1
+    AND pd_orders.global_entity_id = 'MJM_AT'
+    AND NOT is_test_order
+    AND is_valid_order
+  GROUP BY
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7
+    ),
+vendor_orders as (SELECT
+  order_discount.global_entity_id,
+  created_date,
+  report_month,
+  pd_vendors.vendor_code,
+  discount_used,
+  max(discount_type) as discount_type ,
+  max(discount_title) as discount_title,
+  COUNT(DISTINCT order_uuid) AS successful_orders,
+  SUM(pd_orders_agg_accounting.gfv_eur) AS gfv_local,
+  SUM(pd_orders_agg_accounting.gmv_eur) AS gmv_local,
+  avg(discount_ratio) AS discount_ratio,
+  SUM(discount_value_local) AS discount_value_local,
+FROM
+  order_discount
+LEFT JOIN
+  `fulfillment-dwh-production.pandata_curated.pd_vendors` AS pd_vendors
+ON
+  pd_vendors.uuid = order_discount.pd_vendor_uuid
+LEFT JOIN
+  `fulfillment-dwh-production.pandata_curated.pd_orders_agg_accounting` AS pd_orders_agg_accounting
+ON
+  pd_orders_agg_accounting.uuid = order_discount.order_uuid
+  AND pd_orders_agg_accounting.created_date_utc BETWEEN DATE_SUB(DATE_TRUNC(CURRENT_DATE-1,MONTH),INTERVAL 11 MONTH)
+  AND CURRENT_DATE - 1
+GROUP BY
+  1,2,3,4,5),
+
+  discounts AS (
+  SELECT
+    global_entity_id,
+    b.iso_date AS report_date,
+    pd_discount_uuid,
+    start_date_local,
+    end_date_local,
+    discount_type,
+    discount_ratio,
+    discount_title
+  FROM
+    `dha---bi-485.local_schedules.discount_mmt_selected_dishes` a,
+    `fulfillment-dwh-production.curated_data_shared_central_dwh.dates` b
+  WHERE
+    global_entity_id = 'MJM_AT'
+    AND start_date_local <<= b.iso_date
+    AND end_date_local >>= b.iso_date
+    AND b.iso_date BETWEEN DATE_SUB(DATE_TRUNC(CURRENT_DATE-1,MONTH),INTERVAL 11 MONTH)
+    AND CURRENT_DATE - 1
+  ORDER BY
+    start_date_local,
+    iso_date
+    ),
+  vendor_discounts AS (
+  SELECT
+    DISTINCT a.global_entity_id,
+    d.pd_discount_uuid,
+    b.iso_date AS report_date,
+    a.vendor_code
+  FROM
+    `fulfillment-dwh-production.pandata_curated.pd_vendors` a
+  LEFT JOIN
+    UNNEST(discounts) d,
+    `fulfillment-dwh-production.curated_data_shared_central_dwh.dates` b
+  WHERE
+    global_entity_id = 'MJM_AT'
+    AND start_date_local <<= b.iso_date
+    AND end_date_local >>= b.iso_date
+    AND b.iso_date BETWEEN DATE_SUB(DATE_TRUNC(CURRENT_DATE-1,MONTH),INTERVAL 11 MONTH)
+    AND CURRENT_DATE - 1 
+UNION ALL
+    SELECT
+    DISTINCT a.global_entity_id,
+    d.pd_discount_uuid,
+    b.iso_date AS report_date,
+    a.vendor_code
+  FROM
+    `fulfillment-dwh-production.pandata_curated.pd_vendors` a
+  LEFT JOIN
+    `dha---bi-485.local_schedules.discount_mmt_selected_dishes` d on left(d.pd_discount_uuid,4) = a.vendor_code,
+    `fulfillment-dwh-production.curated_data_shared_central_dwh.dates` b
+  WHERE
+    a.global_entity_id = 'MJM_AT'
+    AND start_date_local <<= b.iso_date
+    AND end_date_local >>= b.iso_date
+    AND b.iso_date BETWEEN DATE_SUB(DATE_TRUNC(CURRENT_DATE-1,MONTH),INTERVAL 11 MONTH)
+    AND CURRENT_DATE - 1
+    ),
+  active_discounts AS (
+  SELECT
+    a.global_entity_id,
+    DATE_TRUNC(a.report_date,MONTH) AS report_month,
+    CAST(NULL AS STRING) AS vendor_code,
+    a.discount_type,
+    a.discount_title,
+    COUNT(DISTINCT a.pd_discount_uuid) AS discounts_active,
+    COUNT(DISTINCT b.vendor_code) AS discounts_active_vendor,
+    COUNT(DISTINCT
+      CASE
+        WHEN discount_type ='free_delivery' THEN a.pd_discount_uuid
+    END
+      ) AS discounts_active_free_delivery,
+    COUNT(DISTINCT
+      CASE
+        WHEN discount_type = 'percentage' THEN if(left(a.pd_discount_uuid,6)='MJM_AT',a.pd_discount_uuid,left(a.discount_title,3))
+    END
+      ) AS discounts_active_percentage,
+    COUNT(DISTINCT
+      CASE
+        WHEN discount_type = 'free_gift' THEN a.pd_discount_uuid
+    END
+      ) AS discounts_active_free_gift,
+    COUNT(DISTINCT
+      CASE
+        WHEN discount_type = 'amount' THEN a.pd_discount_uuid
+    END
+      ) AS discounts_active_amount,
+    COUNT(DISTINCT
+      CASE
+        WHEN COALESCE(discount_type, '') NOT IN ('free_delivery', 'percentage', 'free_gift', 'amount') THEN a.pd_discount_uuid
+    END
+      ) AS discounts_active_other,
+    CASE
+      WHEN COUNT(DISTINCT b.vendor_code ) = 0 THEN 1
+    ELSE
+    0
+  END
+    AS discounts_active_no_vendor
+  FROM
+    discounts a
+  LEFT JOIN
+    `fulfillment-dwh-production.curated_data_shared_central_dwh.dates` AS d
+  ON
+    a.report_date = d.iso_date
+  LEFT JOIN
+    vendor_discounts b
+  ON
+    a.global_entity_id = b.global_entity_id
+    AND a.report_date = b.report_date
+    AND a.pd_discount_uuid = b.pd_discount_uuid
+  GROUP BY
+    1,
+    2,
+    3,
+    4,
+    5),
+  active_discounts_vendor AS (
+  SELECT
+    a.global_entity_id,
+    DATE_TRUNC(a.report_date,MONTH) AS report_month,
+    b.vendor_code,
+    a.discount_type,
+    a.discount_title,
+    COUNT(DISTINCT b.vendor_code) AS discounts_active_vendor,
+    COUNT(DISTINCT
+      CASE
+        WHEN discount_type ='free_delivery' THEN b.vendor_code
+    END
+      ) AS discounts_active_free_delivery_vendor,
+    COUNT(DISTINCT
+      CASE
+        WHEN discount_type = 'percentage' THEN b.vendor_code
+    END
+      ) AS discounts_active_percentage_vendor,
+    COUNT(DISTINCT
+      CASE
+        WHEN discount_type = 'free_gift' THEN b.vendor_code
+    END
+      ) AS discounts_active_free_gift_vendor,
+    COUNT(DISTINCT
+      CASE
+        WHEN discount_type = 'amount' THEN b.vendor_code
+    END
+      ) AS discounts_active_amount_vendor,
+    COUNT(DISTINCT
+      CASE
+        WHEN COALESCE(discount_type, '') NOT IN ('free_delivery', 'percentage', 'free_gift', 'amount') THEN b.vendor_code
+    END
+      ) AS discounts_active_other_vendor
+  FROM
+    discounts a
+  LEFT JOIN
+    `fulfillment-dwh-production.curated_data_shared_central_dwh.dates` AS d
+  ON
+    a.report_date = d.iso_date
+  INNER JOIN
+    vendor_discounts b
+  ON
+    a.global_entity_id = b.global_entity_id
+    AND a.report_date = b.report_date
+    AND a.pd_discount_uuid = b.pd_discount_uuid
+  GROUP BY
+    1,
+    2,
+    3,
+    4,
+    5),
+  discount_orders AS (
+  SELECT
+    a.global_entity_id,
+    DATE_TRUNC(a.created_date,MONTH) AS report_month,
+    a.vendor_code,
+    a.discount_type,
+    a.discount_title,
+    SUM(a.successful_orders) AS discounts,
+    SUM(a.gfv_local) AS discounts_gfv,
+    SUM(a.gmv_local) AS discounts_gmv,
+    SUM(CASE
+        WHEN a.discount_ratio = 100 THEN a.successful_orders
+    END
+      ) AS discounts_dh,
+    SUM(CASE
+        WHEN a.discount_ratio = 0 THEN a.successful_orders
+    END
+      ) AS discounts_vendor,
+    SUM(CASE
+        WHEN a.discount_ratio >> 0 AND a.discount_ratio<<100 THEN a.successful_orders
+    END
+      ) AS discounts_mixed,
+    SUM(a.discount_value_local) AS discounts_value,
+    SUM(a.discount_value_local*(a.discount_ratio/100)) AS discounts_value_dh,
+    SUM(a.discount_value_local*((100-a.discount_ratio)/100)) AS discounts_value_vendor
+  FROM
+    vendor_orders AS a
+  WHERE
+    a.created_date BETWEEN DATE_SUB(DATE_TRUNC(CURRENT_DATE-1,MONTH),INTERVAL 11 MONTH)-1
+    AND CURRENT_DATE - 1
+    AND a.global_entity_id = 'MJM_AT'
+    AND a.successful_orders >> 0
+    AND a.discount_used IS TRUE
+  GROUP BY
+    1,
+    2,
+    3,
+    4,
+    5 ),
+  successful_orders AS (
+  SELECT
+    a.global_entity_id,
+    DATE_TRUNC(a.created_date,MONTH) AS report_month,
+    a.vendor_code,
+    a.discount_used,
+    CAST('Total' AS STRING) AS discount_type,
+    CAST('Total' AS STRING) AS discount_title,
+    SUM(a.successful_orders) AS orders,
+    SUM(a.gfv_local) AS orders_gfv,
+    SUM(a.gmv_local) AS orders_gmv
+  FROM
+    vendor_orders AS a
+  WHERE
+    a.global_entity_id = 'MJM_AT'
+    AND a.successful_orders >> 0
+  GROUP BY
+    1,
+    2,
+    3,
+    4),
+  active_vendors AS (
+  SELECT
+    pd_vendors.global_entity_id,
+    DATE_TRUNC(a.date_created,MONTH) AS report_month,
+    a.vendor_code,
+    CAST('Total' AS STRING) AS discount_type,
+    CAST('Total' AS STRING)AS discount_title,
+    COUNT(DISTINCT a.vendor_code) AS vendors_active
+  FROM
+    `dha---bi-485.local_schedules.pd_vendors_history` AS a
+  LEFT JOIN
+    `fulfillment-dwh-production.pandata_curated.pd_vendors` AS pd_vendors
+  ON
+    pd_vendors.vendor_code = a.vendor_code
+  WHERE
+    pd_vendors.global_entity_id = 'MJM_AT'
+    AND a.date_created BETWEEN DATE_SUB(DATE_TRUNC(CURRENT_DATE-1,MONTH),INTERVAL 11 MONTH)
+    AND CURRENT_DATE - 1
+    AND a.is_active IS TRUE
+  GROUP BY
+    1,
+    2,
+    3,
+    4,
+    5 ),
+  final AS (
+  SELECT
+    global_entity_id,
+    report_month,
+    vendor_code,
+    discount_type,
+    discount_title,
+    CAST(discounts_active AS INT64) AS discounts_active,
+    CAST(discounts_active_free_delivery AS INT64) AS discounts_active_free_delivery,
+    CAST(discounts_active_percentage AS INT64) AS discounts_active_percentage,
+    CAST(discounts_active_free_gift AS INT64) AS discounts_active_free_gift,
+    CAST(discounts_active_amount AS INT64) AS discounts_active_amount,
+    CAST(discounts_active_other AS INT64) AS discounts_active_other,
+    CAST(discounts_active_no_vendor AS INT64) AS discounts_active_no_vendor,
+    CAST(NULL AS INT64) AS discounts_active_vendor,
+    CAST(NULL AS INT64) AS discounts_active_free_delivery_vendor,
+    CAST(NULL AS INT64) AS discounts_active_percentage_vendor,
+    CAST(NULL AS INT64) AS discounts_active_text_freegift_vendor,
+    CAST(NULL AS INT64) AS discounts_active_amount_vendor,
+    CAST(NULL AS INT64) AS discounts_active_other_vendor,
+    CAST(NULL AS INT64) AS discounts,
+    CAST(NULL AS FLOAT64) AS discounts_gfv,
+    CAST(NULL AS FLOAT64) AS discounts_gmv,
+    CAST(NULL AS INT64) AS discounts_dh,
+    CAST(NULL AS INT64) AS discounts_vendor,
+    CAST(NULL AS INT64) AS discounts_mixed,
+    CAST(NULL AS FLOAT64) AS discounts_value,
+    CAST(NULL AS FLOAT64) AS discounts_value_dh,
+    CAST(NULL AS FLOAT64) AS discounts_value_vendor,
+    CAST(NULL AS INT64) AS orders,
+    CAST(NULL AS FLOAT64) AS orders_gfv,
+    CAST(NULL AS FLOAT64) AS orders_gmv,
+    CAST(NULL AS INT64) AS vendors_active
+  FROM
+    active_discounts
+  UNION ALL
+  SELECT
+    global_entity_id,
+    report_month,
+    vendor_code,
+    discount_type,
+    discount_title,
+    CAST(NULL AS INT64) AS discounts_active,
+    CAST(NULL AS INT64) AS discounts_active_free_delivery,
+    CAST(NULL AS INT64) AS discounts_active_percentage,
+    CAST(NULL AS INT64) AS discounts_active_text_freegift,
+    CAST(NULL AS INT64) AS discounts_active_amount,
+    CAST(NULL AS INT64) AS discounts_active_other,
+    CAST(NULL AS INT64) AS discounts_active_no_vendor,
+    CAST(discounts_active_vendor AS INT64) AS discounts_active_vendor,
+    CAST(discounts_active_free_delivery_vendor AS INT64) AS discounts_active_free_delivery_vendor,
+    CAST(discounts_active_percentage_vendor AS INT64) AS discounts_active_percentage_vendor,
+    CAST(discounts_active_free_gift_vendor AS INT64) AS discounts_active_free_gift_vendor,
+    CAST(discounts_active_amount_vendor AS INT64) AS discounts_active_amount_vendor,
+    CAST(discounts_active_other_vendor AS INT64) AS discounts_active_other_vendor,
+    CAST(NULL AS INT64) AS discounts,
+    CAST(NULL AS FLOAT64) AS discounts_gfv,
+    CAST(NULL AS FLOAT64) AS discounts_gmv,
+    CAST(NULL AS INT64) AS discounts_dh,
+    CAST(NULL AS INT64) AS discounts_vendor,
+    CAST(NULL AS INT64) AS discounts_mixed,
+    CAST(NULL AS FLOAT64) AS discounts_value,
+    CAST(NULL AS FLOAT64) AS discounts_value_dh,
+    CAST(NULL AS FLOAT64) AS discounts_value_vendor,
+    CAST(NULL AS INT64) AS orders,
+    CAST(NULL AS FLOAT64) AS orders_gfv,
+    CAST(NULL AS FLOAT64) AS orders_gmv,
+    CAST(NULL AS INT64) AS vendors_active
+  FROM
+    active_discounts_vendor
+  UNION ALL
+  SELECT
+    global_entity_id,
+    report_month,
+    vendor_code,
+    discount_type,
+    discount_title,
+    CAST(NULL AS INT64) AS discounts_active,
+    CAST(NULL AS INT64) AS discounts_active_free_delivery,
+    CAST(NULL AS INT64) AS discounts_active_percentage,
+    CAST(NULL AS INT64) AS discounts_active_text_freegift,
+    CAST(NULL AS INT64) AS discounts_active_amount,
+    CAST(NULL AS INT64) AS discounts_active_other,
+    CAST(NULL AS INT64) AS discounts_active_no_vendor,
+    CAST(NULL AS INT64) AS discounts_active_vendor,
+    CAST(NULL AS INT64) AS discounts_active_free_delivery_vendor,
+    CAST(NULL AS INT64) AS discounts_active_percentage_vendor,
+    CAST(NULL AS INT64) AS discounts_active_text_freegift_vendor,
+    CAST(NULL AS INT64) AS discounts_active_amount_vendor,
+    CAST(NULL AS INT64) AS discounts_active_other_vendor,
+    CAST(discounts AS INT64) AS discounts,
+    CAST(discounts_gfv AS FLOAT64) AS discounts_gfv,
+    CAST(discounts_gmv AS FLOAT64) AS discounts_gmv,
+    CAST(discounts_dh AS INT64) AS discounts_dh,
+    CAST(discounts_vendor AS INT64) AS discounts_vendor,
+    CAST(discounts_mixed AS INT64) AS discounts_mixed,
+    CAST(discounts_value AS FLOAT64) AS discounts_value,
+    CAST(discounts_value_dh AS FLOAT64) AS discounts_value_dh,
+    CAST(discounts_value_vendor AS FLOAT64) AS discounts_value_vendor,
+    CAST(NULL AS INT64) AS orders,
+    CAST(NULL AS FLOAT64) AS orders_gfv,
+    CAST(NULL AS FLOAT64) AS orders_gmv,
+    CAST(NULL AS INT64) AS vendors_active
+  FROM
+    discount_orders
+  UNION ALL
+  SELECT
+    global_entity_id,
+    report_month,
+    vendor_code,
+    discount_type,
+    discount_title,
+    CAST(NULL AS INT64) AS discounts_active,
+    CAST(NULL AS INT64) AS discounts_active_free_delivery,
+    CAST(NULL AS INT64) AS discounts_active_percentage,
+    CAST(NULL AS INT64) AS discounts_active_text_freegift,
+    CAST(NULL AS INT64) AS discounts_active_amount,
+    CAST(NULL AS INT64) AS discounts_active_other,
+    CAST(NULL AS INT64) AS discounts_active_no_vendor,
+    CAST(NULL AS INT64) AS discounts_active_vendor,
+    CAST(NULL AS INT64) AS discounts_active_free_delivery_vendor,
+    CAST(NULL AS INT64) AS discounts_active_percentage_vendor,
+    CAST(NULL AS INT64) AS discounts_active_text_freegift_vendor,
+    CAST(NULL AS INT64) AS discounts_active_amount_vendor,
+    CAST(NULL AS INT64) AS discounts_active_other_vendor,
+    CAST(NULL AS INT64) AS discounts,
+    CAST(NULL AS FLOAT64) AS discounts_gfv,
+    CAST(NULL AS FLOAT64) AS discounts_gmv,
+    CAST(NULL AS INT64) AS discounts_dh,
+    CAST(NULL AS INT64) AS discounts_vendor,
+    CAST(NULL AS INT64) AS discounts_mixed,
+    CAST(NULL AS FLOAT64) AS discounts_value,
+    CAST(NULL AS FLOAT64) AS discounts_value_dh,
+    CAST(NULL AS FLOAT64) AS discounts_value_vendor,
+    CAST(orders AS INT64) AS orders,
+    CAST(orders_gfv AS FLOAT64) AS orders_gfv,
+    CAST(orders_gmv AS FLOAT64) AS orders_gmv,
+    CAST(NULL AS INT64) AS vendors_active
+  FROM
+    successful_orders
+  UNION ALL
+  SELECT
+    global_entity_id,
+    report_month,
+    vendor_code,
+    discount_type,
+    discount_title,
+    CAST(NULL AS INT64) AS discounts_active,
+    CAST(NULL AS INT64) AS discounts_active_free_delivery,
+    CAST(NULL AS INT64) AS discounts_active_percentage,
+    CAST(NULL AS INT64) AS discounts_active_text_freegift,
+    CAST(NULL AS INT64) AS discounts_active_amount,
+    CAST(NULL AS INT64) AS discounts_active_other,
+    CAST(NULL AS INT64) AS discounts_active_no_vendor,
+    CAST(NULL AS INT64) AS discounts_active_vendor,
+    CAST(NULL AS INT64) AS discounts_active_free_delivery_vendor,
+    CAST(NULL AS INT64) AS discounts_active_percentage_vendor,
+    CAST(NULL AS INT64) AS discounts_active_text_freegift_vendor,
+    CAST(NULL AS INT64) AS discounts_active_amount_vendor,
+    CAST(NULL AS INT64) AS discounts_active_other_vendor,
+    CAST(NULL AS INT64) AS discounts,
+    CAST(NULL AS FLOAT64) AS discounts_gfv,
+    CAST(NULL AS FLOAT64) AS discounts_gmv,
+    CAST(NULL AS INT64) AS discounts_dh,
+    CAST(NULL AS INT64) AS discounts_vendor,
+    CAST(NULL AS INT64) AS discounts_mixed,
+    CAST(NULL AS FLOAT64) AS discounts_value,
+    CAST(NULL AS FLOAT64) AS discounts_value_dh,
+    CAST(NULL AS FLOAT64) AS discounts_value_vendor,
+    CAST(NULL AS INT64) AS orders,
+    CAST(NULL AS FLOAT64) AS orders_gfv,
+    CAST(NULL AS FLOAT64) AS orders_gmv,
+    CAST(vendors_active AS INT64) AS vendors_active
+  FROM
+    active_vendors)
+SELECT
+  v.chain_name,
+  v.name,
+  v.is_active,
+  a.*
+FROM
+  final AS a
+LEFT JOIN
+  `fulfillment-dwh-production.pandata_curated.pd_vendors` AS v
+ON
+  a.global_entity_id=v.global_entity_id
+  AND a.vendor_code=v.vendor_code]]></_.fcp.ObjectModelEncapsulateLegacy.false...relation>
+        <_.fcp.ObjectModelEncapsulateLegacy.true...relation connection='bigquery.0ja9gbu15j02n810qf1li0bjf1rn' name='Custom SQL Query' type='text'><![CDATA[WITH
+  order_discount AS (
+  SELECT
+    DISTINCT pd_orders.code AS order_code,
+    pd_orders.uuid AS order_uuid,
+    pd_vendor_uuid,
+    pd_orders.global_entity_id,
+    pd_orders.created_date_utc AS created_date,
+    DATE_TRUNC(pd_orders.created_date_utc, month) AS report_month,
+    pd_orders_agg_discounts.discount_used AS discount_used,
+    max (pd_orders_agg_discounts.discount_type) as discount_type,
+    max (pd_orders_agg_discounts.discount_title) as discount_title,
+    avg(discount_ratio) as discount_ratio,
+    SUM(discount_value_local) as discount_value_local,
+  FROM
+    `fulfillment-dwh-production.pandata_curated.pd_orders` AS pd_orders
+  LEFT JOIN
+    `dha---bi-485.local_schedules.pd_order_discount_mmt_selected_dishes_v2` AS pd_orders_agg_discounts
+  ON
+    pd_orders_agg_discounts.order_code = pd_orders.code
+    AND pd_orders_agg_discounts.created_date BETWEEN DATE_SUB(DATE_TRUNC(CURRENT_DATE-1,MONTH),INTERVAL 11 MONTH)
+    AND CURRENT_DATE - 1
+  LEFT JOIN
+    `fulfillment-dwh-production.pandata_curated.pd_discounts` pd_discounts
+  ON
+    pd_discounts.uuid = pd_orders_agg_discounts.pd_discount_uuid
+  WHERE
+    pd_orders.created_date_utc BETWEEN DATE_SUB(DATE_TRUNC(CURRENT_DATE-1,MONTH),INTERVAL 11 MONTH)
+    AND CURRENT_DATE - 1
+    AND pd_orders.global_entity_id = 'MJM_AT'
+    AND NOT is_test_order
+    AND is_valid_order
+  GROUP BY
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7
+    ),
+vendor_orders as (SELECT
+  order_discount.global_entity_id,
+  created_date,
+  report_month,
+  pd_vendors.vendor_code,
+  discount_used,
+  max(discount_type) as discount_type ,
+  max(discount_title) as discount_title,
+  COUNT(DISTINCT order_uuid) AS successful_orders,
+  SUM(pd_orders_agg_accounting.gfv_eur) AS gfv_local,
+  SUM(pd_orders_agg_accounting.gmv_eur) AS gmv_local,
+  avg(discount_ratio) AS discount_ratio,
+  SUM(discount_value_local) AS discount_value_local,
+FROM
+  order_discount
+LEFT JOIN
+  `fulfillment-dwh-production.pandata_curated.pd_vendors` AS pd_vendors
+ON
+  pd_vendors.uuid = order_discount.pd_vendor_uuid
+LEFT JOIN
+  `fulfillment-dwh-production.pandata_curated.pd_orders_agg_accounting` AS pd_orders_agg_accounting
+ON
+  pd_orders_agg_accounting.uuid = order_discount.order_uuid
+  AND pd_orders_agg_accounting.created_date_utc BETWEEN DATE_SUB(DATE_TRUNC(CURRENT_DATE-1,MONTH),INTERVAL 11 MONTH)
+  AND CURRENT_DATE - 1
+GROUP BY
+  1,2,3,4,5),
+
+  discounts AS (
+  SELECT
+    global_entity_id,
+    b.iso_date AS report_date,
+    pd_discount_uuid,
+    start_date_local,
+    end_date_local,
+    discount_type,
+    discount_ratio,
+    discount_title
+  FROM
+    `dha---bi-485.local_schedules.discount_mmt_selected_dishes` a,
+    `fulfillment-dwh-production.curated_data_shared_central_dwh.dates` b
+  WHERE
+    global_entity_id = 'MJM_AT'
+    AND start_date_local <<= b.iso_date
+    AND end_date_local >>= b.iso_date
+    AND b.iso_date BETWEEN DATE_SUB(DATE_TRUNC(CURRENT_DATE-1,MONTH),INTERVAL 11 MONTH)
+    AND CURRENT_DATE - 1
+  ORDER BY
+    start_date_local,
+    iso_date
+    ),
+  vendor_discounts AS (
+  SELECT
+    DISTINCT a.global_entity_id,
+    d.pd_discount_uuid,
+    b.iso_date AS report_date,
+    a.vendor_code
+  FROM
+    `fulfillment-dwh-production.pandata_curated.pd_vendors` a
+  LEFT JOIN
+    UNNEST(discounts) d,
+    `fulfillment-dwh-production.curated_data_shared_central_dwh.dates` b
+  WHERE
+    global_entity_id = 'MJM_AT'
+    AND start_date_local <<= b.iso_date
+    AND end_date_local >>= b.iso_date
+    AND b.iso_date BETWEEN DATE_SUB(DATE_TRUNC(CURRENT_DATE-1,MONTH),INTERVAL 11 MONTH)
+    AND CURRENT_DATE - 1 
+UNION ALL
+    SELECT
+    DISTINCT a.global_entity_id,
+    d.pd_discount_uuid,
+    b.iso_date AS report_date,
+    a.vendor_code
+  FROM
+    `fulfillment-dwh-production.pandata_curated.pd_vendors` a
+  LEFT JOIN
+    `dha---bi-485.local_schedules.discount_mmt_selected_dishes` d on left(d.pd_discount_uuid,4) = a.vendor_code,
+    `fulfillment-dwh-production.curated_data_shared_central_dwh.dates` b
+  WHERE
+    a.global_entity_id = 'MJM_AT'
+    AND start_date_local <<= b.iso_date
+    AND end_date_local >>= b.iso_date
+    AND b.iso_date BETWEEN DATE_SUB(DATE_TRUNC(CURRENT_DATE-1,MONTH),INTERVAL 11 MONTH)
+    AND CURRENT_DATE - 1
+    ),
+  active_discounts AS (
+  SELECT
+    a.global_entity_id,
+    DATE_TRUNC(a.report_date,MONTH) AS report_month,
+    CAST(NULL AS STRING) AS vendor_code,
+    a.discount_type,
+    a.discount_title,
+    COUNT(DISTINCT a.pd_discount_uuid) AS discounts_active,
+    COUNT(DISTINCT b.vendor_code) AS discounts_active_vendor,
+    COUNT(DISTINCT
+      CASE
+        WHEN discount_type ='free_delivery' THEN a.pd_discount_uuid
+    END
+      ) AS discounts_active_free_delivery,
+    COUNT(DISTINCT
+      CASE
+        WHEN discount_type = 'percentage' THEN if(left(a.pd_discount_uuid,6)='MJM_AT',a.pd_discount_uuid,left(a.discount_title,3))
+    END
+      ) AS discounts_active_percentage,
+    COUNT(DISTINCT
+      CASE
+        WHEN discount_type = 'free_gift' THEN a.pd_discount_uuid
+    END
+      ) AS discounts_active_free_gift,
+    COUNT(DISTINCT
+      CASE
+        WHEN discount_type = 'amount' THEN a.pd_discount_uuid
+    END
+      ) AS discounts_active_amount,
+    COUNT(DISTINCT
+      CASE
+        WHEN COALESCE(discount_type, '') NOT IN ('free_delivery', 'percentage', 'free_gift', 'amount') THEN a.pd_discount_uuid
+    END
+      ) AS discounts_active_other,
+    CASE
+      WHEN COUNT(DISTINCT b.vendor_code ) = 0 THEN 1
+    ELSE
+    0
+  END
+    AS discounts_active_no_vendor
+  FROM
+    discounts a
+  LEFT JOIN
+    `fulfillment-dwh-production.curated_data_shared_central_dwh.dates` AS d
+  ON
+    a.report_date = d.iso_date
+  LEFT JOIN
+    vendor_discounts b
+  ON
+    a.global_entity_id = b.global_entity_id
+    AND a.report_date = b.report_date
+    AND a.pd_discount_uuid = b.pd_discount_uuid
+  GROUP BY
+    1,
+    2,
+    3,
+    4,
+    5),
+  active_discounts_vendor AS (
+  SELECT
+    a.global_entity_id,
+    DATE_TRUNC(a.report_date,MONTH) AS report_month,
+    b.vendor_code,
+    a.discount_type,
+    a.discount_title,
+    COUNT(DISTINCT b.vendor_code) AS discounts_active_vendor,
+    COUNT(DISTINCT
+      CASE
+        WHEN discount_type ='free_delivery' THEN b.vendor_code
+    END
+      ) AS discounts_active_free_delivery_vendor,
+    COUNT(DISTINCT
+      CASE
+        WHEN discount_type = 'percentage' THEN b.vendor_code
+    END
+      ) AS discounts_active_percentage_vendor,
+    COUNT(DISTINCT
+      CASE
+        WHEN discount_type = 'free_gift' THEN b.vendor_code
+    END
+      ) AS discounts_active_free_gift_vendor,
+    COUNT(DISTINCT
+      CASE
+        WHEN discount_type = 'amount' THEN b.vendor_code
+    END
+      ) AS discounts_active_amount_vendor,
+    COUNT(DISTINCT
+      CASE
+        WHEN COALESCE(discount_type, '') NOT IN ('free_delivery', 'percentage', 'free_gift', 'amount') THEN b.vendor_code
+    END
+      ) AS discounts_active_other_vendor
+  FROM
+    discounts a
+  LEFT JOIN
+    `fulfillment-dwh-production.curated_data_shared_central_dwh.dates` AS d
+  ON
+    a.report_date = d.iso_date
+  INNER JOIN
+    vendor_discounts b
+  ON
+    a.global_entity_id = b.global_entity_id
+    AND a.report_date = b.report_date
+    AND a.pd_discount_uuid = b.pd_discount_uuid
+  GROUP BY
+    1,
+    2,
+    3,
+    4,
+    5),
+  discount_orders AS (
+  SELECT
+    a.global_entity_id,
+    DATE_TRUNC(a.created_date,MONTH) AS report_month,
+    a.vendor_code,
+    a.discount_type,
+    a.discount_title,
+    SUM(a.successful_orders) AS discounts,
+    SUM(a.gfv_local) AS discounts_gfv,
+    SUM(a.gmv_local) AS discounts_gmv,
+    SUM(CASE
+        WHEN a.discount_ratio = 100 THEN a.successful_orders
+    END
+      ) AS discounts_dh,
+    SUM(CASE
+        WHEN a.discount_ratio = 0 THEN a.successful_orders
+    END
+      ) AS discounts_vendor,
+    SUM(CASE
+        WHEN a.discount_ratio >> 0 AND a.discount_ratio<<100 THEN a.successful_orders
+    END
+      ) AS discounts_mixed,
+    SUM(a.discount_value_local) AS discounts_value,
+    SUM(a.discount_value_local*(a.discount_ratio/100)) AS discounts_value_dh,
+    SUM(a.discount_value_local*((100-a.discount_ratio)/100)) AS discounts_value_vendor
+  FROM
+    vendor_orders AS a
+  WHERE
+    a.created_date BETWEEN DATE_SUB(DATE_TRUNC(CURRENT_DATE-1,MONTH),INTERVAL 11 MONTH)-1
+    AND CURRENT_DATE - 1
+    AND a.global_entity_id = 'MJM_AT'
+    AND a.successful_orders >> 0
+    AND a.discount_used IS TRUE
+  GROUP BY
+    1,
+    2,
+    3,
+    4,
+    5 ),
+  successful_orders AS (
+  SELECT
+    a.global_entity_id,
+    DATE_TRUNC(a.created_date,MONTH) AS report_month,
+    a.vendor_code,
+    a.discount_used,
+    CAST('Total' AS STRING) AS discount_type,
+    CAST('Total' AS STRING) AS discount_title,
+    SUM(a.successful_orders) AS orders,
+    SUM(a.gfv_local) AS orders_gfv,
+    SUM(a.gmv_local) AS orders_gmv
+  FROM
+    vendor_orders AS a
+  WHERE
+    a.global_entity_id = 'MJM_AT'
+    AND a.successful_orders >> 0
+  GROUP BY
+    1,
+    2,
+    3,
+    4),
+  active_vendors AS (
+  SELECT
+    pd_vendors.global_entity_id,
+    DATE_TRUNC(a.date_created,MONTH) AS report_month,
+    a.vendor_code,
+    CAST('Total' AS STRING) AS discount_type,
+    CAST('Total' AS STRING)AS discount_title,
+    COUNT(DISTINCT a.vendor_code) AS vendors_active
+  FROM
+    `dha---bi-485.local_schedules.pd_vendors_history` AS a
+  LEFT JOIN
+    `fulfillment-dwh-production.pandata_curated.pd_vendors` AS pd_vendors
+  ON
+    pd_vendors.vendor_code = a.vendor_code
+  WHERE
+    pd_vendors.global_entity_id = 'MJM_AT'
+    AND a.date_created BETWEEN DATE_SUB(DATE_TRUNC(CURRENT_DATE-1,MONTH),INTERVAL 11 MONTH)
+    AND CURRENT_DATE - 1
+    AND a.is_active IS TRUE
+  GROUP BY
+    1,
+    2,
+    3,
+    4,
+    5 ),
+  final AS (
+  SELECT
+    global_entity_id,
+    report_month,
+    vendor_code,
+    discount_type,
+    discount_title,
+    CAST(discounts_active AS INT64) AS discounts_active,
+    CAST(discounts_active_free_delivery AS INT64) AS discounts_active_free_delivery,
+    CAST(discounts_active_percentage AS INT64) AS discounts_active_percentage,
+    CAST(discounts_active_free_gift AS INT64) AS discounts_active_free_gift,
+    CAST(discounts_active_amount AS INT64) AS discounts_active_amount,
+    CAST(discounts_active_other AS INT64) AS discounts_active_other,
+    CAST(discounts_active_no_vendor AS INT64) AS discounts_active_no_vendor,
+    CAST(NULL AS INT64) AS discounts_active_vendor,
+    CAST(NULL AS INT64) AS discounts_active_free_delivery_vendor,
+    CAST(NULL AS INT64) AS discounts_active_percentage_vendor,
+    CAST(NULL AS INT64) AS discounts_active_text_freegift_vendor,
+    CAST(NULL AS INT64) AS discounts_active_amount_vendor,
+    CAST(NULL AS INT64) AS discounts_active_other_vendor,
+    CAST(NULL AS INT64) AS discounts,
+    CAST(NULL AS FLOAT64) AS discounts_gfv,
+    CAST(NULL AS FLOAT64) AS discounts_gmv,
+    CAST(NULL AS INT64) AS discounts_dh,
+    CAST(NULL AS INT64) AS discounts_vendor,
+    CAST(NULL AS INT64) AS discounts_mixed,
+    CAST(NULL AS FLOAT64) AS discounts_value,
+    CAST(NULL AS FLOAT64) AS discounts_value_dh,
+    CAST(NULL AS FLOAT64) AS discounts_value_vendor,
+    CAST(NULL AS INT64) AS orders,
+    CAST(NULL AS FLOAT64) AS orders_gfv,
+    CAST(NULL AS FLOAT64) AS orders_gmv,
+    CAST(NULL AS INT64) AS vendors_active
+  FROM
+    active_discounts
+  UNION ALL
+  SELECT
+    global_entity_id,
+    report_month,
+    vendor_code,
+    discount_type,
+    discount_title,
+    CAST(NULL AS INT64) AS discounts_active,
+    CAST(NULL AS INT64) AS discounts_active_free_delivery,
+    CAST(NULL AS INT64) AS discounts_active_percentage,
+    CAST(NULL AS INT64) AS discounts_active_text_freegift,
+    CAST(NULL AS INT64) AS discounts_active_amount,
+    CAST(NULL AS INT64) AS discounts_active_other,
+    CAST(NULL AS INT64) AS discounts_active_no_vendor,
+    CAST(discounts_active_vendor AS INT64) AS discounts_active_vendor,
+    CAST(discounts_active_free_delivery_vendor AS INT64) AS discounts_active_free_delivery_vendor,
+    CAST(discounts_active_percentage_vendor AS INT64) AS discounts_active_percentage_vendor,
+    CAST(discounts_active_free_gift_vendor AS INT64) AS discounts_active_free_gift_vendor,
+    CAST(discounts_active_amount_vendor AS INT64) AS discounts_active_amount_vendor,
+    CAST(discounts_active_other_vendor AS INT64) AS discounts_active_other_vendor,
+    CAST(NULL AS INT64) AS discounts,
+    CAST(NULL AS FLOAT64) AS discounts_gfv,
+    CAST(NULL AS FLOAT64) AS discounts_gmv,
+    CAST(NULL AS INT64) AS discounts_dh,
+    CAST(NULL AS INT64) AS discounts_vendor,
+    CAST(NULL AS INT64) AS discounts_mixed,
+    CAST(NULL AS FLOAT64) AS discounts_value,
+    CAST(NULL AS FLOAT64) AS discounts_value_dh,
+    CAST(NULL AS FLOAT64) AS discounts_value_vendor,
+    CAST(NULL AS INT64) AS orders,
+    CAST(NULL AS FLOAT64) AS orders_gfv,
+    CAST(NULL AS FLOAT64) AS orders_gmv,
+    CAST(NULL AS INT64) AS vendors_active
+  FROM
+    active_discounts_vendor
+  UNION ALL
+  SELECT
+    global_entity_id,
+    report_month,
+    vendor_code,
+    discount_type,
+    discount_title,
+    CAST(NULL AS INT64) AS discounts_active,
+    CAST(NULL AS INT64) AS discounts_active_free_delivery,
+    CAST(NULL AS INT64) AS discounts_active_percentage,
+    CAST(NULL AS INT64) AS discounts_active_text_freegift,
+    CAST(NULL AS INT64) AS discounts_active_amount,
+    CAST(NULL AS INT64) AS discounts_active_other,
+    CAST(NULL AS INT64) AS discounts_active_no_vendor,
+    CAST(NULL AS INT64) AS discounts_active_vendor,
+    CAST(NULL AS INT64) AS discounts_active_free_delivery_vendor,
+    CAST(NULL AS INT64) AS discounts_active_percentage_vendor,
+    CAST(NULL AS INT64) AS discounts_active_text_freegift_vendor,
+    CAST(NULL AS INT64) AS discounts_active_amount_vendor,
+    CAST(NULL AS INT64) AS discounts_active_other_vendor,
+    CAST(discounts AS INT64) AS discounts,
+    CAST(discounts_gfv AS FLOAT64) AS discounts_gfv,
+    CAST(discounts_gmv AS FLOAT64) AS discounts_gmv,
+    CAST(discounts_dh AS INT64) AS discounts_dh,
+    CAST(discounts_vendor AS INT64) AS discounts_vendor,
+    CAST(discounts_mixed AS INT64) AS discounts_mixed,
+    CAST(discounts_value AS FLOAT64) AS discounts_value,
+    CAST(discounts_value_dh AS FLOAT64) AS discounts_value_dh,
+    CAST(discounts_value_vendor AS FLOAT64) AS discounts_value_vendor,
+    CAST(NULL AS INT64) AS orders,
+    CAST(NULL AS FLOAT64) AS orders_gfv,
+    CAST(NULL AS FLOAT64) AS orders_gmv,
+    CAST(NULL AS INT64) AS vendors_active
+  FROM
+    discount_orders
+  UNION ALL
+  SELECT
+    global_entity_id,
+    report_month,
+    vendor_code,
+    discount_type,
+    discount_title,
+    CAST(NULL AS INT64) AS discounts_active,
+    CAST(NULL AS INT64) AS discounts_active_free_delivery,
+    CAST(NULL AS INT64) AS discounts_active_percentage,
+    CAST(NULL AS INT64) AS discounts_active_text_freegift,
+    CAST(NULL AS INT64) AS discounts_active_amount,
+    CAST(NULL AS INT64) AS discounts_active_other,
+    CAST(NULL AS INT64) AS discounts_active_no_vendor,
+    CAST(NULL AS INT64) AS discounts_active_vendor,
+    CAST(NULL AS INT64) AS discounts_active_free_delivery_vendor,
+    CAST(NULL AS INT64) AS discounts_active_percentage_vendor,
+    CAST(NULL AS INT64) AS discounts_active_text_freegift_vendor,
+    CAST(NULL AS INT64) AS discounts_active_amount_vendor,
+    CAST(NULL AS INT64) AS discounts_active_other_vendor,
+    CAST(NULL AS INT64) AS discounts,
+    CAST(NULL AS FLOAT64) AS discounts_gfv,
+    CAST(NULL AS FLOAT64) AS discounts_gmv,
+    CAST(NULL AS INT64) AS discounts_dh,
+    CAST(NULL AS INT64) AS discounts_vendor,
+    CAST(NULL AS INT64) AS discounts_mixed,
+    CAST(NULL AS FLOAT64) AS discounts_value,
+    CAST(NULL AS FLOAT64) AS discounts_value_dh,
+    CAST(NULL AS FLOAT64) AS discounts_value_vendor,
+    CAST(orders AS INT64) AS orders,
+    CAST(orders_gfv AS FLOAT64) AS orders_gfv,
+    CAST(orders_gmv AS FLOAT64) AS orders_gmv,
+    CAST(NULL AS INT64) AS vendors_active
+  FROM
+    successful_orders
+  UNION ALL
+  SELECT
+    global_entity_id,
+    report_month,
+    vendor_code,
+    discount_type,
+    discount_title,
+    CAST(NULL AS INT64) AS discounts_active,
+    CAST(NULL AS INT64) AS discounts_active_free_delivery,
+    CAST(NULL AS INT64) AS discounts_active_percentage,
+    CAST(NULL AS INT64) AS discounts_active_text_freegift,
+    CAST(NULL AS INT64) AS discounts_active_amount,
+    CAST(NULL AS INT64) AS discounts_active_other,
+    CAST(NULL AS INT64) AS discounts_active_no_vendor,
+    CAST(NULL AS INT64) AS discounts_active_vendor,
+    CAST(NULL AS INT64) AS discounts_active_free_delivery_vendor,
+    CAST(NULL AS INT64) AS discounts_active_percentage_vendor,
+    CAST(NULL AS INT64) AS discounts_active_text_freegift_vendor,
+    CAST(NULL AS INT64) AS discounts_active_amount_vendor,
+    CAST(NULL AS INT64) AS discounts_active_other_vendor,
+    CAST(NULL AS INT64) AS discounts,
+    CAST(NULL AS FLOAT64) AS discounts_gfv,
+    CAST(NULL AS FLOAT64) AS discounts_gmv,
+    CAST(NULL AS INT64) AS discounts_dh,
+    CAST(NULL AS INT64) AS discounts_vendor,
+    CAST(NULL AS INT64) AS discounts_mixed,
+    CAST(NULL AS FLOAT64) AS discounts_value,
+    CAST(NULL AS FLOAT64) AS discounts_value_dh,
+    CAST(NULL AS FLOAT64) AS discounts_value_vendor,
+    CAST(NULL AS INT64) AS orders,
+    CAST(NULL AS FLOAT64) AS orders_gfv,
+    CAST(NULL AS FLOAT64) AS orders_gmv,
+    CAST(vendors_active AS INT64) AS vendors_active
+  FROM
+    active_vendors)
+SELECT
+  v.chain_name,
+  v.name,
+  v.is_active,
+  a.*
+FROM
+  final AS a
+LEFT JOIN
+  `fulfillment-dwh-production.pandata_curated.pd_vendors` AS v
+ON
+  a.global_entity_id=v.global_entity_id
+  AND a.vendor_code=v.vendor_code]]></_.fcp.ObjectModelEncapsulateLegacy.true...relation>
+        <metadata-records>
+          <metadata-record class='column'>
+            <remote-name>chain_name</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[chain_name]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>chain_name</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_5FD0A4E8D327491F93C1BD8313E59ECE]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>name</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[name]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>name</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_5FD0A4E8D327491F93C1BD8313E59ECE]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>is_active</remote-name>
+            <remote-type>11</remote-type>
+            <local-name>[is_active]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>is_active</remote-alias>
+            <local-type>boolean</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_5FD0A4E8D327491F93C1BD8313E59ECE]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>global_entity_id</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[global_entity_id]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>global_entity_id</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_5FD0A4E8D327491F93C1BD8313E59ECE]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>report_month</remote-name>
+            <remote-type>7</remote-type>
+            <local-name>[report_month]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>report_month</remote-alias>
+            <local-type>date</local-type>
+            <aggregation>Year</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_5FD0A4E8D327491F93C1BD8313E59ECE]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>vendor_code</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[vendor_code]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>vendor_code</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_5FD0A4E8D327491F93C1BD8313E59ECE]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>discount_type</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[discount_type]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>discount_type</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_5FD0A4E8D327491F93C1BD8313E59ECE]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>discount_title</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[discount_title]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>discount_title</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_5FD0A4E8D327491F93C1BD8313E59ECE]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>discounts_active</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[discounts_active]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>discounts_active</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_5FD0A4E8D327491F93C1BD8313E59ECE]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>discounts_active_free_delivery</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[discounts_active_free_delivery]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>discounts_active_free_delivery</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_5FD0A4E8D327491F93C1BD8313E59ECE]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>discounts_active_percentage</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[discounts_active_percentage]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>discounts_active_percentage</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_5FD0A4E8D327491F93C1BD8313E59ECE]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>discounts_active_free_gift</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[discounts_active_free_gift]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>discounts_active_free_gift</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_5FD0A4E8D327491F93C1BD8313E59ECE]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>discounts_active_amount</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[discounts_active_amount]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>discounts_active_amount</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_5FD0A4E8D327491F93C1BD8313E59ECE]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>discounts_active_other</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[discounts_active_other]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>discounts_active_other</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_5FD0A4E8D327491F93C1BD8313E59ECE]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>discounts_active_no_vendor</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[discounts_active_no_vendor]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>discounts_active_no_vendor</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_5FD0A4E8D327491F93C1BD8313E59ECE]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>discounts_active_vendor</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[discounts_active_vendor]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>discounts_active_vendor</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_5FD0A4E8D327491F93C1BD8313E59ECE]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>discounts_active_free_delivery_vendor</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[discounts_active_free_delivery_vendor]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>discounts_active_free_delivery_vendor</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_5FD0A4E8D327491F93C1BD8313E59ECE]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>discounts_active_percentage_vendor</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[discounts_active_percentage_vendor]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>discounts_active_percentage_vendor</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_5FD0A4E8D327491F93C1BD8313E59ECE]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>discounts_active_text_freegift_vendor</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[discounts_active_text_freegift_vendor]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>discounts_active_text_freegift_vendor</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_5FD0A4E8D327491F93C1BD8313E59ECE]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>discounts_active_amount_vendor</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[discounts_active_amount_vendor]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>discounts_active_amount_vendor</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_5FD0A4E8D327491F93C1BD8313E59ECE]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>discounts_active_other_vendor</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[discounts_active_other_vendor]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>discounts_active_other_vendor</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_5FD0A4E8D327491F93C1BD8313E59ECE]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>discounts</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[discounts]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>discounts</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_5FD0A4E8D327491F93C1BD8313E59ECE]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>discounts_gfv</remote-name>
+            <remote-type>5</remote-type>
+            <local-name>[discounts_gfv]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>discounts_gfv</remote-alias>
+            <local-type>real</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_5FD0A4E8D327491F93C1BD8313E59ECE]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>discounts_gmv</remote-name>
+            <remote-type>5</remote-type>
+            <local-name>[discounts_gmv]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>discounts_gmv</remote-alias>
+            <local-type>real</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_5FD0A4E8D327491F93C1BD8313E59ECE]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>discounts_dh</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[discounts_dh]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>discounts_dh</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_5FD0A4E8D327491F93C1BD8313E59ECE]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>discounts_vendor</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[discounts_vendor]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>discounts_vendor</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_5FD0A4E8D327491F93C1BD8313E59ECE]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>discounts_mixed</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[discounts_mixed]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>discounts_mixed</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_5FD0A4E8D327491F93C1BD8313E59ECE]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>discounts_value</remote-name>
+            <remote-type>5</remote-type>
+            <local-name>[discounts_value]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>discounts_value</remote-alias>
+            <local-type>real</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_5FD0A4E8D327491F93C1BD8313E59ECE]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>discounts_value_dh</remote-name>
+            <remote-type>5</remote-type>
+            <local-name>[discounts_value_dh]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>discounts_value_dh</remote-alias>
+            <local-type>real</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_5FD0A4E8D327491F93C1BD8313E59ECE]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>discounts_value_vendor</remote-name>
+            <remote-type>5</remote-type>
+            <local-name>[discounts_value_vendor]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>discounts_value_vendor</remote-alias>
+            <local-type>real</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_5FD0A4E8D327491F93C1BD8313E59ECE]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>orders</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[orders]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>orders</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_5FD0A4E8D327491F93C1BD8313E59ECE]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>orders_gfv</remote-name>
+            <remote-type>5</remote-type>
+            <local-name>[orders_gfv]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>orders_gfv</remote-alias>
+            <local-type>real</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_5FD0A4E8D327491F93C1BD8313E59ECE]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>orders_gmv</remote-name>
+            <remote-type>5</remote-type>
+            <local-name>[orders_gmv]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>orders_gmv</remote-alias>
+            <local-type>real</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_5FD0A4E8D327491F93C1BD8313E59ECE]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>vendors_active</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[vendors_active]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>vendors_active</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_5FD0A4E8D327491F93C1BD8313E59ECE]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+        </metadata-records>
+      </connection>
+      <aliases enabled='yes' />
+      <column caption='# Deals Active - Free Delivery' datatype='integer' name='[# Deals Active (copy)_1659857967467089944]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='[discounts_active_free_delivery]' />
+      </column>
+      <column caption='# Deals Active - Percentage' datatype='integer' name='[# Deals Active - Free Delivery (copy)_1659857967467171865]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='[discounts_active_percentage]' />
+      </column>
+      <column caption='# Deals Active - Amount' datatype='integer' name='[# Deals Active - Text Free Gift (copy)_1659857967467388956]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='[discounts_active_amount]' />
+      </column>
+      <column caption='# Deals Active - Other' datatype='integer' name='[# Deals Active - Text Free Gift (copy)_1659857967467536413]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='[discounts_active_other]' />
+      </column>
+      <column caption='# Orders w Deal - DH Paid' datatype='integer' name='[# Orders w Deal (copy)_1659857967460532234]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='[discounts_dh]' />
+      </column>
+      <column caption='# Orders w Deal - Vendor Paid' datatype='integer' name='[# Orders w Deal - DH Paid (copy)_1659857967461543947]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='[discounts_vendor]' />
+      </column>
+      <column caption='# Orders w Deal - Mixed Paid' datatype='integer' name='[# Orders w Deal - Vendor Paid (copy)_1659857967461703692]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='[discounts_mixed]' />
+      </column>
+      <column caption='# Vendors w Deal - Percentage' datatype='integer' name='[# Vendors w Deal - Free Delivery (copy)_1659857967470391329]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='[discounts_active_percentage_vendor]' />
+      </column>
+      <column caption='# Vendors w Deal - Amount' datatype='integer' name='[# Vendors w Deal - Text Free Gift (copy)_1659857967470731299]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='[discounts_active_amount_vendor]' />
+      </column>
+      <column caption='# Vendors w Deal - Other' datatype='integer' name='[# Vendors w Deal - Text Free Gift (copy)_1659857967470923812]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='[discounts_active_other_vendor]' />
+      </column>
+      <column datatype='string' name='[:Measure Names]' role='dimension' type='nominal'>
+        <aliases>
+          <alias key='&quot;[federated.12fkbze1nux58d15q2nc01bv4uk1].[sum:Calculation_1659857967462129677:qk]&quot;' value='Deal Value ' />
+          <alias key='&quot;[federated.12fkbze1nux58d15q2nc01bv4uk1].[sum:Calculation_1659857967462260750:qk]&quot;' value='GMV ' />
+          <alias key='&quot;[federated.12fkbze1nux58d15q2nc01bv4uk1].[sum:Deal Value (LC) - DH Paid (copy)_1659857967462813713:qk]&quot;' value='Deal Value - Vendor Paid' />
+          <alias key='&quot;[federated.12fkbze1nux58d15q2nc01bv4uk1].[sum:Deal Value (LC) (copy)_1659857967462727696:qk]&quot;' value='Deal Value - DH Paid' />
+          <alias key='&quot;[federated.12fkbze1nux58d15q2nc01bv4uk1].[sum:discounts_active_free_gift:qk]&quot;' value='# Deals Active Free Gift' />
+          <alias key='&quot;[federated.12fkbze1nux58d15q2nc01bv4uk1].[usr:AFV (LC) - Deals (copy)_1659857967463682069:qk]&quot;' value='AOV - Deal' />
+          <alias key='&quot;[federated.12fkbze1nux58d15q2nc01bv4uk1].[usr:AFV (LC) (copy)_1659857967463370771:qk]&quot;' value='AFV - Deal' />
+          <alias key='&quot;[federated.12fkbze1nux58d15q2nc01bv4uk1].[usr:AFV (LC) (copy)_1659857967463579668:qk]&quot;' value='AOV ' />
+          <alias key='&quot;[federated.12fkbze1nux58d15q2nc01bv4uk1].[usr:Calculation_1659857967463141394:qk]&quot;' value='AFV ' />
+          <alias key='&quot;[federated.12fkbze1nux58d15q2nc01bv4uk1].[usr:Calculation_1659857967472218149:qk]&quot;' value='AOV - Change' />
+          <alias key='&quot;[federated.12fkbze1nux58d15q2nc01bv4uk1].[usr:Calculation_1659857967472459814:qk]&quot;' value='AFV  - Change' />
+          <alias key='&quot;[federated.12fkbze1nux58d15q2nc01bv4uk1].[usr:Deal Value (LC) - DH Paid (copy)_1659857967468605470:qk]&quot;' value='% Deal Value - Vendor Paid' />
+        </aliases>
+      </column>
+      <column caption='AFV (LC) - Deal' datatype='real' name='[AFV (LC) (copy)_1659857967463370771]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='SUM([discounts_gfv])/SUM([discounts])' />
+      </column>
+      <column caption='AOV (LC)' datatype='real' name='[AFV (LC) (copy)_1659857967463579668]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='SUM([orders_gmv])/SUM([orders])' />
+      </column>
+      <column caption='AOV (LC) - Deal' datatype='real' name='[AFV (LC) - Deals (copy)_1659857967463682069]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='SUM([discounts_gmv])/SUM([discounts])' />
+      </column>
+      <column caption='# Deals' datatype='integer' name='[Calculation_1478869574690881537]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='[# Deals Active - Free Delivery (copy)_1659857967467171865]+[# Deals Active - Text Free Gift (copy)_1659857967467388956]+[# Deals Active (copy)_1659857967467089944]+[# Deals Active - Text Free Gift (copy)_1659857967467536413]' />
+      </column>
+      <column caption='Report Month' datatype='string' name='[Calculation_1659857967456649216]' role='dimension' type='nominal'>
+        <calculation class='tableau' formula='LEFT(STR([report_month]),7)' />
+      </column>
+      <column caption='# Orders w Deal' datatype='integer' name='[Calculation_1659857967456792577]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='[discounts]' />
+      </column>
+      <column caption='# Deals Active' datatype='integer' name='[Calculation_1659857967456985091]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='[discounts_active]' />
+      </column>
+      <column caption='# Orders' datatype='integer' name='[Calculation_1659857967457386500]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='[orders]' />
+      </column>
+      <column caption='% Orders w Deal' datatype='real' name='[Calculation_1659857967457468421]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='SUM([discounts])/SUM([orders])' />
+      </column>
+      <column caption='# Vendors Online' datatype='integer' name='[Calculation_1659857967458594822]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='[vendors_active]' />
+      </column>
+      <column caption='% Vendors w Deal' datatype='real' name='[Calculation_1659857967458869255]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='[Calculation_1659857967459266568] / SUM([vendors_active])' />
+      </column>
+      <column caption='# Vendors w Deal' datatype='integer' name='[Calculation_1659857967459266568]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='COUNTD(IF [discounts_active_vendor]&gt;0 THEN [vendor_code] END)' />
+      </column>
+      <column caption='Deal Value (LC)' datatype='real' name='[Calculation_1659857967462129677]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='[discounts_value]' />
+      </column>
+      <column caption='GMV (LC)' datatype='real' name='[Calculation_1659857967462260750]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='[orders_gmv]' />
+      </column>
+      <column caption='% Deal Value of Total GMV' datatype='real' name='[Calculation_1659857967462383631]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='SUM([Calculation_1659857967462129677])/SUM([Calculation_1659857967462260750])' />
+      </column>
+      <column caption='AFV (LC)' datatype='real' name='[Calculation_1659857967463141394]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='SUM([orders_gfv])/SUM([orders])' />
+      </column>
+      <column caption='# Vendors w Deal - Free Delivery' datatype='integer' name='[Calculation_1659857967470223392]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='[discounts_active_free_delivery_vendor]' />
+      </column>
+      <column caption='# Vendors w Deal - Text Free Gift' datatype='integer' name='[Calculation_1659857967470510114]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='[discounts_active_text_freegift_vendor]' />
+      </column>
+      <column caption='AOV (LC) - Change' datatype='real' name='[Calculation_1659857967472218149]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='[AFV (LC) - Deals (copy)_1659857967463682069]/[AFV (LC) (copy)_1659857967463579668]-1' />
+      </column>
+      <column caption='AFV (LC) - Change' datatype='real' name='[Calculation_1659857967472459814]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='[AFV (LC) (copy)_1659857967463370771]/[Calculation_1659857967463141394]-1' />
+      </column>
+      <column caption='Current Month' datatype='string' name='[Calculation_1659857967477551143]' role='dimension' type='nominal'>
+        <calculation class='tableau' formula='IF STR([Calculation_1659857967456649216]) = LEFT(STR(DATE(DATEADD(&apos;month&apos;,-0,DATETRUNC(&apos;month&apos;,TODAY())))),7) &#13;&#10;    THEN &apos;Current Month&apos;&#13;&#10;ELSE STR([Calculation_1659857967456649216]) END' />
+      </column>
+      <column caption='Deal Type2' datatype='string' name='[Calculation_1659857967489847338]' role='dimension' type='nominal'>
+        <calculation class='tableau' formula='[discount_type]' />
+      </column>
+      <column caption='Deal Value (LC) - DH Paid' datatype='real' name='[Deal Value (LC) (copy)_1659857967462727696]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='[discounts_value_dh]' />
+      </column>
+      <column caption='Deal Value (LC) - Vendor Paid' datatype='real' name='[Deal Value (LC) - DH Paid (copy)_1659857967462813713]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='[discounts_value_vendor]' />
+      </column>
+      <column caption='% Deal Value (LC) - Vendor Paid' datatype='real' name='[Deal Value (LC) - DH Paid (copy)_1659857967468605470]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='SUM([Deal Value (LC) - DH Paid (copy)_1659857967462813713])/SUM([Calculation_1659857967462129677])' />
+      </column>
+      <_.fcp.ObjectModelTableType.true...column caption='Custom SQL Query' datatype='table' name='[__tableau_internal_object_id__].[_5FD0A4E8D327491F93C1BD8313E59ECE]' role='measure' type='quantitative' />
+      <column datatype='string' name='[discount_title (group)]' role='dimension' type='nominal'>
+        <calculation class='categorical-bin' column='[discount_title]' new-bin='true'>
+          <bin default-name='false' value='&quot;Discount selected dishes&quot;'>
+            <value>&quot;-10\% auf alles&quot;</value>
+            <value>&quot;-10\%aufausgewählteGerichte&quot;</value>
+            <value>&quot;-15\% auf alles&quot;</value>
+            <value>&quot;-15\%aufausgewählteGerichte&quot;</value>
+            <value>&quot;-15\%aufBowls&quot;</value>
+            <value>&quot;-15\%aufChinesisch&quot;</value>
+            <value>&quot;-20\% auf alles&quot;</value>
+            <value>&quot;-20\% Maki und Sushi&quot;</value>
+            <value>&quot;-20\% Normal Pizza&quot;</value>
+            <value>&quot;-20\%aufallePizzen32cm&quot;</value>
+            <value>&quot;-20\%aufalleveganenBurger&quot;</value>
+            <value>&quot;-20\%aufalleveganenPizzen32cm&quot;</value>
+            <value>&quot;-20\%aufAsiatisch&quot;</value>
+            <value>&quot;-20\%aufausgewählteGerichte&quot;</value>
+            <value>&quot;-20\%aufBurger&quot;</value>
+            <value>&quot;-20\%aufItalienisch&quot;</value>
+            <value>&quot;-20\%aufÖsterreichisch&quot;</value>
+            <value>&quot;-20\%aufPizzen&quot;</value>
+            <value>&quot;-20\%aufRamen&quot;</value>
+            <value>&quot;-20\%aufSchnitzel&quot;</value>
+            <value>&quot;-20\%aufSpeisen&quot;</value>
+            <value>&quot;-20\%aufThailändisch&quot;</value>
+            <value>&quot;-20\%aufVietnamesisch&quot;</value>
+            <value>&quot;-20\%aufWraps&quot;</value>
+            <value>&quot;-25\% auf alles&quot;</value>
+            <value>&quot;-25\%aufausgewählteGerichte&quot;</value>
+            <value>&quot;-30\% auf alles&quot;</value>
+            <value>&quot;-30\%aufallePizzen&quot;</value>
+            <value>&quot;-30\%aufausgewählteGerichte&quot;</value>
+            <value>&quot;-30\%aufBowls&quot;</value>
+            <value>&quot;-30\%aufItalienisch&quot;</value>
+            <value>&quot;-30\%aufÖsterreichisch&quot;</value>
+            <value>&quot;-30\%aufPizzen&quot;</value>
+          </bin>
+        </calculation>
+      </column>
+      <column caption='Discount Title' datatype='string' name='[discount_title]' role='dimension' type='nominal' />
+      <column caption='Deal Type' datatype='string' name='[discount_type]' role='dimension' type='nominal' />
+      <column datatype='integer' name='[discounts_active_free_gift]' role='measure' type='quantitative' />
+      <column caption='Vendor Name' datatype='string' name='[name]' role='dimension' type='nominal' />
+      <column caption='Vendor Code' datatype='string' name='[vendor_code]' role='dimension' type='nominal' />
+      <column-instance column='[Calculation_1659857967462129677]' derivation='Sum' name='[sum:Calculation_1659857967462129677:qk]' pivot='key' type='quantitative' />
+      <column-instance column='[Calculation_1659857967462260750]' derivation='Sum' name='[sum:Calculation_1659857967462260750:qk]' pivot='key' type='quantitative' />
+      <column-instance column='[Deal Value (LC) (copy)_1659857967462727696]' derivation='Sum' name='[sum:Deal Value (LC) (copy)_1659857967462727696:qk]' pivot='key' type='quantitative' />
+      <column-instance column='[Deal Value (LC) - DH Paid (copy)_1659857967462813713]' derivation='Sum' name='[sum:Deal Value (LC) - DH Paid (copy)_1659857967462813713:qk]' pivot='key' type='quantitative' />
+      <column-instance column='[discounts_active_free_gift]' derivation='Sum' name='[sum:discounts_active_free_gift:qk]' pivot='key' type='quantitative' />
+      <column-instance column='[AFV (LC) (copy)_1659857967463370771]' derivation='User' name='[usr:AFV (LC) (copy)_1659857967463370771:qk]' pivot='key' type='quantitative' />
+      <column-instance column='[AFV (LC) (copy)_1659857967463579668]' derivation='User' name='[usr:AFV (LC) (copy)_1659857967463579668:qk]' pivot='key' type='quantitative' />
+      <column-instance column='[AFV (LC) - Deals (copy)_1659857967463682069]' derivation='User' name='[usr:AFV (LC) - Deals (copy)_1659857967463682069:qk]' pivot='key' type='quantitative' />
+      <column-instance column='[Calculation_1659857967463141394]' derivation='User' name='[usr:Calculation_1659857967463141394:qk]' pivot='key' type='quantitative' />
+      <column-instance column='[Calculation_1659857967472218149]' derivation='User' name='[usr:Calculation_1659857967472218149:qk]' pivot='key' type='quantitative' />
+      <column-instance column='[Calculation_1659857967472459814]' derivation='User' name='[usr:Calculation_1659857967472459814:qk]' pivot='key' type='quantitative' />
+      <column-instance column='[Deal Value (LC) - DH Paid (copy)_1659857967468605470]' derivation='User' name='[usr:Deal Value (LC) - DH Paid (copy)_1659857967468605470:qk]' pivot='key' type='quantitative' />
+      <extract _.fcp.ObjectModelExtractV2.true...object-id='_5FD0A4E8D327491F93C1BD8313E59ECE' count='-1' enabled='true' units='records'>
+        <connection access_mode='readonly' author-locale='en_US' class='hyper' dbname='extract/d0/47/{9FA0ABB7-C128-4BA5-B84E-D9B745BAFDFC}/federated_12fkbze1nux58d15q2nc01.hyper' extract-engine='true' schema='Extract' sslmode='' tablename='Extract' update-time='07/11/2022 07:02:34 AM'>
+          <_.fcp.ObjectModelEncapsulateLegacy.false...relation name='Extract' table='[Extract].[Extract]' type='table' />
+          <_.fcp.ObjectModelEncapsulateLegacy.true...relation name='Extract' table='[Extract].[Extract]' type='table' />
+          <metadata-records>
+            <metadata-record class='column'>
+              <remote-name>chain_name</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[chain_name]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>chain_name</remote-alias>
+              <ordinal>0</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>745</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_5FD0A4E8D327491F93C1BD8313E59ECE]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>name</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[name]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>name</remote-alias>
+              <ordinal>1</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>16302</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_5FD0A4E8D327491F93C1BD8313E59ECE]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>is_active</remote-name>
+              <remote-type>11</remote-type>
+              <local-name>[is_active]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>is_active</remote-alias>
+              <ordinal>2</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>boolean</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>3</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_5FD0A4E8D327491F93C1BD8313E59ECE]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>global_entity_id</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[global_entity_id]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>global_entity_id</remote-alias>
+              <ordinal>3</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>1</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_5FD0A4E8D327491F93C1BD8313E59ECE]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>report_month</remote-name>
+              <remote-type>133</remote-type>
+              <local-name>[report_month]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>report_month</remote-alias>
+              <ordinal>4</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>date</local-type>
+              <aggregation>Year</aggregation>
+              <approx-count>12</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_5FD0A4E8D327491F93C1BD8313E59ECE]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>vendor_code</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[vendor_code]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>vendor_code</remote-alias>
+              <ordinal>5</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>20484</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_5FD0A4E8D327491F93C1BD8313E59ECE]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>discount_type</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[discount_type]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>discount_type</remote-alias>
+              <ordinal>6</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>7</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_5FD0A4E8D327491F93C1BD8313E59ECE]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>discount_title</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[discount_title]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>discount_title</remote-alias>
+              <ordinal>7</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>652</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_5FD0A4E8D327491F93C1BD8313E59ECE]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>discounts_active</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[discounts_active]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>discounts_active</remote-alias>
+              <ordinal>8</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>35</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_5FD0A4E8D327491F93C1BD8313E59ECE]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>discounts_active_free_delivery</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[discounts_active_free_delivery]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>discounts_active_free_delivery</remote-alias>
+              <ordinal>9</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>2</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_5FD0A4E8D327491F93C1BD8313E59ECE]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>discounts_active_percentage</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[discounts_active_percentage]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>discounts_active_percentage</remote-alias>
+              <ordinal>10</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>6</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_5FD0A4E8D327491F93C1BD8313E59ECE]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>discounts_active_free_gift</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[discounts_active_free_gift]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>discounts_active_free_gift</remote-alias>
+              <ordinal>11</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>2</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_5FD0A4E8D327491F93C1BD8313E59ECE]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>discounts_active_amount</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[discounts_active_amount]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>discounts_active_amount</remote-alias>
+              <ordinal>12</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>2</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_5FD0A4E8D327491F93C1BD8313E59ECE]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>discounts_active_other</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[discounts_active_other]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>discounts_active_other</remote-alias>
+              <ordinal>13</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>2</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_5FD0A4E8D327491F93C1BD8313E59ECE]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>discounts_active_no_vendor</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[discounts_active_no_vendor]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>discounts_active_no_vendor</remote-alias>
+              <ordinal>14</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>2</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_5FD0A4E8D327491F93C1BD8313E59ECE]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>discounts_active_vendor</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[discounts_active_vendor]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>discounts_active_vendor</remote-alias>
+              <ordinal>15</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>2</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_5FD0A4E8D327491F93C1BD8313E59ECE]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>discounts_active_free_delivery_vendor</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[discounts_active_free_delivery_vendor]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>discounts_active_free_delivery_vendor</remote-alias>
+              <ordinal>16</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>6</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_5FD0A4E8D327491F93C1BD8313E59ECE]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>discounts_active_percentage_vendor</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[discounts_active_percentage_vendor]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>discounts_active_percentage_vendor</remote-alias>
+              <ordinal>17</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>3</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_5FD0A4E8D327491F93C1BD8313E59ECE]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>discounts_active_text_freegift_vendor</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[discounts_active_text_freegift_vendor]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>discounts_active_text_freegift_vendor</remote-alias>
+              <ordinal>18</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>6</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_5FD0A4E8D327491F93C1BD8313E59ECE]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>discounts_active_amount_vendor</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[discounts_active_amount_vendor]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>discounts_active_amount_vendor</remote-alias>
+              <ordinal>19</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>2</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_5FD0A4E8D327491F93C1BD8313E59ECE]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>discounts_active_other_vendor</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[discounts_active_other_vendor]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>discounts_active_other_vendor</remote-alias>
+              <ordinal>20</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>2</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_5FD0A4E8D327491F93C1BD8313E59ECE]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>discounts</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[discounts]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>discounts</remote-alias>
+              <ordinal>21</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>642</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_5FD0A4E8D327491F93C1BD8313E59ECE]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>discounts_gfv</remote-name>
+              <remote-type>5</remote-type>
+              <local-name>[discounts_gfv]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>discounts_gfv</remote-alias>
+              <ordinal>22</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>real</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>1859</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_5FD0A4E8D327491F93C1BD8313E59ECE]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>discounts_gmv</remote-name>
+              <remote-type>5</remote-type>
+              <local-name>[discounts_gmv]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>discounts_gmv</remote-alias>
+              <ordinal>23</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>real</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>1859</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_5FD0A4E8D327491F93C1BD8313E59ECE]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>discounts_dh</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[discounts_dh]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>discounts_dh</remote-alias>
+              <ordinal>24</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>1</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_5FD0A4E8D327491F93C1BD8313E59ECE]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>discounts_vendor</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[discounts_vendor]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>discounts_vendor</remote-alias>
+              <ordinal>25</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>242</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_5FD0A4E8D327491F93C1BD8313E59ECE]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>discounts_mixed</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[discounts_mixed]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>discounts_mixed</remote-alias>
+              <ordinal>26</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>1</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_5FD0A4E8D327491F93C1BD8313E59ECE]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>discounts_value</remote-name>
+              <remote-type>5</remote-type>
+              <local-name>[discounts_value]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>discounts_value</remote-alias>
+              <ordinal>27</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>real</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>752</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_5FD0A4E8D327491F93C1BD8313E59ECE]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>discounts_value_dh</remote-name>
+              <remote-type>5</remote-type>
+              <local-name>[discounts_value_dh]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>discounts_value_dh</remote-alias>
+              <ordinal>28</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>real</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>2</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_5FD0A4E8D327491F93C1BD8313E59ECE]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>discounts_value_vendor</remote-name>
+              <remote-type>5</remote-type>
+              <local-name>[discounts_value_vendor]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>discounts_value_vendor</remote-alias>
+              <ordinal>29</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>real</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>242</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_5FD0A4E8D327491F93C1BD8313E59ECE]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>orders</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[orders]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>orders</remote-alias>
+              <ordinal>30</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>2036</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_5FD0A4E8D327491F93C1BD8313E59ECE]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>orders_gfv</remote-name>
+              <remote-type>5</remote-type>
+              <local-name>[orders_gfv]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>orders_gfv</remote-alias>
+              <ordinal>31</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>real</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>38967</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_5FD0A4E8D327491F93C1BD8313E59ECE]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>orders_gmv</remote-name>
+              <remote-type>5</remote-type>
+              <local-name>[orders_gmv]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>orders_gmv</remote-alias>
+              <ordinal>32</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>real</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>41741</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_5FD0A4E8D327491F93C1BD8313E59ECE]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>vendors_active</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[vendors_active]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>vendors_active</remote-alias>
+              <ordinal>33</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>2</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_5FD0A4E8D327491F93C1BD8313E59ECE]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+          </metadata-records>
+        </connection>
+      </extract>
+      <layout _.fcp.SchemaViewerObjectModel.false...dim-percentage='0.5' _.fcp.SchemaViewerObjectModel.false...measure-percentage='0.4' _.fcp.SchemaViewerObjectModel.true...common-percentage='1' _.fcp.SchemaViewerObjectModel.true...user-set-layout-v2='true' dim-ordering='alphabetic' measure-ordering='alphabetic' show-structure='true' />
+      <semantic-values>
+        <semantic-value key='[Country].[Name]' value='&quot;Germany&quot;' />
+      </semantic-values>
+      <date-options start-of-week='monday' />
+      <_.fcp.ObjectModelEncapsulateLegacy.true...object-graph>
+        <objects>
+          <object caption='Custom SQL Query' id='_5FD0A4E8D327491F93C1BD8313E59ECE'>
+            <properties context=''>
+              <relation connection='bigquery.0ja9gbu15j02n810qf1li0bjf1rn' name='Custom SQL Query' type='text'><![CDATA[WITH
+  order_discount AS (
+  SELECT
+    DISTINCT pd_orders.code AS order_code,
+    pd_orders.uuid AS order_uuid,
+    pd_vendor_uuid,
+    pd_orders.global_entity_id,
+    pd_orders.created_date_utc AS created_date,
+    DATE_TRUNC(pd_orders.created_date_utc, month) AS report_month,
+    pd_orders_agg_discounts.discount_used AS discount_used,
+    max (pd_orders_agg_discounts.discount_type) as discount_type,
+    max (pd_orders_agg_discounts.discount_title) as discount_title,
+    avg(discount_ratio) as discount_ratio,
+    SUM(discount_value_local) as discount_value_local,
+  FROM
+    `fulfillment-dwh-production.pandata_curated.pd_orders` AS pd_orders
+  LEFT JOIN
+    `dha---bi-485.local_schedules.pd_order_discount_mmt_selected_dishes_v2` AS pd_orders_agg_discounts
+  ON
+    pd_orders_agg_discounts.order_code = pd_orders.code
+    AND pd_orders_agg_discounts.created_date BETWEEN DATE_SUB(DATE_TRUNC(CURRENT_DATE-1,MONTH),INTERVAL 11 MONTH)
+    AND CURRENT_DATE - 1
+  LEFT JOIN
+    `fulfillment-dwh-production.pandata_curated.pd_discounts` pd_discounts
+  ON
+    pd_discounts.uuid = pd_orders_agg_discounts.pd_discount_uuid
+  WHERE
+    pd_orders.created_date_utc BETWEEN DATE_SUB(DATE_TRUNC(CURRENT_DATE-1,MONTH),INTERVAL 11 MONTH)
+    AND CURRENT_DATE - 1
+    AND pd_orders.global_entity_id = 'MJM_AT'
+    AND NOT is_test_order
+    AND is_valid_order
+  GROUP BY
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7
+    ),
+vendor_orders as (SELECT
+  order_discount.global_entity_id,
+  created_date,
+  report_month,
+  pd_vendors.vendor_code,
+  discount_used,
+  max(discount_type) as discount_type ,
+  max(discount_title) as discount_title,
+  COUNT(DISTINCT order_uuid) AS successful_orders,
+  SUM(pd_orders_agg_accounting.gfv_eur) AS gfv_local,
+  SUM(pd_orders_agg_accounting.gmv_eur) AS gmv_local,
+  avg(discount_ratio) AS discount_ratio,
+  SUM(discount_value_local) AS discount_value_local,
+FROM
+  order_discount
+LEFT JOIN
+  `fulfillment-dwh-production.pandata_curated.pd_vendors` AS pd_vendors
+ON
+  pd_vendors.uuid = order_discount.pd_vendor_uuid
+LEFT JOIN
+  `fulfillment-dwh-production.pandata_curated.pd_orders_agg_accounting` AS pd_orders_agg_accounting
+ON
+  pd_orders_agg_accounting.uuid = order_discount.order_uuid
+  AND pd_orders_agg_accounting.created_date_utc BETWEEN DATE_SUB(DATE_TRUNC(CURRENT_DATE-1,MONTH),INTERVAL 11 MONTH)
+  AND CURRENT_DATE - 1
+GROUP BY
+  1,2,3,4,5),
+
+  discounts AS (
+  SELECT
+    global_entity_id,
+    b.iso_date AS report_date,
+    pd_discount_uuid,
+    start_date_local,
+    end_date_local,
+    discount_type,
+    discount_ratio,
+    discount_title
+  FROM
+    `dha---bi-485.local_schedules.discount_mmt_selected_dishes` a,
+    `fulfillment-dwh-production.curated_data_shared_central_dwh.dates` b
+  WHERE
+    global_entity_id = 'MJM_AT'
+    AND start_date_local <<= b.iso_date
+    AND end_date_local >>= b.iso_date
+    AND b.iso_date BETWEEN DATE_SUB(DATE_TRUNC(CURRENT_DATE-1,MONTH),INTERVAL 11 MONTH)
+    AND CURRENT_DATE - 1
+  ORDER BY
+    start_date_local,
+    iso_date
+    ),
+  vendor_discounts AS (
+  SELECT
+    DISTINCT a.global_entity_id,
+    d.pd_discount_uuid,
+    b.iso_date AS report_date,
+    a.vendor_code
+  FROM
+    `fulfillment-dwh-production.pandata_curated.pd_vendors` a
+  LEFT JOIN
+    UNNEST(discounts) d,
+    `fulfillment-dwh-production.curated_data_shared_central_dwh.dates` b
+  WHERE
+    global_entity_id = 'MJM_AT'
+    AND start_date_local <<= b.iso_date
+    AND end_date_local >>= b.iso_date
+    AND b.iso_date BETWEEN DATE_SUB(DATE_TRUNC(CURRENT_DATE-1,MONTH),INTERVAL 11 MONTH)
+    AND CURRENT_DATE - 1 
+UNION ALL
+    SELECT
+    DISTINCT a.global_entity_id,
+    d.pd_discount_uuid,
+    b.iso_date AS report_date,
+    a.vendor_code
+  FROM
+    `fulfillment-dwh-production.pandata_curated.pd_vendors` a
+  LEFT JOIN
+    `dha---bi-485.local_schedules.discount_mmt_selected_dishes` d on left(d.pd_discount_uuid,4) = a.vendor_code,
+    `fulfillment-dwh-production.curated_data_shared_central_dwh.dates` b
+  WHERE
+    a.global_entity_id = 'MJM_AT'
+    AND start_date_local <<= b.iso_date
+    AND end_date_local >>= b.iso_date
+    AND b.iso_date BETWEEN DATE_SUB(DATE_TRUNC(CURRENT_DATE-1,MONTH),INTERVAL 11 MONTH)
+    AND CURRENT_DATE - 1
+    ),
+  active_discounts AS (
+  SELECT
+    a.global_entity_id,
+    DATE_TRUNC(a.report_date,MONTH) AS report_month,
+    CAST(NULL AS STRING) AS vendor_code,
+    a.discount_type,
+    a.discount_title,
+    COUNT(DISTINCT a.pd_discount_uuid) AS discounts_active,
+    COUNT(DISTINCT b.vendor_code) AS discounts_active_vendor,
+    COUNT(DISTINCT
+      CASE
+        WHEN discount_type ='free_delivery' THEN a.pd_discount_uuid
+    END
+      ) AS discounts_active_free_delivery,
+    COUNT(DISTINCT
+      CASE
+        WHEN discount_type = 'percentage' THEN if(left(a.pd_discount_uuid,6)='MJM_AT',a.pd_discount_uuid,left(a.discount_title,3))
+    END
+      ) AS discounts_active_percentage,
+    COUNT(DISTINCT
+      CASE
+        WHEN discount_type = 'free_gift' THEN a.pd_discount_uuid
+    END
+      ) AS discounts_active_free_gift,
+    COUNT(DISTINCT
+      CASE
+        WHEN discount_type = 'amount' THEN a.pd_discount_uuid
+    END
+      ) AS discounts_active_amount,
+    COUNT(DISTINCT
+      CASE
+        WHEN COALESCE(discount_type, '') NOT IN ('free_delivery', 'percentage', 'free_gift', 'amount') THEN a.pd_discount_uuid
+    END
+      ) AS discounts_active_other,
+    CASE
+      WHEN COUNT(DISTINCT b.vendor_code ) = 0 THEN 1
+    ELSE
+    0
+  END
+    AS discounts_active_no_vendor
+  FROM
+    discounts a
+  LEFT JOIN
+    `fulfillment-dwh-production.curated_data_shared_central_dwh.dates` AS d
+  ON
+    a.report_date = d.iso_date
+  LEFT JOIN
+    vendor_discounts b
+  ON
+    a.global_entity_id = b.global_entity_id
+    AND a.report_date = b.report_date
+    AND a.pd_discount_uuid = b.pd_discount_uuid
+  GROUP BY
+    1,
+    2,
+    3,
+    4,
+    5),
+  active_discounts_vendor AS (
+  SELECT
+    a.global_entity_id,
+    DATE_TRUNC(a.report_date,MONTH) AS report_month,
+    b.vendor_code,
+    a.discount_type,
+    a.discount_title,
+    COUNT(DISTINCT b.vendor_code) AS discounts_active_vendor,
+    COUNT(DISTINCT
+      CASE
+        WHEN discount_type ='free_delivery' THEN b.vendor_code
+    END
+      ) AS discounts_active_free_delivery_vendor,
+    COUNT(DISTINCT
+      CASE
+        WHEN discount_type = 'percentage' THEN b.vendor_code
+    END
+      ) AS discounts_active_percentage_vendor,
+    COUNT(DISTINCT
+      CASE
+        WHEN discount_type = 'free_gift' THEN b.vendor_code
+    END
+      ) AS discounts_active_free_gift_vendor,
+    COUNT(DISTINCT
+      CASE
+        WHEN discount_type = 'amount' THEN b.vendor_code
+    END
+      ) AS discounts_active_amount_vendor,
+    COUNT(DISTINCT
+      CASE
+        WHEN COALESCE(discount_type, '') NOT IN ('free_delivery', 'percentage', 'free_gift', 'amount') THEN b.vendor_code
+    END
+      ) AS discounts_active_other_vendor
+  FROM
+    discounts a
+  LEFT JOIN
+    `fulfillment-dwh-production.curated_data_shared_central_dwh.dates` AS d
+  ON
+    a.report_date = d.iso_date
+  INNER JOIN
+    vendor_discounts b
+  ON
+    a.global_entity_id = b.global_entity_id
+    AND a.report_date = b.report_date
+    AND a.pd_discount_uuid = b.pd_discount_uuid
+  GROUP BY
+    1,
+    2,
+    3,
+    4,
+    5),
+  discount_orders AS (
+  SELECT
+    a.global_entity_id,
+    DATE_TRUNC(a.created_date,MONTH) AS report_month,
+    a.vendor_code,
+    a.discount_type,
+    a.discount_title,
+    SUM(a.successful_orders) AS discounts,
+    SUM(a.gfv_local) AS discounts_gfv,
+    SUM(a.gmv_local) AS discounts_gmv,
+    SUM(CASE
+        WHEN a.discount_ratio = 100 THEN a.successful_orders
+    END
+      ) AS discounts_dh,
+    SUM(CASE
+        WHEN a.discount_ratio = 0 THEN a.successful_orders
+    END
+      ) AS discounts_vendor,
+    SUM(CASE
+        WHEN a.discount_ratio >> 0 AND a.discount_ratio<<100 THEN a.successful_orders
+    END
+      ) AS discounts_mixed,
+    SUM(a.discount_value_local) AS discounts_value,
+    SUM(a.discount_value_local*(a.discount_ratio/100)) AS discounts_value_dh,
+    SUM(a.discount_value_local*((100-a.discount_ratio)/100)) AS discounts_value_vendor
+  FROM
+    vendor_orders AS a
+  WHERE
+    a.created_date BETWEEN DATE_SUB(DATE_TRUNC(CURRENT_DATE-1,MONTH),INTERVAL 11 MONTH)-1
+    AND CURRENT_DATE - 1
+    AND a.global_entity_id = 'MJM_AT'
+    AND a.successful_orders >> 0
+    AND a.discount_used IS TRUE
+  GROUP BY
+    1,
+    2,
+    3,
+    4,
+    5 ),
+  successful_orders AS (
+  SELECT
+    a.global_entity_id,
+    DATE_TRUNC(a.created_date,MONTH) AS report_month,
+    a.vendor_code,
+    a.discount_used,
+    CAST('Total' AS STRING) AS discount_type,
+    CAST('Total' AS STRING) AS discount_title,
+    SUM(a.successful_orders) AS orders,
+    SUM(a.gfv_local) AS orders_gfv,
+    SUM(a.gmv_local) AS orders_gmv
+  FROM
+    vendor_orders AS a
+  WHERE
+    a.global_entity_id = 'MJM_AT'
+    AND a.successful_orders >> 0
+  GROUP BY
+    1,
+    2,
+    3,
+    4),
+  active_vendors AS (
+  SELECT
+    pd_vendors.global_entity_id,
+    DATE_TRUNC(a.date_created,MONTH) AS report_month,
+    a.vendor_code,
+    CAST('Total' AS STRING) AS discount_type,
+    CAST('Total' AS STRING)AS discount_title,
+    COUNT(DISTINCT a.vendor_code) AS vendors_active
+  FROM
+    `dha---bi-485.local_schedules.pd_vendors_history` AS a
+  LEFT JOIN
+    `fulfillment-dwh-production.pandata_curated.pd_vendors` AS pd_vendors
+  ON
+    pd_vendors.vendor_code = a.vendor_code
+  WHERE
+    pd_vendors.global_entity_id = 'MJM_AT'
+    AND a.date_created BETWEEN DATE_SUB(DATE_TRUNC(CURRENT_DATE-1,MONTH),INTERVAL 11 MONTH)
+    AND CURRENT_DATE - 1
+    AND a.is_active IS TRUE
+  GROUP BY
+    1,
+    2,
+    3,
+    4,
+    5 ),
+  final AS (
+  SELECT
+    global_entity_id,
+    report_month,
+    vendor_code,
+    discount_type,
+    discount_title,
+    CAST(discounts_active AS INT64) AS discounts_active,
+    CAST(discounts_active_free_delivery AS INT64) AS discounts_active_free_delivery,
+    CAST(discounts_active_percentage AS INT64) AS discounts_active_percentage,
+    CAST(discounts_active_free_gift AS INT64) AS discounts_active_free_gift,
+    CAST(discounts_active_amount AS INT64) AS discounts_active_amount,
+    CAST(discounts_active_other AS INT64) AS discounts_active_other,
+    CAST(discounts_active_no_vendor AS INT64) AS discounts_active_no_vendor,
+    CAST(NULL AS INT64) AS discounts_active_vendor,
+    CAST(NULL AS INT64) AS discounts_active_free_delivery_vendor,
+    CAST(NULL AS INT64) AS discounts_active_percentage_vendor,
+    CAST(NULL AS INT64) AS discounts_active_text_freegift_vendor,
+    CAST(NULL AS INT64) AS discounts_active_amount_vendor,
+    CAST(NULL AS INT64) AS discounts_active_other_vendor,
+    CAST(NULL AS INT64) AS discounts,
+    CAST(NULL AS FLOAT64) AS discounts_gfv,
+    CAST(NULL AS FLOAT64) AS discounts_gmv,
+    CAST(NULL AS INT64) AS discounts_dh,
+    CAST(NULL AS INT64) AS discounts_vendor,
+    CAST(NULL AS INT64) AS discounts_mixed,
+    CAST(NULL AS FLOAT64) AS discounts_value,
+    CAST(NULL AS FLOAT64) AS discounts_value_dh,
+    CAST(NULL AS FLOAT64) AS discounts_value_vendor,
+    CAST(NULL AS INT64) AS orders,
+    CAST(NULL AS FLOAT64) AS orders_gfv,
+    CAST(NULL AS FLOAT64) AS orders_gmv,
+    CAST(NULL AS INT64) AS vendors_active
+  FROM
+    active_discounts
+  UNION ALL
+  SELECT
+    global_entity_id,
+    report_month,
+    vendor_code,
+    discount_type,
+    discount_title,
+    CAST(NULL AS INT64) AS discounts_active,
+    CAST(NULL AS INT64) AS discounts_active_free_delivery,
+    CAST(NULL AS INT64) AS discounts_active_percentage,
+    CAST(NULL AS INT64) AS discounts_active_text_freegift,
+    CAST(NULL AS INT64) AS discounts_active_amount,
+    CAST(NULL AS INT64) AS discounts_active_other,
+    CAST(NULL AS INT64) AS discounts_active_no_vendor,
+    CAST(discounts_active_vendor AS INT64) AS discounts_active_vendor,
+    CAST(discounts_active_free_delivery_vendor AS INT64) AS discounts_active_free_delivery_vendor,
+    CAST(discounts_active_percentage_vendor AS INT64) AS discounts_active_percentage_vendor,
+    CAST(discounts_active_free_gift_vendor AS INT64) AS discounts_active_free_gift_vendor,
+    CAST(discounts_active_amount_vendor AS INT64) AS discounts_active_amount_vendor,
+    CAST(discounts_active_other_vendor AS INT64) AS discounts_active_other_vendor,
+    CAST(NULL AS INT64) AS discounts,
+    CAST(NULL AS FLOAT64) AS discounts_gfv,
+    CAST(NULL AS FLOAT64) AS discounts_gmv,
+    CAST(NULL AS INT64) AS discounts_dh,
+    CAST(NULL AS INT64) AS discounts_vendor,
+    CAST(NULL AS INT64) AS discounts_mixed,
+    CAST(NULL AS FLOAT64) AS discounts_value,
+    CAST(NULL AS FLOAT64) AS discounts_value_dh,
+    CAST(NULL AS FLOAT64) AS discounts_value_vendor,
+    CAST(NULL AS INT64) AS orders,
+    CAST(NULL AS FLOAT64) AS orders_gfv,
+    CAST(NULL AS FLOAT64) AS orders_gmv,
+    CAST(NULL AS INT64) AS vendors_active
+  FROM
+    active_discounts_vendor
+  UNION ALL
+  SELECT
+    global_entity_id,
+    report_month,
+    vendor_code,
+    discount_type,
+    discount_title,
+    CAST(NULL AS INT64) AS discounts_active,
+    CAST(NULL AS INT64) AS discounts_active_free_delivery,
+    CAST(NULL AS INT64) AS discounts_active_percentage,
+    CAST(NULL AS INT64) AS discounts_active_text_freegift,
+    CAST(NULL AS INT64) AS discounts_active_amount,
+    CAST(NULL AS INT64) AS discounts_active_other,
+    CAST(NULL AS INT64) AS discounts_active_no_vendor,
+    CAST(NULL AS INT64) AS discounts_active_vendor,
+    CAST(NULL AS INT64) AS discounts_active_free_delivery_vendor,
+    CAST(NULL AS INT64) AS discounts_active_percentage_vendor,
+    CAST(NULL AS INT64) AS discounts_active_text_freegift_vendor,
+    CAST(NULL AS INT64) AS discounts_active_amount_vendor,
+    CAST(NULL AS INT64) AS discounts_active_other_vendor,
+    CAST(discounts AS INT64) AS discounts,
+    CAST(discounts_gfv AS FLOAT64) AS discounts_gfv,
+    CAST(discounts_gmv AS FLOAT64) AS discounts_gmv,
+    CAST(discounts_dh AS INT64) AS discounts_dh,
+    CAST(discounts_vendor AS INT64) AS discounts_vendor,
+    CAST(discounts_mixed AS INT64) AS discounts_mixed,
+    CAST(discounts_value AS FLOAT64) AS discounts_value,
+    CAST(discounts_value_dh AS FLOAT64) AS discounts_value_dh,
+    CAST(discounts_value_vendor AS FLOAT64) AS discounts_value_vendor,
+    CAST(NULL AS INT64) AS orders,
+    CAST(NULL AS FLOAT64) AS orders_gfv,
+    CAST(NULL AS FLOAT64) AS orders_gmv,
+    CAST(NULL AS INT64) AS vendors_active
+  FROM
+    discount_orders
+  UNION ALL
+  SELECT
+    global_entity_id,
+    report_month,
+    vendor_code,
+    discount_type,
+    discount_title,
+    CAST(NULL AS INT64) AS discounts_active,
+    CAST(NULL AS INT64) AS discounts_active_free_delivery,
+    CAST(NULL AS INT64) AS discounts_active_percentage,
+    CAST(NULL AS INT64) AS discounts_active_text_freegift,
+    CAST(NULL AS INT64) AS discounts_active_amount,
+    CAST(NULL AS INT64) AS discounts_active_other,
+    CAST(NULL AS INT64) AS discounts_active_no_vendor,
+    CAST(NULL AS INT64) AS discounts_active_vendor,
+    CAST(NULL AS INT64) AS discounts_active_free_delivery_vendor,
+    CAST(NULL AS INT64) AS discounts_active_percentage_vendor,
+    CAST(NULL AS INT64) AS discounts_active_text_freegift_vendor,
+    CAST(NULL AS INT64) AS discounts_active_amount_vendor,
+    CAST(NULL AS INT64) AS discounts_active_other_vendor,
+    CAST(NULL AS INT64) AS discounts,
+    CAST(NULL AS FLOAT64) AS discounts_gfv,
+    CAST(NULL AS FLOAT64) AS discounts_gmv,
+    CAST(NULL AS INT64) AS discounts_dh,
+    CAST(NULL AS INT64) AS discounts_vendor,
+    CAST(NULL AS INT64) AS discounts_mixed,
+    CAST(NULL AS FLOAT64) AS discounts_value,
+    CAST(NULL AS FLOAT64) AS discounts_value_dh,
+    CAST(NULL AS FLOAT64) AS discounts_value_vendor,
+    CAST(orders AS INT64) AS orders,
+    CAST(orders_gfv AS FLOAT64) AS orders_gfv,
+    CAST(orders_gmv AS FLOAT64) AS orders_gmv,
+    CAST(NULL AS INT64) AS vendors_active
+  FROM
+    successful_orders
+  UNION ALL
+  SELECT
+    global_entity_id,
+    report_month,
+    vendor_code,
+    discount_type,
+    discount_title,
+    CAST(NULL AS INT64) AS discounts_active,
+    CAST(NULL AS INT64) AS discounts_active_free_delivery,
+    CAST(NULL AS INT64) AS discounts_active_percentage,
+    CAST(NULL AS INT64) AS discounts_active_text_freegift,
+    CAST(NULL AS INT64) AS discounts_active_amount,
+    CAST(NULL AS INT64) AS discounts_active_other,
+    CAST(NULL AS INT64) AS discounts_active_no_vendor,
+    CAST(NULL AS INT64) AS discounts_active_vendor,
+    CAST(NULL AS INT64) AS discounts_active_free_delivery_vendor,
+    CAST(NULL AS INT64) AS discounts_active_percentage_vendor,
+    CAST(NULL AS INT64) AS discounts_active_text_freegift_vendor,
+    CAST(NULL AS INT64) AS discounts_active_amount_vendor,
+    CAST(NULL AS INT64) AS discounts_active_other_vendor,
+    CAST(NULL AS INT64) AS discounts,
+    CAST(NULL AS FLOAT64) AS discounts_gfv,
+    CAST(NULL AS FLOAT64) AS discounts_gmv,
+    CAST(NULL AS INT64) AS discounts_dh,
+    CAST(NULL AS INT64) AS discounts_vendor,
+    CAST(NULL AS INT64) AS discounts_mixed,
+    CAST(NULL AS FLOAT64) AS discounts_value,
+    CAST(NULL AS FLOAT64) AS discounts_value_dh,
+    CAST(NULL AS FLOAT64) AS discounts_value_vendor,
+    CAST(NULL AS INT64) AS orders,
+    CAST(NULL AS FLOAT64) AS orders_gfv,
+    CAST(NULL AS FLOAT64) AS orders_gmv,
+    CAST(vendors_active AS INT64) AS vendors_active
+  FROM
+    active_vendors)
+SELECT
+  v.chain_name,
+  v.name,
+  v.is_active,
+  a.*
+FROM
+  final AS a
+LEFT JOIN
+  `fulfillment-dwh-production.pandata_curated.pd_vendors` AS v
+ON
+  a.global_entity_id=v.global_entity_id
+  AND a.vendor_code=v.vendor_code]]></relation>
+            </properties>
+            <properties context='extract'>
+              <relation name='Extract' table='[Extract].[Extract]' type='table' />
+            </properties>
+          </object>
+        </objects>
+      </_.fcp.ObjectModelEncapsulateLegacy.true...object-graph>
+    </datasource>
+  </datasources>
+  <shared-views>
+    <shared-view name='federated.12fkbze1nux58d15q2nc01bv4uk1'>
+      <datasources>
+        <datasource caption='Custom SQL Query (pandata_curated)' name='federated.12fkbze1nux58d15q2nc01bv4uk1' />
+      </datasources>
+      <datasource-dependencies datasource='federated.12fkbze1nux58d15q2nc01bv4uk1'>
+        <column caption='Report Month' datatype='string' name='[Calculation_1659857967456649216]' role='dimension' type='nominal'>
+          <calculation class='tableau' formula='LEFT(STR([report_month]),7)' />
+        </column>
+        <column datatype='string' name='[chain_name]' role='dimension' type='nominal' />
+        <column caption='Discount Title' datatype='string' name='[discount_title]' role='dimension' type='nominal' />
+        <column caption='Deal Type' datatype='string' name='[discount_type]' role='dimension' type='nominal' />
+        <column-instance column='[Calculation_1659857967456649216]' derivation='None' name='[none:Calculation_1659857967456649216:nk]' pivot='key' type='nominal' />
+        <column-instance column='[chain_name]' derivation='None' name='[none:chain_name:nk]' pivot='key' type='nominal' />
+        <column-instance column='[discount_title]' derivation='None' name='[none:discount_title:nk]' pivot='key' type='nominal' />
+        <column-instance column='[discount_type]' derivation='None' name='[none:discount_type:nk]' pivot='key' type='nominal' />
+        <column-instance column='[vendor_code]' derivation='None' name='[none:vendor_code:nk]' pivot='key' type='nominal' />
+        <column caption='Vendor Code' datatype='string' name='[vendor_code]' role='dimension' type='nominal' />
+      </datasource-dependencies>
+      <filter class='categorical' column='[federated.12fkbze1nux58d15q2nc01bv4uk1].[none:Calculation_1659857967456649216:nk]'>
+        <groupfilter function='union' user:ui-domain='relevant' user:ui-enumeration='inclusive' user:ui-marker='enumerate'>
+          <groupfilter function='member' level='[none:Calculation_1659857967456649216:nk]' member='&quot;2022-01&quot;' />
+          <groupfilter function='member' level='[none:Calculation_1659857967456649216:nk]' member='&quot;2022-02&quot;' />
+          <groupfilter function='member' level='[none:Calculation_1659857967456649216:nk]' member='&quot;2022-03&quot;' />
+        </groupfilter>
+      </filter>
+      <filter class='categorical' column='[federated.12fkbze1nux58d15q2nc01bv4uk1].[none:chain_name:nk]'>
+        <groupfilter function='level-members' level='[none:chain_name:nk]' user:ui-enumeration='all' user:ui-marker='enumerate' />
+      </filter>
+      <filter class='categorical' column='[federated.12fkbze1nux58d15q2nc01bv4uk1].[none:discount_title:nk]'>
+        <groupfilter function='level-members' level='[none:discount_title:nk]' user:ui-enumeration='all' user:ui-marker='enumerate' />
+      </filter>
+      <filter class='categorical' column='[federated.12fkbze1nux58d15q2nc01bv4uk1].[none:discount_type:nk]'>
+        <groupfilter function='level-members' level='[none:discount_type:nk]' user:ui-enumeration='all' user:ui-marker='enumerate' />
+      </filter>
+      <filter class='categorical' column='[federated.12fkbze1nux58d15q2nc01bv4uk1].[none:vendor_code:nk]'>
+        <groupfilter function='level-members' level='[none:vendor_code:nk]' user:ui-enumeration='all' user:ui-marker='enumerate' />
+      </filter>
+    </shared-view>
+  </shared-views>
+  <worksheets>
+    <worksheet name='Overview Prep'>
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='Custom SQL Query (pandata_curated)' name='federated.12fkbze1nux58d15q2nc01bv4uk1' />
+          </datasources>
+          <datasource-dependencies datasource='federated.12fkbze1nux58d15q2nc01bv4uk1'>
+            <column caption='# Deals Active - Free Delivery' datatype='integer' name='[# Deals Active (copy)_1659857967467089944]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='[discounts_active_free_delivery]' />
+            </column>
+            <column caption='# Deals Active - Percentage' datatype='integer' name='[# Deals Active - Free Delivery (copy)_1659857967467171865]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='[discounts_active_percentage]' />
+            </column>
+            <column caption='# Deals Active - Amount' datatype='integer' name='[# Deals Active - Text Free Gift (copy)_1659857967467388956]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='[discounts_active_amount]' />
+            </column>
+            <column caption='# Deals Active - Other' datatype='integer' name='[# Deals Active - Text Free Gift (copy)_1659857967467536413]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='[discounts_active_other]' />
+            </column>
+            <column caption='# Orders w Deal - DH Paid' datatype='integer' name='[# Orders w Deal (copy)_1659857967460532234]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='[discounts_dh]' />
+            </column>
+            <column caption='# Orders w Deal - Vendor Paid' datatype='integer' name='[# Orders w Deal - DH Paid (copy)_1659857967461543947]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='[discounts_vendor]' />
+            </column>
+            <column caption='# Orders w Deal - Mixed Paid' datatype='integer' name='[# Orders w Deal - Vendor Paid (copy)_1659857967461703692]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='[discounts_mixed]' />
+            </column>
+            <column caption='# Vendors w Deal - Percentage' datatype='integer' name='[# Vendors w Deal - Free Delivery (copy)_1659857967470391329]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='[discounts_active_percentage_vendor]' />
+            </column>
+            <column caption='# Vendors w Deal - Amount' datatype='integer' name='[# Vendors w Deal - Text Free Gift (copy)_1659857967470731299]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='[discounts_active_amount_vendor]' />
+            </column>
+            <column caption='# Vendors w Deal - Other' datatype='integer' name='[# Vendors w Deal - Text Free Gift (copy)_1659857967470923812]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='[discounts_active_other_vendor]' />
+            </column>
+            <column caption='AFV (LC) - Deal' datatype='real' name='[AFV (LC) (copy)_1659857967463370771]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='SUM([discounts_gfv])/SUM([discounts])' />
+            </column>
+            <column caption='AOV (LC)' datatype='real' name='[AFV (LC) (copy)_1659857967463579668]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='SUM([orders_gmv])/SUM([orders])' />
+            </column>
+            <column caption='AOV (LC) - Deal' datatype='real' name='[AFV (LC) - Deals (copy)_1659857967463682069]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='SUM([discounts_gmv])/SUM([discounts])' />
+            </column>
+            <column caption='# Deals' datatype='integer' name='[Calculation_1478869574690881537]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='[# Deals Active - Free Delivery (copy)_1659857967467171865]+[# Deals Active - Text Free Gift (copy)_1659857967467388956]+[# Deals Active (copy)_1659857967467089944]+[# Deals Active - Text Free Gift (copy)_1659857967467536413]' />
+            </column>
+            <column caption='Report Month' datatype='string' name='[Calculation_1659857967456649216]' role='dimension' type='nominal'>
+              <calculation class='tableau' formula='LEFT(STR([report_month]),7)' />
+            </column>
+            <column caption='# Orders w Deal' datatype='integer' name='[Calculation_1659857967456792577]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='[discounts]' />
+            </column>
+            <column caption='# Orders' datatype='integer' name='[Calculation_1659857967457386500]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='[orders]' />
+            </column>
+            <column caption='% Orders w Deal' datatype='real' name='[Calculation_1659857967457468421]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='SUM([discounts])/SUM([orders])' />
+            </column>
+            <column caption='# Vendors Online' datatype='integer' name='[Calculation_1659857967458594822]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='[vendors_active]' />
+            </column>
+            <column caption='% Vendors w Deal' datatype='real' name='[Calculation_1659857967458869255]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='[Calculation_1659857967459266568] / SUM([vendors_active])' />
+            </column>
+            <column caption='# Vendors w Deal' datatype='integer' name='[Calculation_1659857967459266568]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='COUNTD(IF [discounts_active_vendor]&gt;0 THEN [vendor_code] END)' />
+            </column>
+            <column caption='Deal Value (LC)' datatype='real' name='[Calculation_1659857967462129677]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='[discounts_value]' />
+            </column>
+            <column caption='GMV (LC)' datatype='real' name='[Calculation_1659857967462260750]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='[orders_gmv]' />
+            </column>
+            <column caption='% Deal Value of Total GMV' datatype='real' name='[Calculation_1659857967462383631]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='SUM([Calculation_1659857967462129677])/SUM([Calculation_1659857967462260750])' />
+            </column>
+            <column caption='AFV (LC)' datatype='real' name='[Calculation_1659857967463141394]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='SUM([orders_gfv])/SUM([orders])' />
+            </column>
+            <column caption='# Vendors w Deal - Free Delivery' datatype='integer' name='[Calculation_1659857967470223392]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='[discounts_active_free_delivery_vendor]' />
+            </column>
+            <column caption='# Vendors w Deal - Text Free Gift' datatype='integer' name='[Calculation_1659857967470510114]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='[discounts_active_text_freegift_vendor]' />
+            </column>
+            <column caption='AOV (LC) - Change' datatype='real' name='[Calculation_1659857967472218149]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='[AFV (LC) - Deals (copy)_1659857967463682069]/[AFV (LC) (copy)_1659857967463579668]-1' />
+            </column>
+            <column caption='AFV (LC) - Change' datatype='real' name='[Calculation_1659857967472459814]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='[AFV (LC) (copy)_1659857967463370771]/[Calculation_1659857967463141394]-1' />
+            </column>
+            <column datatype='string' name='[chain_name]' role='dimension' type='nominal' />
+            <column caption='Discount Title' datatype='string' name='[discount_title]' role='dimension' type='nominal' />
+            <column caption='Deal Type' datatype='string' name='[discount_type]' role='dimension' type='nominal' />
+            <column datatype='integer' name='[discounts]' role='measure' type='quantitative' />
+            <column datatype='integer' name='[discounts_active_amount]' role='measure' type='quantitative' />
+            <column datatype='integer' name='[discounts_active_amount_vendor]' role='measure' type='quantitative' />
+            <column datatype='integer' name='[discounts_active_free_delivery]' role='measure' type='quantitative' />
+            <column datatype='integer' name='[discounts_active_free_delivery_vendor]' role='measure' type='quantitative' />
+            <column datatype='integer' name='[discounts_active_free_gift]' role='measure' type='quantitative' />
+            <column datatype='integer' name='[discounts_active_other]' role='measure' type='quantitative' />
+            <column datatype='integer' name='[discounts_active_other_vendor]' role='measure' type='quantitative' />
+            <column datatype='integer' name='[discounts_active_percentage]' role='measure' type='quantitative' />
+            <column datatype='integer' name='[discounts_active_percentage_vendor]' role='measure' type='quantitative' />
+            <column datatype='integer' name='[discounts_active_text_freegift_vendor]' role='measure' type='quantitative' />
+            <column datatype='integer' name='[discounts_active_vendor]' role='measure' type='quantitative' />
+            <column datatype='integer' name='[discounts_dh]' role='measure' type='quantitative' />
+            <column datatype='real' name='[discounts_gfv]' role='measure' type='quantitative' />
+            <column datatype='real' name='[discounts_gmv]' role='measure' type='quantitative' />
+            <column datatype='integer' name='[discounts_mixed]' role='measure' type='quantitative' />
+            <column datatype='real' name='[discounts_value]' role='measure' type='quantitative' />
+            <column datatype='integer' name='[discounts_vendor]' role='measure' type='quantitative' />
+            <column-instance column='[report_month]' derivation='MY' name='[my:report_month:ok]' pivot='key' type='ordinal' />
+            <column-instance column='[Calculation_1659857967456649216]' derivation='None' name='[none:Calculation_1659857967456649216:nk]' pivot='key' type='nominal' />
+            <column-instance column='[chain_name]' derivation='None' name='[none:chain_name:nk]' pivot='key' type='nominal' />
+            <column-instance column='[discount_title]' derivation='None' name='[none:discount_title:nk]' pivot='key' type='nominal' />
+            <column-instance column='[discount_type]' derivation='None' name='[none:discount_type:nk]' pivot='key' type='nominal' />
+            <column-instance column='[vendor_code]' derivation='None' name='[none:vendor_code:nk]' pivot='key' type='nominal' />
+            <column datatype='integer' name='[orders]' role='measure' type='quantitative' />
+            <column datatype='real' name='[orders_gfv]' role='measure' type='quantitative' />
+            <column datatype='real' name='[orders_gmv]' role='measure' type='quantitative' />
+            <column datatype='date' name='[report_month]' role='dimension' type='ordinal' />
+            <column-instance column='[# Deals Active (copy)_1659857967467089944]' derivation='Sum' name='[sum:# Deals Active (copy)_1659857967467089944:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[# Deals Active - Free Delivery (copy)_1659857967467171865]' derivation='Sum' name='[sum:# Deals Active - Free Delivery (copy)_1659857967467171865:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[# Deals Active - Text Free Gift (copy)_1659857967467388956]' derivation='Sum' name='[sum:# Deals Active - Text Free Gift (copy)_1659857967467388956:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[# Deals Active - Text Free Gift (copy)_1659857967467536413]' derivation='Sum' name='[sum:# Deals Active - Text Free Gift (copy)_1659857967467536413:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[# Orders w Deal (copy)_1659857967460532234]' derivation='Sum' name='[sum:# Orders w Deal (copy)_1659857967460532234:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[# Orders w Deal - DH Paid (copy)_1659857967461543947]' derivation='Sum' name='[sum:# Orders w Deal - DH Paid (copy)_1659857967461543947:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[# Orders w Deal - Vendor Paid (copy)_1659857967461703692]' derivation='Sum' name='[sum:# Orders w Deal - Vendor Paid (copy)_1659857967461703692:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[# Vendors w Deal - Free Delivery (copy)_1659857967470391329]' derivation='Sum' name='[sum:# Vendors w Deal - Free Delivery (copy)_1659857967470391329:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[# Vendors w Deal - Text Free Gift (copy)_1659857967470731299]' derivation='Sum' name='[sum:# Vendors w Deal - Text Free Gift (copy)_1659857967470731299:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[# Vendors w Deal - Text Free Gift (copy)_1659857967470923812]' derivation='Sum' name='[sum:# Vendors w Deal - Text Free Gift (copy)_1659857967470923812:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[Calculation_1478869574690881537]' derivation='Sum' name='[sum:Calculation_1478869574690881537:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[Calculation_1659857967456792577]' derivation='Sum' name='[sum:Calculation_1659857967456792577:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[Calculation_1659857967457386500]' derivation='Sum' name='[sum:Calculation_1659857967457386500:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[Calculation_1659857967458594822]' derivation='Sum' name='[sum:Calculation_1659857967458594822:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[Calculation_1659857967462129677]' derivation='Sum' name='[sum:Calculation_1659857967462129677:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[Calculation_1659857967462260750]' derivation='Sum' name='[sum:Calculation_1659857967462260750:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[Calculation_1659857967470223392]' derivation='Sum' name='[sum:Calculation_1659857967470223392:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[Calculation_1659857967470510114]' derivation='Sum' name='[sum:Calculation_1659857967470510114:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[discounts_active_free_gift]' derivation='Sum' name='[sum:discounts_active_free_gift:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[AFV (LC) (copy)_1659857967463370771]' derivation='User' name='[usr:AFV (LC) (copy)_1659857967463370771:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[AFV (LC) (copy)_1659857967463579668]' derivation='User' name='[usr:AFV (LC) (copy)_1659857967463579668:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[AFV (LC) - Deals (copy)_1659857967463682069]' derivation='User' name='[usr:AFV (LC) - Deals (copy)_1659857967463682069:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[Calculation_1659857967457468421]' derivation='User' name='[usr:Calculation_1659857967457468421:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[Calculation_1659857967458869255]' derivation='User' name='[usr:Calculation_1659857967458869255:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[Calculation_1659857967462383631]' derivation='User' name='[usr:Calculation_1659857967462383631:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[Calculation_1659857967463141394]' derivation='User' name='[usr:Calculation_1659857967463141394:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[Calculation_1659857967472218149]' derivation='User' name='[usr:Calculation_1659857967472218149:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[Calculation_1659857967472459814]' derivation='User' name='[usr:Calculation_1659857967472459814:qk]' pivot='key' type='quantitative' />
+            <column caption='Vendor Code' datatype='string' name='[vendor_code]' role='dimension' type='nominal' />
+            <column datatype='integer' name='[vendors_active]' role='measure' type='quantitative' />
+          </datasource-dependencies>
+          <filter class='categorical' column='[federated.12fkbze1nux58d15q2nc01bv4uk1].[:Measure Names]'>
+            <groupfilter function='union' user:op='manual'>
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.12fkbze1nux58d15q2nc01bv4uk1].[sum:Calculation_1478869574690881537:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.12fkbze1nux58d15q2nc01bv4uk1].[sum:\# Deals Active (copy)_1659857967467089944:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.12fkbze1nux58d15q2nc01bv4uk1].[sum:\# Deals Active - Free Delivery (copy)_1659857967467171865:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.12fkbze1nux58d15q2nc01bv4uk1].[sum:\# Deals Active - Text Free Gift (copy)_1659857967467388956:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.12fkbze1nux58d15q2nc01bv4uk1].[sum:discounts_active_free_gift:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.12fkbze1nux58d15q2nc01bv4uk1].[sum:\# Deals Active - Text Free Gift (copy)_1659857967467536413:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.12fkbze1nux58d15q2nc01bv4uk1].[sum:Calculation_1659857967458594822:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.12fkbze1nux58d15q2nc01bv4uk1].[usr:Calculation_1659857967458869255:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.12fkbze1nux58d15q2nc01bv4uk1].[sum:Calculation_1659857967470223392:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.12fkbze1nux58d15q2nc01bv4uk1].[sum:\# Vendors w Deal - Free Delivery (copy)_1659857967470391329:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.12fkbze1nux58d15q2nc01bv4uk1].[sum:Calculation_1659857967470510114:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.12fkbze1nux58d15q2nc01bv4uk1].[sum:\# Vendors w Deal - Text Free Gift (copy)_1659857967470731299:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.12fkbze1nux58d15q2nc01bv4uk1].[sum:\# Vendors w Deal - Text Free Gift (copy)_1659857967470923812:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.12fkbze1nux58d15q2nc01bv4uk1].[sum:Calculation_1659857967457386500:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.12fkbze1nux58d15q2nc01bv4uk1].[usr:Calculation_1659857967457468421:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.12fkbze1nux58d15q2nc01bv4uk1].[sum:Calculation_1659857967456792577:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.12fkbze1nux58d15q2nc01bv4uk1].[sum:\# Orders w Deal (copy)_1659857967460532234:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.12fkbze1nux58d15q2nc01bv4uk1].[sum:\# Orders w Deal - DH Paid (copy)_1659857967461543947:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.12fkbze1nux58d15q2nc01bv4uk1].[sum:\# Orders w Deal - Vendor Paid (copy)_1659857967461703692:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.12fkbze1nux58d15q2nc01bv4uk1].[sum:Calculation_1659857967462260750:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.12fkbze1nux58d15q2nc01bv4uk1].[usr:Calculation_1659857967462383631:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.12fkbze1nux58d15q2nc01bv4uk1].[sum:Calculation_1659857967462129677:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.12fkbze1nux58d15q2nc01bv4uk1].[usr:AFV (LC) (copy)_1659857967463579668:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.12fkbze1nux58d15q2nc01bv4uk1].[usr:AFV (LC) - Deals (copy)_1659857967463682069:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.12fkbze1nux58d15q2nc01bv4uk1].[usr:Calculation_1659857967472218149:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.12fkbze1nux58d15q2nc01bv4uk1].[usr:Calculation_1659857967463141394:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.12fkbze1nux58d15q2nc01bv4uk1].[usr:AFV (LC) (copy)_1659857967463370771:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.12fkbze1nux58d15q2nc01bv4uk1].[usr:Calculation_1659857967472459814:qk]&quot;' />
+            </groupfilter>
+          </filter>
+          <manual-sort column='[federated.12fkbze1nux58d15q2nc01bv4uk1].[:Measure Names]' direction='ASC'>
+            <dictionary>
+              <bucket>&quot;[federated.12fkbze1nux58d15q2nc01bv4uk1].[sum:Calculation_1478869574690881537:qk]&quot;</bucket>
+              <bucket>&quot;[federated.12fkbze1nux58d15q2nc01bv4uk1].[sum:\# Deals Active (copy)_1659857967467089944:qk]&quot;</bucket>
+              <bucket>&quot;[federated.12fkbze1nux58d15q2nc01bv4uk1].[sum:\# Deals Active - Free Delivery (copy)_1659857967467171865:qk]&quot;</bucket>
+              <bucket>&quot;[federated.12fkbze1nux58d15q2nc01bv4uk1].[sum:\# Deals Active - Text Free Gift (copy)_1659857967467388956:qk]&quot;</bucket>
+              <bucket>&quot;[federated.12fkbze1nux58d15q2nc01bv4uk1].[sum:discounts_active_free_gift:qk]&quot;</bucket>
+              <bucket>&quot;[federated.12fkbze1nux58d15q2nc01bv4uk1].[sum:\# Deals Active - Text Free Gift (copy)_1659857967467536413:qk]&quot;</bucket>
+              <bucket>&quot;[federated.12fkbze1nux58d15q2nc01bv4uk1].[sum:Calculation_1659857967458594822:qk]&quot;</bucket>
+              <bucket>&quot;[federated.12fkbze1nux58d15q2nc01bv4uk1].[usr:Calculation_1659857967458869255:qk]&quot;</bucket>
+              <bucket>&quot;[federated.12fkbze1nux58d15q2nc01bv4uk1].[sum:Calculation_1659857967470223392:qk]&quot;</bucket>
+              <bucket>&quot;[federated.12fkbze1nux58d15q2nc01bv4uk1].[sum:\# Vendors w Deal - Free Delivery (copy)_1659857967470391329:qk]&quot;</bucket>
+              <bucket>&quot;[federated.12fkbze1nux58d15q2nc01bv4uk1].[sum:Calculation_1659857967470510114:qk]&quot;</bucket>
+              <bucket>&quot;[federated.12fkbze1nux58d15q2nc01bv4uk1].[sum:\# Vendors w Deal - Text Free Gift (copy)_1659857967470731299:qk]&quot;</bucket>
+              <bucket>&quot;[federated.12fkbze1nux58d15q2nc01bv4uk1].[sum:\# Vendors w Deal - Text Free Gift (copy)_1659857967470923812:qk]&quot;</bucket>
+              <bucket>&quot;[federated.12fkbze1nux58d15q2nc01bv4uk1].[sum:Calculation_1659857967457386500:qk]&quot;</bucket>
+              <bucket>&quot;[federated.12fkbze1nux58d15q2nc01bv4uk1].[usr:Calculation_1659857967457468421:qk]&quot;</bucket>
+              <bucket>&quot;[federated.12fkbze1nux58d15q2nc01bv4uk1].[sum:Calculation_1659857967456792577:qk]&quot;</bucket>
+              <bucket>&quot;[federated.12fkbze1nux58d15q2nc01bv4uk1].[sum:\# Orders w Deal (copy)_1659857967460532234:qk]&quot;</bucket>
+              <bucket>&quot;[federated.12fkbze1nux58d15q2nc01bv4uk1].[sum:\# Orders w Deal - DH Paid (copy)_1659857967461543947:qk]&quot;</bucket>
+              <bucket>&quot;[federated.12fkbze1nux58d15q2nc01bv4uk1].[sum:\# Orders w Deal - Vendor Paid (copy)_1659857967461703692:qk]&quot;</bucket>
+              <bucket>&quot;[federated.12fkbze1nux58d15q2nc01bv4uk1].[sum:Calculation_1659857967462260750:qk]&quot;</bucket>
+              <bucket>&quot;[federated.12fkbze1nux58d15q2nc01bv4uk1].[usr:Calculation_1659857967462383631:qk]&quot;</bucket>
+              <bucket>&quot;[federated.12fkbze1nux58d15q2nc01bv4uk1].[sum:Calculation_1659857967462129677:qk]&quot;</bucket>
+              <bucket>&quot;[federated.12fkbze1nux58d15q2nc01bv4uk1].[usr:AFV (LC) (copy)_1659857967463579668:qk]&quot;</bucket>
+              <bucket>&quot;[federated.12fkbze1nux58d15q2nc01bv4uk1].[usr:AFV (LC) - Deals (copy)_1659857967463682069:qk]&quot;</bucket>
+              <bucket>&quot;[federated.12fkbze1nux58d15q2nc01bv4uk1].[usr:Calculation_1659857967472218149:qk]&quot;</bucket>
+              <bucket>&quot;[federated.12fkbze1nux58d15q2nc01bv4uk1].[usr:Calculation_1659857967463141394:qk]&quot;</bucket>
+              <bucket>&quot;[federated.12fkbze1nux58d15q2nc01bv4uk1].[usr:AFV (LC) (copy)_1659857967463370771:qk]&quot;</bucket>
+              <bucket>&quot;[federated.12fkbze1nux58d15q2nc01bv4uk1].[usr:Calculation_1659857967472459814:qk]&quot;</bucket>
+            </dictionary>
+          </manual-sort>
+          <filter class='categorical' column='[federated.12fkbze1nux58d15q2nc01bv4uk1].[my:report_month:ok]'>
+            <groupfilter function='level-members' level='[my:report_month:ok]' user:ui-enumeration='all' user:ui-marker='enumerate' />
+          </filter>
+          <slices>
+            <column>[federated.12fkbze1nux58d15q2nc01bv4uk1].[:Measure Names]</column>
+            <column>[federated.12fkbze1nux58d15q2nc01bv4uk1].[none:discount_type:nk]</column>
+            <column>[federated.12fkbze1nux58d15q2nc01bv4uk1].[none:chain_name:nk]</column>
+            <column>[federated.12fkbze1nux58d15q2nc01bv4uk1].[none:vendor_code:nk]</column>
+            <column>[federated.12fkbze1nux58d15q2nc01bv4uk1].[none:discount_title:nk]</column>
+            <column>[federated.12fkbze1nux58d15q2nc01bv4uk1].[my:report_month:ok]</column>
+            <column>[federated.12fkbze1nux58d15q2nc01bv4uk1].[none:Calculation_1659857967456649216:nk]</column>
+          </slices>
+          <aggregation value='true' />
+        </view>
+        <style>
+          <style-rule element='cell'>
+            <format attr='width' field='[federated.12fkbze1nux58d15q2nc01bv4uk1].[none:Calculation_1659857967456649216:nk]' value='94' />
+            <format attr='text-format' field='[federated.12fkbze1nux58d15q2nc01bv4uk1].[usr:Calculation_1659857967457468421:qk]' value='p0.00%' />
+            <format attr='text-format' field='[federated.12fkbze1nux58d15q2nc01bv4uk1].[sum:Calculation_1659857967457386500:qk]' value='n#,##0;-#,##0' />
+            <format attr='text-format' field='[federated.12fkbze1nux58d15q2nc01bv4uk1].[sum:Calculation_1659857967456792577:qk]' value='n#,##0;-#,##0' />
+            <format attr='text-format' field='[federated.12fkbze1nux58d15q2nc01bv4uk1].[sum:Calculation_1659857967458594822:qk]' value='n#,##0;-#,##0' />
+            <format attr='text-format' field='[federated.12fkbze1nux58d15q2nc01bv4uk1].[sum:# Orders w Deal - DH Paid (copy)_1659857967461543947:qk]' value='n#,##0;-#,##0' />
+            <format attr='text-format' field='[federated.12fkbze1nux58d15q2nc01bv4uk1].[sum:# Orders w Deal (copy)_1659857967460532234:qk]' value='n#,##0;-#,##0' />
+            <format attr='text-format' field='[federated.12fkbze1nux58d15q2nc01bv4uk1].[sum:# Orders w Deal - Vendor Paid (copy)_1659857967461703692:qk]' value='n#,##0;-#,##0' />
+            <format attr='text-format' field='[federated.12fkbze1nux58d15q2nc01bv4uk1].[sum:Calculation_1659857967462129677:qk]' value='n#,##0;-#,##0' />
+            <format attr='text-format' field='[federated.12fkbze1nux58d15q2nc01bv4uk1].[sum:Calculation_1659857967462260750:qk]' value='n#,##0;-#,##0' />
+            <format attr='text-format' field='[federated.12fkbze1nux58d15q2nc01bv4uk1].[usr:Calculation_1659857967462383631:qk]' value='p0.00%' />
+            <format attr='text-format' field='[federated.12fkbze1nux58d15q2nc01bv4uk1].[usr:Calculation_1659857967463141394:qk]' value='n#,##0.00;-#,##0.00' />
+            <format attr='text-format' field='[federated.12fkbze1nux58d15q2nc01bv4uk1].[usr:AFV (LC) (copy)_1659857967463370771:qk]' value='n#,##0.00;-#,##0.00' />
+            <format attr='text-format' field='[federated.12fkbze1nux58d15q2nc01bv4uk1].[usr:AFV (LC) (copy)_1659857967463579668:qk]' value='n#,##0.00;-#,##0.00' />
+            <format attr='text-format' field='[federated.12fkbze1nux58d15q2nc01bv4uk1].[usr:AFV (LC) - Deals (copy)_1659857967463682069:qk]' value='n#,##0.00;-#,##0.00' />
+            <format attr='text-format' field='[federated.12fkbze1nux58d15q2nc01bv4uk1].[sum:# Deals Active (copy)_1659857967467089944:qk]' value='n#,##0;-#,##0' />
+            <format attr='text-format' field='[federated.12fkbze1nux58d15q2nc01bv4uk1].[sum:# Deals Active - Free Delivery (copy)_1659857967467171865:qk]' value='n#,##0;-#,##0' />
+            <format attr='text-format' field='[federated.12fkbze1nux58d15q2nc01bv4uk1].[sum:# Deals Active - Text Free Gift (copy)_1659857967467388956:qk]' value='n#,##0;-#,##0' />
+            <format attr='text-format' field='[federated.12fkbze1nux58d15q2nc01bv4uk1].[sum:# Deals Active - Text Free Gift (copy)_1659857967467536413:qk]' value='n#,##0;-#,##0' />
+            <format attr='text-format' field='[federated.12fkbze1nux58d15q2nc01bv4uk1].[sum:Calculation_1659857967470223392:qk]' value='n#,##0;-#,##0' />
+            <format attr='text-format' field='[federated.12fkbze1nux58d15q2nc01bv4uk1].[sum:# Vendors w Deal - Free Delivery (copy)_1659857967470391329:qk]' value='n#,##0;-#,##0' />
+            <format attr='text-format' field='[federated.12fkbze1nux58d15q2nc01bv4uk1].[sum:Calculation_1659857967470510114:qk]' value='n#,##0;-#,##0' />
+            <format attr='text-format' field='[federated.12fkbze1nux58d15q2nc01bv4uk1].[sum:# Vendors w Deal - Text Free Gift (copy)_1659857967470731299:qk]' value='n#,##0;-#,##0' />
+            <format attr='text-format' field='[federated.12fkbze1nux58d15q2nc01bv4uk1].[sum:# Vendors w Deal - Text Free Gift (copy)_1659857967470923812:qk]' value='n#,##0;-#,##0' />
+            <format attr='text-format' field='[federated.12fkbze1nux58d15q2nc01bv4uk1].[usr:Calculation_1659857967472218149:qk]' value='p0.0%' />
+            <format attr='text-format' field='[federated.12fkbze1nux58d15q2nc01bv4uk1].[usr:Calculation_1659857967472459814:qk]' value='p0.00%' />
+            <format attr='text-format' field='[federated.12fkbze1nux58d15q2nc01bv4uk1].[usr:Calculation_1659857967458869255:qk]' value='p0.00%' />
+          </style-rule>
+          <style-rule element='header'>
+            <format attr='width' field='[federated.12fkbze1nux58d15q2nc01bv4uk1].[:Measure Names]' value='628' />
+            <format attr='background-color' value='#00000000' />
+            <format attr='background-color' data-class='subtotal' value='#00000000' />
+            <format attr='background-color' scope='cols' value='#d70f64' />
+            <format attr='border-style' scope='cols' value='solid' />
+            <format attr='border-color' scope='cols' value='#ffffff' />
+            <format attr='background-color' field='[federated.12fkbze1nux58d15q2nc01bv4uk1].[none:Calculation_1659857967456649216:nk]' value='#d4d4d4' />
+          </style-rule>
+          <style-rule element='label'>
+            <format attr='font-weight' scope='cols' value='bold' />
+            <format attr='color' scope='cols' value='#ffffff' />
+            <format attr='color' field='[federated.12fkbze1nux58d15q2nc01bv4uk1].[none:Calculation_1659857967456649216:nk]' value='#555555' />
+            <format attr='font-weight' field='[federated.12fkbze1nux58d15q2nc01bv4uk1].[none:Calculation_1659857967456649216:nk]' value='bold' />
+          </style-rule>
+          <style-rule element='worksheet'>
+            <format attr='display-field-labels' scope='cols' value='false' />
+            <format attr='font-size' value='8' />
+          </style-rule>
+          <style-rule element='quick-filter'>
+            <format attr='title' field='[federated.12fkbze1nux58d15q2nc01bv4uk1].[none:discount_type:nk]' value='Deal Type' />
+            <format attr='title' field='[federated.12fkbze1nux58d15q2nc01bv4uk1].[none:chain_name:nk]' value='Chain Name' />
+            <format attr='title' field='[federated.12fkbze1nux58d15q2nc01bv4uk1].[none:vendor_code:nk]' value='Vendor Code' />
+            <format attr='title' field='[federated.12fkbze1nux58d15q2nc01bv4uk1].[none:discount_title:nk]' value='Discount Title' />
+          </style-rule>
+        </style>
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Automatic' />
+            <encodings>
+              <text column='[federated.12fkbze1nux58d15q2nc01bv4uk1].[Multiple Values]' />
+            </encodings>
+            <style>
+              <style-rule element='mark'>
+                <format attr='mark-labels-show' value='true' />
+              </style-rule>
+              <style-rule element='pane'>
+                <format attr='minwidth' value='-1' />
+                <format attr='maxwidth' value='-1' />
+              </style-rule>
+            </style>
+          </pane>
+        </panes>
+        <rows>[federated.12fkbze1nux58d15q2nc01bv4uk1].[:Measure Names]</rows>
+        <cols>[federated.12fkbze1nux58d15q2nc01bv4uk1].[none:Calculation_1659857967456649216:nk]</cols>
+        <tooltip-style tooltip-mode='none' />
+      </table>
+      <simple-id uuid='{3EFE176F-0F63-4E56-9ECC-8F42D32399F9}' />
+    </worksheet>
+    <worksheet name='Sheet 2'>
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='Custom SQL Query (pandata_curated)' name='federated.12fkbze1nux58d15q2nc01bv4uk1' />
+          </datasources>
+          <datasource-dependencies datasource='federated.12fkbze1nux58d15q2nc01bv4uk1'>
+            <column caption='Report Month' datatype='string' name='[Calculation_1659857967456649216]' role='dimension' type='nominal'>
+              <calculation class='tableau' formula='LEFT(STR([report_month]),7)' />
+            </column>
+            <column datatype='string' name='[chain_name]' role='dimension' type='nominal' />
+            <column caption='Discount Title' datatype='string' name='[discount_title]' role='dimension' type='nominal' />
+            <column caption='Deal Type' datatype='string' name='[discount_type]' role='dimension' type='nominal' />
+            <column-instance column='[Calculation_1659857967456649216]' derivation='None' name='[none:Calculation_1659857967456649216:nk]' pivot='key' type='nominal' />
+            <column-instance column='[chain_name]' derivation='None' name='[none:chain_name:nk]' pivot='key' type='nominal' />
+            <column-instance column='[discount_title]' derivation='None' name='[none:discount_title:nk]' pivot='key' type='nominal' />
+            <column-instance column='[discount_type]' derivation='None' name='[none:discount_type:nk]' pivot='key' type='nominal' />
+            <column-instance column='[vendor_code]' derivation='None' name='[none:vendor_code:nk]' pivot='key' type='nominal' />
+            <column datatype='date' name='[report_month]' role='dimension' type='ordinal' />
+            <column caption='Vendor Code' datatype='string' name='[vendor_code]' role='dimension' type='nominal' />
+          </datasource-dependencies>
+          <slices>
+            <column>[federated.12fkbze1nux58d15q2nc01bv4uk1].[none:chain_name:nk]</column>
+            <column>[federated.12fkbze1nux58d15q2nc01bv4uk1].[none:vendor_code:nk]</column>
+            <column>[federated.12fkbze1nux58d15q2nc01bv4uk1].[none:discount_title:nk]</column>
+            <column>[federated.12fkbze1nux58d15q2nc01bv4uk1].[none:Calculation_1659857967456649216:nk]</column>
+            <column>[federated.12fkbze1nux58d15q2nc01bv4uk1].[none:discount_type:nk]</column>
+          </slices>
+          <aggregation value='true' />
+        </view>
+        <style />
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Automatic' />
+            <encodings>
+              <text column='[federated.12fkbze1nux58d15q2nc01bv4uk1].[none:discount_title:nk]' />
+            </encodings>
+            <style>
+              <style-rule element='mark'>
+                <format attr='mark-labels-cull' value='true' />
+                <format attr='mark-labels-show' value='true' />
+              </style-rule>
+            </style>
+          </pane>
+        </panes>
+        <rows />
+        <cols />
+      </table>
+      <simple-id uuid='{CDCF968A-2965-4B87-B892-A71D8E42C980}' />
+    </worksheet>
+    <worksheet name='Vendors with Deals - List'>
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='Custom SQL Query (pandata_curated)' name='federated.12fkbze1nux58d15q2nc01bv4uk1' />
+          </datasources>
+          <datasource-dependencies datasource='federated.12fkbze1nux58d15q2nc01bv4uk1'>
+            <column caption='Report Month' datatype='string' name='[Calculation_1659857967456649216]' role='dimension' type='nominal'>
+              <calculation class='tableau' formula='LEFT(STR([report_month]),7)' />
+            </column>
+            <column caption='# Vendors w Deal' datatype='integer' name='[Calculation_1659857967459266568]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='COUNTD(IF [discounts_active_vendor]&gt;0 THEN [vendor_code] END)' />
+            </column>
+            <column datatype='string' name='[chain_name]' role='dimension' type='nominal' />
+            <column caption='Discount Title' datatype='string' name='[discount_title]' role='dimension' type='nominal' />
+            <column caption='Deal Type' datatype='string' name='[discount_type]' role='dimension' type='nominal' />
+            <column datatype='integer' name='[discounts_active_vendor]' role='measure' type='quantitative' />
+            <column caption='Vendor Name' datatype='string' name='[name]' role='dimension' type='nominal' />
+            <column-instance column='[Calculation_1659857967456649216]' derivation='None' name='[none:Calculation_1659857967456649216:nk]' pivot='key' type='nominal' />
+            <column-instance column='[chain_name]' derivation='None' name='[none:chain_name:nk]' pivot='key' type='nominal' />
+            <column-instance column='[discount_title]' derivation='None' name='[none:discount_title:nk]' pivot='key' type='nominal' />
+            <column-instance column='[discount_type]' derivation='None' name='[none:discount_type:nk]' pivot='key' type='nominal' />
+            <column-instance column='[name]' derivation='None' name='[none:name:nk]' pivot='key' type='nominal' />
+            <column-instance column='[report_month]' derivation='None' name='[none:report_month:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[vendor_code]' derivation='None' name='[none:vendor_code:nk]' pivot='key' type='nominal' />
+            <column datatype='date' name='[report_month]' role='dimension' type='ordinal' />
+            <column-instance column='[Calculation_1659857967459266568]' derivation='User' name='[usr:Calculation_1659857967459266568:qk]' pivot='key' type='quantitative' />
+            <column caption='Vendor Code' datatype='string' name='[vendor_code]' role='dimension' type='nominal' />
+          </datasource-dependencies>
+          <filter class='relative-date' column='[federated.12fkbze1nux58d15q2nc01bv4uk1].[none:report_month:qk]' first-period='-2' include-future='true' include-null='false' last-period='0' period-type-v2='month' />
+          <filter class='quantitative' column='[federated.12fkbze1nux58d15q2nc01bv4uk1].[usr:Calculation_1659857967459266568:qk]' included-values='in-range'>
+            <min>1</min>
+            <max>1</max>
+          </filter>
+          <slices>
+            <column>[federated.12fkbze1nux58d15q2nc01bv4uk1].[none:report_month:qk]</column>
+            <column>[federated.12fkbze1nux58d15q2nc01bv4uk1].[none:discount_type:nk]</column>
+            <column>[federated.12fkbze1nux58d15q2nc01bv4uk1].[usr:Calculation_1659857967459266568:qk]</column>
+            <column>[federated.12fkbze1nux58d15q2nc01bv4uk1].[none:chain_name:nk]</column>
+            <column>[federated.12fkbze1nux58d15q2nc01bv4uk1].[none:vendor_code:nk]</column>
+            <column>[federated.12fkbze1nux58d15q2nc01bv4uk1].[none:discount_title:nk]</column>
+            <column>[federated.12fkbze1nux58d15q2nc01bv4uk1].[none:Calculation_1659857967456649216:nk]</column>
+          </slices>
+          <aggregation value='true' />
+        </view>
+        <style>
+          <style-rule element='header'>
+            <format attr='width' field='[federated.12fkbze1nux58d15q2nc01bv4uk1].[none:discount_title:nk]' value='232' />
+            <format attr='width' field='[federated.12fkbze1nux58d15q2nc01bv4uk1].[none:name:nk]' value='200' />
+            <format attr='width' field='[federated.12fkbze1nux58d15q2nc01bv4uk1].[none:discount_type:nk]' value='116' />
+          </style-rule>
+          <style-rule element='field-labels-spanner'>
+            <format attr='background-color' scope='cols' value='#c0c0c0' />
+          </style-rule>
+        </style>
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Automatic' />
+            <encodings>
+              <text column='[federated.12fkbze1nux58d15q2nc01bv4uk1].[usr:Calculation_1659857967459266568:qk]' />
+            </encodings>
+            <style>
+              <style-rule element='mark'>
+                <format attr='mark-labels-show' value='true' />
+              </style-rule>
+            </style>
+          </pane>
+        </panes>
+        <rows total='true'>([federated.12fkbze1nux58d15q2nc01bv4uk1].[none:vendor_code:nk] / ([federated.12fkbze1nux58d15q2nc01bv4uk1].[none:name:nk] / ([federated.12fkbze1nux58d15q2nc01bv4uk1].[none:discount_type:nk] / [federated.12fkbze1nux58d15q2nc01bv4uk1].[none:discount_title:nk])))</rows>
+        <cols>[federated.12fkbze1nux58d15q2nc01bv4uk1].[none:Calculation_1659857967456649216:nk]</cols>
+      </table>
+      <simple-id uuid='{B2EC118B-EEBE-412F-816F-8E81A47A0983}' />
+    </worksheet>
+  </worksheets>
+  <dashboards>
+    <dashboard name='Deals Overview'>
+      <repository-location derived-from='https://tableau.deliveryhero.net/t/Austria/workbooks/ATDealsOverview-Tabular_16391377467250/DealsOverview?rev=' id='DealsOverview' path='/t/Austria/workbooks/ATDealsOverview-Tabular_16391377467250' revision='' site='Austria' />
+      <style />
+      <size maxheight='1300' maxwidth='1440' minheight='1300' minwidth='1440' sizing-mode='fixed' />
+      <datasources>
+        <datasource caption='Custom SQL Query (pandata_curated)' name='federated.12fkbze1nux58d15q2nc01bv4uk1' />
+      </datasources>
+      <datasource-dependencies datasource='federated.12fkbze1nux58d15q2nc01bv4uk1'>
+        <column caption='Report Month' datatype='string' name='[Calculation_1659857967456649216]' role='dimension' type='nominal'>
+          <calculation class='tableau' formula='LEFT(STR([report_month]),7)' />
+        </column>
+        <column datatype='string' name='[chain_name]' role='dimension' type='nominal' />
+        <column caption='Discount Title' datatype='string' name='[discount_title]' role='dimension' type='nominal' />
+        <column caption='Deal Type' datatype='string' name='[discount_type]' role='dimension' type='nominal' />
+        <column-instance column='[Calculation_1659857967456649216]' derivation='None' name='[none:Calculation_1659857967456649216:nk]' pivot='key' type='nominal' />
+        <column-instance column='[chain_name]' derivation='None' name='[none:chain_name:nk]' pivot='key' type='nominal' />
+        <column-instance column='[discount_title]' derivation='None' name='[none:discount_title:nk]' pivot='key' type='nominal' />
+        <column-instance column='[discount_type]' derivation='None' name='[none:discount_type:nk]' pivot='key' type='nominal' />
+        <column-instance column='[vendor_code]' derivation='None' name='[none:vendor_code:nk]' pivot='key' type='nominal' />
+        <column caption='Vendor Code' datatype='string' name='[vendor_code]' role='dimension' type='nominal' />
+      </datasource-dependencies>
+      <zones>
+        <zone h='100000' id='4' type-v2='layout-basic' w='100000' x='0' y='0'>
+          <zone h='99846' id='7' param='horz' type-v2='layout-flow' w='99862' x='69' y='77'>
+            <zone h='99846' id='5' type-v2='layout-basic' w='88751' x='69' y='77'>
+              <zone h='46069' id='3' name='Overview Prep' show-title='false' w='88751' x='69' y='7782'>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+              <zone forceUpdate='true' h='7705' id='17' type-v2='text' w='88751' x='69' y='77'>
+                <formatted-text>
+                  <run bold='true' fontalignment='1' fontcolor='#555555' fontname='Arial' fontsize='10'>Deals Overview</run>
+                </formatted-text>
+                <zone-style>
+                  <format attr='border-color' value='#00ff00' />
+                  <format attr='border-style' value='solid' />
+                  <format attr='border-width' value='1' />
+                  <format attr='margin' value='4' />
+                  <format attr='background-color' value='#e6e6e6' />
+                </zone-style>
+              </zone>
+              <zone h='46072' id='82' name='Vendors with Deals - List' w='88751' x='69' y='53851'>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+            </zone>
+            <zone fixed-size='160' h='99846' id='6' is-fixed='true' param='vert' type-v2='layout-flow' w='11111' x='88820' y='77'>
+              <zone fixed-size='87' forceUpdate='true' h='7307' id='43' is-fixed='true' type-v2='text' w='11111' x='88820' y='77'>
+                <formatted-text>
+                  <run bold='true' fontcolor='#555555' fontname='Arial' fontsize='8'>Note: </run>
+                  <run fontcolor='#555555' fontname='Arial' fontsize='8'>Always leave the &quot;Total&quot; box ticked, even if you want to look at one, or a few, of the deal types</run>
+                </formatted-text>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                  <format attr='background-color' value='#d4d4d4' />
+                </zone-style>
+              </zone>
+              <zone h='19769' id='8' name='Overview Prep' param='[federated.12fkbze1nux58d15q2nc01bv4uk1].[none:discount_type:nk]' show-apply='true' type-v2='filter' values='relevant' w='11111' x='88820' y='7384'>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+              <zone h='5153' id='55' mode='checkdropdown' name='Overview Prep' param='[federated.12fkbze1nux58d15q2nc01bv4uk1].[none:Calculation_1659857967456649216:nk]' show-apply='true' type-v2='filter' values='database' w='11111' x='88820' y='27153'>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+              <zone h='5153' id='13' mode='checkdropdown' name='Overview Prep' param='[federated.12fkbze1nux58d15q2nc01bv4uk1].[none:chain_name:nk]' show-apply='true' type-v2='filter' values='relevant' w='11111' x='88820' y='32306'>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+              <zone h='5153' id='15' mode='checkdropdown' name='Overview Prep' param='[federated.12fkbze1nux58d15q2nc01bv4uk1].[none:vendor_code:nk]' show-apply='true' type-v2='filter' values='relevant' w='11111' x='88820' y='37459'>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+              <zone h='5153' id='54' mode='checkdropdown' name='Overview Prep' param='[federated.12fkbze1nux58d15q2nc01bv4uk1].[none:discount_title:nk]' type-v2='filter' values='database' w='11111' x='88820' y='42612'>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+            </zone>
+          </zone>
+          <zone-style>
+            <format attr='border-color' value='#00ff00' />
+            <format attr='border-style' value='solid' />
+            <format attr='border-width' value='1' />
+            <format attr='margin' value='0' />
+          </zone-style>
+        </zone>
+        <zone h='1900' id='18' is-centered='0' is-scaled='1' param='Image/foodora-RGB-horizontal.png' type-v2='bitmap' w='32292' x='903' y='1200' />
+      </zones>
+      <devicelayouts>
+        <devicelayout auto-generated='true' name='Phone'>
+          <size maxheight='1050' minheight='1050' sizing-mode='vscroll' />
+          <zones>
+            <zone h='100000' id='88' type-v2='layout-basic' w='100000' x='0' y='0'>
+              <zone h='98770' id='87' param='vert' type-v2='layout-flow' w='98888' x='556' y='615'>
+                <zone forceUpdate='true' h='7705' id='17' type-v2='text' w='88751' x='69' y='77'>
+                  <formatted-text>
+                    <run bold='true' fontalignment='1' fontcolor='#555555' fontname='Arial' fontsize='10'>Deals Overview</run>
+                  </formatted-text>
+                  <zone-style>
+                    <format attr='border-color' value='#00ff00' />
+                    <format attr='border-style' value='solid' />
+                    <format attr='border-width' value='1' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                    <format attr='background-color' value='#e6e6e6' />
+                  </zone-style>
+                </zone>
+                <zone fixed-size='87' forceUpdate='true' h='7307' id='43' type-v2='text' w='11111' x='88820' y='77'>
+                  <formatted-text>
+                    <run bold='true' fontcolor='#555555' fontname='Arial' fontsize='8'>Note: </run>
+                    <run fontcolor='#555555' fontname='Arial' fontsize='8'>Always leave the &quot;Total&quot; box ticked, even if you want to look at one, or a few, of the deal types</run>
+                  </formatted-text>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                    <format attr='background-color' value='#d4d4d4' />
+                  </zone-style>
+                </zone>
+                <zone fixed-size='24' h='1900' id='18' is-centered='0' is-fixed='true' is-scaled='1' param='Image/foodora-RGB-horizontal.png' type-v2='bitmap' w='32292' x='903' y='1200'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone h='19769' id='8' mode='checkdropdown' name='Overview Prep' param='[federated.12fkbze1nux58d15q2nc01bv4uk1].[none:discount_type:nk]' show-apply='true' type-v2='filter' values='relevant' w='11111' x='88820' y='7384'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone h='5153' id='55' mode='checkdropdown' name='Overview Prep' param='[federated.12fkbze1nux58d15q2nc01bv4uk1].[none:Calculation_1659857967456649216:nk]' show-apply='true' type-v2='filter' values='database' w='11111' x='88820' y='27153'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone h='5153' id='13' mode='checkdropdown' name='Overview Prep' param='[federated.12fkbze1nux58d15q2nc01bv4uk1].[none:chain_name:nk]' show-apply='true' type-v2='filter' values='relevant' w='11111' x='88820' y='32306'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone h='5153' id='15' mode='checkdropdown' name='Overview Prep' param='[federated.12fkbze1nux58d15q2nc01bv4uk1].[none:vendor_code:nk]' show-apply='true' type-v2='filter' values='relevant' w='11111' x='88820' y='37459'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone h='5153' id='54' mode='checkdropdown' name='Overview Prep' param='[federated.12fkbze1nux58d15q2nc01bv4uk1].[none:discount_title:nk]' type-v2='filter' values='database' w='11111' x='88820' y='42612'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone fixed-size='280' h='46069' id='3' is-fixed='true' name='Overview Prep' show-title='false' w='88751' x='69' y='7782'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone fixed-size='280' h='46072' id='82' is-fixed='true' name='Vendors with Deals - List' w='88751' x='69' y='53851'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+              </zone>
+              <zone-style>
+                <format attr='border-color' value='#00ff00' />
+                <format attr='border-style' value='solid' />
+                <format attr='border-width' value='1' />
+                <format attr='margin' value='0' />
+              </zone-style>
+            </zone>
+          </zones>
+        </devicelayout>
+      </devicelayouts>
+      <simple-id uuid='{57126509-E954-4341-A59F-F742FAE1FAD3}' />
+    </dashboard>
+  </dashboards>
+  <windows source-height='44'>
+    <window class='worksheet' maximized='true' name='Overview Prep'>
+      <cards>
+        <edge name='left'>
+          <strip size='300'>
+            <card size='3' type='pages' />
+            <card size='23' type='filters' />
+            <card size='7' type='marks' />
+            <card size='17' type='measures' />
+          </strip>
+        </edge>
+        <edge name='top'>
+          <strip size='2147483647'>
+            <card type='columns' />
+          </strip>
+          <strip size='2147483647'>
+            <card type='rows' />
+          </strip>
+          <strip size='12'>
+            <card type='title' />
+          </strip>
+        </edge>
+        <edge name='right'>
+          <strip size='100'>
+            <card mode='checkdropdown' param='[federated.12fkbze1nux58d15q2nc01bv4uk1].[my:report_month:ok]' show-apply='true' type='filter' />
+            <card mode='checkdropdown' param='[federated.12fkbze1nux58d15q2nc01bv4uk1].[none:discount_title:nk]' type='filter' />
+            <card param='[federated.12fkbze1nux58d15q2nc01bv4uk1].[none:discount_type:nk]' show-apply='true' type='filter' values='relevant' />
+            <card mode='checkdropdown' param='[federated.12fkbze1nux58d15q2nc01bv4uk1].[none:chain_name:nk]' show-apply='true' type='filter' values='relevant' />
+            <card mode='checkdropdown' param='[federated.12fkbze1nux58d15q2nc01bv4uk1].[none:vendor_code:nk]' show-apply='true' type='filter' values='relevant' />
+          </strip>
+        </edge>
+      </cards>
+      <viewpoint>
+        <zoom type='fit-width' />
+        <highlight>
+          <color-one-way>
+            <field>[federated.12fkbze1nux58d15q2nc01bv4uk1].[:Measure Names]</field>
+            <field>[federated.12fkbze1nux58d15q2nc01bv4uk1].[User Filter 1]</field>
+            <field>[federated.12fkbze1nux58d15q2nc01bv4uk1].[discount_title (group)]</field>
+            <field>[federated.12fkbze1nux58d15q2nc01bv4uk1].[my:report_month:ok]</field>
+            <field>[federated.12fkbze1nux58d15q2nc01bv4uk1].[none:Calculation_1659857967456649216:nk]</field>
+            <field>[federated.12fkbze1nux58d15q2nc01bv4uk1].[none:Calculation_1659857967466262551:nk]</field>
+            <field>[federated.12fkbze1nux58d15q2nc01bv4uk1].[none:discount_title:nk]</field>
+            <field>[federated.19q0dt0011s2im17zqftp02htzkl].[none:vendor_name:nk]</field>
+          </color-one-way>
+        </highlight>
+      </viewpoint>
+      <simple-id uuid='{B13CE972-4969-4341-9A43-BCCFC9821CBD}' />
+    </window>
+    <window class='dashboard' name='Deals Overview'>
+      <viewpoints>
+        <viewpoint name='Overview Prep'>
+          <zoom type='fit-width' />
+        </viewpoint>
+        <viewpoint name='Vendors with Deals - List'>
+          <zoom type='fit-width' />
+        </viewpoint>
+      </viewpoints>
+      <active id='-1' />
+      <simple-id uuid='{6E93CC54-4A79-4120-934C-2C47DE8456C7}' />
+    </window>
+    <window class='worksheet' name='Sheet 2'>
+      <cards>
+        <edge name='left'>
+          <strip size='106'>
+            <card type='pages' />
+            <card type='filters' />
+            <card type='marks' />
+          </strip>
+        </edge>
+        <edge name='top'>
+          <strip size='2147483647'>
+            <card type='columns' />
+          </strip>
+          <strip size='2147483647'>
+            <card type='rows' />
+          </strip>
+          <strip size='20'>
+            <card type='title' />
+          </strip>
+        </edge>
+      </cards>
+      <viewpoint>
+        <highlight>
+          <color-one-way>
+            <field>[federated.12fkbze1nux58d15q2nc01bv4uk1].[discount_title (group)]</field>
+            <field>[federated.12fkbze1nux58d15q2nc01bv4uk1].[none:discount_title:nk]</field>
+            <field>[federated.12fkbze1nux58d15q2nc01bv4uk1].[none:discount_type:nk]</field>
+          </color-one-way>
+        </highlight>
+      </viewpoint>
+      <simple-id uuid='{D7726934-9129-4737-A222-9BC92B9BBF10}' />
+    </window>
+    <window class='worksheet' name='Vendors with Deals - List'>
+      <cards>
+        <edge name='left'>
+          <strip size='240'>
+            <card type='pages' />
+            <card type='filters' />
+            <card type='marks' />
+          </strip>
+        </edge>
+        <edge name='top'>
+          <strip size='48'>
+            <card type='columns' />
+          </strip>
+          <strip size='48'>
+            <card type='rows' />
+          </strip>
+          <strip size='46'>
+            <card type='title' />
+          </strip>
+        </edge>
+        <edge name='right'>
+          <strip size='240'>
+            <card mode='checkdropdown' param='[federated.12fkbze1nux58d15q2nc01bv4uk1].[none:discount_type:nk]' show-apply='true' type='filter' />
+            <card param='[federated.12fkbze1nux58d15q2nc01bv4uk1].[none:report_month:qk]' show-domain='false' show-null-ctrls='false' type='filter' />
+          </strip>
+        </edge>
+      </cards>
+      <viewpoint>
+        <highlight>
+          <color-one-way>
+            <field>[federated.12fkbze1nux58d15q2nc01bv4uk1].[discount_title (group)]</field>
+            <field>[federated.12fkbze1nux58d15q2nc01bv4uk1].[none:Calculation_1659857967456649216:nk]</field>
+            <field>[federated.12fkbze1nux58d15q2nc01bv4uk1].[none:discount_title:nk]</field>
+            <field>[federated.12fkbze1nux58d15q2nc01bv4uk1].[none:discount_type:nk]</field>
+            <field>[federated.12fkbze1nux58d15q2nc01bv4uk1].[none:name:nk]</field>
+            <field>[federated.12fkbze1nux58d15q2nc01bv4uk1].[none:report_month:qk]</field>
+            <field>[federated.12fkbze1nux58d15q2nc01bv4uk1].[none:vendor_code:nk]</field>
+          </color-one-way>
+        </highlight>
+      </viewpoint>
+      <simple-id uuid='{33777CC4-E49D-4524-8066-318B9D86AA3D}' />
+    </window>
+  </windows>
+</workbook>

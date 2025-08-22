@@ -1,0 +1,3714 @@
+<?xml version='1.0' encoding='utf-8' ?>
+
+<!-- build 20221.22.1108.1355                               -->
+<workbook original-version='18.1' source-build='2022.1.9 (20221.22.1108.1355)' version='18.1' xml:base='http://ip-172-31-0-157:8931' xmlns:user='http://www.tableausoftware.com/xml/user'>
+  <document-format-change-manifest>
+    <_.fcp.AccessibleZoneTabOrder.true...AccessibleZoneTabOrder />
+    <_.fcp.AnimationOnByDefault.true...AnimationOnByDefault />
+    <AutoCreateAndUpdateDSDPhoneLayouts />
+    <_.fcp.MarkAnimation.true...MarkAnimation />
+    <_.fcp.ObjectModelEncapsulateLegacy.true...ObjectModelEncapsulateLegacy />
+    <_.fcp.ObjectModelExtractV2.true...ObjectModelExtractV2 />
+    <_.fcp.ObjectModelTableType.true...ObjectModelTableType />
+    <_.fcp.SchemaViewerObjectModel.true...SchemaViewerObjectModel />
+    <SetMembershipControl />
+    <SheetIdentifierTracking />
+    <SortTagCleanup />
+    <WindowsPersistSimpleIdentifiers />
+    <WorksheetBackgroundTransparency />
+    <ZoneBackgroundTransparency />
+  </document-format-change-manifest>
+  <repository-location derived-from='http://ip-172-31-0-157:8931/t/Austria/workbooks/Joanalysis?rev=1.5' id='Joanalysis' path='/t/Austria/workbooks' revision='1.6' site='Austria' />
+  <preferences />
+  <_.fcp.AnimationOnByDefault.false...style>
+    <_.fcp.AnimationOnByDefault.false..._.fcp.MarkAnimation.true...style-rule element='animation'>
+      <_.fcp.AnimationOnByDefault.false...format attr='animation-on' value='ao-on' />
+    </_.fcp.AnimationOnByDefault.false..._.fcp.MarkAnimation.true...style-rule>
+  </_.fcp.AnimationOnByDefault.false...style>
+  <datasources>
+    <datasource caption='curated_data_shared' inline='true' name='federated.0ooik2v1p032o21don3x80qku7rv' version='18.1'>
+      <connection class='federated'>
+        <named-connections>
+          <named-connection caption='BigQuery' name='bigquery.17uhbku0db71sl17h94540zgqbsk'>
+            <connection CATALOG='fulfillment-dwh-production' EXECCATALOG='dha---bi-485' authentication='oauth' bq-dataset-fetch-rows='' bq-fetch-rows='' bq-fetch-tasks='' bq-large-fetch-rows='' bq-project-fetch-rows='' bq-response-rows='' class='bigquery' connection-dialect='google-sql' project='fulfillment-dwh-production' schema='curated_data_shared' server-oauth='' username='sirinthip.narula@deliveryhero.at' workgroup-auth-mode='prompt' />
+          </named-connection>
+        </named-connections>
+        <_.fcp.ObjectModelEncapsulateLegacy.false...relation connection='bigquery.17uhbku0db71sl17h94540zgqbsk' name='Custom SQL Query' type='text'><![CDATA[WITH
+  order_data AS (
+  SELECT
+    DATE_TRUNC(po.created_date_utc,month) AS order_month,
+    DATE_TRUNC(po.created_date_utc,day) AS order_day,
+
+    po.uuid AS order_uuid,
+    analytical_customer_id,
+    pd_orders_agg_accounting.gfv_eur AS gfv_eur,
+    pd_orders_agg_accounting.gmv_eur AS gmv_eur,
+    po.delivery_fee_local AS delivery_fee_local,
+    accounting.discount_eur AS discount_eur,
+    po.global_entity_id,
+    po.pd_customer_uuid,
+    orders_dwh.is_acquisition
+  FROM
+    `fulfillment-dwh-production.pandata_curated.pd_orders` AS po
+  LEFT JOIN
+    `fulfillment-dwh-production.curated_data_shared_central_dwh.orders` orders_dwh
+  ON
+    orders_dwh.global_entity_id = po.global_entity_id
+    AND orders_dwh.order_id=po.code
+  LEFT JOIN
+    `fulfillment-dwh-production.pandata_report.regional_eu__pd_orders_agg_accounting` AS pd_orders_agg_accounting
+  ON
+    pd_orders_agg_accounting.uuid = po.uuid
+    AND pd_orders_agg_accounting.global_entity_id = po.global_entity_id,
+    UNNEST(accounting) AS accounting
+  WHERE
+    po.global_entity_id = 'MJM_AT'
+    AND orders_dwh.placed_at_local >>= "2021-05-01"
+    AND po.created_date_utc >>= "2021-05-01"
+    AND is_valid_order
+    AND pd_orders_agg_accounting.created_date_utc <<>>current_date 
+    ),
+    customer_data AS ( 
+  SELECT
+    cus.code,
+    cus.uuid,
+    partner.customer_code,
+    partner.field,
+    partner.partner,
+    partner.is_deleted joe_deleted
+    ,cus.is_deleted customer_deleted,
+    cus.global_entity_id,
+     DATE_TRUNC(partner.created_at_utc,day) AS connected_date,
+    (DATE_TRUNC(partner.updated_at_utc,day)) AS joe_updated_date,
+     rw_promotions.title,
+  FROM
+    `fulfillment-dwh-production.pandata_curated.cus_customers` cus 
+    LEFT JOIN
+  `fulfillment-dwh-production.pandata_curated.cus_partner_details` AS partner
+ON
+  cus.global_entity_id = partner.global_entity_id
+  AND cus.code = partner.customer_code
+AND field= 'customer_id'
+left join 
+    `fulfillment-dwh-production.pandata_curated.rw_customer_promotions` as cus_promo 
+    on cus_promo.global_entity_id = partner.global_entity_id
+    and cus_promo.customer_code = partner.customer_code 
+ left join `fulfillment-dwh-production.pandata_curated.rw_promotions` as rw_promotions
+on rw_promotions.id = cus_promo.rw_promotion_id
+and rw_promotions.global_entity_id = cus_promo.global_entity_id
+
+
+    
+    ),
+    kpi as( 
+select * from 
+order_data
+left join 
+customer_data
+on order_data.global_entity_id = customer_data.global_entity_id
+and order_data.pd_customer_uuid = customer_data.uuid
+
+    )
+
+
+
+  SELECT
+order_month,
+case when partner = 'joe' then 'jö' else 'nonjö' end as partner,
+order_uuid,
+analytical_customer_id,
+gfv_eur
+,
+gmv_eur,
+delivery_fee_local,
+discount_eur
+,
+is_acquisition,
+joe_deleted,
+connected_date,
+joe_updated_date,
+order_day,
+title
+  from kpi
+  -- GROUP BY 
+    -- 1,2
+  order by order_month  desc]]></_.fcp.ObjectModelEncapsulateLegacy.false...relation>
+        <_.fcp.ObjectModelEncapsulateLegacy.true...relation connection='bigquery.17uhbku0db71sl17h94540zgqbsk' name='Custom SQL Query' type='text'><![CDATA[WITH
+  order_data AS (
+  SELECT
+    DATE_TRUNC(po.created_date_utc,month) AS order_month,
+    DATE_TRUNC(po.created_date_utc,day) AS order_day,
+
+    po.uuid AS order_uuid,
+    analytical_customer_id,
+    pd_orders_agg_accounting.gfv_eur AS gfv_eur,
+    pd_orders_agg_accounting.gmv_eur AS gmv_eur,
+    po.delivery_fee_local AS delivery_fee_local,
+    accounting.discount_eur AS discount_eur,
+    po.global_entity_id,
+    po.pd_customer_uuid,
+    orders_dwh.is_acquisition
+  FROM
+    `fulfillment-dwh-production.pandata_curated.pd_orders` AS po
+  LEFT JOIN
+    `fulfillment-dwh-production.curated_data_shared_central_dwh.orders` orders_dwh
+  ON
+    orders_dwh.global_entity_id = po.global_entity_id
+    AND orders_dwh.order_id=po.code
+  LEFT JOIN
+    `fulfillment-dwh-production.pandata_report.regional_eu__pd_orders_agg_accounting` AS pd_orders_agg_accounting
+  ON
+    pd_orders_agg_accounting.uuid = po.uuid
+    AND pd_orders_agg_accounting.global_entity_id = po.global_entity_id,
+    UNNEST(accounting) AS accounting
+  WHERE
+    po.global_entity_id = 'MJM_AT'
+    AND orders_dwh.placed_at_local >>= "2021-05-01"
+    AND po.created_date_utc >>= "2021-05-01"
+    AND is_valid_order
+    AND pd_orders_agg_accounting.created_date_utc <<>>current_date 
+    ),
+    customer_data AS ( 
+  SELECT
+    cus.code,
+    cus.uuid,
+    partner.customer_code,
+    partner.field,
+    partner.partner,
+    partner.is_deleted joe_deleted
+    ,cus.is_deleted customer_deleted,
+    cus.global_entity_id,
+     DATE_TRUNC(partner.created_at_utc,day) AS connected_date,
+    (DATE_TRUNC(partner.updated_at_utc,day)) AS joe_updated_date,
+     rw_promotions.title,
+  FROM
+    `fulfillment-dwh-production.pandata_curated.cus_customers` cus 
+    LEFT JOIN
+  `fulfillment-dwh-production.pandata_curated.cus_partner_details` AS partner
+ON
+  cus.global_entity_id = partner.global_entity_id
+  AND cus.code = partner.customer_code
+AND field= 'customer_id'
+left join 
+    `fulfillment-dwh-production.pandata_curated.rw_customer_promotions` as cus_promo 
+    on cus_promo.global_entity_id = partner.global_entity_id
+    and cus_promo.customer_code = partner.customer_code 
+ left join `fulfillment-dwh-production.pandata_curated.rw_promotions` as rw_promotions
+on rw_promotions.id = cus_promo.rw_promotion_id
+and rw_promotions.global_entity_id = cus_promo.global_entity_id
+
+
+    
+    ),
+    kpi as( 
+select * from 
+order_data
+left join 
+customer_data
+on order_data.global_entity_id = customer_data.global_entity_id
+and order_data.pd_customer_uuid = customer_data.uuid
+
+    )
+
+
+
+  SELECT
+order_month,
+case when partner = 'joe' then 'jö' else 'nonjö' end as partner,
+order_uuid,
+analytical_customer_id,
+gfv_eur
+,
+gmv_eur,
+delivery_fee_local,
+discount_eur
+,
+is_acquisition,
+joe_deleted,
+connected_date,
+joe_updated_date,
+order_day,
+title
+  from kpi
+  -- GROUP BY 
+    -- 1,2
+  order by order_month  desc]]></_.fcp.ObjectModelEncapsulateLegacy.true...relation>
+        <metadata-records>
+          <metadata-record class='column'>
+            <remote-name>order_month</remote-name>
+            <remote-type>7</remote-type>
+            <local-name>[order_month]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>order_month</remote-alias>
+            <local-type>date</local-type>
+            <aggregation>Year</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_63BD7115F6DB47268A94801EB7667E13]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>partner</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[partner]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>partner</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_63BD7115F6DB47268A94801EB7667E13]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>order_uuid</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[order_uuid]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>order_uuid</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_63BD7115F6DB47268A94801EB7667E13]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>analytical_customer_id</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[analytical_customer_id]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>analytical_customer_id</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_63BD7115F6DB47268A94801EB7667E13]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>gfv_eur</remote-name>
+            <remote-type>5</remote-type>
+            <local-name>[gfv_eur]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>gfv_eur</remote-alias>
+            <local-type>real</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_63BD7115F6DB47268A94801EB7667E13]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>gmv_eur</remote-name>
+            <remote-type>5</remote-type>
+            <local-name>[gmv_eur]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>gmv_eur</remote-alias>
+            <local-type>real</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_63BD7115F6DB47268A94801EB7667E13]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>delivery_fee_local</remote-name>
+            <remote-type>5</remote-type>
+            <local-name>[delivery_fee_local]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>delivery_fee_local</remote-alias>
+            <local-type>real</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_63BD7115F6DB47268A94801EB7667E13]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>discount_eur</remote-name>
+            <remote-type>5</remote-type>
+            <local-name>[discount_eur]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>discount_eur</remote-alias>
+            <local-type>real</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_63BD7115F6DB47268A94801EB7667E13]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>is_acquisition</remote-name>
+            <remote-type>11</remote-type>
+            <local-name>[is_acquisition]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>is_acquisition</remote-alias>
+            <local-type>boolean</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_63BD7115F6DB47268A94801EB7667E13]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>joe_deleted</remote-name>
+            <remote-type>11</remote-type>
+            <local-name>[joe_deleted]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>joe_deleted</remote-alias>
+            <local-type>boolean</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_63BD7115F6DB47268A94801EB7667E13]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>connected_date</remote-name>
+            <remote-type>7</remote-type>
+            <local-name>[connected_date]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>connected_date</remote-alias>
+            <local-type>datetime</local-type>
+            <aggregation>Year</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_63BD7115F6DB47268A94801EB7667E13]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>joe_updated_date</remote-name>
+            <remote-type>7</remote-type>
+            <local-name>[joe_updated_date]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>joe_updated_date</remote-alias>
+            <local-type>datetime</local-type>
+            <aggregation>Year</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_63BD7115F6DB47268A94801EB7667E13]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>order_day</remote-name>
+            <remote-type>7</remote-type>
+            <local-name>[order_day]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>order_day</remote-alias>
+            <local-type>date</local-type>
+            <aggregation>Year</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_63BD7115F6DB47268A94801EB7667E13]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>title</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[title]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>title</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_63BD7115F6DB47268A94801EB7667E13]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+        </metadata-records>
+      </connection>
+      <aliases enabled='yes' />
+      <column datatype='real' default-format='p0.00%' name='[Calculation1]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='[Calculation_1281274143000395777] / TOTAL([Calculation_1281274143000395777])'>
+          <table-calc ordering-type='Columns' />
+        </calculation>
+      </column>
+      <column datatype='real' default-format='p0.00%' name='[Calculation2]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='[Calculation_1281274143000301568] / TOTAL([Calculation_1281274143000301568])'>
+          <table-calc ordering-field='[federated.0ooik2v1p032o21don3x80qku7rv].[none:partner:nk]' ordering-type='Field' />
+        </calculation>
+      </column>
+      <column datatype='real' default-format='p0.00%' name='[Calculation3]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='[Calculation_1281274143000395777] / TOTAL([Calculation_1281274143000395777])'>
+          <table-calc ordering-type='Columns' />
+        </calculation>
+      </column>
+      <column caption='Orders' datatype='integer' name='[Calculation_1281274143000301568]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='COUNTD([order_uuid])' />
+      </column>
+      <column caption='Customers' datatype='integer' name='[Calculation_1281274143000395777]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='COUNTD([analytical_customer_id])' />
+      </column>
+      <column caption='Frequency' datatype='real' name='[Calculation_1281274143020609543]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='COUNTD([order_uuid])/COUNTD([analytical_customer_id])' />
+      </column>
+      <column caption='churnedaccounts' datatype='string' name='[Calculation_1281274143034060811]' role='dimension' type='nominal'>
+        <calculation class='tableau' formula='if[joe_deleted] then [analytical_customer_id] end' />
+      </column>
+      <column caption='Acquisition Condition' datatype='boolean' name='[Calculation_1463388454330118147]' role='dimension' type='nominal'>
+        <calculation class='tableau' formula='if([connected_date]&lt;= [order_day]) then true end' />
+      </column>
+      <column caption='Partners' datatype='string' name='[Calculation_1463388454331904004]' role='dimension' type='nominal'>
+        <calculation class='tableau' formula='if [Calculation_1463388454330118147] = true&#13;&#10;and [partner] = &apos;jö&apos;&#13;&#10; then &apos;jö&apos;&#13;&#10;ELSEIF  [partner] = &apos;nonjö&apos; then&#13;&#10; &apos;nonjö&apos;&#13;&#10;&#13;&#10; end' />
+      </column>
+      <_.fcp.ObjectModelTableType.true...column caption='Custom SQL Query' datatype='table' name='[__tableau_internal_object_id__].[_63BD7115F6DB47268A94801EB7667E13]' role='measure' type='quantitative' />
+      <column datatype='string' name='[partner]' role='dimension' type='nominal' />
+      <column-instance column='[Calculation_1463388454331904004]' derivation='None' name='[none:Calculation_1463388454331904004:nk]' pivot='key' type='nominal' />
+      <column-instance column='[partner]' derivation='None' name='[none:partner:nk]' pivot='key' type='nominal' />
+      <layout _.fcp.SchemaViewerObjectModel.false...dim-percentage='0.5' _.fcp.SchemaViewerObjectModel.false...measure-percentage='0.4' dim-ordering='alphabetic' measure-ordering='alphabetic' show-structure='true' />
+      <style>
+        <style-rule element='mark'>
+          <encoding attr='color' field='[none:partner:nk]' type='palette'>
+            <map to='#4e79a7'>
+              <bucket>&quot;jö&quot;</bucket>
+            </map>
+            <map to='#f28e2b'>
+              <bucket>&quot;nonjö&quot;</bucket>
+            </map>
+          </encoding>
+          <encoding attr='color' field='[none:Calculation_1463388454331904004:nk]' type='palette'>
+            <map to='#4e79a7'>
+              <bucket>%null%</bucket>
+            </map>
+            <map to='#4e79a7'>
+              <bucket>&quot;jö&quot;</bucket>
+            </map>
+            <map to='#f28e2b'>
+              <bucket>&quot;nonjö&quot;</bucket>
+            </map>
+          </encoding>
+        </style-rule>
+      </style>
+      <semantic-values>
+        <semantic-value key='[Country].[Name]' value='&quot;United States&quot;' />
+      </semantic-values>
+      <field-sort-info field-sort-order-type='custom-order'>
+        <field-sort-custom-order field='order_month' />
+        <field-sort-custom-order field='partner' />
+        <field-sort-custom-order field='order_uuid' />
+        <field-sort-custom-order field='Calculation_1281274143020609543' />
+        <field-sort-custom-order field='Calculation_1281274143000301568' />
+        <field-sort-custom-order field='analytical_customer_id' />
+        <field-sort-custom-order field='Calculation_1281274143000395777' />
+        <field-sort-custom-order field='Calculation_1281274143022723080' />
+        <field-sort-custom-order field='gfv_eur' />
+        <field-sort-custom-order field='gmv_eur' />
+        <field-sort-custom-order field='delivery_fee_local' />
+        <field-sort-custom-order field='discount_eur' />
+        <field-sort-custom-order field='is_acquisition' />
+      </field-sort-info>
+      <_.fcp.ObjectModelEncapsulateLegacy.true...object-graph>
+        <objects>
+          <object caption='Custom SQL Query' id='_63BD7115F6DB47268A94801EB7667E13'>
+            <properties context=''>
+              <relation connection='bigquery.17uhbku0db71sl17h94540zgqbsk' name='Custom SQL Query' type='text'><![CDATA[WITH
+  order_data AS (
+  SELECT
+    DATE_TRUNC(po.created_date_utc,month) AS order_month,
+    DATE_TRUNC(po.created_date_utc,day) AS order_day,
+
+    po.uuid AS order_uuid,
+    analytical_customer_id,
+    pd_orders_agg_accounting.gfv_eur AS gfv_eur,
+    pd_orders_agg_accounting.gmv_eur AS gmv_eur,
+    po.delivery_fee_local AS delivery_fee_local,
+    accounting.discount_eur AS discount_eur,
+    po.global_entity_id,
+    po.pd_customer_uuid,
+    orders_dwh.is_acquisition
+  FROM
+    `fulfillment-dwh-production.pandata_curated.pd_orders` AS po
+  LEFT JOIN
+    `fulfillment-dwh-production.curated_data_shared_central_dwh.orders` orders_dwh
+  ON
+    orders_dwh.global_entity_id = po.global_entity_id
+    AND orders_dwh.order_id=po.code
+  LEFT JOIN
+    `fulfillment-dwh-production.pandata_report.regional_eu__pd_orders_agg_accounting` AS pd_orders_agg_accounting
+  ON
+    pd_orders_agg_accounting.uuid = po.uuid
+    AND pd_orders_agg_accounting.global_entity_id = po.global_entity_id,
+    UNNEST(accounting) AS accounting
+  WHERE
+    po.global_entity_id = 'MJM_AT'
+    AND orders_dwh.placed_at_local >>= "2021-05-01"
+    AND po.created_date_utc >>= "2021-05-01"
+    AND is_valid_order
+    AND pd_orders_agg_accounting.created_date_utc <<>>current_date 
+    ),
+    customer_data AS ( 
+  SELECT
+    cus.code,
+    cus.uuid,
+    partner.customer_code,
+    partner.field,
+    partner.partner,
+    partner.is_deleted joe_deleted
+    ,cus.is_deleted customer_deleted,
+    cus.global_entity_id,
+     DATE_TRUNC(partner.created_at_utc,day) AS connected_date,
+    (DATE_TRUNC(partner.updated_at_utc,day)) AS joe_updated_date,
+     rw_promotions.title,
+  FROM
+    `fulfillment-dwh-production.pandata_curated.cus_customers` cus 
+    LEFT JOIN
+  `fulfillment-dwh-production.pandata_curated.cus_partner_details` AS partner
+ON
+  cus.global_entity_id = partner.global_entity_id
+  AND cus.code = partner.customer_code
+AND field= 'customer_id'
+left join 
+    `fulfillment-dwh-production.pandata_curated.rw_customer_promotions` as cus_promo 
+    on cus_promo.global_entity_id = partner.global_entity_id
+    and cus_promo.customer_code = partner.customer_code 
+ left join `fulfillment-dwh-production.pandata_curated.rw_promotions` as rw_promotions
+on rw_promotions.id = cus_promo.rw_promotion_id
+and rw_promotions.global_entity_id = cus_promo.global_entity_id
+
+
+    
+    ),
+    kpi as( 
+select * from 
+order_data
+left join 
+customer_data
+on order_data.global_entity_id = customer_data.global_entity_id
+and order_data.pd_customer_uuid = customer_data.uuid
+
+    )
+
+
+
+  SELECT
+order_month,
+case when partner = 'joe' then 'jö' else 'nonjö' end as partner,
+order_uuid,
+analytical_customer_id,
+gfv_eur
+,
+gmv_eur,
+delivery_fee_local,
+discount_eur
+,
+is_acquisition,
+joe_deleted,
+connected_date,
+joe_updated_date,
+order_day,
+title
+  from kpi
+  -- GROUP BY 
+    -- 1,2
+  order by order_month  desc]]></relation>
+            </properties>
+          </object>
+        </objects>
+      </_.fcp.ObjectModelEncapsulateLegacy.true...object-graph>
+    </datasource>
+    <datasource caption='before after ' inline='true' name='federated.0ooik2v1p032o21don3x80qku7rv (copy)' version='18.1'>
+      <connection class='federated'>
+        <named-connections>
+          <named-connection caption='BigQuery' name='bigquery.17uhbku0db71sl17h94540zgqbsk (copy)'>
+            <connection CATALOG='fulfillment-dwh-production' EXECCATALOG='dha---bi-485' authentication='oauth' bq-dataset-fetch-rows='' bq-fetch-rows='' bq-fetch-tasks='' bq-large-fetch-rows='' bq-project-fetch-rows='' bq-response-rows='' class='bigquery' connection-dialect='google-sql' project='fulfillment-dwh-production' schema='curated_data_shared' server-oauth='' username='sirinthip.narula@deliveryhero.at' workgroup-auth-mode='prompt' />
+          </named-connection>
+        </named-connections>
+        <_.fcp.ObjectModelEncapsulateLegacy.false...relation connection='bigquery.17uhbku0db71sl17h94540zgqbsk (copy)' name='Custom SQL Query' type='text'><![CDATA[WITH
+  order_data AS (
+  SELECT
+    DATE_TRUNC(po.created_date_utc,day) AS order_day,
+    DATE_TRUNC(po.created_date_utc,month) AS order_month,
+
+    po.uuid AS order_uuid,
+    analytical_customer_id,
+    pd_orders_agg_accounting.gfv_eur AS gfv_eur,
+    pd_orders_agg_accounting.gmv_eur AS gmv_eur,
+    po.delivery_fee_local AS delivery_fee_local,
+    accounting.discount_eur AS discount_eur,
+    po.global_entity_id,
+    po.pd_customer_uuid,
+    orders_dwh.is_acquisition
+  FROM
+    `fulfillment-dwh-production.pandata_curated.pd_orders` AS po
+  INNER JOIN
+    `fulfillment-dwh-production.curated_data_shared_central_dwh.orders` orders_dwh
+  ON
+    orders_dwh.global_entity_id = po.global_entity_id
+    AND orders_dwh.order_id=po.code
+  LEFT JOIN
+    `fulfillment-dwh-production.pandata_report.regional_eu__pd_orders_agg_accounting` AS pd_orders_agg_accounting
+  ON
+    pd_orders_agg_accounting.uuid = po.uuid
+    AND pd_orders_agg_accounting.global_entity_id = po.global_entity_id,
+    UNNEST(accounting) AS accounting
+  WHERE
+    po.global_entity_id = 'MJM_AT'
+    AND orders_dwh.placed_at_local >>= "2021-05-01"
+    AND po.created_date_utc >>= "2021-05-01"
+    AND is_valid_order
+    AND pd_orders_agg_accounting.created_date_utc <<>>current_date ),
+  customer_data AS (
+  SELECT
+    cus.code,
+    cus.uuid,
+    partner.customer_code,
+    partner.field,
+    partner.partner,
+    partner.is_deleted joe_deleted,
+    cus.is_deleted customer_deleted,
+    cus.global_entity_id,
+    DATE_TRUNC(partner.created_at_utc,day) AS connected_date,
+    DATE_TRUNC(cus.created_at_utc,day) AS customer_created_at,
+    (DATE_TRUNC(partner.updated_at_utc,day)) AS joe_updated_date,
+  FROM
+    `fulfillment-dwh-production.pandata_curated.cus_customers` cus
+  LEFT JOIN
+    `fulfillment-dwh-production.pandata_curated.cus_partner_details` AS partner
+  ON
+    cus.global_entity_id = partner.global_entity_id
+    AND cus.code = partner.customer_code
+    AND field= 'customer_id'
+  WHERE
+    cus.global_entity_id = 'MJM_AT'
+    AND partner.created_at_utc >>="2021-05-01"
+  GROUP BY
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11 ),
+  kpi AS(
+  SELECT
+    *
+  FROM
+    order_data
+  inner JOIN
+    customer_data
+  ON
+    order_data.global_entity_id = customer_data.global_entity_id
+    AND order_data.pd_customer_uuid = customer_data.uuid )
+SELECT
+  order_day,
+  order_month,
+  CASE
+    WHEN partner = 'joe' THEN 'jö'
+  ELSE
+  'nonjö'
+END
+  AS partner,
+  order_uuid,
+  analytical_customer_id,
+  gfv_eur,
+  gmv_eur,
+  delivery_fee_local,
+  discount_eur,
+  is_acquisition,
+  joe_deleted,
+  connected_date,
+  joe_updated_date,
+  
+  CASE
+    WHEN connected_date>>= order_day THEN 'before' 
+ when  connected_date<< order_day THEN 'after'
+  END
+  AS order_status,
+
+
+  customer_created_at
+FROM
+  kpi
+
+ORDER BY
+  order_day DESC]]></_.fcp.ObjectModelEncapsulateLegacy.false...relation>
+        <_.fcp.ObjectModelEncapsulateLegacy.true...relation connection='bigquery.17uhbku0db71sl17h94540zgqbsk (copy)' name='Custom SQL Query' type='text'><![CDATA[WITH
+  order_data AS (
+  SELECT
+    DATE_TRUNC(po.created_date_utc,day) AS order_day,
+    DATE_TRUNC(po.created_date_utc,month) AS order_month,
+
+    po.uuid AS order_uuid,
+    analytical_customer_id,
+    pd_orders_agg_accounting.gfv_eur AS gfv_eur,
+    pd_orders_agg_accounting.gmv_eur AS gmv_eur,
+    po.delivery_fee_local AS delivery_fee_local,
+    accounting.discount_eur AS discount_eur,
+    po.global_entity_id,
+    po.pd_customer_uuid,
+    orders_dwh.is_acquisition
+  FROM
+    `fulfillment-dwh-production.pandata_curated.pd_orders` AS po
+  INNER JOIN
+    `fulfillment-dwh-production.curated_data_shared_central_dwh.orders` orders_dwh
+  ON
+    orders_dwh.global_entity_id = po.global_entity_id
+    AND orders_dwh.order_id=po.code
+  LEFT JOIN
+    `fulfillment-dwh-production.pandata_report.regional_eu__pd_orders_agg_accounting` AS pd_orders_agg_accounting
+  ON
+    pd_orders_agg_accounting.uuid = po.uuid
+    AND pd_orders_agg_accounting.global_entity_id = po.global_entity_id,
+    UNNEST(accounting) AS accounting
+  WHERE
+    po.global_entity_id = 'MJM_AT'
+    AND orders_dwh.placed_at_local >>= "2021-05-01"
+    AND po.created_date_utc >>= "2021-05-01"
+    AND is_valid_order
+    AND pd_orders_agg_accounting.created_date_utc <<>>current_date ),
+  customer_data AS (
+  SELECT
+    cus.code,
+    cus.uuid,
+    partner.customer_code,
+    partner.field,
+    partner.partner,
+    partner.is_deleted joe_deleted,
+    cus.is_deleted customer_deleted,
+    cus.global_entity_id,
+    DATE_TRUNC(partner.created_at_utc,day) AS connected_date,
+    DATE_TRUNC(cus.created_at_utc,day) AS customer_created_at,
+    (DATE_TRUNC(partner.updated_at_utc,day)) AS joe_updated_date,
+  FROM
+    `fulfillment-dwh-production.pandata_curated.cus_customers` cus
+  LEFT JOIN
+    `fulfillment-dwh-production.pandata_curated.cus_partner_details` AS partner
+  ON
+    cus.global_entity_id = partner.global_entity_id
+    AND cus.code = partner.customer_code
+    AND field= 'customer_id'
+  WHERE
+    cus.global_entity_id = 'MJM_AT'
+    AND partner.created_at_utc >>="2021-05-01"
+  GROUP BY
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11 ),
+  kpi AS(
+  SELECT
+    *
+  FROM
+    order_data
+  inner JOIN
+    customer_data
+  ON
+    order_data.global_entity_id = customer_data.global_entity_id
+    AND order_data.pd_customer_uuid = customer_data.uuid )
+SELECT
+  order_day,
+  order_month,
+  CASE
+    WHEN partner = 'joe' THEN 'jö'
+  ELSE
+  'nonjö'
+END
+  AS partner,
+  order_uuid,
+  analytical_customer_id,
+  gfv_eur,
+  gmv_eur,
+  delivery_fee_local,
+  discount_eur,
+  is_acquisition,
+  joe_deleted,
+  connected_date,
+  joe_updated_date,
+  
+  CASE
+    WHEN connected_date>>= order_day THEN 'before' 
+ when  connected_date<< order_day THEN 'after'
+  END
+  AS order_status,
+
+
+  customer_created_at
+FROM
+  kpi
+
+ORDER BY
+  order_day DESC]]></_.fcp.ObjectModelEncapsulateLegacy.true...relation>
+        <metadata-records>
+          <metadata-record class='column'>
+            <remote-name>order_day</remote-name>
+            <remote-type>7</remote-type>
+            <local-name>[order_day]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>order_day</remote-alias>
+            <local-type>date</local-type>
+            <aggregation>Year</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_63BD7115F6DB47268A94801EB7667E13]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>order_month</remote-name>
+            <remote-type>7</remote-type>
+            <local-name>[order_month]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>order_month</remote-alias>
+            <local-type>date</local-type>
+            <aggregation>Year</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_63BD7115F6DB47268A94801EB7667E13]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>partner</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[partner]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>partner</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_63BD7115F6DB47268A94801EB7667E13]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>order_uuid</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[order_uuid]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>order_uuid</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_63BD7115F6DB47268A94801EB7667E13]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>analytical_customer_id</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[analytical_customer_id]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>analytical_customer_id</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_63BD7115F6DB47268A94801EB7667E13]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>gfv_eur</remote-name>
+            <remote-type>5</remote-type>
+            <local-name>[gfv_eur]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>gfv_eur</remote-alias>
+            <local-type>real</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_63BD7115F6DB47268A94801EB7667E13]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>gmv_eur</remote-name>
+            <remote-type>5</remote-type>
+            <local-name>[gmv_eur]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>gmv_eur</remote-alias>
+            <local-type>real</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_63BD7115F6DB47268A94801EB7667E13]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>delivery_fee_local</remote-name>
+            <remote-type>5</remote-type>
+            <local-name>[delivery_fee_local]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>delivery_fee_local</remote-alias>
+            <local-type>real</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_63BD7115F6DB47268A94801EB7667E13]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>discount_eur</remote-name>
+            <remote-type>5</remote-type>
+            <local-name>[discount_eur]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>discount_eur</remote-alias>
+            <local-type>real</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_63BD7115F6DB47268A94801EB7667E13]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>is_acquisition</remote-name>
+            <remote-type>11</remote-type>
+            <local-name>[is_acquisition]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>is_acquisition</remote-alias>
+            <local-type>boolean</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_63BD7115F6DB47268A94801EB7667E13]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>joe_deleted</remote-name>
+            <remote-type>11</remote-type>
+            <local-name>[joe_deleted]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>joe_deleted</remote-alias>
+            <local-type>boolean</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_63BD7115F6DB47268A94801EB7667E13]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>connected_date</remote-name>
+            <remote-type>7</remote-type>
+            <local-name>[connected_date]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>connected_date</remote-alias>
+            <local-type>datetime</local-type>
+            <aggregation>Year</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_63BD7115F6DB47268A94801EB7667E13]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>joe_updated_date</remote-name>
+            <remote-type>7</remote-type>
+            <local-name>[joe_updated_date]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>joe_updated_date</remote-alias>
+            <local-type>datetime</local-type>
+            <aggregation>Year</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_63BD7115F6DB47268A94801EB7667E13]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>order_status</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[order_status]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>order_status</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_63BD7115F6DB47268A94801EB7667E13]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>customer_created_at</remote-name>
+            <remote-type>7</remote-type>
+            <local-name>[customer_created_at]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>customer_created_at</remote-alias>
+            <local-type>datetime</local-type>
+            <aggregation>Year</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_63BD7115F6DB47268A94801EB7667E13]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+        </metadata-records>
+      </connection>
+      <aliases enabled='yes' />
+      <column datatype='real' default-format='p0.00%' name='[Calculation1]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='[Calculation_1281274143000395777] / TOTAL([Calculation_1281274143000395777])'>
+          <table-calc ordering-type='Columns' />
+        </calculation>
+      </column>
+      <column datatype='real' default-format='p0.00%' name='[Calculation2]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='[Calculation_1281274143000301568] / TOTAL([Calculation_1281274143000301568])'>
+          <table-calc ordering-field='[federated.0ooik2v1p032o21don3x80qku7rv (copy)].[none:partner:nk]' ordering-type='Field' />
+        </calculation>
+      </column>
+      <column caption='Orders' datatype='integer' name='[Calculation_1281274143000301568]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='COUNTD([order_uuid])' />
+      </column>
+      <column caption='Customers' datatype='integer' name='[Calculation_1281274143000395777]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='COUNTD([analytical_customer_id])' />
+      </column>
+      <column caption='Frequency' datatype='real' name='[Calculation_1281274143020609543]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='COUNTD([order_uuid])/COUNTD([analytical_customer_id])' />
+      </column>
+      <column caption='churnedaccounts' datatype='string' name='[Calculation_1281274143034060811]' role='dimension' type='nominal'>
+        <calculation class='tableau' formula='if[joe_deleted] then [analytical_customer_id] end' />
+      </column>
+      <column caption='Connected_date+1' datatype='datetime' name='[Calculation_1372190562226909184]' role='dimension' type='ordinal'>
+        <calculation class='tableau' formula='DATEADD(&apos;month&apos;,1,[connected_date])' />
+      </column>
+      <column caption='ORder before' datatype='date' name='[Calculation_1372190562239725570]' role='dimension' type='ordinal'>
+        <calculation class='tableau' formula='IF [order_status]= &apos;before&apos; then&#13;&#10;[order_day]&#13;&#10;end' />
+      </column>
+      <column caption='after' datatype='date' name='[Calculation_1372190562240897027]' role='dimension' type='ordinal'>
+        <calculation class='tableau' formula='IF [order_status] = &apos;after&apos; then&#13;&#10;[order_month] END' />
+      </column>
+      <_.fcp.ObjectModelTableType.true...column caption='Custom SQL Query' datatype='table' name='[__tableau_internal_object_id__].[_63BD7115F6DB47268A94801EB7667E13]' role='measure' type='quantitative' />
+      <column caption='Jö Connecting Date' datatype='datetime' name='[connected_date]' role='dimension' type='ordinal' />
+      <column datatype='string' name='[order_status]' role='dimension' type='nominal' />
+      <column datatype='string' name='[partner]' role='dimension' type='nominal' />
+      <column-instance column='[order_status]' derivation='None' name='[none:order_status:nk]' pivot='key' type='nominal' />
+      <column-instance column='[partner]' derivation='None' name='[none:partner:nk]' pivot='key' type='nominal' />
+      <extract _.fcp.ObjectModelExtractV2.true...object-id='_63BD7115F6DB47268A94801EB7667E13' count='-1' enabled='true' units='records'>
+        <connection access_mode='readonly' author-locale='en_US' class='hyper' dbname='extract/84/bb/{CD067E2E-CAD3-43CE-9EC9-B1E986FC1869}/federated_0ooik2v1p032o21don3x80.hyper' extract-engine='true' schema='Extract' sslmode='' tablename='Extract' update-time='09/07/2023 07:23:33 AM'>
+          <_.fcp.ObjectModelEncapsulateLegacy.false...relation name='Extract' table='[Extract].[Extract]' type='table' />
+          <_.fcp.ObjectModelEncapsulateLegacy.true...relation name='Extract' table='[Extract].[Extract]' type='table' />
+          <metadata-records>
+            <metadata-record class='column'>
+              <remote-name>order_day</remote-name>
+              <remote-type>133</remote-type>
+              <local-name>[order_day]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>order_day</remote-alias>
+              <ordinal>0</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>date</local-type>
+              <aggregation>Year</aggregation>
+              <approx-count>841</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_63BD7115F6DB47268A94801EB7667E13]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>order_month</remote-name>
+              <remote-type>133</remote-type>
+              <local-name>[order_month]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>order_month</remote-alias>
+              <ordinal>1</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>date</local-type>
+              <aggregation>Year</aggregation>
+              <approx-count>35</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_63BD7115F6DB47268A94801EB7667E13]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>partner</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[partner]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>partner</remote-alias>
+              <ordinal>2</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>1</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_63BD7115F6DB47268A94801EB7667E13]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>order_uuid</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[order_uuid]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>order_uuid</remote-alias>
+              <ordinal>3</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>3643964</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_63BD7115F6DB47268A94801EB7667E13]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>analytical_customer_id</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[analytical_customer_id]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>analytical_customer_id</remote-alias>
+              <ordinal>4</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>243620</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_63BD7115F6DB47268A94801EB7667E13]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>gfv_eur</remote-name>
+              <remote-type>5</remote-type>
+              <local-name>[gfv_eur]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>gfv_eur</remote-alias>
+              <ordinal>5</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>real</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>15611</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_63BD7115F6DB47268A94801EB7667E13]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>gmv_eur</remote-name>
+              <remote-type>5</remote-type>
+              <local-name>[gmv_eur]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>gmv_eur</remote-alias>
+              <ordinal>6</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>real</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>16266</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_63BD7115F6DB47268A94801EB7667E13]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>delivery_fee_local</remote-name>
+              <remote-type>5</remote-type>
+              <local-name>[delivery_fee_local]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>delivery_fee_local</remote-alias>
+              <ordinal>7</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>real</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>81</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_63BD7115F6DB47268A94801EB7667E13]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>discount_eur</remote-name>
+              <remote-type>5</remote-type>
+              <local-name>[discount_eur]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>discount_eur</remote-alias>
+              <ordinal>8</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>real</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>4051</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_63BD7115F6DB47268A94801EB7667E13]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>is_acquisition</remote-name>
+              <remote-type>11</remote-type>
+              <local-name>[is_acquisition]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>is_acquisition</remote-alias>
+              <ordinal>9</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>boolean</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>2</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_63BD7115F6DB47268A94801EB7667E13]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>joe_deleted</remote-name>
+              <remote-type>11</remote-type>
+              <local-name>[joe_deleted]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>joe_deleted</remote-alias>
+              <ordinal>10</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>boolean</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>2</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_63BD7115F6DB47268A94801EB7667E13]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>connected_date</remote-name>
+              <remote-type>135</remote-type>
+              <local-name>[connected_date]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>connected_date</remote-alias>
+              <ordinal>11</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>datetime</local-type>
+              <aggregation>Year</aggregation>
+              <approx-count>863</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_63BD7115F6DB47268A94801EB7667E13]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>joe_updated_date</remote-name>
+              <remote-type>135</remote-type>
+              <local-name>[joe_updated_date]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>joe_updated_date</remote-alias>
+              <ordinal>12</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>datetime</local-type>
+              <aggregation>Year</aggregation>
+              <approx-count>1082</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_63BD7115F6DB47268A94801EB7667E13]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>order_status</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[order_status]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>order_status</remote-alias>
+              <ordinal>13</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>2</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_63BD7115F6DB47268A94801EB7667E13]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>customer_created_at</remote-name>
+              <remote-type>135</remote-type>
+              <local-name>[customer_created_at]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>customer_created_at</remote-alias>
+              <ordinal>14</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>datetime</local-type>
+              <aggregation>Year</aggregation>
+              <approx-count>13639</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_63BD7115F6DB47268A94801EB7667E13]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+          </metadata-records>
+        </connection>
+      </extract>
+      <layout _.fcp.SchemaViewerObjectModel.false...dim-percentage='0.5' _.fcp.SchemaViewerObjectModel.false...measure-percentage='0.4' dim-ordering='alphabetic' measure-ordering='alphabetic' show-structure='true' />
+      <style>
+        <style-rule element='mark'>
+          <encoding attr='color' field='[none:partner:nk]' type='palette'>
+            <map to='#4e79a7'>
+              <bucket>&quot;jö&quot;</bucket>
+            </map>
+            <map to='#f28e2b'>
+              <bucket>&quot;nonjö&quot;</bucket>
+            </map>
+          </encoding>
+          <encoding attr='color' field='[none:order_status:nk]' type='palette'>
+            <map to='#e15759'>
+              <bucket>&quot;after&quot;</bucket>
+            </map>
+            <map to='#edc948'>
+              <bucket>&quot;before&quot;</bucket>
+            </map>
+          </encoding>
+        </style-rule>
+      </style>
+      <semantic-values>
+        <semantic-value key='[Country].[Name]' value='&quot;United States&quot;' />
+      </semantic-values>
+      <field-sort-info field-sort-order-type='custom-order'>
+        <field-sort-custom-order field='order_month' />
+        <field-sort-custom-order field='partner' />
+        <field-sort-custom-order field='order_uuid' />
+        <field-sort-custom-order field='Calculation_1281274143020609543' />
+        <field-sort-custom-order field='Calculation_1281274143000301568' />
+        <field-sort-custom-order field='analytical_customer_id' />
+        <field-sort-custom-order field='Calculation_1281274143000395777' />
+        <field-sort-custom-order field='Calculation_1281274143022723080' />
+        <field-sort-custom-order field='gfv_eur' />
+        <field-sort-custom-order field='gmv_eur' />
+        <field-sort-custom-order field='delivery_fee_local' />
+        <field-sort-custom-order field='discount_eur' />
+        <field-sort-custom-order field='is_acquisition' />
+      </field-sort-info>
+      <_.fcp.ObjectModelEncapsulateLegacy.true...object-graph>
+        <objects>
+          <object caption='Custom SQL Query' id='_63BD7115F6DB47268A94801EB7667E13'>
+            <properties context=''>
+              <relation connection='bigquery.17uhbku0db71sl17h94540zgqbsk (copy)' name='Custom SQL Query' type='text'><![CDATA[WITH
+  order_data AS (
+  SELECT
+    DATE_TRUNC(po.created_date_utc,day) AS order_day,
+    DATE_TRUNC(po.created_date_utc,month) AS order_month,
+
+    po.uuid AS order_uuid,
+    analytical_customer_id,
+    pd_orders_agg_accounting.gfv_eur AS gfv_eur,
+    pd_orders_agg_accounting.gmv_eur AS gmv_eur,
+    po.delivery_fee_local AS delivery_fee_local,
+    accounting.discount_eur AS discount_eur,
+    po.global_entity_id,
+    po.pd_customer_uuid,
+    orders_dwh.is_acquisition
+  FROM
+    `fulfillment-dwh-production.pandata_curated.pd_orders` AS po
+  INNER JOIN
+    `fulfillment-dwh-production.curated_data_shared_central_dwh.orders` orders_dwh
+  ON
+    orders_dwh.global_entity_id = po.global_entity_id
+    AND orders_dwh.order_id=po.code
+  LEFT JOIN
+    `fulfillment-dwh-production.pandata_report.regional_eu__pd_orders_agg_accounting` AS pd_orders_agg_accounting
+  ON
+    pd_orders_agg_accounting.uuid = po.uuid
+    AND pd_orders_agg_accounting.global_entity_id = po.global_entity_id,
+    UNNEST(accounting) AS accounting
+  WHERE
+    po.global_entity_id = 'MJM_AT'
+    AND orders_dwh.placed_at_local >>= "2021-05-01"
+    AND po.created_date_utc >>= "2021-05-01"
+    AND is_valid_order
+    AND pd_orders_agg_accounting.created_date_utc <<>>current_date ),
+  customer_data AS (
+  SELECT
+    cus.code,
+    cus.uuid,
+    partner.customer_code,
+    partner.field,
+    partner.partner,
+    partner.is_deleted joe_deleted,
+    cus.is_deleted customer_deleted,
+    cus.global_entity_id,
+    DATE_TRUNC(partner.created_at_utc,day) AS connected_date,
+    DATE_TRUNC(cus.created_at_utc,day) AS customer_created_at,
+    (DATE_TRUNC(partner.updated_at_utc,day)) AS joe_updated_date,
+  FROM
+    `fulfillment-dwh-production.pandata_curated.cus_customers` cus
+  LEFT JOIN
+    `fulfillment-dwh-production.pandata_curated.cus_partner_details` AS partner
+  ON
+    cus.global_entity_id = partner.global_entity_id
+    AND cus.code = partner.customer_code
+    AND field= 'customer_id'
+  WHERE
+    cus.global_entity_id = 'MJM_AT'
+    AND partner.created_at_utc >>="2021-05-01"
+  GROUP BY
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11 ),
+  kpi AS(
+  SELECT
+    *
+  FROM
+    order_data
+  inner JOIN
+    customer_data
+  ON
+    order_data.global_entity_id = customer_data.global_entity_id
+    AND order_data.pd_customer_uuid = customer_data.uuid )
+SELECT
+  order_day,
+  order_month,
+  CASE
+    WHEN partner = 'joe' THEN 'jö'
+  ELSE
+  'nonjö'
+END
+  AS partner,
+  order_uuid,
+  analytical_customer_id,
+  gfv_eur,
+  gmv_eur,
+  delivery_fee_local,
+  discount_eur,
+  is_acquisition,
+  joe_deleted,
+  connected_date,
+  joe_updated_date,
+  
+  CASE
+    WHEN connected_date>>= order_day THEN 'before' 
+ when  connected_date<< order_day THEN 'after'
+  END
+  AS order_status,
+
+
+  customer_created_at
+FROM
+  kpi
+
+ORDER BY
+  order_day DESC]]></relation>
+            </properties>
+            <properties context='extract'>
+              <relation name='Extract' table='[Extract].[Extract]' type='table' />
+            </properties>
+          </object>
+        </objects>
+      </_.fcp.ObjectModelEncapsulateLegacy.true...object-graph>
+    </datasource>
+  </datasources>
+  <actions>
+    <action caption='Highlight 2 (generated)' name='[Action2_D1335C979EE546D68FC123388A7CE4E7]'>
+      <activation auto-clear='true' type='on-select' />
+      <source dashboard='Data Summary' type='sheet' />
+      <command command='tsc:brush'>
+        <param name='field-captions' value='Partners' />
+        <param name='target' value='Data Summary' />
+      </command>
+    </action>
+  </actions>
+  <worksheets>
+    <worksheet name='Acquisitions'>
+      <repository-location derived-from='http://ip-172-31-0-157:8931/t/Austria/workbooks/Joanalysis/Acquisitions?rev=' id='Acquisitions' path='/t/Austria/workbooks/Joanalysis' revision='' site='Austria' />
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='curated_data_shared' name='federated.0ooik2v1p032o21don3x80qku7rv' />
+          </datasources>
+          <datasource-dependencies datasource='federated.0ooik2v1p032o21don3x80qku7rv'>
+            <column datatype='real' default-format='p0.00%' name='[Calculation1]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='[Calculation_1281274143000395777] / TOTAL([Calculation_1281274143000395777])'>
+                <table-calc ordering-type='Columns' />
+              </calculation>
+            </column>
+            <column caption='Customers' datatype='integer' name='[Calculation_1281274143000395777]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='COUNTD([analytical_customer_id])' />
+            </column>
+            <column caption='Acquisition Condition' datatype='boolean' name='[Calculation_1463388454330118147]' role='dimension' type='nominal'>
+              <calculation class='tableau' formula='if([connected_date]&lt;= [order_day]) then true end' />
+            </column>
+            <column caption='Partners' datatype='string' name='[Calculation_1463388454331904004]' role='dimension' type='nominal'>
+              <calculation class='tableau' formula='if [Calculation_1463388454330118147] = true&#13;&#10;and [partner] = &apos;jö&apos;&#13;&#10; then &apos;jö&apos;&#13;&#10;ELSEIF  [partner] = &apos;nonjö&apos; then&#13;&#10; &apos;nonjö&apos;&#13;&#10;&#13;&#10; end' />
+            </column>
+            <column datatype='string' name='[analytical_customer_id]' role='dimension' type='nominal' />
+            <column datatype='datetime' name='[connected_date]' role='dimension' type='ordinal' />
+            <column datatype='boolean' name='[is_acquisition]' role='dimension' type='nominal' />
+            <column-instance column='[order_month]' derivation='MY' name='[my:order_month:ok]' pivot='key' type='ordinal' />
+            <column-instance column='[Calculation_1463388454331904004]' derivation='None' name='[none:Calculation_1463388454331904004:nk]' pivot='key' type='nominal' />
+            <column-instance column='[is_acquisition]' derivation='None' name='[none:is_acquisition:nk]' pivot='key' type='nominal' />
+            <column-instance column='[title]' derivation='None' name='[none:title:nk]' pivot='key' type='nominal' />
+            <column datatype='date' name='[order_day]' role='dimension' type='ordinal' />
+            <column datatype='date' name='[order_month]' role='dimension' type='ordinal' />
+            <column datatype='string' name='[partner]' role='dimension' type='nominal' />
+            <column datatype='string' name='[title]' role='dimension' type='nominal' />
+            <column-instance column='[Calculation1]' derivation='User' name='[usr:Calculation1:qk]' pivot='key' type='quantitative'>
+              <table-calc ordering-type='Columns' />
+            </column-instance>
+            <column-instance column='[Calculation_1281274143000395777]' derivation='User' name='[usr:Calculation_1281274143000395777:qk]' pivot='key' type='quantitative' />
+          </datasource-dependencies>
+          <filter class='categorical' column='[federated.0ooik2v1p032o21don3x80qku7rv].[my:order_month:ok]'>
+            <groupfilter from='202201' function='range' level='[my:order_month:ok]' to='202301' user:ui-domain='database' user:ui-enumeration='inclusive' user:ui-marker='enumerate' />
+          </filter>
+          <filter class='categorical' column='[federated.0ooik2v1p032o21don3x80qku7rv].[none:Calculation_1463388454331904004:nk]'>
+            <groupfilter function='union' user:ui-domain='database' user:ui-enumeration='inclusive' user:ui-marker='enumerate'>
+              <groupfilter function='member' level='[none:Calculation_1463388454331904004:nk]' member='&quot;jö&quot;' />
+              <groupfilter function='member' level='[none:Calculation_1463388454331904004:nk]' member='&quot;nonjö&quot;' />
+            </groupfilter>
+          </filter>
+          <filter class='categorical' column='[federated.0ooik2v1p032o21don3x80qku7rv].[none:is_acquisition:nk]'>
+            <groupfilter function='member' level='[none:is_acquisition:nk]' member='true' user:ui-domain='database' user:ui-enumeration='inclusive' user:ui-marker='enumerate' />
+          </filter>
+          <filter class='categorical' column='[federated.0ooik2v1p032o21don3x80qku7rv].[none:title:nk]'>
+            <groupfilter function='level-members' level='[none:title:nk]' user:ui-enumeration='all' user:ui-marker='enumerate' />
+          </filter>
+          <slices>
+            <column>[federated.0ooik2v1p032o21don3x80qku7rv].[none:is_acquisition:nk]</column>
+            <column>[federated.0ooik2v1p032o21don3x80qku7rv].[my:order_month:ok]</column>
+            <column>[federated.0ooik2v1p032o21don3x80qku7rv].[none:Calculation_1463388454331904004:nk]</column>
+            <column>[federated.0ooik2v1p032o21don3x80qku7rv].[none:title:nk]</column>
+          </slices>
+          <aggregation value='true' />
+        </view>
+        <style />
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Automatic' />
+            <encodings>
+              <lod column='[federated.0ooik2v1p032o21don3x80qku7rv].[usr:Calculation1:qk]' />
+              <text column='[federated.0ooik2v1p032o21don3x80qku7rv].[usr:Calculation_1281274143000395777:qk]' />
+            </encodings>
+            <style>
+              <style-rule element='mark'>
+                <format attr='mark-labels-show' value='true' />
+              </style-rule>
+            </style>
+          </pane>
+        </panes>
+        <rows>[federated.0ooik2v1p032o21don3x80qku7rv].[none:Calculation_1463388454331904004:nk]</rows>
+        <cols>[federated.0ooik2v1p032o21don3x80qku7rv].[my:order_month:ok]</cols>
+      </table>
+      <simple-id uuid='{9A79B3C3-CF98-42D8-82B7-EBB99C2B9488}' />
+    </worksheet>
+    <worksheet name='Acquisitions GRAPH'>
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='curated_data_shared' name='federated.0ooik2v1p032o21don3x80qku7rv' />
+          </datasources>
+          <datasource-dependencies datasource='federated.0ooik2v1p032o21don3x80qku7rv'>
+            <column datatype='real' default-format='p0.00%' name='[Calculation1]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='[Calculation_1281274143000395777] / TOTAL([Calculation_1281274143000395777])'>
+                <table-calc ordering-type='Columns' />
+              </calculation>
+            </column>
+            <column caption='Customers' datatype='integer' name='[Calculation_1281274143000395777]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='COUNTD([analytical_customer_id])' />
+            </column>
+            <column caption='Acquisition Condition' datatype='boolean' name='[Calculation_1463388454330118147]' role='dimension' type='nominal'>
+              <calculation class='tableau' formula='if([connected_date]&lt;= [order_day]) then true end' />
+            </column>
+            <column caption='Partners' datatype='string' name='[Calculation_1463388454331904004]' role='dimension' type='nominal'>
+              <calculation class='tableau' formula='if [Calculation_1463388454330118147] = true&#13;&#10;and [partner] = &apos;jö&apos;&#13;&#10; then &apos;jö&apos;&#13;&#10;ELSEIF  [partner] = &apos;nonjö&apos; then&#13;&#10; &apos;nonjö&apos;&#13;&#10;&#13;&#10; end' />
+            </column>
+            <column datatype='string' name='[analytical_customer_id]' role='dimension' type='nominal' />
+            <column datatype='datetime' name='[connected_date]' role='dimension' type='ordinal' />
+            <column datatype='boolean' name='[is_acquisition]' role='dimension' type='nominal' />
+            <column-instance column='[order_month]' derivation='MY' name='[my:order_month:ok]' pivot='key' type='ordinal' />
+            <column-instance column='[Calculation_1463388454331904004]' derivation='None' name='[none:Calculation_1463388454331904004:nk]' pivot='key' type='nominal' />
+            <column-instance column='[is_acquisition]' derivation='None' name='[none:is_acquisition:nk]' pivot='key' type='nominal' />
+            <column datatype='date' name='[order_day]' role='dimension' type='ordinal' />
+            <column datatype='date' name='[order_month]' role='dimension' type='ordinal' />
+            <column datatype='string' name='[partner]' role='dimension' type='nominal' />
+            <column-instance column='[Calculation1]' derivation='User' name='[usr:Calculation1:qk:1]' pivot='key' type='quantitative'>
+              <table-calc ordering-field='[federated.0ooik2v1p032o21don3x80qku7rv].[none:Calculation_1463388454331904004:nk]' ordering-type='Field' />
+            </column-instance>
+            <column-instance column='[Calculation_1281274143000395777]' derivation='User' name='[usr:Calculation_1281274143000395777:qk]' pivot='key' type='quantitative' />
+          </datasource-dependencies>
+          <filter class='categorical' column='[federated.0ooik2v1p032o21don3x80qku7rv].[my:order_month:ok]'>
+            <groupfilter function='level-members' level='[my:order_month:ok]' user:ui-enumeration='all' user:ui-marker='enumerate' />
+          </filter>
+          <filter class='categorical' column='[federated.0ooik2v1p032o21don3x80qku7rv].[none:Calculation_1463388454331904004:nk]'>
+            <groupfilter function='union' user:ui-domain='database' user:ui-enumeration='inclusive' user:ui-marker='enumerate'>
+              <groupfilter function='member' level='[none:Calculation_1463388454331904004:nk]' member='&quot;jö&quot;' />
+              <groupfilter function='member' level='[none:Calculation_1463388454331904004:nk]' member='&quot;nonjö&quot;' />
+            </groupfilter>
+          </filter>
+          <filter class='categorical' column='[federated.0ooik2v1p032o21don3x80qku7rv].[none:is_acquisition:nk]'>
+            <groupfilter function='member' level='[none:is_acquisition:nk]' member='true' user:ui-domain='database' user:ui-enumeration='inclusive' user:ui-marker='enumerate' />
+          </filter>
+          <slices>
+            <column>[federated.0ooik2v1p032o21don3x80qku7rv].[none:is_acquisition:nk]</column>
+            <column>[federated.0ooik2v1p032o21don3x80qku7rv].[my:order_month:ok]</column>
+            <column>[federated.0ooik2v1p032o21don3x80qku7rv].[none:Calculation_1463388454331904004:nk]</column>
+          </slices>
+          <aggregation value='true' />
+        </view>
+        <style />
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Line' />
+            <encodings>
+              <color column='[federated.0ooik2v1p032o21don3x80qku7rv].[none:Calculation_1463388454331904004:nk]' />
+              <text column='[federated.0ooik2v1p032o21don3x80qku7rv].[usr:Calculation1:qk:1]' />
+            </encodings>
+            <style>
+              <style-rule element='mark'>
+                <format attr='mark-labels-show' value='true' />
+                <format attr='mark-labels-cull' value='true' />
+              </style-rule>
+            </style>
+          </pane>
+        </panes>
+        <rows>[federated.0ooik2v1p032o21don3x80qku7rv].[usr:Calculation_1281274143000395777:qk]</rows>
+        <cols>[federated.0ooik2v1p032o21don3x80qku7rv].[my:order_month:ok]</cols>
+      </table>
+      <simple-id uuid='{2150AD86-B0AA-4A7D-9A9D-9F527A9D3922}' />
+    </worksheet>
+    <worksheet name='After'>
+      <layout-options>
+        <title>
+          <formatted-text>
+            <run>After Connecting to Jö</run>
+          </formatted-text>
+        </title>
+      </layout-options>
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='before after ' name='federated.0ooik2v1p032o21don3x80qku7rv (copy)' />
+          </datasources>
+          <datasource-dependencies datasource='federated.0ooik2v1p032o21don3x80qku7rv (copy)'>
+            <column-instance column='[gfv_eur]' derivation='Avg' name='[avg:gfv_eur:qk]' pivot='key' type='quantitative' />
+            <column caption='Jö Connecting Date' datatype='datetime' name='[connected_date]' role='dimension' type='ordinal' />
+            <column datatype='real' name='[gfv_eur]' role='measure' type='quantitative' />
+            <column-instance column='[connected_date]' derivation='MY' name='[my:connected_date:ok]' pivot='key' type='ordinal' />
+            <column-instance column='[order_day]' derivation='MY' name='[my:order_day:ok]' pivot='key' type='ordinal' />
+            <column-instance column='[order_status]' derivation='None' name='[none:order_status:nk]' pivot='key' type='nominal' />
+            <column datatype='date' name='[order_day]' role='dimension' type='ordinal' />
+            <column datatype='string' name='[order_status]' role='dimension' type='nominal' />
+          </datasource-dependencies>
+          <natural-sort column='[federated.0ooik2v1p032o21don3x80qku7rv (copy)].[my:connected_date:ok]' direction='DESC' />
+          <natural-sort column='[federated.0ooik2v1p032o21don3x80qku7rv (copy)].[my:order_day:ok]' direction='DESC' />
+          <filter class='categorical' column='[federated.0ooik2v1p032o21don3x80qku7rv (copy)].[none:order_status:nk]'>
+            <groupfilter function='member' level='[none:order_status:nk]' member='&quot;after&quot;' user:ui-domain='database' user:ui-enumeration='inclusive' user:ui-marker='enumerate' />
+          </filter>
+          <slices>
+            <column>[federated.0ooik2v1p032o21don3x80qku7rv (copy)].[none:order_status:nk]</column>
+          </slices>
+          <aggregation value='true' />
+        </view>
+        <style>
+          <style-rule element='cell'>
+            <format attr='width' field='[federated.0ooik2v1p032o21don3x80qku7rv (copy)].[my:order_day:ok]' value='92' />
+            <format attr='color' value='#4e79a7' />
+          </style-rule>
+          <style-rule element='header'>
+            <format attr='width' field='[federated.0ooik2v1p032o21don3x80qku7rv (copy)].[my:connected_date:ok]' value='252' />
+            <format attr='background-color' scope='rows' value='#00000000' />
+            <format attr='height' field='[federated.0ooik2v1p032o21don3x80qku7rv (copy)].[my:order_day:ok]' value='20' />
+          </style-rule>
+          <style-rule element='field-labels'>
+            <format attr='color' value='#e15759' />
+          </style-rule>
+          <style-rule element='field-labels-decoration'>
+            <format attr='color' value='#e15759' />
+            <format attr='background-color' value='#00000000' />
+          </style-rule>
+          <style-rule element='field-labels-spanner'>
+            <format attr='color' scope='cols' value='#000000' />
+            <format attr='background-color' scope='cols' value='#00000000' />
+            <format attr='background-color' scope='rows' value='#00000000' />
+          </style-rule>
+          <style-rule element='label'>
+            <format attr='color' value='#000000' />
+            <format attr='font-weight' value='normal' />
+          </style-rule>
+          <style-rule element='pane'>
+            <format attr='band-color' scope='rows' value='#00000000' />
+          </style-rule>
+          <style-rule element='table'>
+            <format attr='band-size' scope='rows' value='1' />
+            <format attr='band-size' scope='cols' value='5' />
+          </style-rule>
+          <style-rule element='worksheet'>
+            <format attr='color' value='#000000' />
+          </style-rule>
+        </style>
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Automatic' />
+            <encodings>
+              <text column='[federated.0ooik2v1p032o21don3x80qku7rv (copy)].[avg:gfv_eur:qk]' />
+            </encodings>
+            <style>
+              <style-rule element='mark'>
+                <format attr='mark-labels-show' value='true' />
+              </style-rule>
+              <style-rule element='pane'>
+                <format attr='minwidth' value='-1' />
+                <format attr='maxwidth' value='-1' />
+              </style-rule>
+            </style>
+          </pane>
+        </panes>
+        <rows>[federated.0ooik2v1p032o21don3x80qku7rv (copy)].[my:connected_date:ok]</rows>
+        <cols>[federated.0ooik2v1p032o21don3x80qku7rv (copy)].[my:order_day:ok]</cols>
+      </table>
+      <simple-id uuid='{D58C7553-5306-43E2-8627-105DF92B6340}' />
+    </worksheet>
+    <worksheet name='AverageBasketSize'>
+      <repository-location derived-from='http://ip-172-31-0-157:8931/t/Austria/workbooks/Joanalysis/AverageBasketSize?rev=' id='AverageBasketSize' path='/t/Austria/workbooks/Joanalysis' revision='' site='Austria' />
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='curated_data_shared' name='federated.0ooik2v1p032o21don3x80qku7rv' />
+          </datasources>
+          <datasource-dependencies datasource='federated.0ooik2v1p032o21don3x80qku7rv'>
+            <column-instance column='[gfv_eur]' derivation='Avg' name='[avg:gfv_eur:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[gmv_eur]' derivation='Avg' name='[avg:gmv_eur:qk]' pivot='key' type='quantitative' />
+            <column datatype='real' name='[delivery_fee_local]' role='measure' type='quantitative' />
+            <column datatype='real' name='[discount_eur]' role='measure' type='quantitative' />
+            <column datatype='real' name='[gfv_eur]' role='measure' type='quantitative' />
+            <column datatype='real' name='[gmv_eur]' role='measure' type='quantitative' />
+            <column-instance column='[order_month]' derivation='MY' name='[my:order_month:ok]' pivot='key' type='ordinal' />
+            <column-instance column='[partner]' derivation='None' name='[none:partner:nk]' pivot='key' type='nominal' />
+            <column-instance column='[title]' derivation='None' name='[none:title:nk]' pivot='key' type='nominal' />
+            <column datatype='date' name='[order_month]' role='dimension' type='ordinal' />
+            <column datatype='string' name='[partner]' role='dimension' type='nominal' />
+            <column-instance column='[delivery_fee_local]' derivation='Sum' name='[sum:delivery_fee_local:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[discount_eur]' derivation='Sum' name='[sum:discount_eur:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[gmv_eur]' derivation='Sum' name='[sum:gmv_eur:qk]' pivot='key' type='quantitative' />
+            <column datatype='string' name='[title]' role='dimension' type='nominal' />
+          </datasource-dependencies>
+          <filter class='categorical' column='[federated.0ooik2v1p032o21don3x80qku7rv].[:Measure Names]'>
+            <groupfilter function='union' user:op='manual'>
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.0ooik2v1p032o21don3x80qku7rv].[avg:gfv_eur:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.0ooik2v1p032o21don3x80qku7rv].[avg:gmv_eur:qk]&quot;' />
+            </groupfilter>
+          </filter>
+          <manual-sort column='[federated.0ooik2v1p032o21don3x80qku7rv].[:Measure Names]' direction='ASC'>
+            <dictionary>
+              <bucket>&quot;[federated.0ooik2v1p032o21don3x80qku7rv].[avg:gfv_eur:qk]&quot;</bucket>
+              <bucket>&quot;[federated.0ooik2v1p032o21don3x80qku7rv].[avg:gmv_eur:qk]&quot;</bucket>
+              <bucket>&quot;[federated.0ooik2v1p032o21don3x80qku7rv].[sum:gmv_eur:qk]&quot;</bucket>
+              <bucket>&quot;[federated.0ooik2v1p032o21don3x80qku7rv].[sum:delivery_fee_local:qk]&quot;</bucket>
+              <bucket>&quot;[federated.0ooik2v1p032o21don3x80qku7rv].[sum:discount_eur:qk]&quot;</bucket>
+            </dictionary>
+          </manual-sort>
+          <filter class='categorical' column='[federated.0ooik2v1p032o21don3x80qku7rv].[my:order_month:ok]'>
+            <groupfilter function='level-members' level='[my:order_month:ok]' />
+          </filter>
+          <filter class='categorical' column='[federated.0ooik2v1p032o21don3x80qku7rv].[none:title:nk]'>
+            <groupfilter function='union' user:ui-domain='database' user:ui-enumeration='inclusive' user:ui-marker='enumerate'>
+              <groupfilter function='member' level='[none:title:nk]' member='%null%' />
+              <groupfilter function='member' level='[none:title:nk]' member='&quot;{\&quot;de-AT\&quot;: \&quot;Sammel 2fach Ös für deine Bestellung.\&quot;, \&quot;en-AT\&quot;: \&quot;2 times the Ös for your order.\&quot;}&quot;' />
+              <groupfilter function='member' level='[none:title:nk]' member='&quot;{\&quot;de-AT\&quot;: \&quot;Sammel 6fach Ös für deine Bestellung.\&quot;, \&quot;en-AT\&quot;: \&quot;6 times the Ös for your order.\&quot;}&quot;' />
+              <groupfilter function='member' level='[none:title:nk]' member='&quot;{\&quot;de-AT\&quot;: \&quot;Sammle 10fach Ös für deine Bestellung.\&quot;, \&quot;en-AT\&quot;: \&quot;10 times the Ös for your order.\&quot;}&quot;' />
+              <groupfilter function='member' level='[none:title:nk]' member='&quot;{\&quot;de-AT\&quot;: \&quot;Sammle 2fach Ös für deine Bestellung.\&quot;, \&quot;en-AT\&quot;: \&quot;2 times the Ös for your order.\&quot;}&quot;' />
+              <groupfilter function='member' level='[none:title:nk]' member='&quot;{\&quot;de-AT\&quot;: \&quot;Sammle 2fach Ös für deine Bestellung.\&quot;, \&quot;en-AT\&quot;: \&quot;Earn double Ös for your order.\&quot;}&quot;' />
+              <groupfilter function='member' level='[none:title:nk]' member='&quot;{\&quot;de-AT\&quot;: \&quot;Sammle 4fach Ös für deine Bestellung.\&quot;, \&quot;en-AT\&quot;: \&quot;4 times the Ös for your order.\&quot;}&quot;' />
+              <groupfilter function='member' level='[none:title:nk]' member='&quot;{\&quot;de-AT\&quot;: \&quot;Sammle 4fach Ös für deine Bestellung.\&quot;, \&quot;en-AT\&quot;: \&quot;Earn 4times the Ös for your order.\&quot;}&quot;' />
+              <groupfilter function='member' level='[none:title:nk]' member='&quot;{\&quot;de-AT\&quot;: \&quot;Sammle 4fach Ös für deine Bestellung.\&quot;, \&quot;en-AT\&quot;: \&quot;Receive 4 times the Ös on your order.\&quot;}&quot;' />
+              <groupfilter function='member' level='[none:title:nk]' member='&quot;{\&quot;de-AT\&quot;: \&quot;Sammle 4fach Ös für deine Bestellung\&quot;, \&quot;en-AT\&quot;: \&quot;Earn 4times the Ös for your order.\&quot;}&quot;' />
+              <groupfilter function='member' level='[none:title:nk]' member='&quot;{\&quot;de-AT\&quot;: \&quot;Sammle 6fach Ös für deine Bestellung.\&quot;, \&quot;en-AT\&quot;: \&quot;6 times the Ös for your order.\&quot;}&quot;' />
+              <groupfilter function='member' level='[none:title:nk]' member='&quot;{\&quot;de-AT\&quot;: \&quot;Sammle 6fach Ös für deine Bestellung.\&quot;, \&quot;en-AT\&quot;: \&quot;Earn 6times the Ös for your order.\&quot;}&quot;' />
+              <groupfilter function='member' level='[none:title:nk]' member='&quot;{\&quot;de-AT\&quot;: \&quot;Sammle 6fach Ös für deine Bestellung.\&quot;, \&quot;en-AT\&quot;: \&quot;Receive 6 times the Ös on your order.\&quot;}&quot;' />
+              <groupfilter function='member' level='[none:title:nk]' member='&quot;{\&quot;de-AT\&quot;: \&quot;Sammle 6fach Ös für deine Bestellung\&quot;, \&quot;en-AT\&quot;: \&quot;Earn 6times the Ös for your order.\&quot;}&quot;' />
+              <groupfilter function='member' level='[none:title:nk]' member='&quot;{\&quot;de-AT\&quot;: \&quot;Sammle 8fach Ös für deine Bestellung.\&quot;, \&quot;en-AT\&quot;: \&quot;Earn 8times the Ös for your order.\&quot;}&quot;' />
+              <groupfilter function='member' level='[none:title:nk]' member='&quot;{\&quot;de-AT\&quot;: \&quot;Sammle 8fach Ös für deine Bestellung\&quot;, \&quot;en-AT\&quot;: \&quot;Earn 8times the Ös for your order.\&quot;}&quot;' />
+              <groupfilter function='member' level='[none:title:nk]' member='&quot;{\&quot;de-AT\&quot;: \&quot;Sammle doppelte Ös für deine Bestellung\&quot;, \&quot;en-AT\&quot;: \&quot;Earn double Ös for your order.\&quot;}&quot;' />
+            </groupfilter>
+          </filter>
+          <slices>
+            <column>[federated.0ooik2v1p032o21don3x80qku7rv].[my:order_month:ok]</column>
+            <column>[federated.0ooik2v1p032o21don3x80qku7rv].[:Measure Names]</column>
+            <column>[federated.0ooik2v1p032o21don3x80qku7rv].[none:title:nk]</column>
+          </slices>
+          <aggregation value='true' />
+        </view>
+        <style>
+          <style-rule element='cell'>
+            <format attr='width' field='[federated.0ooik2v1p032o21don3x80qku7rv].[:Measure Names]' value='159' />
+          </style-rule>
+          <style-rule element='header'>
+            <format attr='width' field='[federated.0ooik2v1p032o21don3x80qku7rv].[:Measure Names]' value='200' />
+          </style-rule>
+        </style>
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Text' />
+            <encodings>
+              <text column='[federated.0ooik2v1p032o21don3x80qku7rv].[Multiple Values]' />
+            </encodings>
+            <style>
+              <style-rule element='mark'>
+                <format attr='mark-labels-show' value='true' />
+                <format attr='mark-labels-cull' value='true' />
+              </style-rule>
+              <style-rule element='pane'>
+                <format attr='minwidth' value='-1' />
+                <format attr='maxwidth' value='-1' />
+              </style-rule>
+            </style>
+          </pane>
+        </panes>
+        <rows>([federated.0ooik2v1p032o21don3x80qku7rv].[my:order_month:ok] / [federated.0ooik2v1p032o21don3x80qku7rv].[none:partner:nk])</rows>
+        <cols>[federated.0ooik2v1p032o21don3x80qku7rv].[:Measure Names]</cols>
+      </table>
+      <simple-id uuid='{D80E1F5F-FED3-4855-90C3-8A5AE4308094}' />
+    </worksheet>
+    <worksheet name='AverageBasketSize graph'>
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='curated_data_shared' name='federated.0ooik2v1p032o21don3x80qku7rv' />
+          </datasources>
+          <datasource-dependencies datasource='federated.0ooik2v1p032o21don3x80qku7rv'>
+            <column-instance column='[gfv_eur]' derivation='Avg' name='[avg:gfv_eur:qk]' pivot='key' type='quantitative' />
+            <column datatype='real' name='[gfv_eur]' role='measure' type='quantitative' />
+            <column-instance column='[order_month]' derivation='MY' name='[my:order_month:ok]' pivot='key' type='ordinal' />
+            <column-instance column='[partner]' derivation='None' name='[none:partner:nk]' pivot='key' type='nominal' />
+            <column datatype='date' name='[order_month]' role='dimension' type='ordinal' />
+            <column datatype='string' name='[partner]' role='dimension' type='nominal' />
+          </datasource-dependencies>
+          <filter class='categorical' column='[federated.0ooik2v1p032o21don3x80qku7rv].[my:order_month:ok]' filter-group='3'>
+            <groupfilter function='level-members' level='[my:order_month:ok]' user:ui-enumeration='all' user:ui-marker='enumerate' />
+          </filter>
+          <slices>
+            <column>[federated.0ooik2v1p032o21don3x80qku7rv].[my:order_month:ok]</column>
+          </slices>
+          <aggregation value='true' />
+        </view>
+        <style>
+          <style-rule element='axis'>
+            <format attr='width' field='[federated.0ooik2v1p032o21don3x80qku7rv].[avg:gfv_eur:qk]' value='32' />
+            <format attr='height' field='[federated.0ooik2v1p032o21don3x80qku7rv].[my:order_month:ok]' value='41' />
+          </style-rule>
+        </style>
+        <panes>
+          <pane id='1' selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Line' />
+            <encodings>
+              <color column='[federated.0ooik2v1p032o21don3x80qku7rv].[none:partner:nk]' />
+            </encodings>
+            <style>
+              <style-rule element='datalabel'>
+                <format attr='color-mode' value='auto' />
+                <format attr='font-size' value='8' />
+              </style-rule>
+              <style-rule element='mark'>
+                <format attr='mark-labels-show' value='true' />
+                <format attr='mark-labels-cull' value='true' />
+              </style-rule>
+            </style>
+          </pane>
+        </panes>
+        <rows>[federated.0ooik2v1p032o21don3x80qku7rv].[avg:gfv_eur:qk]</rows>
+        <cols>[federated.0ooik2v1p032o21don3x80qku7rv].[my:order_month:ok]</cols>
+      </table>
+      <simple-id uuid='{0B55D057-AA2D-48B7-9C1F-95BEA6DB67A6}' />
+    </worksheet>
+    <worksheet name='Before'>
+      <layout-options>
+        <title>
+          <formatted-text>
+            <run>Before Connecting to Jö</run>
+          </formatted-text>
+        </title>
+      </layout-options>
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='before after ' name='federated.0ooik2v1p032o21don3x80qku7rv (copy)' />
+          </datasources>
+          <datasource-dependencies datasource='federated.0ooik2v1p032o21don3x80qku7rv (copy)'>
+            <column-instance column='[gfv_eur]' derivation='Avg' name='[avg:gfv_eur:qk]' pivot='key' type='quantitative' />
+            <column datatype='real' name='[gfv_eur]' role='measure' type='quantitative' />
+            <column-instance column='[order_day]' derivation='MY' name='[my:order_day:ok]' pivot='key' type='ordinal' />
+            <column-instance column='[order_status]' derivation='None' name='[none:order_status:nk]' pivot='key' type='nominal' />
+            <column datatype='date' name='[order_day]' role='dimension' type='ordinal' />
+            <column datatype='string' name='[order_status]' role='dimension' type='nominal' />
+          </datasource-dependencies>
+          <natural-sort column='[federated.0ooik2v1p032o21don3x80qku7rv (copy)].[my:order_day:ok]' direction='DESC' />
+          <filter class='categorical' column='[federated.0ooik2v1p032o21don3x80qku7rv (copy)].[none:order_status:nk]'>
+            <groupfilter function='member' level='[none:order_status:nk]' member='&quot;before&quot;' user:ui-domain='database' user:ui-enumeration='inclusive' user:ui-marker='enumerate' />
+          </filter>
+          <slices>
+            <column>[federated.0ooik2v1p032o21don3x80qku7rv (copy)].[none:order_status:nk]</column>
+          </slices>
+          <aggregation value='true' />
+        </view>
+        <style>
+          <style-rule element='cell'>
+            <format attr='width' field='[federated.0ooik2v1p032o21don3x80qku7rv (copy)].[my:order_day:ok]' value='92' />
+            <format attr='color' value='#499894' />
+          </style-rule>
+          <style-rule element='header'>
+            <format attr='width' field='[federated.0ooik2v1p032o21don3x80qku7rv (copy)].[my:order_day:ok]' value='208' />
+          </style-rule>
+          <style-rule element='worksheet'>
+            <format attr='display-field-labels' scope='rows' value='false' />
+          </style-rule>
+        </style>
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Automatic' />
+            <encodings>
+              <text column='[federated.0ooik2v1p032o21don3x80qku7rv (copy)].[avg:gfv_eur:qk]' />
+            </encodings>
+            <style>
+              <style-rule element='mark'>
+                <format attr='mark-labels-show' value='true' />
+              </style-rule>
+              <style-rule element='pane'>
+                <format attr='minwidth' value='-1' />
+                <format attr='maxwidth' value='-1' />
+              </style-rule>
+            </style>
+          </pane>
+        </panes>
+        <rows>[federated.0ooik2v1p032o21don3x80qku7rv (copy)].[my:order_day:ok]</rows>
+        <cols />
+      </table>
+      <simple-id uuid='{8B9E1B7A-7575-4BEE-993D-1ADA18B5FFBC}' />
+    </worksheet>
+    <worksheet name='Before GFV graph'>
+      <layout-options>
+        <title>
+          <formatted-text />
+        </title>
+      </layout-options>
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='before after ' name='federated.0ooik2v1p032o21don3x80qku7rv (copy)' />
+          </datasources>
+          <datasource-dependencies datasource='federated.0ooik2v1p032o21don3x80qku7rv (copy)'>
+            <column-instance column='[gfv_eur]' derivation='Avg' name='[avg:gfv_eur:qk]' pivot='key' type='quantitative' />
+            <column datatype='real' name='[gfv_eur]' role='measure' type='quantitative' />
+            <column-instance column='[order_day]' derivation='MY' name='[my:order_day:ok]' pivot='key' type='ordinal' />
+            <column-instance column='[order_month]' derivation='MY' name='[my:order_month:ok]' pivot='key' type='ordinal' />
+            <column-instance column='[order_status]' derivation='None' name='[none:order_status:nk]' pivot='key' type='nominal' />
+            <column datatype='date' name='[order_day]' role='dimension' type='ordinal' />
+            <column datatype='date' name='[order_month]' role='dimension' type='ordinal' />
+            <column datatype='string' name='[order_status]' role='dimension' type='nominal' />
+          </datasource-dependencies>
+          <filter class='categorical' column='[federated.0ooik2v1p032o21don3x80qku7rv (copy)].[none:order_status:nk]'>
+            <groupfilter function='level-members' level='[none:order_status:nk]' user:ui-enumeration='all' user:ui-marker='enumerate' />
+          </filter>
+          <slices>
+            <column>[federated.0ooik2v1p032o21don3x80qku7rv (copy)].[none:order_status:nk]</column>
+          </slices>
+          <aggregation value='true' />
+        </view>
+        <style>
+          <style-rule element='axis'>
+            <format attr='height' field='[federated.0ooik2v1p032o21don3x80qku7rv (copy)].[my:order_month:ok]' value='60' />
+          </style-rule>
+          <style-rule element='cell'>
+            <format attr='color' value='#499894' />
+          </style-rule>
+          <style-rule element='worksheet'>
+            <format attr='display-field-labels' scope='rows' value='false' />
+          </style-rule>
+        </style>
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Line' />
+            <encodings>
+              <color column='[federated.0ooik2v1p032o21don3x80qku7rv (copy)].[none:order_status:nk]' />
+              <lod column='[federated.0ooik2v1p032o21don3x80qku7rv (copy)].[my:order_day:ok]' />
+            </encodings>
+            <style>
+              <style-rule element='datalabel'>
+                <format attr='color-mode' value='user' />
+                <format attr='color' value='#000000' />
+              </style-rule>
+              <style-rule element='mark'>
+                <format attr='mark-labels-show' value='true' />
+                <format attr='mark-labels-cull' value='true' />
+              </style-rule>
+            </style>
+          </pane>
+        </panes>
+        <rows>[federated.0ooik2v1p032o21don3x80qku7rv (copy)].[avg:gfv_eur:qk]</rows>
+        <cols>[federated.0ooik2v1p032o21don3x80qku7rv (copy)].[my:order_month:ok]</cols>
+      </table>
+      <simple-id uuid='{54A82040-28BA-4AAC-85D1-F29E9ADADF6C}' />
+    </worksheet>
+    <worksheet name='Frequency'>
+      <repository-location derived-from='http://ip-172-31-0-157:8931/t/Austria/workbooks/Joanalysis/Frequency?rev=' id='Frequency' path='/t/Austria/workbooks/Joanalysis' revision='' site='Austria' />
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='curated_data_shared' name='federated.0ooik2v1p032o21don3x80qku7rv' />
+          </datasources>
+          <datasource-dependencies datasource='federated.0ooik2v1p032o21don3x80qku7rv'>
+            <column caption='Orders' datatype='integer' name='[Calculation_1281274143000301568]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='COUNTD([order_uuid])' />
+            </column>
+            <column caption='Customers' datatype='integer' name='[Calculation_1281274143000395777]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='COUNTD([analytical_customer_id])' />
+            </column>
+            <column caption='Frequency' datatype='real' name='[Calculation_1281274143020609543]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='COUNTD([order_uuid])/COUNTD([analytical_customer_id])' />
+            </column>
+            <column datatype='string' name='[analytical_customer_id]' role='dimension' type='nominal' />
+            <column datatype='real' name='[delivery_fee_local]' role='measure' type='quantitative' />
+            <column datatype='real' name='[discount_eur]' role='measure' type='quantitative' />
+            <column datatype='real' name='[gfv_eur]' role='measure' type='quantitative' />
+            <column datatype='real' name='[gmv_eur]' role='measure' type='quantitative' />
+            <column-instance column='[order_month]' derivation='MY' name='[my:order_month:ok]' pivot='key' type='ordinal' />
+            <column-instance column='[partner]' derivation='None' name='[none:partner:nk]' pivot='key' type='nominal' />
+            <column datatype='date' name='[order_month]' role='dimension' type='ordinal' />
+            <column datatype='string' name='[order_uuid]' role='dimension' type='nominal' />
+            <column datatype='string' name='[partner]' role='dimension' type='nominal' />
+            <column-instance column='[delivery_fee_local]' derivation='Sum' name='[sum:delivery_fee_local:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[discount_eur]' derivation='Sum' name='[sum:discount_eur:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[gfv_eur]' derivation='Sum' name='[sum:gfv_eur:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[gmv_eur]' derivation='Sum' name='[sum:gmv_eur:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[Calculation_1281274143000301568]' derivation='User' name='[usr:Calculation_1281274143000301568:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[Calculation_1281274143000395777]' derivation='User' name='[usr:Calculation_1281274143000395777:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[Calculation_1281274143020609543]' derivation='User' name='[usr:Calculation_1281274143020609543:qk]' pivot='key' type='quantitative' />
+          </datasource-dependencies>
+          <filter class='categorical' column='[federated.0ooik2v1p032o21don3x80qku7rv].[:Measure Names]'>
+            <groupfilter function='union' user:op='manual'>
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.0ooik2v1p032o21don3x80qku7rv].[usr:Calculation_1281274143000395777:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.0ooik2v1p032o21don3x80qku7rv].[usr:Calculation_1281274143000301568:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.0ooik2v1p032o21don3x80qku7rv].[usr:Calculation_1281274143020609543:qk]&quot;' />
+            </groupfilter>
+          </filter>
+          <manual-sort column='[federated.0ooik2v1p032o21don3x80qku7rv].[:Measure Names]' direction='ASC'>
+            <dictionary>
+              <bucket>&quot;[federated.0ooik2v1p032o21don3x80qku7rv].[usr:Calculation_1281274143000395777:qk]&quot;</bucket>
+              <bucket>&quot;[federated.0ooik2v1p032o21don3x80qku7rv].[usr:Calculation_1281274143000301568:qk]&quot;</bucket>
+              <bucket>&quot;[federated.0ooik2v1p032o21don3x80qku7rv].[usr:Calculation_1281274143020609543:qk]&quot;</bucket>
+              <bucket>&quot;[federated.0ooik2v1p032o21don3x80qku7rv].[sum:delivery_fee_local:qk]&quot;</bucket>
+              <bucket>&quot;[federated.0ooik2v1p032o21don3x80qku7rv].[sum:discount_eur:qk]&quot;</bucket>
+              <bucket>&quot;[federated.0ooik2v1p032o21don3x80qku7rv].[sum:gfv_eur:qk]&quot;</bucket>
+              <bucket>&quot;[federated.0ooik2v1p032o21don3x80qku7rv].[sum:gmv_eur:qk]&quot;</bucket>
+            </dictionary>
+          </manual-sort>
+          <natural-sort column='[federated.0ooik2v1p032o21don3x80qku7rv].[my:order_month:ok]' direction='DESC' />
+          <slices>
+            <column>[federated.0ooik2v1p032o21don3x80qku7rv].[:Measure Names]</column>
+          </slices>
+          <aggregation value='true' />
+        </view>
+        <style>
+          <style-rule element='cell'>
+            <format attr='text-format' field='[federated.0ooik2v1p032o21don3x80qku7rv].[usr:Calculation_1281274143020609543:qk]' value='n#,##0.00;-#,##0.00' />
+          </style-rule>
+        </style>
+        <panes>
+          <pane id='2' selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Text' />
+            <encodings>
+              <text column='[federated.0ooik2v1p032o21don3x80qku7rv].[Multiple Values]' />
+            </encodings>
+            <style>
+              <style-rule element='mark'>
+                <format attr='mark-labels-show' value='true' />
+                <format attr='mark-labels-cull' value='true' />
+              </style-rule>
+            </style>
+          </pane>
+        </panes>
+        <rows>([federated.0ooik2v1p032o21don3x80qku7rv].[my:order_month:ok] / [federated.0ooik2v1p032o21don3x80qku7rv].[none:partner:nk])</rows>
+        <cols>[federated.0ooik2v1p032o21don3x80qku7rv].[:Measure Names]</cols>
+      </table>
+      <simple-id uuid='{F4A07C9A-A126-449C-90B6-DAD9B7374990}' />
+    </worksheet>
+    <worksheet name='Frequency After '>
+      <layout-options>
+        <title>
+          <formatted-text>
+            <run>After Connecting to Jö</run>
+          </formatted-text>
+        </title>
+      </layout-options>
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='before after ' name='federated.0ooik2v1p032o21don3x80qku7rv (copy)' />
+          </datasources>
+          <datasource-dependencies datasource='federated.0ooik2v1p032o21don3x80qku7rv (copy)'>
+            <column caption='Frequency' datatype='real' name='[Calculation_1281274143020609543]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='COUNTD([order_uuid])/COUNTD([analytical_customer_id])' />
+            </column>
+            <column datatype='string' name='[analytical_customer_id]' role='dimension' type='nominal' />
+            <column caption='Jö Connecting Date' datatype='datetime' name='[connected_date]' role='dimension' type='ordinal' />
+            <column-instance column='[connected_date]' derivation='MY' name='[my:connected_date:ok]' pivot='key' type='ordinal' />
+            <column-instance column='[order_day]' derivation='MY' name='[my:order_day:ok]' pivot='key' type='ordinal' />
+            <column-instance column='[order_status]' derivation='None' name='[none:order_status:nk]' pivot='key' type='nominal' />
+            <column datatype='date' name='[order_day]' role='dimension' type='ordinal' />
+            <column datatype='string' name='[order_status]' role='dimension' type='nominal' />
+            <column datatype='string' name='[order_uuid]' role='dimension' type='nominal' />
+            <column-instance column='[Calculation_1281274143020609543]' derivation='User' name='[usr:Calculation_1281274143020609543:qk]' pivot='key' type='quantitative' />
+          </datasource-dependencies>
+          <natural-sort column='[federated.0ooik2v1p032o21don3x80qku7rv (copy)].[my:connected_date:ok]' direction='DESC' />
+          <natural-sort column='[federated.0ooik2v1p032o21don3x80qku7rv (copy)].[my:order_day:ok]' direction='DESC' />
+          <filter class='categorical' column='[federated.0ooik2v1p032o21don3x80qku7rv (copy)].[none:order_status:nk]'>
+            <groupfilter function='member' level='[none:order_status:nk]' member='&quot;after&quot;' user:ui-domain='database' user:ui-enumeration='inclusive' user:ui-marker='enumerate' />
+          </filter>
+          <slices>
+            <column>[federated.0ooik2v1p032o21don3x80qku7rv (copy)].[none:order_status:nk]</column>
+          </slices>
+          <aggregation value='true' />
+        </view>
+        <style>
+          <style-rule element='cell'>
+            <format attr='width' field='[federated.0ooik2v1p032o21don3x80qku7rv (copy)].[my:order_day:ok]' value='92' />
+            <format attr='color' value='#4e79a7' />
+          </style-rule>
+          <style-rule element='header'>
+            <format attr='width' field='[federated.0ooik2v1p032o21don3x80qku7rv (copy)].[my:connected_date:ok]' value='252' />
+            <format attr='background-color' scope='rows' value='#00000000' />
+          </style-rule>
+          <style-rule element='field-labels'>
+            <format attr='color' value='#e15759' />
+          </style-rule>
+          <style-rule element='field-labels-decoration'>
+            <format attr='color' value='#e15759' />
+            <format attr='background-color' value='#00000000' />
+          </style-rule>
+          <style-rule element='field-labels-spanner'>
+            <format attr='color' scope='cols' value='#000000' />
+            <format attr='background-color' scope='cols' value='#00000000' />
+            <format attr='background-color' scope='rows' value='#00000000' />
+          </style-rule>
+          <style-rule element='label'>
+            <format attr='color' value='#000000' />
+            <format attr='font-weight' value='normal' />
+          </style-rule>
+          <style-rule element='pane'>
+            <format attr='band-color' scope='rows' value='#00000000' />
+          </style-rule>
+          <style-rule element='table'>
+            <format attr='band-size' scope='rows' value='1' />
+            <format attr='band-size' scope='cols' value='5' />
+          </style-rule>
+          <style-rule element='worksheet'>
+            <format attr='color' value='#000000' />
+          </style-rule>
+        </style>
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Automatic' />
+            <encodings>
+              <text column='[federated.0ooik2v1p032o21don3x80qku7rv (copy)].[usr:Calculation_1281274143020609543:qk]' />
+            </encodings>
+            <style>
+              <style-rule element='mark'>
+                <format attr='mark-labels-show' value='true' />
+              </style-rule>
+              <style-rule element='pane'>
+                <format attr='minwidth' value='-1' />
+                <format attr='maxwidth' value='-1' />
+              </style-rule>
+            </style>
+          </pane>
+        </panes>
+        <rows>[federated.0ooik2v1p032o21don3x80qku7rv (copy)].[my:connected_date:ok]</rows>
+        <cols>[federated.0ooik2v1p032o21don3x80qku7rv (copy)].[my:order_day:ok]</cols>
+      </table>
+      <simple-id uuid='{4C171431-426B-42B0-BDE1-76D4FAC42F37}' />
+    </worksheet>
+    <worksheet name='Frequency Before '>
+      <layout-options>
+        <title>
+          <formatted-text>
+            <run>Before Connecting to Jö</run>
+          </formatted-text>
+        </title>
+      </layout-options>
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='before after ' name='federated.0ooik2v1p032o21don3x80qku7rv (copy)' />
+          </datasources>
+          <datasource-dependencies datasource='Parameters' />
+          <datasource-dependencies datasource='federated.0ooik2v1p032o21don3x80qku7rv (copy)'>
+            <column caption='Frequency' datatype='real' name='[Calculation_1281274143020609543]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='COUNTD([order_uuid])/COUNTD([analytical_customer_id])' />
+            </column>
+            <column datatype='string' name='[analytical_customer_id]' role='dimension' type='nominal' />
+            <column-instance column='[gfv_eur]' derivation='Avg' name='[avg:gfv_eur:qk]' pivot='key' type='quantitative' />
+            <column datatype='real' name='[gfv_eur]' role='measure' type='quantitative' />
+            <column-instance column='[order_day]' derivation='MY' name='[my:order_day:ok]' pivot='key' type='ordinal' />
+            <column-instance column='[order_status]' derivation='None' name='[none:order_status:nk]' pivot='key' type='nominal' />
+            <column datatype='date' name='[order_day]' role='dimension' type='ordinal' />
+            <column datatype='string' name='[order_status]' role='dimension' type='nominal' />
+            <column datatype='string' name='[order_uuid]' role='dimension' type='nominal' />
+            <column-instance column='[Calculation_1281274143020609543]' derivation='User' name='[usr:Calculation_1281274143020609543:qk]' pivot='key' type='quantitative' />
+          </datasource-dependencies>
+          <filter class='categorical' column='[federated.0ooik2v1p032o21don3x80qku7rv (copy)].[:Measure Names]'>
+            <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.0ooik2v1p032o21don3x80qku7rv (copy)].[usr:Calculation_1281274143020609543:qk]&quot;' user:op='manual' />
+          </filter>
+          <manual-sort column='[federated.0ooik2v1p032o21don3x80qku7rv (copy)].[:Measure Names]' direction='ASC'>
+            <dictionary>
+              <bucket>&quot;[federated.0ooik2v1p032o21don3x80qku7rv (copy)].[usr:Calculation_1281274143020609543:qk]&quot;</bucket>
+              <bucket>&quot;[federated.0ooik2v1p032o21don3x80qku7rv (copy)].[avg:gfv_eur:qk]&quot;</bucket>
+              <bucket>&quot;[Parameters].[Frequency Parameter]&quot;</bucket>
+            </dictionary>
+          </manual-sort>
+          <natural-sort column='[federated.0ooik2v1p032o21don3x80qku7rv (copy)].[my:order_day:ok]' direction='DESC' />
+          <filter class='categorical' column='[federated.0ooik2v1p032o21don3x80qku7rv (copy)].[none:order_status:nk]'>
+            <groupfilter function='member' level='[none:order_status:nk]' member='&quot;before&quot;' user:ui-domain='database' user:ui-enumeration='inclusive' user:ui-marker='enumerate' />
+          </filter>
+          <slices>
+            <column>[federated.0ooik2v1p032o21don3x80qku7rv (copy)].[none:order_status:nk]</column>
+            <column>[federated.0ooik2v1p032o21don3x80qku7rv (copy)].[:Measure Names]</column>
+          </slices>
+          <aggregation value='true' />
+        </view>
+        <style>
+          <style-rule element='cell'>
+            <format attr='width' field='[federated.0ooik2v1p032o21don3x80qku7rv (copy)].[my:order_day:ok]' value='92' />
+            <format attr='color' value='#499894' />
+            <format attr='width' field='[federated.0ooik2v1p032o21don3x80qku7rv (copy)].[:Measure Names]' value='97' />
+          </style-rule>
+          <style-rule element='header'>
+            <format attr='width' field='[federated.0ooik2v1p032o21don3x80qku7rv (copy)].[my:order_day:ok]' value='208' />
+          </style-rule>
+          <style-rule element='worksheet'>
+            <format attr='display-field-labels' scope='rows' value='false' />
+          </style-rule>
+        </style>
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Automatic' />
+            <encodings>
+              <text column='[federated.0ooik2v1p032o21don3x80qku7rv (copy)].[Multiple Values]' />
+            </encodings>
+            <style>
+              <style-rule element='mark'>
+                <format attr='mark-labels-show' value='true' />
+              </style-rule>
+              <style-rule element='pane'>
+                <format attr='minwidth' value='-1' />
+                <format attr='maxwidth' value='-1' />
+              </style-rule>
+            </style>
+          </pane>
+        </panes>
+        <rows>[federated.0ooik2v1p032o21don3x80qku7rv (copy)].[my:order_day:ok]</rows>
+        <cols>[federated.0ooik2v1p032o21don3x80qku7rv (copy)].[:Measure Names]</cols>
+      </table>
+      <simple-id uuid='{419EA088-A3CC-4096-B3FD-B4EF8C366BE3}' />
+    </worksheet>
+    <worksheet name='Frequency Graph'>
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='curated_data_shared' name='federated.0ooik2v1p032o21don3x80qku7rv' />
+          </datasources>
+          <datasource-dependencies datasource='federated.0ooik2v1p032o21don3x80qku7rv'>
+            <column caption='Frequency' datatype='real' name='[Calculation_1281274143020609543]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='COUNTD([order_uuid])/COUNTD([analytical_customer_id])' />
+            </column>
+            <column datatype='string' name='[analytical_customer_id]' role='dimension' type='nominal' />
+            <column-instance column='[order_month]' derivation='MY' name='[my:order_month:ok]' pivot='key' type='ordinal' />
+            <column-instance column='[partner]' derivation='None' name='[none:partner:nk]' pivot='key' type='nominal' />
+            <column datatype='date' name='[order_month]' role='dimension' type='ordinal' />
+            <column datatype='string' name='[order_uuid]' role='dimension' type='nominal' />
+            <column datatype='string' name='[partner]' role='dimension' type='nominal' />
+            <column-instance column='[Calculation_1281274143020609543]' derivation='User' name='[usr:Calculation_1281274143020609543:qk]' pivot='key' type='quantitative' />
+          </datasource-dependencies>
+          <filter class='categorical' column='[federated.0ooik2v1p032o21don3x80qku7rv].[my:order_month:ok]' filter-group='3'>
+            <groupfilter function='level-members' level='[my:order_month:ok]' user:ui-enumeration='all' user:ui-marker='enumerate' />
+          </filter>
+          <slices>
+            <column>[federated.0ooik2v1p032o21don3x80qku7rv].[my:order_month:ok]</column>
+          </slices>
+          <aggregation value='true' />
+        </view>
+        <style>
+          <style-rule element='axis'>
+            <format attr='height' field='[federated.0ooik2v1p032o21don3x80qku7rv].[my:order_month:ok]' value='41' />
+          </style-rule>
+        </style>
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Line' />
+            <encodings>
+              <color column='[federated.0ooik2v1p032o21don3x80qku7rv].[none:partner:nk]' />
+            </encodings>
+            <style>
+              <style-rule element='mark'>
+                <format attr='mark-labels-show' value='true' />
+                <format attr='mark-labels-cull' value='true' />
+              </style-rule>
+            </style>
+          </pane>
+        </panes>
+        <rows>[federated.0ooik2v1p032o21don3x80qku7rv].[usr:Calculation_1281274143020609543:qk]</rows>
+        <cols>[federated.0ooik2v1p032o21don3x80qku7rv].[my:order_month:ok]</cols>
+      </table>
+      <simple-id uuid='{AA3540B6-9F94-417F-B832-6431246A3B0A}' />
+    </worksheet>
+    <worksheet name='Frequency aftergraph'>
+      <layout-options>
+        <title>
+          <formatted-text>
+            <run>Before &amp; After Connecting to Jö</run>
+          </formatted-text>
+        </title>
+      </layout-options>
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='before after ' name='federated.0ooik2v1p032o21don3x80qku7rv (copy)' />
+          </datasources>
+          <datasource-dependencies datasource='federated.0ooik2v1p032o21don3x80qku7rv (copy)'>
+            <column caption='Frequency' datatype='real' name='[Calculation_1281274143020609543]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='COUNTD([order_uuid])/COUNTD([analytical_customer_id])' />
+            </column>
+            <column datatype='string' name='[analytical_customer_id]' role='dimension' type='nominal' />
+            <column-instance column='[order_day]' derivation='MY' name='[my:order_day:ok]' pivot='key' type='ordinal' />
+            <column-instance column='[order_month]' derivation='MY' name='[my:order_month:ok]' pivot='key' type='ordinal' />
+            <column-instance column='[order_status]' derivation='None' name='[none:order_status:nk]' pivot='key' type='nominal' />
+            <column datatype='date' name='[order_day]' role='dimension' type='ordinal' />
+            <column datatype='date' name='[order_month]' role='dimension' type='ordinal' />
+            <column datatype='string' name='[order_status]' role='dimension' type='nominal' />
+            <column datatype='string' name='[order_uuid]' role='dimension' type='nominal' />
+            <column-instance column='[Calculation_1281274143020609543]' derivation='User' name='[usr:Calculation_1281274143020609543:qk]' pivot='key' type='quantitative' />
+          </datasource-dependencies>
+          <filter class='categorical' column='[federated.0ooik2v1p032o21don3x80qku7rv (copy)].[none:order_status:nk]'>
+            <groupfilter function='union' user:ui-domain='database' user:ui-enumeration='inclusive' user:ui-marker='enumerate'>
+              <groupfilter function='member' level='[none:order_status:nk]' member='&quot;after&quot;' />
+              <groupfilter function='member' level='[none:order_status:nk]' member='&quot;before&quot;' />
+            </groupfilter>
+          </filter>
+          <slices>
+            <column>[federated.0ooik2v1p032o21don3x80qku7rv (copy)].[none:order_status:nk]</column>
+          </slices>
+          <aggregation value='true' />
+        </view>
+        <style>
+          <style-rule element='axis'>
+            <format attr='height' field='[federated.0ooik2v1p032o21don3x80qku7rv (copy)].[my:order_month:ok]' value='80' />
+          </style-rule>
+          <style-rule element='cell'>
+            <format attr='color' value='#499894' />
+          </style-rule>
+          <style-rule element='worksheet'>
+            <format attr='display-field-labels' scope='rows' value='false' />
+          </style-rule>
+        </style>
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Line' />
+            <encodings>
+              <color column='[federated.0ooik2v1p032o21don3x80qku7rv (copy)].[none:order_status:nk]' />
+              <lod column='[federated.0ooik2v1p032o21don3x80qku7rv (copy)].[my:order_day:ok]' />
+            </encodings>
+            <style>
+              <style-rule element='datalabel'>
+                <format attr='color-mode' value='user' />
+                <format attr='color' value='#4e79a7' />
+              </style-rule>
+              <style-rule element='mark'>
+                <format attr='mark-labels-show' value='true' />
+                <format attr='mark-labels-cull' value='true' />
+                <format attr='mark-color' value='#4e79a7' />
+              </style-rule>
+            </style>
+          </pane>
+        </panes>
+        <rows>[federated.0ooik2v1p032o21don3x80qku7rv (copy)].[usr:Calculation_1281274143020609543:qk]</rows>
+        <cols>[federated.0ooik2v1p032o21don3x80qku7rv (copy)].[my:order_month:ok]</cols>
+      </table>
+      <simple-id uuid='{1C0BB1CC-3868-4A02-B522-DD1EC6C4370C}' />
+    </worksheet>
+    <worksheet name='OrderShare Data'>
+      <repository-location derived-from='http://ip-172-31-0-157:8931/t/Austria/workbooks/Joanalysis/OrderShareData?rev=' id='OrderShareData' path='/t/Austria/workbooks/Joanalysis' revision='' site='Austria' />
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='curated_data_shared' name='federated.0ooik2v1p032o21don3x80qku7rv' />
+          </datasources>
+          <datasource-dependencies datasource='federated.0ooik2v1p032o21don3x80qku7rv'>
+            <column caption='Orders' datatype='integer' name='[Calculation_1281274143000301568]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='COUNTD([order_uuid])' />
+            </column>
+            <column-instance column='[order_month]' derivation='MY' name='[my:order_month:ok]' pivot='key' type='ordinal' />
+            <column-instance column='[partner]' derivation='None' name='[none:partner:nk]' pivot='key' type='nominal' />
+            <column-instance column='[title]' derivation='None' name='[none:title:nk]' pivot='key' type='nominal' />
+            <column datatype='date' name='[order_month]' role='dimension' type='ordinal' />
+            <column datatype='string' name='[order_uuid]' role='dimension' type='nominal' />
+            <column datatype='string' name='[partner]' role='dimension' type='nominal' />
+            <column-instance column='[Calculation_1281274143000301568]' derivation='User' name='[pcto:usr:Calculation_1281274143000301568:qk]' pivot='key' type='quantitative'>
+              <table-calc ordering-type='Rows' type='PctTotal' />
+            </column-instance>
+            <column datatype='string' name='[title]' role='dimension' type='nominal' />
+            <column-instance column='[Calculation_1281274143000301568]' derivation='User' name='[usr:Calculation_1281274143000301568:qk]' pivot='key' type='quantitative' />
+          </datasource-dependencies>
+          <filter class='categorical' column='[federated.0ooik2v1p032o21don3x80qku7rv].[my:order_month:ok]'>
+            <groupfilter function='level-members' level='[my:order_month:ok]' />
+          </filter>
+          <natural-sort column='[federated.0ooik2v1p032o21don3x80qku7rv].[my:order_month:ok]' direction='DESC' />
+          <filter class='categorical' column='[federated.0ooik2v1p032o21don3x80qku7rv].[none:title:nk]'>
+            <groupfilter function='level-members' level='[none:title:nk]' user:ui-enumeration='all' user:ui-marker='enumerate' />
+          </filter>
+          <slices>
+            <column>[federated.0ooik2v1p032o21don3x80qku7rv].[my:order_month:ok]</column>
+            <column>[federated.0ooik2v1p032o21don3x80qku7rv].[none:title:nk]</column>
+          </slices>
+          <aggregation value='true' />
+        </view>
+        <style>
+          <style-rule element='cell'>
+            <format attr='width' field='[federated.0ooik2v1p032o21don3x80qku7rv].[none:partner:nk]' value='156' />
+          </style-rule>
+        </style>
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Automatic' />
+            <encodings>
+              <lod column='[federated.0ooik2v1p032o21don3x80qku7rv].[usr:Calculation_1281274143000301568:qk]' />
+              <text column='[federated.0ooik2v1p032o21don3x80qku7rv].[usr:Calculation_1281274143000301568:qk]' />
+              <text column='[federated.0ooik2v1p032o21don3x80qku7rv].[pcto:usr:Calculation_1281274143000301568:qk]' />
+            </encodings>
+            <style>
+              <style-rule element='mark'>
+                <format attr='mark-labels-show' value='true' />
+                <format attr='mark-labels-cull' value='true' />
+              </style-rule>
+              <style-rule element='pane'>
+                <format attr='minwidth' value='-1' />
+                <format attr='maxwidth' value='-1' />
+              </style-rule>
+            </style>
+          </pane>
+        </panes>
+        <rows>[federated.0ooik2v1p032o21don3x80qku7rv].[my:order_month:ok]</rows>
+        <cols total='true'>[federated.0ooik2v1p032o21don3x80qku7rv].[none:partner:nk]</cols>
+      </table>
+      <simple-id uuid='{25129E27-75E9-4FFF-BF00-2EFC9396F778}' />
+    </worksheet>
+    <worksheet name='OrderShare graph'>
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='curated_data_shared' name='federated.0ooik2v1p032o21don3x80qku7rv' />
+          </datasources>
+          <datasource-dependencies datasource='federated.0ooik2v1p032o21don3x80qku7rv'>
+            <column caption='Orders' datatype='integer' name='[Calculation_1281274143000301568]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='COUNTD([order_uuid])' />
+            </column>
+            <column-instance column='[order_month]' derivation='MY' name='[my:order_month:ok]' pivot='key' type='ordinal' />
+            <column-instance column='[partner]' derivation='None' name='[none:partner:nk]' pivot='key' type='nominal' />
+            <column datatype='date' name='[order_month]' role='dimension' type='ordinal' />
+            <column datatype='string' name='[order_uuid]' role='dimension' type='nominal' />
+            <column datatype='string' name='[partner]' role='dimension' type='nominal' />
+            <column-instance column='[Calculation_1281274143000301568]' derivation='User' name='[pcto:usr:Calculation_1281274143000301568:qk:3]' pivot='key' type='quantitative'>
+              <table-calc ordering-type='Columns' type='PctTotal' />
+            </column-instance>
+            <column-instance column='[Calculation_1281274143000301568]' derivation='User' name='[usr:Calculation_1281274143000301568:qk]' pivot='key' type='quantitative' />
+          </datasource-dependencies>
+          <filter class='categorical' column='[federated.0ooik2v1p032o21don3x80qku7rv].[my:order_month:ok]' filter-group='3'>
+            <groupfilter function='level-members' level='[my:order_month:ok]' user:ui-enumeration='all' user:ui-marker='enumerate' />
+          </filter>
+          <natural-sort column='[federated.0ooik2v1p032o21don3x80qku7rv].[my:order_month:ok]' direction='ASC' />
+          <slices>
+            <column>[federated.0ooik2v1p032o21don3x80qku7rv].[my:order_month:ok]</column>
+          </slices>
+          <aggregation value='true' />
+        </view>
+        <style>
+          <style-rule element='axis'>
+            <format attr='width' field='[federated.0ooik2v1p032o21don3x80qku7rv].[pcto:usr:Calculation_1281274143000301568:qk:3]' value='60' />
+          </style-rule>
+        </style>
+        <panes>
+          <pane id='1' selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Line' />
+            <encodings>
+              <color column='[federated.0ooik2v1p032o21don3x80qku7rv].[none:partner:nk]' />
+              <lod column='[federated.0ooik2v1p032o21don3x80qku7rv].[usr:Calculation_1281274143000301568:qk]' />
+            </encodings>
+            <style>
+              <style-rule element='mark'>
+                <format attr='mark-labels-show' value='true' />
+                <format attr='mark-labels-cull' value='true' />
+              </style-rule>
+            </style>
+          </pane>
+        </panes>
+        <rows>[federated.0ooik2v1p032o21don3x80qku7rv].[pcto:usr:Calculation_1281274143000301568:qk:3]</rows>
+        <cols>[federated.0ooik2v1p032o21don3x80qku7rv].[my:order_month:ok]</cols>
+      </table>
+      <simple-id uuid='{3848D836-592E-48F5-BDED-250A098A192D}' />
+    </worksheet>
+    <worksheet name='Sheet 12'>
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='curated_data_shared' name='federated.0ooik2v1p032o21don3x80qku7rv' />
+          </datasources>
+          <datasource-dependencies datasource='federated.0ooik2v1p032o21don3x80qku7rv'>
+            <column datatype='datetime' name='[connected_date]' role='dimension' type='ordinal' />
+            <column-instance column='[connected_date]' derivation='MY' name='[my:connected_date:ok]' pivot='key' type='ordinal' />
+          </datasource-dependencies>
+          <aggregation value='true' />
+        </view>
+        <style />
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Automatic' />
+          </pane>
+        </panes>
+        <rows />
+        <cols>[federated.0ooik2v1p032o21don3x80qku7rv].[my:connected_date:ok]</cols>
+      </table>
+      <simple-id uuid='{732284B3-B28F-4B44-AE9F-F2C346220D7E}' />
+    </worksheet>
+  </worksheets>
+  <dashboards>
+    <dashboard _.fcp.AccessibleZoneTabOrder.true...enable-sort-zone-taborder='true' name='Data Summary'>
+      <repository-location derived-from='http://ip-172-31-0-157:8931/t/Austria/workbooks/Joanalysis/DataSummary?rev=' id='DataSummary' path='/t/Austria/workbooks/Joanalysis' revision='' site='Austria' />
+      <style />
+      <size maxheight='1000' maxwidth='1500' minheight='1000' minwidth='1500' sizing-mode='fixed' />
+      <datasources>
+        <datasource caption='curated_data_shared' name='federated.0ooik2v1p032o21don3x80qku7rv' />
+      </datasources>
+      <datasource-dependencies datasource='federated.0ooik2v1p032o21don3x80qku7rv'>
+        <column-instance column='[order_month]' derivation='MY' name='[my:order_month:ok]' pivot='key' type='ordinal' />
+        <column datatype='date' name='[order_month]' role='dimension' type='ordinal' />
+      </datasource-dependencies>
+      <zones>
+        <zone h='100000' id='4' type-v2='layout-basic' w='100000' x='0' y='0'>
+          <zone-style>
+            <format attr='border-color' value='#000000' />
+            <format attr='border-style' value='none' />
+            <format attr='border-width' value='0' />
+            <format attr='margin' value='8' />
+          </zone-style>
+        </zone>
+        <zone h='9000' id='5' param='horz' type-v2='layout-flow' w='42400' x='2333' y='13500'>
+          <zone forceUpdate='true' h='9000' id='9' type-v2='text' w='42400' x='2333' y='13500'>
+            <formatted-text>
+              <run bold='true' fontcolor='#499894' fontsize='10'>Acquisitions</run>
+              <run>Æ&#10;</run>
+              <run bold='true'>who connect their mjam accounts with jo before or same day as their first order</run>
+            </formatted-text>
+            <zone-style>
+              <format attr='border-color' value='#000000' />
+              <format attr='border-style' value='none' />
+              <format attr='border-width' value='0' />
+              <format attr='margin' value='4' />
+            </zone-style>
+          </zone>
+        </zone>
+        <zone h='42200' id='6' param='vert' type-v2='layout-flow' w='47333' x='2400' y='22300'>
+          <zone h='42200' id='41' name='Acquisitions GRAPH' show-title='false' w='47333' x='2400' y='22300'>
+            <layout-cache minheight='220' type-h='scalable' type-w='fixed' />
+            <zone-style>
+              <format attr='border-color' value='#000000' />
+              <format attr='border-style' value='none' />
+              <format attr='border-width' value='0' />
+              <format attr='margin' value='4' />
+            </zone-style>
+          </zone>
+        </zone>
+        <zone forceUpdate='true' h='9000' id='10' type-v2='text' w='42400' x='50067' y='14000'>
+          <formatted-text>
+            <run bold='true' fontcolor='#499894' fontsize='10'>Order Share</run>
+            <run>Æ&#10;</run>
+            <run fontcolor='#4e79a7' fontname='Poppins,sans-serif'>Or</run>
+            <run fontcolor='#555555' fontname='Poppins,sans-serif'>der share - jö orders vs. non-jö orders</run>
+          </formatted-text>
+          <zone-style>
+            <format attr='border-color' value='#000000' />
+            <format attr='border-style' value='none' />
+            <format attr='border-width' value='0' />
+            <format attr='margin' value='4' />
+          </zone-style>
+        </zone>
+        <zone forceUpdate='true' h='9000' id='11' type-v2='text' w='42400' x='3000' y='64000'>
+          <formatted-text>
+            <run bold='true' fontcolor='#499894' fontsize='10'>Average Basket Size based on GFV</run>
+            <run>Æ&#10;</run>
+            <run fontcolor='#555555' fontname='Poppins,sans-serif'>jö vs. non-jö members</run>
+          </formatted-text>
+          <zone-style>
+            <format attr='border-color' value='#000000' />
+            <format attr='border-style' value='none' />
+            <format attr='border-width' value='0' />
+            <format attr='margin' value='4' />
+          </zone-style>
+        </zone>
+        <zone h='41375' id='12' param='vert' type-v2='layout-flow' w='48800' x='49800' y='22750'>
+          <zone h='41375' id='13' name='OrderShare graph' show-title='false' w='48800' x='49800' y='22750'>
+            <layout-cache minheight='220' type-h='scalable' type-w='fixed' />
+            <zone-style>
+              <format attr='border-color' value='#000000' />
+              <format attr='border-style' value='none' />
+              <format attr='border-width' value='0' />
+              <format attr='margin' value='4' />
+            </zone-style>
+          </zone>
+        </zone>
+        <zone forceUpdate='true' h='9000' id='19' type-v2='text' w='42400' x='49000' y='64400'>
+          <formatted-text>
+            <run bold='true' fontcolor='#499894' fontsize='10'>Frequency</run>
+            <run>Æ&#10;</run>
+            <run fontcolor='#555555' fontname='Poppins,sans-serif'>jö vs. non-jö members</run>
+          </formatted-text>
+          <zone-style>
+            <format attr='border-color' value='#000000' />
+            <format attr='border-style' value='none' />
+            <format attr='border-width' value='0' />
+            <format attr='margin' value='4' />
+          </zone-style>
+        </zone>
+        <zone h='27300' id='20' param='vert' type-v2='layout-flow' w='43800' x='54933' y='71100'>
+          <zone h='27300' id='16' name='Frequency Graph' show-title='false' w='43800' x='54933' y='71100'>
+            <layout-cache minheight='161' type-h='scalable' type-w='fixed' />
+            <zone-style>
+              <format attr='border-color' value='#000000' />
+              <format attr='border-style' value='none' />
+              <format attr='border-width' value='0' />
+              <format attr='margin' value='4' />
+            </zone-style>
+          </zone>
+        </zone>
+        <zone h='6900' id='21' param='horz' type-v2='layout-flow' w='42800' x='2200' y='6300'>
+          <zone h='6900' id='14' mode='checkdropdown' name='OrderShare graph' param='[federated.0ooik2v1p032o21don3x80qku7rv].[my:order_month:ok]' type-v2='filter' w='11200' x='2200' y='6300'>
+            <zone-style>
+              <format attr='border-color' value='#000000' />
+              <format attr='border-style' value='none' />
+              <format attr='border-width' value='0' />
+              <format attr='margin' value='4' />
+            </zone-style>
+          </zone>
+          <zone h='6900' id='42' mode='checkdropdown' name='Acquisitions GRAPH' param='[federated.0ooik2v1p032o21don3x80qku7rv].[my:order_month:ok]' type-v2='filter' w='11200' x='13400' y='6300'>
+            <zone-style>
+              <format attr='border-color' value='#000000' />
+              <format attr='border-style' value='none' />
+              <format attr='border-width' value='0' />
+              <format attr='margin' value='4' />
+            </zone-style>
+          </zone>
+          <zone h='6900' id='43' name='Acquisitions GRAPH' pane-specification-id='0' param='[federated.0ooik2v1p032o21don3x80qku7rv].[none:Calculation_1463388454331904004:nk]' type-v2='color' w='11200' x='24600' y='6300'>
+            <zone-style>
+              <format attr='border-color' value='#000000' />
+              <format attr='border-style' value='none' />
+              <format attr='border-width' value='0' />
+              <format attr='margin' value='4' />
+            </zone-style>
+          </zone>
+        </zone>
+        <zone h='5800' id='23' param='vert' type-v2='layout-flow' w='98733' x='933' y='1700'>
+          <zone forceUpdate='true' h='3700' id='22' type-v2='text' w='98733' x='933' y='1700'>
+            <formatted-text>
+              <run fontalignment='1' fontcolor='#499894' fontname='Tableau Bold' fontsize='16'>Jö Data Summary</run>
+            </formatted-text>
+            <zone-style>
+              <format attr='border-color' value='#000000' />
+              <format attr='border-style' value='none' />
+              <format attr='border-width' value='0' />
+              <format attr='margin' value='4' />
+              <format attr='background-color' value='#dfedeb' />
+            </zone-style>
+          </zone>
+        </zone>
+        <zone h='27300' id='24' param='vert' type-v2='layout-flow' w='45533' x='2000' y='71900'>
+          <zone h='27300' id='25' name='AverageBasketSize graph' show-title='false' w='45533' x='2000' y='71900'>
+            <layout-cache minheight='161' type-h='scalable' type-w='fixed' />
+            <zone-style>
+              <format attr='border-color' value='#000000' />
+              <format attr='border-style' value='none' />
+              <format attr='border-width' value='0' />
+              <format attr='margin' value='4' />
+            </zone-style>
+          </zone>
+        </zone>
+      </zones>
+      <devicelayouts>
+        <devicelayout auto-generated='true' name='Phone'>
+          <size maxheight='1650' minheight='1650' sizing-mode='vscroll' />
+          <zones>
+            <zone h='100000' id='51' type-v2='layout-basic' w='100000' x='0' y='0'>
+              <zone h='84000' id='50' param='vert' type-v2='layout-flow' w='84000' x='8000' y='8000'>
+                <zone forceUpdate='true' h='3700' id='22' type-v2='text' w='98733' x='933' y='1700'>
+                  <formatted-text>
+                    <run fontalignment='1' fontcolor='#499894' fontname='Tableau Bold' fontsize='16'>Jö Data Summary</run>
+                  </formatted-text>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                    <format attr='background-color' value='#dfedeb' />
+                  </zone-style>
+                </zone>
+                <zone forceUpdate='true' h='9000' id='9' type-v2='text' w='42400' x='2333' y='13500'>
+                  <formatted-text>
+                    <run bold='true' fontcolor='#499894' fontsize='10'>Acquisitions</run>
+                    <run>Æ&#10;</run>
+                    <run bold='true'>who connect their mjam accounts with jo before or same day as their first order</run>
+                  </formatted-text>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone forceUpdate='true' h='9000' id='10' type-v2='text' w='42400' x='50067' y='14000'>
+                  <formatted-text>
+                    <run bold='true' fontcolor='#499894' fontsize='10'>Order Share</run>
+                    <run>Æ&#10;</run>
+                    <run fontcolor='#4e79a7' fontname='Poppins,sans-serif'>Or</run>
+                    <run fontcolor='#555555' fontname='Poppins,sans-serif'>der share - jö orders vs. non-jö orders</run>
+                  </formatted-text>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone h='6900' id='42' mode='checkdropdown' name='Acquisitions GRAPH' param='[federated.0ooik2v1p032o21don3x80qku7rv].[my:order_month:ok]' type-v2='filter' w='11200' x='13400' y='6300'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone fixed-size='280' h='42200' id='41' is-fixed='true' name='Acquisitions GRAPH' show-title='false' w='47333' x='2400' y='22300'>
+                  <layout-cache minheight='220' type-h='scalable' type-w='fixed' />
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone h='6900' id='43' name='Acquisitions GRAPH' pane-specification-id='0' param='[federated.0ooik2v1p032o21don3x80qku7rv].[none:Calculation_1463388454331904004:nk]' type-v2='color' w='11200' x='24600' y='6300'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone h='6900' id='14' mode='checkdropdown' name='OrderShare graph' param='[federated.0ooik2v1p032o21don3x80qku7rv].[my:order_month:ok]' type-v2='filter' w='11200' x='2200' y='6300'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone fixed-size='280' h='41375' id='13' is-fixed='true' name='OrderShare graph' show-title='false' w='48800' x='49800' y='22750'>
+                  <layout-cache minheight='220' type-h='scalable' type-w='fixed' />
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone forceUpdate='true' h='9000' id='11' type-v2='text' w='42400' x='3000' y='64000'>
+                  <formatted-text>
+                    <run bold='true' fontcolor='#499894' fontsize='10'>Average Basket Size based on GFV</run>
+                    <run>Æ&#10;</run>
+                    <run fontcolor='#555555' fontname='Poppins,sans-serif'>jö vs. non-jö members</run>
+                  </formatted-text>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone forceUpdate='true' h='9000' id='19' type-v2='text' w='42400' x='49000' y='64400'>
+                  <formatted-text>
+                    <run bold='true' fontcolor='#499894' fontsize='10'>Frequency</run>
+                    <run>Æ&#10;</run>
+                    <run fontcolor='#555555' fontname='Poppins,sans-serif'>jö vs. non-jö members</run>
+                  </formatted-text>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone fixed-size='265' h='27300' id='16' is-fixed='true' name='Frequency Graph' show-title='false' w='43800' x='54933' y='71100'>
+                  <layout-cache minheight='161' type-h='scalable' type-w='fixed' />
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone fixed-size='265' h='27300' id='25' is-fixed='true' name='AverageBasketSize graph' show-title='false' w='45533' x='2000' y='71900'>
+                  <layout-cache minheight='161' type-h='scalable' type-w='fixed' />
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+              </zone>
+              <zone-style>
+                <format attr='border-color' value='#000000' />
+                <format attr='border-style' value='none' />
+                <format attr='border-width' value='0' />
+                <format attr='margin' value='8' />
+              </zone-style>
+            </zone>
+          </zones>
+        </devicelayout>
+      </devicelayouts>
+      <simple-id uuid='{1C421DAF-B825-4E78-BF1B-0F2F6AD6C824}' />
+    </dashboard>
+    <dashboard _.fcp.AccessibleZoneTabOrder.true...enable-sort-zone-taborder='true' name='Frequency Before After'>
+      <repository-location derived-from='http://ip-172-31-0-157:8931/t/Austria/workbooks/Joanalysis/FrequencyBeforeAfter?rev=' id='FrequencyBeforeAfter' path='/t/Austria/workbooks/Joanalysis' revision='' site='Austria' />
+      <style />
+      <size maxheight='1100' maxwidth='1200' minheight='1100' minwidth='1200' sizing-mode='fixed' />
+      <zones>
+        <zone h='100000' id='4' type-v2='layout-basic' w='100000' x='0' y='0'>
+          <zone h='98546' id='25' param='horz' type-v2='layout-flow' w='98666' x='667' y='727'>
+            <zone h='98546' id='23' type-v2='layout-basic' w='98666' x='667' y='727'>
+              <zone h='92546' id='3' param='vert' type-v2='layout-flow' w='98666' x='667' y='6727'>
+                <zone fixed-size='666' h='60545' id='5' is-fixed='true' param='horz' type-v2='layout-flow' w='98666' x='667' y='6727'>
+                  <zone h='60545' id='9' name='Frequency Before ' w='26250' x='667' y='6727'>
+                    <layout-cache fixed-size-h='645' fixed-size-w='307' type-h='fixed' type-w='fixed' />
+                    <zone-style>
+                      <format attr='border-color' value='#000000' />
+                      <format attr='border-style' value='none' />
+                      <format attr='border-width' value='0' />
+                      <format attr='margin' value='4' />
+                    </zone-style>
+                  </zone>
+                  <zone h='60545' id='7' param='vert' type-v2='layout-flow' w='72416' x='26917' y='6727'>
+                    <zone fixed-size='670' h='60545' id='10' is-fixed='true' name='Frequency After ' w='72416' x='26917' y='6727'>
+                      <layout-cache fixed-size-w='2369' type-h='fixed' type-w='fixed' />
+                      <zone-style>
+                        <format attr='border-color' value='#000000' />
+                        <format attr='border-style' value='none' />
+                        <format attr='border-width' value='0' />
+                        <format attr='margin' value='4' />
+                      </zone-style>
+                    </zone>
+                  </zone>
+                </zone>
+                <zone h='32001' id='22' name='Frequency aftergraph' w='98666' x='667' y='67272'>
+                  <layout-cache minheight='243' type-h='scalable' type-w='fixed' />
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                  </zone-style>
+                </zone>
+              </zone>
+              <zone forceUpdate='true' h='6000' id='19' type-v2='text' w='98666' x='667' y='727'>
+                <formatted-text>
+                  <run bold='true' fontalignment='1' fontcolor='#4e79a7' fontsize='15'>Frequency</run>
+                </formatted-text>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                  <format attr='background-color' value='#dfedeb' />
+                </zone-style>
+              </zone>
+            </zone>
+          </zone>
+          <zone-style>
+            <format attr='border-color' value='#000000' />
+            <format attr='border-style' value='none' />
+            <format attr='border-width' value='0' />
+            <format attr='margin' value='8' />
+          </zone-style>
+        </zone>
+        <zone h='6909' id='26' name='Frequency aftergraph' pane-specification-id='0' param='[federated.0ooik2v1p032o21don3x80qku7rv (copy)].[none:order_status:nk]' type-v2='color' w='11667' x='86667' y='68818' />
+      </zones>
+      <devicelayouts>
+        <devicelayout auto-generated='true' name='Phone'>
+          <size maxheight='1000' minheight='1000' sizing-mode='vscroll' />
+          <zones>
+            <zone h='100000' id='32' type-v2='layout-basic' w='100000' x='0' y='0'>
+              <zone h='98546' id='31' param='vert' type-v2='layout-flow' w='98666' x='667' y='727'>
+                <zone forceUpdate='true' h='6000' id='19' type-v2='text' w='98666' x='667' y='727'>
+                  <formatted-text>
+                    <run bold='true' fontalignment='1' fontcolor='#4e79a7' fontsize='15'>Frequency</run>
+                  </formatted-text>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                    <format attr='background-color' value='#dfedeb' />
+                  </zone-style>
+                </zone>
+                <zone fixed-size='280' h='60545' id='9' is-fixed='true' name='Frequency Before ' w='26250' x='667' y='6727'>
+                  <layout-cache fixed-size-h='645' fixed-size-w='307' type-h='fixed' type-w='fixed' />
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone fixed-size='280' h='60545' id='10' is-fixed='true' name='Frequency After ' w='72416' x='26917' y='6727'>
+                  <layout-cache fixed-size-w='2369' type-h='fixed' type-w='fixed' />
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone fixed-size='280' h='32001' id='22' is-fixed='true' name='Frequency aftergraph' w='98666' x='667' y='67272'>
+                  <layout-cache minheight='243' type-h='scalable' type-w='fixed' />
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone h='6909' id='26' name='Frequency aftergraph' pane-specification-id='0' param='[federated.0ooik2v1p032o21don3x80qku7rv (copy)].[none:order_status:nk]' type-v2='color' w='11667' x='86667' y='68818'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+              </zone>
+              <zone-style>
+                <format attr='border-color' value='#000000' />
+                <format attr='border-style' value='none' />
+                <format attr='border-width' value='0' />
+                <format attr='margin' value='8' />
+              </zone-style>
+            </zone>
+          </zones>
+        </devicelayout>
+      </devicelayouts>
+      <simple-id uuid='{9D6B6A53-E403-4ADD-ABB9-38DBC86F13A5}' />
+    </dashboard>
+    <dashboard _.fcp.AccessibleZoneTabOrder.true...enable-sort-zone-taborder='true' name='GFV Before After'>
+      <repository-location derived-from='http://ip-172-31-0-157:8931/t/Austria/workbooks/Joanalysis/GFVBeforeAfter?rev=' id='GFVBeforeAfter' path='/t/Austria/workbooks/Joanalysis' revision='' site='Austria' />
+      <style />
+      <size maxheight='1100' maxwidth='1200' minheight='1100' minwidth='1200' sizing-mode='fixed' />
+      <zones>
+        <zone h='100000' id='4' type-v2='layout-basic' w='100000' x='0' y='0'>
+          <zone h='98546' id='30' param='horz' type-v2='layout-flow' w='98666' x='667' y='727'>
+            <zone h='98546' id='18' type-v2='layout-basic' w='98666' x='667' y='727'>
+              <zone h='91364' id='12' param='horz' type-v2='layout-flow' w='98666' x='667' y='7909'>
+                <zone h='91364' id='3' param='vert' type-v2='layout-flow' w='98666' x='667' y='7909'>
+                  <zone fixed-size='725' h='65909' id='5' is-fixed='true' param='horz' type-v2='layout-flow' w='98666' x='667' y='7909'>
+                    <zone fixed-size='317' h='65909' id='6' is-fixed='true' name='Before' w='27084' x='667' y='7909'>
+                      <layout-cache type-h='cell' type-w='fixed' />
+                      <zone-style>
+                        <format attr='border-color' value='#000000' />
+                        <format attr='border-style' value='none' />
+                        <format attr='border-width' value='0' />
+                        <format attr='margin' value='4' />
+                      </zone-style>
+                    </zone>
+                    <zone h='65909' id='35' param='horz' type-v2='layout-flow' w='71582' x='27751' y='7909'>
+                      <zone h='65909' id='8' name='After' w='71582' x='27751' y='7909'>
+                        <layout-cache cell-count-h='21' fixed-size-w='2369' non-cell-size-h='83' type-h='cell' type-w='fixed' />
+                        <zone-style>
+                          <format attr='border-color' value='#000000' />
+                          <format attr='border-style' value='none' />
+                          <format attr='border-width' value='1' />
+                          <format attr='margin' value='4' />
+                        </zone-style>
+                      </zone>
+                    </zone>
+                  </zone>
+                  <zone h='25455' id='28' name='Before GFV graph' w='98666' x='667' y='73818'>
+                    <layout-cache minheight='195' type-h='scalable' type-w='cell' />
+                    <zone-style>
+                      <format attr='border-color' value='#000000' />
+                      <format attr='border-style' value='none' />
+                      <format attr='border-width' value='0' />
+                      <format attr='margin' value='4' />
+                    </zone-style>
+                  </zone>
+                </zone>
+              </zone>
+              <zone forceUpdate='true' h='7182' id='15' type-v2='text' w='98666' x='667' y='727'>
+                <formatted-text>
+                  <run fontalignment='1' fontcolor='#4e79a7' fontsize='15'>GFV </run>
+                </formatted-text>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                  <format attr='background-color' value='#dfedeb' />
+                </zone-style>
+              </zone>
+            </zone>
+          </zone>
+          <zone-style>
+            <format attr='border-color' value='#000000' />
+            <format attr='border-style' value='none' />
+            <format attr='border-width' value='0' />
+            <format attr='margin' value='8' />
+          </zone-style>
+        </zone>
+        <zone h='6909' id='32' name='Before GFV graph' pane-specification-id='0' param='[federated.0ooik2v1p032o21don3x80qku7rv (copy)].[none:order_status:nk]' type-v2='color' w='11667' x='1000' y='73182' />
+      </zones>
+      <devicelayouts>
+        <devicelayout auto-generated='true' name='Phone'>
+          <size maxheight='1000' minheight='1000' sizing-mode='vscroll' />
+          <zones>
+            <zone h='100000' id='39' type-v2='layout-basic' w='100000' x='0' y='0'>
+              <zone h='98546' id='38' param='vert' type-v2='layout-flow' w='98666' x='667' y='727'>
+                <zone forceUpdate='true' h='7182' id='15' type-v2='text' w='98666' x='667' y='727'>
+                  <formatted-text>
+                    <run fontalignment='1' fontcolor='#4e79a7' fontsize='15'>GFV </run>
+                  </formatted-text>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                    <format attr='background-color' value='#dfedeb' />
+                  </zone-style>
+                </zone>
+                <zone fixed-size='280' h='65909' id='6' is-fixed='true' name='Before' w='27084' x='667' y='7909'>
+                  <layout-cache type-h='cell' type-w='fixed' />
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone fixed-size='280' h='65909' id='8' is-fixed='true' name='After' w='71582' x='27751' y='7909'>
+                  <layout-cache cell-count-h='21' fixed-size-w='2369' non-cell-size-h='83' type-h='cell' type-w='fixed' />
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='1' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone fixed-size='272' h='25455' id='28' is-fixed='true' name='Before GFV graph' w='98666' x='667' y='73818'>
+                  <layout-cache minheight='195' type-h='scalable' type-w='cell' />
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone h='6909' id='32' name='Before GFV graph' pane-specification-id='0' param='[federated.0ooik2v1p032o21don3x80qku7rv (copy)].[none:order_status:nk]' type-v2='color' w='11667' x='1000' y='73182'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+              </zone>
+              <zone-style>
+                <format attr='border-color' value='#000000' />
+                <format attr='border-style' value='none' />
+                <format attr='border-width' value='0' />
+                <format attr='margin' value='8' />
+              </zone-style>
+            </zone>
+          </zones>
+        </devicelayout>
+      </devicelayouts>
+      <simple-id uuid='{D1487F66-DF33-480C-8A1E-FE026612CE46}' />
+    </dashboard>
+  </dashboards>
+  <windows source-height='75'>
+    <window class='dashboard' name='Data Summary'>
+      <viewpoints>
+        <viewpoint name='Acquisitions GRAPH'>
+          <zoom type='entire-view' />
+        </viewpoint>
+        <viewpoint name='AverageBasketSize graph'>
+          <zoom type='entire-view' />
+        </viewpoint>
+        <viewpoint name='Frequency Graph'>
+          <zoom type='entire-view' />
+        </viewpoint>
+        <viewpoint name='OrderShare graph'>
+          <zoom type='entire-view' />
+        </viewpoint>
+      </viewpoints>
+      <active id='-1' />
+      <simple-id uuid='{7A9E4EEA-2894-40BE-B545-D364BC7FFDE6}' />
+    </window>
+    <window class='dashboard' name='GFV Before After'>
+      <viewpoints>
+        <viewpoint name='After'>
+          <zoom type='fit-height' />
+        </viewpoint>
+        <viewpoint name='Before'>
+          <zoom type='fit-height' />
+        </viewpoint>
+        <viewpoint name='Before GFV graph'>
+          <zoom type='entire-view' />
+        </viewpoint>
+      </viewpoints>
+      <active id='-1' />
+      <simple-id uuid='{14A7AD76-1F9A-4443-A9DC-F1F056EFB21B}' />
+    </window>
+    <window class='dashboard' name='Frequency Before After'>
+      <viewpoints>
+        <viewpoint name='Frequency After '>
+          <zoom type='fit-height' />
+        </viewpoint>
+        <viewpoint name='Frequency Before '>
+          <zoom type='fit-height' />
+        </viewpoint>
+        <viewpoint name='Frequency aftergraph'>
+          <zoom type='entire-view' />
+          <highlight>
+            <color-one-way>
+              <field>[federated.0ooik2v1p032o21don3x80qku7rv (copy)].[none:order_status:nk]</field>
+            </color-one-way>
+          </highlight>
+        </viewpoint>
+      </viewpoints>
+      <active id='10' />
+      <simple-id uuid='{709536B6-3FBC-4092-9A59-706BE9BFF047}' />
+    </window>
+    <window class='worksheet' name='Acquisitions'>
+      <cards>
+        <edge name='left'>
+          <strip size='160'>
+            <card type='pages' />
+            <card type='filters' />
+            <card type='marks' />
+          </strip>
+        </edge>
+        <edge name='top'>
+          <strip size='2147483647'>
+            <card type='columns' />
+          </strip>
+          <strip size='2147483647'>
+            <card type='rows' />
+          </strip>
+          <strip size='30'>
+            <card type='title' />
+          </strip>
+        </edge>
+        <edge name='right'>
+          <strip size='160'>
+            <card mode='checkdropdown' param='[federated.0ooik2v1p032o21don3x80qku7rv].[my:order_month:ok]' type='filter' />
+            <card mode='checkdropdown' param='[federated.0ooik2v1p032o21don3x80qku7rv].[none:title:nk]' type='filter' values='database' />
+          </strip>
+        </edge>
+      </cards>
+      <viewpoint>
+        <highlight>
+          <color-one-way>
+            <field>[federated.0ooik2v1p032o21don3x80qku7rv].[none:Calculation_1463388454330118147:nk]</field>
+            <field>[federated.0ooik2v1p032o21don3x80qku7rv].[none:Calculation_1463388454331904004:nk]</field>
+            <field>[federated.0ooik2v1p032o21don3x80qku7rv].[none:is_acquisition:nk]</field>
+            <field>[federated.0ooik2v1p032o21don3x80qku7rv].[none:partner:nk]</field>
+            <field>[federated.0ooik2v1p032o21don3x80qku7rv].[none:title:nk]</field>
+            <field>[federated.0ooik2v1p032o21don3x80qku7rv].[yr:order_month:ok]</field>
+          </color-one-way>
+        </highlight>
+      </viewpoint>
+      <simple-id uuid='{87CEFF68-00FA-483F-A8A4-1C4496505D93}' />
+    </window>
+    <window class='worksheet' name='Acquisitions GRAPH'>
+      <cards>
+        <edge name='left'>
+          <strip size='160'>
+            <card type='pages' />
+            <card type='filters' />
+            <card type='marks' />
+          </strip>
+        </edge>
+        <edge name='top'>
+          <strip size='2147483647'>
+            <card type='columns' />
+          </strip>
+          <strip size='2147483647'>
+            <card type='rows' />
+          </strip>
+          <strip size='30'>
+            <card type='title' />
+          </strip>
+        </edge>
+        <edge name='right'>
+          <strip size='160'>
+            <card mode='checkdropdown' param='[federated.0ooik2v1p032o21don3x80qku7rv].[my:order_month:ok]' type='filter' />
+            <card pane-specification-id='0' param='[federated.0ooik2v1p032o21don3x80qku7rv].[none:Calculation_1463388454331904004:nk]' type='color' />
+          </strip>
+        </edge>
+      </cards>
+      <viewpoint>
+        <highlight>
+          <color-one-way>
+            <field>[federated.0ooik2v1p032o21don3x80qku7rv].[none:Calculation_1463388454330118147:nk]</field>
+            <field>[federated.0ooik2v1p032o21don3x80qku7rv].[none:Calculation_1463388454331904004:nk]</field>
+            <field>[federated.0ooik2v1p032o21don3x80qku7rv].[none:is_acquisition:nk]</field>
+            <field>[federated.0ooik2v1p032o21don3x80qku7rv].[none:partner:nk]</field>
+            <field>[federated.0ooik2v1p032o21don3x80qku7rv].[yr:order_month:ok]</field>
+          </color-one-way>
+        </highlight>
+      </viewpoint>
+      <simple-id uuid='{0FC34FF9-0679-4A14-ABB6-C1F4055ACE09}' />
+    </window>
+    <window class='worksheet' name='OrderShare Data'>
+      <cards>
+        <edge name='left'>
+          <strip size='160'>
+            <card type='pages' />
+            <card type='filters' />
+            <card type='marks' />
+          </strip>
+        </edge>
+        <edge name='top'>
+          <strip size='2147483647'>
+            <card type='columns' />
+          </strip>
+          <strip size='2147483647'>
+            <card type='rows' />
+          </strip>
+          <strip size='30'>
+            <card type='title' />
+          </strip>
+        </edge>
+        <edge name='right'>
+          <strip size='160'>
+            <card mode='checkdropdown' param='[federated.0ooik2v1p032o21don3x80qku7rv].[my:order_month:ok]' type='filter' />
+            <card mode='checkdropdown' param='[federated.0ooik2v1p032o21don3x80qku7rv].[none:title:nk]' type='filter' values='database' />
+          </strip>
+        </edge>
+      </cards>
+      <viewpoint>
+        <highlight>
+          <color-one-way>
+            <field>[federated.0ooik2v1p032o21don3x80qku7rv].[my:order_month:ok]</field>
+            <field>[federated.0ooik2v1p032o21don3x80qku7rv].[none:partner:nk]</field>
+            <field>[federated.0ooik2v1p032o21don3x80qku7rv].[none:title:nk]</field>
+            <field>[federated.0ooik2v1p032o21don3x80qku7rv].[yr:order_month:ok]</field>
+          </color-one-way>
+        </highlight>
+      </viewpoint>
+      <simple-id uuid='{B081B8E4-42AB-47DF-9AD5-6BF1AE3CD013}' />
+    </window>
+    <window class='worksheet' name='Sheet 12'>
+      <cards>
+        <edge name='left'>
+          <strip size='160'>
+            <card type='pages' />
+            <card type='filters' />
+            <card type='marks' />
+          </strip>
+        </edge>
+        <edge name='top'>
+          <strip size='2147483647'>
+            <card type='columns' />
+          </strip>
+          <strip size='2147483647'>
+            <card type='rows' />
+          </strip>
+          <strip size='30'>
+            <card type='title' />
+          </strip>
+        </edge>
+      </cards>
+      <viewpoint>
+        <highlight>
+          <color-one-way>
+            <field>[federated.0ooik2v1p032o21don3x80qku7rv].[yr:connected_date:ok]</field>
+          </color-one-way>
+        </highlight>
+      </viewpoint>
+      <simple-id uuid='{3A55747C-2E46-409E-9B4D-1B645B76973F}' />
+    </window>
+    <window class='worksheet' maximized='true' name='Frequency'>
+      <cards>
+        <edge name='left'>
+          <strip size='160'>
+            <card type='pages' />
+            <card type='filters' />
+            <card type='marks' />
+            <card type='measures' />
+          </strip>
+        </edge>
+        <edge name='top'>
+          <strip size='2147483647'>
+            <card type='columns' />
+          </strip>
+          <strip size='2147483647'>
+            <card type='rows' />
+          </strip>
+          <strip size='30'>
+            <card type='title' />
+          </strip>
+        </edge>
+      </cards>
+      <viewpoint>
+        <highlight>
+          <color-one-way>
+            <field>[federated.0ooik2v1p032o21don3x80qku7rv].[:Measure Names]</field>
+            <field>[federated.0ooik2v1p032o21don3x80qku7rv].[my:order_month:ok]</field>
+            <field>[federated.0ooik2v1p032o21don3x80qku7rv].[none:partner:nk]</field>
+            <field>[federated.0ooik2v1p032o21don3x80qku7rv].[yr:order_month:ok]</field>
+          </color-one-way>
+        </highlight>
+      </viewpoint>
+      <simple-id uuid='{5938E82D-30B5-4799-8DF9-DD7030181DB3}' />
+    </window>
+    <window class='worksheet' name='AverageBasketSize'>
+      <cards>
+        <edge name='left'>
+          <strip size='160'>
+            <card type='pages' />
+            <card type='filters' />
+            <card type='marks' />
+            <card type='measures' />
+          </strip>
+        </edge>
+        <edge name='top'>
+          <strip size='90'>
+            <card type='columns' />
+          </strip>
+          <strip size='2147483647'>
+            <card type='rows' />
+          </strip>
+          <strip size='30'>
+            <card type='title' />
+          </strip>
+        </edge>
+        <edge name='right'>
+          <strip size='160'>
+            <card mode='checkdropdown' param='[federated.0ooik2v1p032o21don3x80qku7rv].[my:order_month:ok]' type='filter' />
+          </strip>
+        </edge>
+      </cards>
+      <viewpoint>
+        <highlight>
+          <color-one-way>
+            <field>[federated.0ooik2v1p032o21don3x80qku7rv].[:Measure Names]</field>
+            <field>[federated.0ooik2v1p032o21don3x80qku7rv].[my:order_month:ok]</field>
+            <field>[federated.0ooik2v1p032o21don3x80qku7rv].[none:partner:nk]</field>
+            <field>[federated.0ooik2v1p032o21don3x80qku7rv].[none:title:nk]</field>
+            <field>[federated.0ooik2v1p032o21don3x80qku7rv].[yr:order_month:ok]</field>
+          </color-one-way>
+        </highlight>
+      </viewpoint>
+      <simple-id uuid='{E7296D0C-AEF7-408A-B147-D25CA66787B4}' />
+    </window>
+    <window class='worksheet' name='Before'>
+      <cards>
+        <edge name='left'>
+          <strip size='160'>
+            <card type='pages' />
+            <card type='filters' />
+            <card type='marks' />
+          </strip>
+        </edge>
+        <edge name='top'>
+          <strip size='2147483647'>
+            <card type='columns' />
+          </strip>
+          <strip size='2147483647'>
+            <card type='rows' />
+          </strip>
+          <strip size='30'>
+            <card type='title' />
+          </strip>
+        </edge>
+      </cards>
+      <viewpoint>
+        <highlight>
+          <color-one-way>
+            <field>[federated.0ooik2v1p032o21don3x80qku7rv (copy)].[my:order_day:ok]</field>
+            <field>[federated.0ooik2v1p032o21don3x80qku7rv (copy)].[none:order_status:nk]</field>
+            <field>[federated.0ooik2v1p032o21don3x80qku7rv (copy)].[yr:connected_date:ok]</field>
+            <field>[federated.0ooik2v1p032o21don3x80qku7rv (copy)].[yr:order_day:ok]</field>
+          </color-one-way>
+        </highlight>
+      </viewpoint>
+      <simple-id uuid='{5600423A-AB71-4CA0-B3F8-65C56DA5A5C1}' />
+    </window>
+    <window class='worksheet' name='After'>
+      <cards>
+        <edge name='left'>
+          <strip size='160'>
+            <card type='pages' />
+            <card type='filters' />
+            <card type='marks' />
+          </strip>
+        </edge>
+        <edge name='top'>
+          <strip size='2147483647'>
+            <card type='columns' />
+          </strip>
+          <strip size='2147483647'>
+            <card type='rows' />
+          </strip>
+          <strip size='30'>
+            <card type='title' />
+          </strip>
+        </edge>
+      </cards>
+      <viewpoint>
+        <highlight>
+          <color-one-way>
+            <field>[federated.0ooik2v1p032o21don3x80qku7rv (copy)].[none:order_status:nk]</field>
+            <field>[federated.0ooik2v1p032o21don3x80qku7rv (copy)].[yr:connected_date:ok]</field>
+            <field>[federated.0ooik2v1p032o21don3x80qku7rv (copy)].[yr:order_day:ok]</field>
+          </color-one-way>
+        </highlight>
+      </viewpoint>
+      <simple-id uuid='{C5A0FA5D-240E-49E9-A79C-F76F5DB83CE2}' />
+    </window>
+    <window class='worksheet' name='Before GFV graph'>
+      <cards>
+        <edge name='left'>
+          <strip size='160'>
+            <card type='pages' />
+            <card type='filters' />
+            <card type='marks' />
+          </strip>
+        </edge>
+        <edge name='top'>
+          <strip size='2147483647'>
+            <card type='columns' />
+          </strip>
+          <strip size='2147483647'>
+            <card type='rows' />
+          </strip>
+          <strip size='30'>
+            <card type='title' />
+          </strip>
+        </edge>
+        <edge name='right'>
+          <strip size='160'>
+            <card param='[federated.0ooik2v1p032o21don3x80qku7rv (copy)].[none:order_status:nk]' type='filter' />
+            <card pane-specification-id='0' param='[federated.0ooik2v1p032o21don3x80qku7rv (copy)].[none:order_status:nk]' type='color' />
+          </strip>
+        </edge>
+      </cards>
+      <viewpoint>
+        <highlight>
+          <color-one-way>
+            <field>[federated.0ooik2v1p032o21don3x80qku7rv (copy)].[my:order_day:ok]</field>
+            <field>[federated.0ooik2v1p032o21don3x80qku7rv (copy)].[none:order_status:nk]</field>
+            <field>[federated.0ooik2v1p032o21don3x80qku7rv (copy)].[yr:connected_date:ok]</field>
+            <field>[federated.0ooik2v1p032o21don3x80qku7rv (copy)].[yr:order_day:ok]</field>
+            <field>[federated.0ooik2v1p032o21don3x80qku7rv (copy)].[yr:order_month:ok]</field>
+          </color-one-way>
+        </highlight>
+      </viewpoint>
+      <simple-id uuid='{9F88FF09-B60D-47BB-A02D-5D6BAB2B3DA3}' />
+    </window>
+    <window class='worksheet' name='Frequency After '>
+      <cards>
+        <edge name='left'>
+          <strip size='160'>
+            <card type='pages' />
+            <card type='filters' />
+            <card type='marks' />
+          </strip>
+        </edge>
+        <edge name='top'>
+          <strip size='2147483647'>
+            <card type='columns' />
+          </strip>
+          <strip size='2147483647'>
+            <card type='rows' />
+          </strip>
+          <strip size='30'>
+            <card type='title' />
+          </strip>
+        </edge>
+      </cards>
+      <viewpoint>
+        <highlight>
+          <color-one-way>
+            <field>[federated.0ooik2v1p032o21don3x80qku7rv (copy)].[none:order_status:nk]</field>
+            <field>[federated.0ooik2v1p032o21don3x80qku7rv (copy)].[yr:connected_date:ok]</field>
+            <field>[federated.0ooik2v1p032o21don3x80qku7rv (copy)].[yr:order_day:ok]</field>
+          </color-one-way>
+        </highlight>
+      </viewpoint>
+      <simple-id uuid='{4D6B88C0-7713-4E91-8268-9EC71FB74BAF}' />
+    </window>
+    <window class='worksheet' name='Frequency Before '>
+      <cards>
+        <edge name='left'>
+          <strip size='160'>
+            <card type='pages' />
+            <card type='filters' />
+            <card type='marks' />
+            <card type='measures' />
+          </strip>
+        </edge>
+        <edge name='top'>
+          <strip size='2147483647'>
+            <card type='columns' />
+          </strip>
+          <strip size='2147483647'>
+            <card type='rows' />
+          </strip>
+          <strip size='30'>
+            <card type='title' />
+          </strip>
+        </edge>
+      </cards>
+      <viewpoint>
+        <highlight>
+          <color-one-way>
+            <field>[federated.0ooik2v1p032o21don3x80qku7rv (copy)].[my:order_day:ok]</field>
+            <field>[federated.0ooik2v1p032o21don3x80qku7rv (copy)].[none:order_status:nk]</field>
+            <field>[federated.0ooik2v1p032o21don3x80qku7rv (copy)].[yr:connected_date:ok]</field>
+            <field>[federated.0ooik2v1p032o21don3x80qku7rv (copy)].[yr:order_day:ok]</field>
+          </color-one-way>
+        </highlight>
+      </viewpoint>
+      <simple-id uuid='{8B467DF6-8688-4EBC-88DB-0BDBF62D6FDC}' />
+    </window>
+    <window class='worksheet' name='Frequency aftergraph'>
+      <cards>
+        <edge name='left'>
+          <strip size='160'>
+            <card type='pages' />
+            <card type='filters' />
+            <card type='marks' />
+          </strip>
+        </edge>
+        <edge name='top'>
+          <strip size='2147483647'>
+            <card type='columns' />
+          </strip>
+          <strip size='2147483647'>
+            <card type='rows' />
+          </strip>
+          <strip size='30'>
+            <card type='title' />
+          </strip>
+        </edge>
+        <edge name='right'>
+          <strip size='160'>
+            <card pane-specification-id='0' param='[federated.0ooik2v1p032o21don3x80qku7rv (copy)].[none:order_status:nk]' type='color' />
+          </strip>
+        </edge>
+      </cards>
+      <viewpoint>
+        <highlight>
+          <color-one-way>
+            <field>[federated.0ooik2v1p032o21don3x80qku7rv (copy)].[my:order_day:ok]</field>
+            <field>[federated.0ooik2v1p032o21don3x80qku7rv (copy)].[none:order_status:nk]</field>
+            <field>[federated.0ooik2v1p032o21don3x80qku7rv (copy)].[yr:connected_date:ok]</field>
+            <field>[federated.0ooik2v1p032o21don3x80qku7rv (copy)].[yr:order_day:ok]</field>
+            <field>[federated.0ooik2v1p032o21don3x80qku7rv (copy)].[yr:order_month:ok]</field>
+          </color-one-way>
+        </highlight>
+      </viewpoint>
+      <simple-id uuid='{F62F93AE-498D-47B5-AC1E-5B54AE426E93}' />
+    </window>
+    <window class='worksheet' hidden='true' name='AverageBasketSize graph'>
+      <cards>
+        <edge name='left'>
+          <strip size='160'>
+            <card type='pages' />
+            <card type='filters' />
+            <card type='marks' />
+          </strip>
+        </edge>
+        <edge name='top'>
+          <strip size='90'>
+            <card type='columns' />
+          </strip>
+          <strip size='2147483647'>
+            <card type='rows' />
+          </strip>
+          <strip size='30'>
+            <card type='title' />
+          </strip>
+        </edge>
+        <edge name='right'>
+          <strip size='160'>
+            <card mode='checkdropdown' param='[federated.0ooik2v1p032o21don3x80qku7rv].[my:order_month:ok]' type='filter' />
+            <card pane-specification-id='1' param='[federated.0ooik2v1p032o21don3x80qku7rv].[none:partner:nk]' type='color' />
+          </strip>
+        </edge>
+      </cards>
+      <viewpoint>
+        <highlight>
+          <color-one-way>
+            <field>[federated.0ooik2v1p032o21don3x80qku7rv].[:Measure Names]</field>
+            <field>[federated.0ooik2v1p032o21don3x80qku7rv].[my:order_month:ok]</field>
+            <field>[federated.0ooik2v1p032o21don3x80qku7rv].[none:partner:nk]</field>
+            <field>[federated.0ooik2v1p032o21don3x80qku7rv].[yr:order_month:ok]</field>
+          </color-one-way>
+        </highlight>
+      </viewpoint>
+      <simple-id uuid='{DA27C0FE-BCBE-48C9-83A7-BD9F65930CAA}' />
+    </window>
+    <window class='worksheet' hidden='true' name='Frequency Graph'>
+      <cards>
+        <edge name='left'>
+          <strip size='160'>
+            <card type='pages' />
+            <card type='filters' />
+            <card type='marks' />
+          </strip>
+        </edge>
+        <edge name='top'>
+          <strip size='2147483647'>
+            <card type='columns' />
+          </strip>
+          <strip size='2147483647'>
+            <card type='rows' />
+          </strip>
+          <strip size='30'>
+            <card type='title' />
+          </strip>
+        </edge>
+        <edge name='right'>
+          <strip size='160'>
+            <card pane-specification-id='0' param='[federated.0ooik2v1p032o21don3x80qku7rv].[none:partner:nk]' type='color' />
+          </strip>
+        </edge>
+      </cards>
+      <viewpoint>
+        <highlight>
+          <color-one-way>
+            <field>[federated.0ooik2v1p032o21don3x80qku7rv].[my:order_month:ok]</field>
+            <field>[federated.0ooik2v1p032o21don3x80qku7rv].[none:partner:nk]</field>
+            <field>[federated.0ooik2v1p032o21don3x80qku7rv].[yr:order_month:ok]</field>
+          </color-one-way>
+        </highlight>
+      </viewpoint>
+      <simple-id uuid='{2BDEB228-2855-4CA6-93C3-5FCE87712018}' />
+    </window>
+    <window class='worksheet' hidden='true' name='OrderShare graph'>
+      <cards>
+        <edge name='left'>
+          <strip size='160'>
+            <card type='pages' />
+            <card type='filters' />
+            <card type='marks' />
+          </strip>
+        </edge>
+        <edge name='top'>
+          <strip size='2147483647'>
+            <card type='columns' />
+          </strip>
+          <strip size='2147483647'>
+            <card type='rows' />
+          </strip>
+          <strip size='30'>
+            <card type='title' />
+          </strip>
+        </edge>
+        <edge name='right'>
+          <strip size='160'>
+            <card mode='checkdropdown' param='[federated.0ooik2v1p032o21don3x80qku7rv].[my:order_month:ok]' type='filter' />
+            <card pane-specification-id='1' param='[federated.0ooik2v1p032o21don3x80qku7rv].[none:partner:nk]' type='color' />
+          </strip>
+        </edge>
+      </cards>
+      <viewpoint>
+        <highlight>
+          <color-one-way>
+            <field>[federated.0ooik2v1p032o21don3x80qku7rv].[my:order_month:ok]</field>
+            <field>[federated.0ooik2v1p032o21don3x80qku7rv].[none:partner:nk]</field>
+            <field>[federated.0ooik2v1p032o21don3x80qku7rv].[yr:order_month:ok]</field>
+          </color-one-way>
+        </highlight>
+      </viewpoint>
+      <simple-id uuid='{D5BF063D-EB1A-4B08-93B5-CDE8198EA641}' />
+    </window>
+  </windows>
+</workbook>

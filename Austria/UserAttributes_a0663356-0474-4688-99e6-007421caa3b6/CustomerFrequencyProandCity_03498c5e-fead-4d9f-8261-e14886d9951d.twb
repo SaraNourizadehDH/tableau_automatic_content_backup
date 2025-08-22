@@ -1,0 +1,1630 @@
+<?xml version='1.0' encoding='utf-8' ?>
+
+<!-- build 20221.22.1108.1355                               -->
+<workbook original-version='18.1' source-build='2022.4.0 (20224.22.1117.1841)' source-platform='win' version='18.1' xml:base='https://tableau.deliveryhero.net' xmlns:user='http://www.tableausoftware.com/xml/user'>
+  <document-format-change-manifest>
+    <_.fcp.AnimationOnByDefault.true...AnimationOnByDefault />
+    <MapboxVectorStylesAndLayers />
+    <_.fcp.MarkAnimation.true...MarkAnimation />
+    <_.fcp.ObjectModelEncapsulateLegacy.true...ObjectModelEncapsulateLegacy />
+    <_.fcp.ObjectModelTableType.true...ObjectModelTableType />
+    <_.fcp.SchemaViewerObjectModel.true...SchemaViewerObjectModel />
+    <SheetIdentifierTracking />
+    <SortTagCleanup />
+    <WindowsPersistSimpleIdentifiers />
+  </document-format-change-manifest>
+  <repository-location derived-from='https://tableau.deliveryhero.net/t/Austria/workbooks/CustomerFrequencyProandCity?rev=1.0' id='CustomerFrequencyProandCity' path='/t/Austria/workbooks' revision='1.1' site='Austria' />
+  <preferences>
+    <preference name='ui.encoding.shelf.height' value='24' />
+    <preference name='ui.shelf.height' value='26' />
+  </preferences>
+  <_.fcp.AnimationOnByDefault.false...style>
+    <_.fcp.AnimationOnByDefault.false..._.fcp.MarkAnimation.true...style-rule element='animation'>
+      <_.fcp.AnimationOnByDefault.false...format attr='animation-on' value='ao-on' />
+    </_.fcp.AnimationOnByDefault.false..._.fcp.MarkAnimation.true...style-rule>
+  </_.fcp.AnimationOnByDefault.false...style>
+  <datasources>
+    <datasource caption='Custom SQL Query (report_tables)' inline='true' name='federated.0g2stjp03q71af10kf64e0kgaze7' version='18.1'>
+      <connection class='federated'>
+        <named-connections>
+          <named-connection caption='BigQuery' name='bigquery.0khdxx10esrot91e4egbn11hrxok'>
+            <connection CATALOG='dha---bi-485' EXECCATALOG='dha---bi-485' authentication='oauth' bq-dataset-fetch-rows='' bq-fetch-rows='' bq-fetch-tasks='' bq-large-fetch-rows='' bq-project-fetch-rows='' bq-response-rows='' class='bigquery' connection-dialect='google-sql' project='DHA - BI' schema='report_tables' server-oauth='' username='sirinthip.narula@foodora.at' workgroup-auth-mode='prompt' />
+          </named-connection>
+        </named-connections>
+        <_.fcp.ObjectModelEncapsulateLegacy.false...relation connection='bigquery.0khdxx10esrot91e4egbn11hrxok' name='Custom SQL Query' type='text'><![CDATA[-- Total Subsription Customer Base
+with sub_data as (
+SELECT
+s.global_entity_id
+, s.customer_uuid
+, COALESCE(i.central_dwh_analytical_customer_id, s.customer_uuid) AS analytical_customer_id
+, s.plan_code
+, created_date_utc
+, s.id AS subs_id
+, s.status
+, p.is_status_success
+, p.is_status_failed
+, p.is_renewal
+, CASE WHEN LENGTH(p.voucher_code) << 1 THEN NULL ELSE p.voucher_code END AS voucher_code -->> because even without a code it wasnt actually null
+, DATE(s.cancelled_at_local) AS cancelled_date
+, DATE(p.paid_at_local) AS paid_date
+, DATE(p.subscription_start_at_local) AS plan_start_date 
+, DATE(p.subscription_end_at_local) AS plan_end_date
+FROM `fulfillment-dwh-production.pandata_curated.sb_subscriptions` AS s
+LEFT JOIN UNNEST(s.payments) AS p
+LEFT JOIN `fulfillment-dwh-production.pandata_curated.mkt_tech_braze_external_id_map` AS i 
+  ON s.customer_id = SAFE_CAST(SPLIT(i.mkt_tech_external_id, "_")[SAFE_OFFSET(1)] AS INT)
+  AND s.global_entity_id = i.global_entity_id
+WHERE s.global_entity_id = 'MJM_AT'
+  AND created_date_utc <<= CURRENT_DATE
+  and is_status_success = true
+),
+
+pro_users as
+
+ ( select DISTINCT CASE WHEN plan_start_date <<= date_sub(current_date,interval 1 day) AND plan_end_date >> date_sub(current_date,interval 1 day) THEN analytical_customer_id END AS pro_analytical_customer_id,
+CASE WHEN plan_start_date <<= date_sub(current_date,interval 1 day) AND plan_end_date >> date_sub(current_date,interval 1 day) THEN true else false END AS is_pro_user ,global_entity_id,
+date_sub(current_date,interval 1 day) as report_date
+from sub_data
+)
+, 
+
+all_customers as 
+(
+
+  SELECT distinct 
+date_sub(current_date,interval 1 day) as report_date,
+all_cust.global_entity_id,
+all_cust.central_dwh_analytical_customer_id as  central_analytical_customer_id,
+case when is_pro_user= true then 'Pro' else
+'Nonpro' end as user_type,
+
+FROM  `fulfillment-dwh-production.pandata_curated.mkt_tech_braze_external_id_map` AS all_cust
+left join pro_users
+on pro_users.pro_analytical_customer_id = all_cust.central_dwh_analytical_customer_id
+and pro_users.global_entity_id = all_cust.global_entity_id
+
+where
+ all_cust.global_entity_id = 'MJM_AT'
+
+),
+ customer_address as (
+SELECT
+DISTINCT
+
+central_analytical_customer_id,
+ eu_orders.customer_code,
+ eu_orders.created_date_local,
+order_code,
+eu_orders.global_entity_id,
+case when LOWER(delivery_address_city) IN ('wien',
+'vienna') then 'vienna 'end as city,
+delivery_address_postcode,
+FROM
+`fulfillment-dwh-production.pandata_report.agg_orders_eu` eu_orders
+LEFT JOIN
+`fulfillment-dwh-production.pandata_curated.pd_orders` pdo
+ON
+pdo.global_entity_id = eu_orders.global_entity_id
+AND pdo.pd_customer_uuid = eu_orders.pd_customer_uuid
+AND pdo.code = eu_orders.order_code
+WHERE
+eu_orders.created_date_utc >>= date_sub(current_date,interval 90 day)
+AND pdo.created_date_utc >>= date_sub(current_date,interval 90 day) 
+AND eu_orders.global_entity_id = 'MJM_AT'
+AND LOWER(delivery_address_city) IN ('wien',
+'vienna')
+and delivery_address_postcode in ('1010',
+'1020',
+'1030',
+'1040',
+'1050',
+'1060',
+'1070',
+'1080',
+'1090',
+ '1100',
+ '1110',
+ '1120',
+ '1130',
+ '1140',
+ '1150',
+ '1160',
+ '1170',
+ '1180',
+ '1190',
+ '1200',
+ '1210',
+ '1220',
+ '1230')
+GROUP BY 1,2,3,4,5,6,7
+
+ORDER By
+1 DESC)
+-- ,
+--  aggregated_data as (
+select
+distinct date_trunc(created_date_local,month) as month,
+ all_customers.central_analytical_customer_id ,city,
+user_type,
+ case when  delivery_address_postcode IN ('1010',
+'1020',
+'1030',
+'1040',
+'1050',
+'1060',
+'1070',
+'1080',
+'1090') then '1-9' 
+when delivery_address_postcode in (
+ '1100',
+ '1110',
+ '1120',
+ '1130',
+ '1140',
+ '1150',
+ '1160',
+ '1170',
+ '1180',
+ '1190',
+ '1200',
+ '1210',
+ '1220',
+ '1230') then '10-23' else null end as district_group,
+ delivery_address_postcode,
+count(distinct order_code) as orders,
+
+
+ from all_customers
+left join customer_address on 
+all_customers.global_entity_id= customer_address.global_entity_id
+and all_customers.central_analytical_customer_id = customer_address.central_analytical_customer_id
+
+group by 1,2,3,4,5,6
+-- )
+-- -- ,
+-- -- frequency_data as (
+-- select 
+-- month,city,user_type,district_1to9,district_1to23,
+--  aggregated_data.central_analytical_customer_id as  analytical_customer_id,
+--  sum(orders),
+-- sum(orders)/count(distinct aggregated_data.central_analytical_customer_id) as frequency,
+
+-- sum(orders) as orders
+
+--  from aggregated_data
+--  group by 1,2,3,4,5,6
+ 
+-- --  )
+-- --  select 
+ 
+-- --  case when 
+-- --  (frequency>>0 and frequency<<=1)  THEN '0-1' 
+-- -- when (frequency>>2 and frequency<<=3) then '2-3'
+-- -- when (frequency>>3 and frequency<<=4) then '3-4'
+-- -- when(frequency>>4 and frequency<<=6) then '4-6'
+-- -- when (frequency>>6 and frequency<<= 8) then '6-8'
+-- -- when(frequency>>8 and frequency<<=10) then '8-10'
+-- -- when (frequency>>10) then '10+' 
+-- -- END as freq_group,
+
+-- -- city,user_type,district_1to9,district_1to23,
+-- --   sum(orders) as orders,
+-- --   sum(analytical_customer_id) as customers,
+-- --   avg(frequency) as avg_frequency
+-- --   from frequency_data f
+
+-- -- group by 1,2,3,4,5]]></_.fcp.ObjectModelEncapsulateLegacy.false...relation>
+        <_.fcp.ObjectModelEncapsulateLegacy.true...relation connection='bigquery.0khdxx10esrot91e4egbn11hrxok' name='Custom SQL Query' type='text'><![CDATA[-- Total Subsription Customer Base
+with sub_data as (
+SELECT
+s.global_entity_id
+, s.customer_uuid
+, COALESCE(i.central_dwh_analytical_customer_id, s.customer_uuid) AS analytical_customer_id
+, s.plan_code
+, created_date_utc
+, s.id AS subs_id
+, s.status
+, p.is_status_success
+, p.is_status_failed
+, p.is_renewal
+, CASE WHEN LENGTH(p.voucher_code) << 1 THEN NULL ELSE p.voucher_code END AS voucher_code -->> because even without a code it wasnt actually null
+, DATE(s.cancelled_at_local) AS cancelled_date
+, DATE(p.paid_at_local) AS paid_date
+, DATE(p.subscription_start_at_local) AS plan_start_date 
+, DATE(p.subscription_end_at_local) AS plan_end_date
+FROM `fulfillment-dwh-production.pandata_curated.sb_subscriptions` AS s
+LEFT JOIN UNNEST(s.payments) AS p
+LEFT JOIN `fulfillment-dwh-production.pandata_curated.mkt_tech_braze_external_id_map` AS i 
+  ON s.customer_id = SAFE_CAST(SPLIT(i.mkt_tech_external_id, "_")[SAFE_OFFSET(1)] AS INT)
+  AND s.global_entity_id = i.global_entity_id
+WHERE s.global_entity_id = 'MJM_AT'
+  AND created_date_utc <<= CURRENT_DATE
+  and is_status_success = true
+),
+
+pro_users as
+
+ ( select DISTINCT CASE WHEN plan_start_date <<= date_sub(current_date,interval 1 day) AND plan_end_date >> date_sub(current_date,interval 1 day) THEN analytical_customer_id END AS pro_analytical_customer_id,
+CASE WHEN plan_start_date <<= date_sub(current_date,interval 1 day) AND plan_end_date >> date_sub(current_date,interval 1 day) THEN true else false END AS is_pro_user ,global_entity_id,
+date_sub(current_date,interval 1 day) as report_date
+from sub_data
+)
+, 
+
+all_customers as 
+(
+
+  SELECT distinct 
+date_sub(current_date,interval 1 day) as report_date,
+all_cust.global_entity_id,
+all_cust.central_dwh_analytical_customer_id as  central_analytical_customer_id,
+case when is_pro_user= true then 'Pro' else
+'Nonpro' end as user_type,
+
+FROM  `fulfillment-dwh-production.pandata_curated.mkt_tech_braze_external_id_map` AS all_cust
+left join pro_users
+on pro_users.pro_analytical_customer_id = all_cust.central_dwh_analytical_customer_id
+and pro_users.global_entity_id = all_cust.global_entity_id
+
+where
+ all_cust.global_entity_id = 'MJM_AT'
+
+),
+ customer_address as (
+SELECT
+DISTINCT
+
+central_analytical_customer_id,
+ eu_orders.customer_code,
+ eu_orders.created_date_local,
+order_code,
+eu_orders.global_entity_id,
+case when LOWER(delivery_address_city) IN ('wien',
+'vienna') then 'vienna 'end as city,
+delivery_address_postcode,
+FROM
+`fulfillment-dwh-production.pandata_report.agg_orders_eu` eu_orders
+LEFT JOIN
+`fulfillment-dwh-production.pandata_curated.pd_orders` pdo
+ON
+pdo.global_entity_id = eu_orders.global_entity_id
+AND pdo.pd_customer_uuid = eu_orders.pd_customer_uuid
+AND pdo.code = eu_orders.order_code
+WHERE
+eu_orders.created_date_utc >>= date_sub(current_date,interval 90 day)
+AND pdo.created_date_utc >>= date_sub(current_date,interval 90 day) 
+AND eu_orders.global_entity_id = 'MJM_AT'
+AND LOWER(delivery_address_city) IN ('wien',
+'vienna')
+and delivery_address_postcode in ('1010',
+'1020',
+'1030',
+'1040',
+'1050',
+'1060',
+'1070',
+'1080',
+'1090',
+ '1100',
+ '1110',
+ '1120',
+ '1130',
+ '1140',
+ '1150',
+ '1160',
+ '1170',
+ '1180',
+ '1190',
+ '1200',
+ '1210',
+ '1220',
+ '1230')
+GROUP BY 1,2,3,4,5,6,7
+
+ORDER By
+1 DESC)
+-- ,
+--  aggregated_data as (
+select
+distinct date_trunc(created_date_local,month) as month,
+ all_customers.central_analytical_customer_id ,city,
+user_type,
+ case when  delivery_address_postcode IN ('1010',
+'1020',
+'1030',
+'1040',
+'1050',
+'1060',
+'1070',
+'1080',
+'1090') then '1-9' 
+when delivery_address_postcode in (
+ '1100',
+ '1110',
+ '1120',
+ '1130',
+ '1140',
+ '1150',
+ '1160',
+ '1170',
+ '1180',
+ '1190',
+ '1200',
+ '1210',
+ '1220',
+ '1230') then '10-23' else null end as district_group,
+ delivery_address_postcode,
+count(distinct order_code) as orders,
+
+
+ from all_customers
+left join customer_address on 
+all_customers.global_entity_id= customer_address.global_entity_id
+and all_customers.central_analytical_customer_id = customer_address.central_analytical_customer_id
+
+group by 1,2,3,4,5,6
+-- )
+-- -- ,
+-- -- frequency_data as (
+-- select 
+-- month,city,user_type,district_1to9,district_1to23,
+--  aggregated_data.central_analytical_customer_id as  analytical_customer_id,
+--  sum(orders),
+-- sum(orders)/count(distinct aggregated_data.central_analytical_customer_id) as frequency,
+
+-- sum(orders) as orders
+
+--  from aggregated_data
+--  group by 1,2,3,4,5,6
+ 
+-- --  )
+-- --  select 
+ 
+-- --  case when 
+-- --  (frequency>>0 and frequency<<=1)  THEN '0-1' 
+-- -- when (frequency>>2 and frequency<<=3) then '2-3'
+-- -- when (frequency>>3 and frequency<<=4) then '3-4'
+-- -- when(frequency>>4 and frequency<<=6) then '4-6'
+-- -- when (frequency>>6 and frequency<<= 8) then '6-8'
+-- -- when(frequency>>8 and frequency<<=10) then '8-10'
+-- -- when (frequency>>10) then '10+' 
+-- -- END as freq_group,
+
+-- -- city,user_type,district_1to9,district_1to23,
+-- --   sum(orders) as orders,
+-- --   sum(analytical_customer_id) as customers,
+-- --   avg(frequency) as avg_frequency
+-- --   from frequency_data f
+
+-- -- group by 1,2,3,4,5]]></_.fcp.ObjectModelEncapsulateLegacy.true...relation>
+        <metadata-records>
+          <metadata-record class='column'>
+            <remote-name>month</remote-name>
+            <remote-type>7</remote-type>
+            <local-name>[month]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>month</remote-alias>
+            <local-type>date</local-type>
+            <aggregation>Year</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_7FFDCF46FACD478B8406B8410593256B]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>central_analytical_customer_id</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[central_analytical_customer_id]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>central_analytical_customer_id</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_7FFDCF46FACD478B8406B8410593256B]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>city</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[city]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>city</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_7FFDCF46FACD478B8406B8410593256B]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>user_type</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[user_type]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>user_type</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_7FFDCF46FACD478B8406B8410593256B]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>district_group</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[district_group]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>district_group</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_7FFDCF46FACD478B8406B8410593256B]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>delivery_address_postcode</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[delivery_address_postcode]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>delivery_address_postcode</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_7FFDCF46FACD478B8406B8410593256B]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>orders</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[orders]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>orders</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_7FFDCF46FACD478B8406B8410593256B]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+        </metadata-records>
+      </connection>
+      <aliases enabled='yes' />
+      <column caption='Customers' datatype='integer' name='[Calculation_656681142171947009]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='COUNTD([central_analytical_customer_id])' />
+      </column>
+      <column caption='Frequency group' datatype='string' name='[Calculation_656681142174273538]' role='dimension' type='nominal'>
+        <calculation class='tableau' formula='If ([Calculation_656681142179450884]&lt;=0 ) THEN &apos;0&apos; &#13;&#10;ELSEIF ([Calculation_656681142179450884]&lt;=1 ) THEN &apos;1&apos; &#13;&#10;ELSEIF([Calculation_656681142179450884]&lt;=2 ) THEN &apos;2&apos; &#13;&#10;ELSEIF([Calculation_656681142179450884]&lt;=3 ) THEN &apos;3&apos; &#13;&#10;ELSEIF ([Calculation_656681142179450884]&lt;=4 ) THEN &apos;4&apos; &#13;&#10;ELSEIF ([Calculation_656681142179450884]&lt;=5 ) THEN &apos;5&apos; &#13;&#10;ELSEIF([Calculation_656681142179450884]&lt;=6 ) THEN &apos;6&apos; &#13;&#10;ELSEIF([Calculation_656681142179450884]&lt;=7 ) THEN &apos;7&apos; &#13;&#10;ELSEIF ([Calculation_656681142179450884]&lt;=8 ) THEN &apos;8&apos; &#13;&#10;ELSEIF ([Calculation_656681142179450884]&lt;=9 ) THEN &apos;9&apos; &#13;&#10;ELSEIF ([Calculation_656681142179450884]&lt;=10 ) THEN &apos;10&apos; &#13;&#10;ELSEIF ([Calculation_656681142179450884]&gt;10) then &apos;10+&apos; &#13;&#10;END' />
+      </column>
+      <column caption='Frequency' datatype='real' name='[Calculation_656681142179450884]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='{fixed [central_analytical_customer_id],[month]:SUM([orders])/COUNTD([central_analytical_customer_id])}' />
+      </column>
+      <_.fcp.ObjectModelTableType.true...column caption='Custom SQL Query' datatype='table' hidden='true' name='[__tableau_internal_object_id__].[_7FFDCF46FACD478B8406B8410593256B]' role='measure' type='quantitative' />
+      <column datatype='string' name='[city]' role='dimension' semantic-role='[City].[Name]' type='nominal' />
+      <column datatype='string' name='[delivery_address_postcode]' role='dimension' semantic-role='[ZipCode].[Name]' type='nominal' />
+      <column datatype='integer' name='[orders]' role='measure' type='quantitative' />
+      <column-instance column='[Calculation_656681142179450884]' derivation='Avg' name='[avg:Calculation_656681142179450884:qk]' pivot='key' type='quantitative' />
+      <column-instance column='[Calculation_656681142174273538]' derivation='None' name='[none:Calculation_656681142174273538:nk]' pivot='key' type='nominal' />
+      <column-instance column='[Calculation_656681142179450884]' derivation='Sum' name='[sum:Calculation_656681142179450884:qk]' pivot='key' type='quantitative' />
+      <column-instance column='[orders]' derivation='Sum' name='[sum:orders:qk]' pivot='key' type='quantitative' />
+      <column-instance column='[Calculation_656681142171947009]' derivation='User' name='[usr:Calculation_656681142171947009:qk]' pivot='key' type='quantitative' />
+      <layout _.fcp.SchemaViewerObjectModel.false...dim-percentage='0.5' _.fcp.SchemaViewerObjectModel.false...measure-percentage='0.4' dim-ordering='alphabetic' measure-ordering='alphabetic' show-structure='true' />
+      <style>
+        <style-rule element='mark'>
+          <encoding attr='color' field='[:Measure Names]' type='palette'>
+            <map to='#4e79a7'>
+              <bucket>&quot;[federated.0g2stjp03q71af10kf64e0kgaze7].[usr:Calculation_656681142171947009:qk]&quot;</bucket>
+            </map>
+            <map to='#e15759'>
+              <bucket>&quot;[federated.0g2stjp03q71af10kf64e0kgaze7].[avg:Calculation_656681142179450884:qk]&quot;</bucket>
+            </map>
+            <map to='#e15759'>
+              <bucket>&quot;[federated.0g2stjp03q71af10kf64e0kgaze7].[sum:Calculation_656681142179450884:qk]&quot;</bucket>
+            </map>
+            <map to='#f28e2b'>
+              <bucket>&quot;[federated.0g2stjp03q71af10kf64e0kgaze7].[sum:orders:qk]&quot;</bucket>
+            </map>
+          </encoding>
+          <encoding attr='color' field='[none:Calculation_656681142174273538:nk]' type='palette'>
+            <map to='#000000'>
+              <bucket>&quot;10+&quot;</bucket>
+            </map>
+            <map to='#491b4d'>
+              <bucket>&quot;8-10&quot;</bucket>
+            </map>
+            <map to='#9c755f'>
+              <bucket>%all%</bucket>
+            </map>
+            <map to='#a30044'>
+              <bucket>&quot;6-8&quot;</bucket>
+            </map>
+            <map to='#df1067'>
+              <bucket>&quot;4-6&quot;</bucket>
+            </map>
+            <map to='#f28e2b'>
+              <bucket>&quot;0-1&quot;</bucket>
+            </map>
+            <map to='#ff76c9'>
+              <bucket>&quot;3-4&quot;</bucket>
+            </map>
+            <map to='#ff9da7'>
+              <bucket>&quot;1-3&quot;</bucket>
+            </map>
+            <map to='#ffffe7'>
+              <bucket>%null%</bucket>
+            </map>
+          </encoding>
+        </style-rule>
+      </style>
+      <semantic-values>
+        <semantic-value key='[Country].[Name]' value='&quot;United States&quot;' />
+      </semantic-values>
+      <field-sort-info field-sort-order-type='custom-order'>
+        <field-sort-custom-order field='central_analytical_customer_id' />
+        <field-sort-custom-order field='Calculation_656681142171947009' />
+        <field-sort-custom-order field='global_entity_id' />
+        <field-sort-custom-order field='current_month_number' />
+        <field-sort-custom-order field='order_month' />
+        <field-sort-custom-order field='order_created_date' />
+        <field-sort-custom-order field='Calculation_656681142440792069' />
+        <field-sort-custom-order field='orders' />
+        <field-sort-custom-order field='Calculation_656681142179450884' />
+        <field-sort-custom-order field='Calculation_656681142174273538' />
+      </field-sort-info>
+      <_.fcp.ObjectModelEncapsulateLegacy.true...object-graph>
+        <objects>
+          <object caption='Custom SQL Query' id='_7FFDCF46FACD478B8406B8410593256B'>
+            <properties context=''>
+              <relation connection='bigquery.0khdxx10esrot91e4egbn11hrxok' name='Custom SQL Query' type='text'><![CDATA[-- Total Subsription Customer Base
+with sub_data as (
+SELECT
+s.global_entity_id
+, s.customer_uuid
+, COALESCE(i.central_dwh_analytical_customer_id, s.customer_uuid) AS analytical_customer_id
+, s.plan_code
+, created_date_utc
+, s.id AS subs_id
+, s.status
+, p.is_status_success
+, p.is_status_failed
+, p.is_renewal
+, CASE WHEN LENGTH(p.voucher_code) << 1 THEN NULL ELSE p.voucher_code END AS voucher_code -->> because even without a code it wasnt actually null
+, DATE(s.cancelled_at_local) AS cancelled_date
+, DATE(p.paid_at_local) AS paid_date
+, DATE(p.subscription_start_at_local) AS plan_start_date 
+, DATE(p.subscription_end_at_local) AS plan_end_date
+FROM `fulfillment-dwh-production.pandata_curated.sb_subscriptions` AS s
+LEFT JOIN UNNEST(s.payments) AS p
+LEFT JOIN `fulfillment-dwh-production.pandata_curated.mkt_tech_braze_external_id_map` AS i 
+  ON s.customer_id = SAFE_CAST(SPLIT(i.mkt_tech_external_id, "_")[SAFE_OFFSET(1)] AS INT)
+  AND s.global_entity_id = i.global_entity_id
+WHERE s.global_entity_id = 'MJM_AT'
+  AND created_date_utc <<= CURRENT_DATE
+  and is_status_success = true
+),
+
+pro_users as
+
+ ( select DISTINCT CASE WHEN plan_start_date <<= date_sub(current_date,interval 1 day) AND plan_end_date >> date_sub(current_date,interval 1 day) THEN analytical_customer_id END AS pro_analytical_customer_id,
+CASE WHEN plan_start_date <<= date_sub(current_date,interval 1 day) AND plan_end_date >> date_sub(current_date,interval 1 day) THEN true else false END AS is_pro_user ,global_entity_id,
+date_sub(current_date,interval 1 day) as report_date
+from sub_data
+)
+, 
+
+all_customers as 
+(
+
+  SELECT distinct 
+date_sub(current_date,interval 1 day) as report_date,
+all_cust.global_entity_id,
+all_cust.central_dwh_analytical_customer_id as  central_analytical_customer_id,
+case when is_pro_user= true then 'Pro' else
+'Nonpro' end as user_type,
+
+FROM  `fulfillment-dwh-production.pandata_curated.mkt_tech_braze_external_id_map` AS all_cust
+left join pro_users
+on pro_users.pro_analytical_customer_id = all_cust.central_dwh_analytical_customer_id
+and pro_users.global_entity_id = all_cust.global_entity_id
+
+where
+ all_cust.global_entity_id = 'MJM_AT'
+
+),
+ customer_address as (
+SELECT
+DISTINCT
+
+central_analytical_customer_id,
+ eu_orders.customer_code,
+ eu_orders.created_date_local,
+order_code,
+eu_orders.global_entity_id,
+case when LOWER(delivery_address_city) IN ('wien',
+'vienna') then 'vienna 'end as city,
+delivery_address_postcode,
+FROM
+`fulfillment-dwh-production.pandata_report.agg_orders_eu` eu_orders
+LEFT JOIN
+`fulfillment-dwh-production.pandata_curated.pd_orders` pdo
+ON
+pdo.global_entity_id = eu_orders.global_entity_id
+AND pdo.pd_customer_uuid = eu_orders.pd_customer_uuid
+AND pdo.code = eu_orders.order_code
+WHERE
+eu_orders.created_date_utc >>= date_sub(current_date,interval 90 day)
+AND pdo.created_date_utc >>= date_sub(current_date,interval 90 day) 
+AND eu_orders.global_entity_id = 'MJM_AT'
+AND LOWER(delivery_address_city) IN ('wien',
+'vienna')
+and delivery_address_postcode in ('1010',
+'1020',
+'1030',
+'1040',
+'1050',
+'1060',
+'1070',
+'1080',
+'1090',
+ '1100',
+ '1110',
+ '1120',
+ '1130',
+ '1140',
+ '1150',
+ '1160',
+ '1170',
+ '1180',
+ '1190',
+ '1200',
+ '1210',
+ '1220',
+ '1230')
+GROUP BY 1,2,3,4,5,6,7
+
+ORDER By
+1 DESC)
+-- ,
+--  aggregated_data as (
+select
+distinct date_trunc(created_date_local,month) as month,
+ all_customers.central_analytical_customer_id ,city,
+user_type,
+ case when  delivery_address_postcode IN ('1010',
+'1020',
+'1030',
+'1040',
+'1050',
+'1060',
+'1070',
+'1080',
+'1090') then '1-9' 
+when delivery_address_postcode in (
+ '1100',
+ '1110',
+ '1120',
+ '1130',
+ '1140',
+ '1150',
+ '1160',
+ '1170',
+ '1180',
+ '1190',
+ '1200',
+ '1210',
+ '1220',
+ '1230') then '10-23' else null end as district_group,
+ delivery_address_postcode,
+count(distinct order_code) as orders,
+
+
+ from all_customers
+left join customer_address on 
+all_customers.global_entity_id= customer_address.global_entity_id
+and all_customers.central_analytical_customer_id = customer_address.central_analytical_customer_id
+
+group by 1,2,3,4,5,6
+-- )
+-- -- ,
+-- -- frequency_data as (
+-- select 
+-- month,city,user_type,district_1to9,district_1to23,
+--  aggregated_data.central_analytical_customer_id as  analytical_customer_id,
+--  sum(orders),
+-- sum(orders)/count(distinct aggregated_data.central_analytical_customer_id) as frequency,
+
+-- sum(orders) as orders
+
+--  from aggregated_data
+--  group by 1,2,3,4,5,6
+ 
+-- --  )
+-- --  select 
+ 
+-- --  case when 
+-- --  (frequency>>0 and frequency<<=1)  THEN '0-1' 
+-- -- when (frequency>>2 and frequency<<=3) then '2-3'
+-- -- when (frequency>>3 and frequency<<=4) then '3-4'
+-- -- when(frequency>>4 and frequency<<=6) then '4-6'
+-- -- when (frequency>>6 and frequency<<= 8) then '6-8'
+-- -- when(frequency>>8 and frequency<<=10) then '8-10'
+-- -- when (frequency>>10) then '10+' 
+-- -- END as freq_group,
+
+-- -- city,user_type,district_1to9,district_1to23,
+-- --   sum(orders) as orders,
+-- --   sum(analytical_customer_id) as customers,
+-- --   avg(frequency) as avg_frequency
+-- --   from frequency_data f
+
+-- -- group by 1,2,3,4,5]]></relation>
+            </properties>
+          </object>
+        </objects>
+      </_.fcp.ObjectModelEncapsulateLegacy.true...object-graph>
+    </datasource>
+    <datasource caption='Custom SQL Query (report_tables) (2)' inline='true' name='federated.1r7nhal0elcs8k14l6r761vwseaw' version='18.1'>
+      <connection class='federated'>
+        <named-connections>
+          <named-connection caption='BigQuery' name='bigquery.1ycef5j1bo9xe410ssmk00xozntn'>
+            <connection CATALOG='dha---bi-485' EXECCATALOG='dha---bi-485' authentication='oauth' bq-dataset-fetch-rows='' bq-fetch-rows='' bq-fetch-tasks='' bq-large-fetch-rows='' bq-project-fetch-rows='' bq-response-rows='' class='bigquery' connection-dialect='google-sql' project='DHA - BI' schema='report_tables' server-oauth='' username='sirinthip.narula@foodora.at' workgroup-auth-mode='prompt' />
+          </named-connection>
+        </named-connections>
+        <_.fcp.ObjectModelEncapsulateLegacy.false...relation connection='bigquery.1ycef5j1bo9xe410ssmk00xozntn' name='Custom SQL Query' type='text'><![CDATA[with sub_data as (
+SELECT
+s.global_entity_id
+, s.customer_uuid
+, COALESCE(i.central_dwh_analytical_customer_id, s.customer_uuid) AS analytical_customer_id
+, s.plan_code
+, created_date_utc
+, s.id AS subs_id
+, s.status
+, p.is_status_success
+, p.is_status_failed
+, p.is_renewal
+, CASE WHEN LENGTH(p.voucher_code) << 1 THEN NULL ELSE p.voucher_code END AS voucher_code -->> because even without a code it wasnt actually null
+, DATE(s.cancelled_at_local) AS cancelled_date
+, DATE(p.paid_at_local) AS paid_date
+, DATE(p.subscription_start_at_local) AS plan_start_date
+, DATE(p.subscription_end_at_local) AS plan_end_date
+FROM `fulfillment-dwh-production.pandata_curated.sb_subscriptions` AS s
+LEFT JOIN UNNEST(s.payments) AS p
+LEFT JOIN `fulfillment-dwh-production.pandata_curated.mkt_tech_braze_external_id_map` AS i
+  ON s.customer_id = SAFE_CAST(SPLIT(i.mkt_tech_external_id, "_")[SAFE_OFFSET(1)] AS INT)
+  AND s.global_entity_id = i.global_entity_id
+WHERE s.global_entity_id = 'MJM_AT'
+  AND created_date_utc <<= CURRENT_DATE
+  and is_status_success = true
+),
+pro_users as
+ ( select DISTINCT CASE WHEN plan_start_date <<= date_sub(current_date,interval 1 day) AND plan_end_date >> date_sub(current_date,interval 1 day)THEN analytical_customer_id END AS pro_analytical_customer_id,
+CASE WHEN plan_start_date <<= date_sub(current_date,interval 1 day) AND plan_end_date >> date_sub(current_date,interval 1 day) THEN true else false END AS is_pro_user ,global_entity_id,
+date_sub(current_date,interval 1 day) as report_date
+from sub_data
+)
+,
+all_customers as
+(
+  SELECT distinct
+date_sub(current_date,interval 1 day) as report_date,
+all_cust.global_entity_id,
+all_cust.central_dwh_analytical_customer_id as  central_analytical_customer_id,
+case when is_pro_user= true then 'Pro' else
+'Nonpro' end as user_type,
+FROM  `fulfillment-dwh-production.pandata_curated.mkt_tech_braze_external_id_map` AS all_cust
+left join pro_users
+on pro_users.pro_analytical_customer_id = all_cust.central_dwh_analytical_customer_id
+and pro_users.global_entity_id = all_cust.global_entity_id
+where
+ all_cust.global_entity_id = 'MJM_AT'
+),
+ customer_address as (
+SELECT
+DISTINCT
+central_analytical_customer_id,
+ eu_orders.customer_code,
+ eu_orders.created_date_local,
+order_code,
+eu_orders.global_entity_id,
+case when LOWER(delivery_address_city) IN ('wien',
+'vienna' )
+and delivery_address_postcode in ('1010',
+'1020',
+'1030',
+'1040',
+'1050',
+'1060',
+'1070',
+'1080',
+'1090',
+ '1100',
+ '1110',
+ '1120',
+ '1130',
+ '1140',
+ '1150',
+ '1160',
+ '1170',
+ '1180',
+ '1190',
+ '1200',
+ '1210',
+ '1220',
+ '1230')
+ then 'vienna,district1-23' else LOWER(delivery_address_city)end as city,
+delivery_address_postcode,
+FROM
+`fulfillment-dwh-production.pandata_report.agg_orders_eu` eu_orders
+LEFT JOIN
+`fulfillment-dwh-production.pandata_curated.pd_orders` pdo
+ON
+pdo.global_entity_id = eu_orders.global_entity_id
+AND pdo.pd_customer_uuid = eu_orders.pd_customer_uuid
+AND pdo.code = eu_orders.order_code
+WHERE
+eu_orders.created_date_utc between '2023-03-01' and date_sub(current_date,interval 1 day)
+AND pdo.created_date_utc between '2023-03-01' and date_sub(current_date,interval 1 day)
+AND eu_orders.global_entity_id = 'MJM_AT'
+-- AND LOWER(delivery_address_city) IN ('wien',
+-- 'vienna')
+and eu_orders.is_valid_order
+-- and delivery_address_postcode in ('1010',
+-- '1020',
+-- '1030',
+-- '1040',
+-- '1050',
+-- '1060',
+-- '1070',
+-- '1080',
+-- '1090',
+--  '1100',
+--  '1110',
+--  '1120',
+--  '1130',
+--  '1140',
+--  '1150',
+--  '1160',
+--  '1170',
+--  '1180',
+--  '1190',
+--  '1200',
+--  '1210',
+--  '1220',
+--  '1230')
+GROUP BY 1,2,3,4,5,6,7
+ORDER By
+1 DESC)
+,
+ aggregated_data as (
+select
+distinct date_trunc(created_date_local,month) as month,
+customer_address.central_analytical_customer_id ,city,
+user_type,
+ delivery_address_postcode,
+count(distinct order_code) as orders,
+
+ from  all_customers
+ right join customer_address on
+all_customers.global_entity_id= customer_address.global_entity_id
+and all_customers.central_analytical_customer_id = customer_address.central_analytical_customer_id
+where customer_address.central_analytical_customer_id is not null
+group by 1,2,3,4,5
+)
+,
+frequency_data as (
+select distinct
+user_type,
+month,city,
+ aggregated_data.central_analytical_customer_id as  analytical_customer_id ,
+ sum(orders) as total_orders,
+sum(orders)/count(distinct aggregated_data.central_analytical_customer_id) as frequency,
+sum(orders) as orders
+ from aggregated_data
+ group by 1,2,3,4
+ )
+ select
+ case when
+ frequency<<=0 THEN '0'
+ when frequency<<=1 THEN '1'
+when frequency<<=2 THEN '2'
+when frequency<<=3 THEN '3'
+when frequency<<=4 THEN '4'
+when frequency<<=5 THEN '5'
+when frequency<<=6 THEN '6'
+when frequency<<=7 THEN '7'
+when frequency<<=8 THEN '8'
+when frequency<<=9 THEN '9'
+when frequency<<=10 THEN '10'
+when frequency>>10 THEN '10+'
+END as freq_group,city,
+
+user_type, month,
+  sum(orders) as orders,
+  count(distinct analytical_customer_id) as customers_dis,
+  round(avg(frequency),2) as avg_frequency
+  from frequency_data f
+group by 2,1,3,4
+order by 2,1]]></_.fcp.ObjectModelEncapsulateLegacy.false...relation>
+        <_.fcp.ObjectModelEncapsulateLegacy.true...relation connection='bigquery.1ycef5j1bo9xe410ssmk00xozntn' name='Custom SQL Query' type='text'><![CDATA[with sub_data as (
+SELECT
+s.global_entity_id
+, s.customer_uuid
+, COALESCE(i.central_dwh_analytical_customer_id, s.customer_uuid) AS analytical_customer_id
+, s.plan_code
+, created_date_utc
+, s.id AS subs_id
+, s.status
+, p.is_status_success
+, p.is_status_failed
+, p.is_renewal
+, CASE WHEN LENGTH(p.voucher_code) << 1 THEN NULL ELSE p.voucher_code END AS voucher_code -->> because even without a code it wasnt actually null
+, DATE(s.cancelled_at_local) AS cancelled_date
+, DATE(p.paid_at_local) AS paid_date
+, DATE(p.subscription_start_at_local) AS plan_start_date
+, DATE(p.subscription_end_at_local) AS plan_end_date
+FROM `fulfillment-dwh-production.pandata_curated.sb_subscriptions` AS s
+LEFT JOIN UNNEST(s.payments) AS p
+LEFT JOIN `fulfillment-dwh-production.pandata_curated.mkt_tech_braze_external_id_map` AS i
+  ON s.customer_id = SAFE_CAST(SPLIT(i.mkt_tech_external_id, "_")[SAFE_OFFSET(1)] AS INT)
+  AND s.global_entity_id = i.global_entity_id
+WHERE s.global_entity_id = 'MJM_AT'
+  AND created_date_utc <<= CURRENT_DATE
+  and is_status_success = true
+),
+pro_users as
+ ( select DISTINCT CASE WHEN plan_start_date <<= date_sub(current_date,interval 1 day) AND plan_end_date >> date_sub(current_date,interval 1 day)THEN analytical_customer_id END AS pro_analytical_customer_id,
+CASE WHEN plan_start_date <<= date_sub(current_date,interval 1 day) AND plan_end_date >> date_sub(current_date,interval 1 day) THEN true else false END AS is_pro_user ,global_entity_id,
+date_sub(current_date,interval 1 day) as report_date
+from sub_data
+)
+,
+all_customers as
+(
+  SELECT distinct
+date_sub(current_date,interval 1 day) as report_date,
+all_cust.global_entity_id,
+all_cust.central_dwh_analytical_customer_id as  central_analytical_customer_id,
+case when is_pro_user= true then 'Pro' else
+'Nonpro' end as user_type,
+FROM  `fulfillment-dwh-production.pandata_curated.mkt_tech_braze_external_id_map` AS all_cust
+left join pro_users
+on pro_users.pro_analytical_customer_id = all_cust.central_dwh_analytical_customer_id
+and pro_users.global_entity_id = all_cust.global_entity_id
+where
+ all_cust.global_entity_id = 'MJM_AT'
+),
+ customer_address as (
+SELECT
+DISTINCT
+central_analytical_customer_id,
+ eu_orders.customer_code,
+ eu_orders.created_date_local,
+order_code,
+eu_orders.global_entity_id,
+case when LOWER(delivery_address_city) IN ('wien',
+'vienna' )
+and delivery_address_postcode in ('1010',
+'1020',
+'1030',
+'1040',
+'1050',
+'1060',
+'1070',
+'1080',
+'1090',
+ '1100',
+ '1110',
+ '1120',
+ '1130',
+ '1140',
+ '1150',
+ '1160',
+ '1170',
+ '1180',
+ '1190',
+ '1200',
+ '1210',
+ '1220',
+ '1230')
+ then 'vienna,district1-23' else LOWER(delivery_address_city)end as city,
+delivery_address_postcode,
+FROM
+`fulfillment-dwh-production.pandata_report.agg_orders_eu` eu_orders
+LEFT JOIN
+`fulfillment-dwh-production.pandata_curated.pd_orders` pdo
+ON
+pdo.global_entity_id = eu_orders.global_entity_id
+AND pdo.pd_customer_uuid = eu_orders.pd_customer_uuid
+AND pdo.code = eu_orders.order_code
+WHERE
+eu_orders.created_date_utc between '2023-03-01' and date_sub(current_date,interval 1 day)
+AND pdo.created_date_utc between '2023-03-01' and date_sub(current_date,interval 1 day)
+AND eu_orders.global_entity_id = 'MJM_AT'
+-- AND LOWER(delivery_address_city) IN ('wien',
+-- 'vienna')
+and eu_orders.is_valid_order
+-- and delivery_address_postcode in ('1010',
+-- '1020',
+-- '1030',
+-- '1040',
+-- '1050',
+-- '1060',
+-- '1070',
+-- '1080',
+-- '1090',
+--  '1100',
+--  '1110',
+--  '1120',
+--  '1130',
+--  '1140',
+--  '1150',
+--  '1160',
+--  '1170',
+--  '1180',
+--  '1190',
+--  '1200',
+--  '1210',
+--  '1220',
+--  '1230')
+GROUP BY 1,2,3,4,5,6,7
+ORDER By
+1 DESC)
+,
+ aggregated_data as (
+select
+distinct date_trunc(created_date_local,month) as month,
+customer_address.central_analytical_customer_id ,city,
+user_type,
+ delivery_address_postcode,
+count(distinct order_code) as orders,
+
+ from  all_customers
+ right join customer_address on
+all_customers.global_entity_id= customer_address.global_entity_id
+and all_customers.central_analytical_customer_id = customer_address.central_analytical_customer_id
+where customer_address.central_analytical_customer_id is not null
+group by 1,2,3,4,5
+)
+,
+frequency_data as (
+select distinct
+user_type,
+month,city,
+ aggregated_data.central_analytical_customer_id as  analytical_customer_id ,
+ sum(orders) as total_orders,
+sum(orders)/count(distinct aggregated_data.central_analytical_customer_id) as frequency,
+sum(orders) as orders
+ from aggregated_data
+ group by 1,2,3,4
+ )
+ select
+ case when
+ frequency<<=0 THEN '0'
+ when frequency<<=1 THEN '1'
+when frequency<<=2 THEN '2'
+when frequency<<=3 THEN '3'
+when frequency<<=4 THEN '4'
+when frequency<<=5 THEN '5'
+when frequency<<=6 THEN '6'
+when frequency<<=7 THEN '7'
+when frequency<<=8 THEN '8'
+when frequency<<=9 THEN '9'
+when frequency<<=10 THEN '10'
+when frequency>>10 THEN '10+'
+END as freq_group,city,
+
+user_type, month,
+  sum(orders) as orders,
+  count(distinct analytical_customer_id) as customers_dis,
+  round(avg(frequency),2) as avg_frequency
+  from frequency_data f
+group by 2,1,3,4
+order by 2,1]]></_.fcp.ObjectModelEncapsulateLegacy.true...relation>
+        <metadata-records>
+          <metadata-record class='column'>
+            <remote-name>freq_group</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[freq_group]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>freq_group</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>city</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[city]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>city</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>user_type</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[user_type]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>user_type</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>month</remote-name>
+            <remote-type>7</remote-type>
+            <local-name>[month]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>month</remote-alias>
+            <local-type>date</local-type>
+            <aggregation>Year</aggregation>
+            <contains-null>true</contains-null>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>orders</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[orders]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>orders</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>customers_dis</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[customers_dis]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>customers_dis</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>avg_frequency</remote-name>
+            <remote-type>5</remote-type>
+            <local-name>[avg_frequency]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>avg_frequency</remote-alias>
+            <local-type>real</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+          </metadata-record>
+        </metadata-records>
+      </connection>
+      <aliases enabled='yes' />
+      <_.fcp.ObjectModelTableType.true...column caption='Custom SQL Query' datatype='table' name='[__tableau_internal_object_id__].[_B75841E48E1C4D11BAAE516952A65A35]' role='measure' type='quantitative' />
+      <column datatype='string' name='[city]' role='dimension' semantic-role='[City].[Name]' type='nominal' />
+      <layout _.fcp.SchemaViewerObjectModel.false...dim-percentage='0.5' _.fcp.SchemaViewerObjectModel.false...measure-percentage='0.4' dim-ordering='alphabetic' measure-ordering='alphabetic' show-structure='true' />
+      <semantic-values>
+        <semantic-value key='[Country].[Name]' value='&quot;United States&quot;' />
+      </semantic-values>
+      <_.fcp.ObjectModelEncapsulateLegacy.true...object-graph>
+        <objects>
+          <object caption='Custom SQL Query' id='_B75841E48E1C4D11BAAE516952A65A35'>
+            <properties context=''>
+              <relation connection='bigquery.1ycef5j1bo9xe410ssmk00xozntn' name='Custom SQL Query' type='text'><![CDATA[with sub_data as (
+SELECT
+s.global_entity_id
+, s.customer_uuid
+, COALESCE(i.central_dwh_analytical_customer_id, s.customer_uuid) AS analytical_customer_id
+, s.plan_code
+, created_date_utc
+, s.id AS subs_id
+, s.status
+, p.is_status_success
+, p.is_status_failed
+, p.is_renewal
+, CASE WHEN LENGTH(p.voucher_code) << 1 THEN NULL ELSE p.voucher_code END AS voucher_code -->> because even without a code it wasnt actually null
+, DATE(s.cancelled_at_local) AS cancelled_date
+, DATE(p.paid_at_local) AS paid_date
+, DATE(p.subscription_start_at_local) AS plan_start_date
+, DATE(p.subscription_end_at_local) AS plan_end_date
+FROM `fulfillment-dwh-production.pandata_curated.sb_subscriptions` AS s
+LEFT JOIN UNNEST(s.payments) AS p
+LEFT JOIN `fulfillment-dwh-production.pandata_curated.mkt_tech_braze_external_id_map` AS i
+  ON s.customer_id = SAFE_CAST(SPLIT(i.mkt_tech_external_id, "_")[SAFE_OFFSET(1)] AS INT)
+  AND s.global_entity_id = i.global_entity_id
+WHERE s.global_entity_id = 'MJM_AT'
+  AND created_date_utc <<= CURRENT_DATE
+  and is_status_success = true
+),
+pro_users as
+ ( select DISTINCT CASE WHEN plan_start_date <<= date_sub(current_date,interval 1 day) AND plan_end_date >> date_sub(current_date,interval 1 day)THEN analytical_customer_id END AS pro_analytical_customer_id,
+CASE WHEN plan_start_date <<= date_sub(current_date,interval 1 day) AND plan_end_date >> date_sub(current_date,interval 1 day) THEN true else false END AS is_pro_user ,global_entity_id,
+date_sub(current_date,interval 1 day) as report_date
+from sub_data
+)
+,
+all_customers as
+(
+  SELECT distinct
+date_sub(current_date,interval 1 day) as report_date,
+all_cust.global_entity_id,
+all_cust.central_dwh_analytical_customer_id as  central_analytical_customer_id,
+case when is_pro_user= true then 'Pro' else
+'Nonpro' end as user_type,
+FROM  `fulfillment-dwh-production.pandata_curated.mkt_tech_braze_external_id_map` AS all_cust
+left join pro_users
+on pro_users.pro_analytical_customer_id = all_cust.central_dwh_analytical_customer_id
+and pro_users.global_entity_id = all_cust.global_entity_id
+where
+ all_cust.global_entity_id = 'MJM_AT'
+),
+ customer_address as (
+SELECT
+DISTINCT
+central_analytical_customer_id,
+ eu_orders.customer_code,
+ eu_orders.created_date_local,
+order_code,
+eu_orders.global_entity_id,
+case when LOWER(delivery_address_city) IN ('wien',
+'vienna' )
+and delivery_address_postcode in ('1010',
+'1020',
+'1030',
+'1040',
+'1050',
+'1060',
+'1070',
+'1080',
+'1090',
+ '1100',
+ '1110',
+ '1120',
+ '1130',
+ '1140',
+ '1150',
+ '1160',
+ '1170',
+ '1180',
+ '1190',
+ '1200',
+ '1210',
+ '1220',
+ '1230')
+ then 'vienna,district1-23' else LOWER(delivery_address_city)end as city,
+delivery_address_postcode,
+FROM
+`fulfillment-dwh-production.pandata_report.agg_orders_eu` eu_orders
+LEFT JOIN
+`fulfillment-dwh-production.pandata_curated.pd_orders` pdo
+ON
+pdo.global_entity_id = eu_orders.global_entity_id
+AND pdo.pd_customer_uuid = eu_orders.pd_customer_uuid
+AND pdo.code = eu_orders.order_code
+WHERE
+eu_orders.created_date_utc between '2023-03-01' and date_sub(current_date,interval 1 day)
+AND pdo.created_date_utc between '2023-03-01' and date_sub(current_date,interval 1 day)
+AND eu_orders.global_entity_id = 'MJM_AT'
+-- AND LOWER(delivery_address_city) IN ('wien',
+-- 'vienna')
+and eu_orders.is_valid_order
+-- and delivery_address_postcode in ('1010',
+-- '1020',
+-- '1030',
+-- '1040',
+-- '1050',
+-- '1060',
+-- '1070',
+-- '1080',
+-- '1090',
+--  '1100',
+--  '1110',
+--  '1120',
+--  '1130',
+--  '1140',
+--  '1150',
+--  '1160',
+--  '1170',
+--  '1180',
+--  '1190',
+--  '1200',
+--  '1210',
+--  '1220',
+--  '1230')
+GROUP BY 1,2,3,4,5,6,7
+ORDER By
+1 DESC)
+,
+ aggregated_data as (
+select
+distinct date_trunc(created_date_local,month) as month,
+customer_address.central_analytical_customer_id ,city,
+user_type,
+ delivery_address_postcode,
+count(distinct order_code) as orders,
+
+ from  all_customers
+ right join customer_address on
+all_customers.global_entity_id= customer_address.global_entity_id
+and all_customers.central_analytical_customer_id = customer_address.central_analytical_customer_id
+where customer_address.central_analytical_customer_id is not null
+group by 1,2,3,4,5
+)
+,
+frequency_data as (
+select distinct
+user_type,
+month,city,
+ aggregated_data.central_analytical_customer_id as  analytical_customer_id ,
+ sum(orders) as total_orders,
+sum(orders)/count(distinct aggregated_data.central_analytical_customer_id) as frequency,
+sum(orders) as orders
+ from aggregated_data
+ group by 1,2,3,4
+ )
+ select
+ case when
+ frequency<<=0 THEN '0'
+ when frequency<<=1 THEN '1'
+when frequency<<=2 THEN '2'
+when frequency<<=3 THEN '3'
+when frequency<<=4 THEN '4'
+when frequency<<=5 THEN '5'
+when frequency<<=6 THEN '6'
+when frequency<<=7 THEN '7'
+when frequency<<=8 THEN '8'
+when frequency<<=9 THEN '9'
+when frequency<<=10 THEN '10'
+when frequency>>10 THEN '10+'
+END as freq_group,city,
+
+user_type, month,
+  sum(orders) as orders,
+  count(distinct analytical_customer_id) as customers_dis,
+  round(avg(frequency),2) as avg_frequency
+  from frequency_data f
+group by 2,1,3,4
+order by 2,1]]></relation>
+            </properties>
+          </object>
+        </objects>
+      </_.fcp.ObjectModelEncapsulateLegacy.true...object-graph>
+    </datasource>
+  </datasources>
+  <mapsources>
+    <mapsource name='Tableau' />
+  </mapsources>
+  <worksheets>
+    <worksheet name='Bar Chart'>
+      <repository-location id='BarChart' path='/t/Austria/workbooks/CustomerFrequencyProandCity' revision='' site='Austria' />
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='Custom SQL Query (report_tables) (2)' name='federated.1r7nhal0elcs8k14l6r761vwseaw' />
+          </datasources>
+          <mapsources>
+            <mapsource name='Tableau' />
+          </mapsources>
+          <datasource-dependencies datasource='federated.1r7nhal0elcs8k14l6r761vwseaw'>
+            <column-instance column='[avg_frequency]' derivation='Avg' name='[avg:avg_frequency:qk]' pivot='key' type='quantitative' />
+            <column datatype='real' name='[avg_frequency]' role='measure' type='quantitative' />
+            <column datatype='string' name='[city]' role='dimension' semantic-role='[City].[Name]' type='nominal' />
+            <column datatype='integer' name='[customers_dis]' role='measure' type='quantitative' />
+            <column datatype='string' name='[freq_group]' role='dimension' type='nominal' />
+            <column datatype='date' name='[month]' role='dimension' type='ordinal' />
+            <column-instance column='[month]' derivation='MY' name='[my:month:ok]' pivot='key' type='ordinal' />
+            <column-instance column='[city]' derivation='None' name='[none:city:nk]' pivot='key' type='nominal' />
+            <column-instance column='[freq_group]' derivation='None' name='[none:freq_group:nk]' pivot='key' type='nominal' />
+            <column-instance column='[user_type]' derivation='None' name='[none:user_type:nk]' pivot='key' type='nominal' />
+            <column datatype='integer' name='[orders]' role='measure' type='quantitative' />
+            <column-instance column='[customers_dis]' derivation='Sum' name='[sum:customers_dis:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[orders]' derivation='Sum' name='[sum:orders:qk]' pivot='key' type='quantitative' />
+            <column datatype='string' name='[user_type]' role='dimension' type='nominal' />
+          </datasource-dependencies>
+          <filter class='categorical' column='[federated.1r7nhal0elcs8k14l6r761vwseaw].[:Measure Names]'>
+            <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.1r7nhal0elcs8k14l6r761vwseaw].[sum:customers_dis:qk]&quot;' user:ui-domain='database' user:ui-enumeration='inclusive' user:ui-marker='enumerate' />
+          </filter>
+          <manual-sort column='[federated.1r7nhal0elcs8k14l6r761vwseaw].[:Measure Names]' direction='ASC'>
+            <dictionary>
+              <bucket>&quot;[federated.1r7nhal0elcs8k14l6r761vwseaw].[sum:customers_dis:qk]&quot;</bucket>
+              <bucket>&quot;[federated.1r7nhal0elcs8k14l6r761vwseaw].[avg:avg_frequency:qk]&quot;</bucket>
+              <bucket>&quot;[federated.1r7nhal0elcs8k14l6r761vwseaw].[sum:orders:qk]&quot;</bucket>
+            </dictionary>
+          </manual-sort>
+          <filter class='categorical' column='[federated.1r7nhal0elcs8k14l6r761vwseaw].[none:city:nk]'>
+            <groupfilter function='union' user:ui-domain='database' user:ui-enumeration='inclusive' user:ui-marker='enumerate'>
+              <groupfilter function='member' level='[none:city:nk]' member='&quot;vienna &quot;' />
+              <groupfilter function='member' level='[none:city:nk]' member='&quot;vienna,district1-23&quot;' />
+            </groupfilter>
+          </filter>
+          <filter class='categorical' column='[federated.1r7nhal0elcs8k14l6r761vwseaw].[none:user_type:nk]'>
+            <groupfilter function='level-members' level='[none:user_type:nk]' />
+          </filter>
+          <slices>
+            <column>[federated.1r7nhal0elcs8k14l6r761vwseaw].[none:city:nk]</column>
+            <column>[federated.1r7nhal0elcs8k14l6r761vwseaw].[none:user_type:nk]</column>
+            <column>[federated.1r7nhal0elcs8k14l6r761vwseaw].[:Measure Names]</column>
+          </slices>
+          <aggregation value='true' />
+        </view>
+        <style>
+          <style-rule element='axis'>
+            <format attr='width' field='[federated.1r7nhal0elcs8k14l6r761vwseaw].[Multiple Values]' value='67' />
+          </style-rule>
+          <style-rule element='cell'>
+            <format attr='width' field='[federated.1r7nhal0elcs8k14l6r761vwseaw].[none:freq_group:nk]' value='62' />
+          </style-rule>
+          <style-rule element='header'>
+            <format attr='width' field='[federated.1r7nhal0elcs8k14l6r761vwseaw].[:Measure Names]' value='144' />
+          </style-rule>
+          <style-rule element='map'>
+            <format attr='washout' value='0.0' />
+          </style-rule>
+        </style>
+        <panes>
+          <pane id='3' selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Bar' />
+            <encodings>
+              <color column='[federated.1r7nhal0elcs8k14l6r761vwseaw].[my:month:ok]' />
+            </encodings>
+            <style>
+              <style-rule element='mark'>
+                <format attr='mark-labels-show' value='true' />
+                <format attr='mark-labels-cull' value='true' />
+              </style-rule>
+            </style>
+          </pane>
+        </panes>
+        <rows>(([federated.1r7nhal0elcs8k14l6r761vwseaw].[my:month:ok] / [federated.1r7nhal0elcs8k14l6r761vwseaw].[:Measure Names]) * [federated.1r7nhal0elcs8k14l6r761vwseaw].[Multiple Values])</rows>
+        <cols>[federated.1r7nhal0elcs8k14l6r761vwseaw].[none:freq_group:nk]</cols>
+      </table>
+      <simple-id uuid='{F0C6888C-D9E9-4415-BEA6-6E0993DBD6B6}' />
+    </worksheet>
+    <worksheet name='Bucket and KPI'>
+      <repository-location id='BucketandKPI' path='/t/Austria/workbooks/CustomerFrequencyProandCity' revision='' site='Austria' />
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='Custom SQL Query (report_tables) (2)' name='federated.1r7nhal0elcs8k14l6r761vwseaw' />
+          </datasources>
+          <datasource-dependencies datasource='federated.1r7nhal0elcs8k14l6r761vwseaw'>
+            <column-instance column='[avg_frequency]' derivation='Avg' name='[avg:avg_frequency:qk]' pivot='key' type='quantitative' />
+            <column datatype='real' name='[avg_frequency]' role='measure' type='quantitative' />
+            <column datatype='string' name='[city]' role='dimension' semantic-role='[City].[Name]' type='nominal' />
+            <column datatype='integer' name='[customers_dis]' role='measure' type='quantitative' />
+            <column datatype='string' name='[freq_group]' role='dimension' type='nominal' />
+            <column datatype='date' name='[month]' role='dimension' type='ordinal' />
+            <column-instance column='[month]' derivation='MY' name='[my:month:ok]' pivot='key' type='ordinal' />
+            <column-instance column='[city]' derivation='None' name='[none:city:nk]' pivot='key' type='nominal' />
+            <column-instance column='[freq_group]' derivation='None' name='[none:freq_group:nk]' pivot='key' type='nominal' />
+            <column-instance column='[user_type]' derivation='None' name='[none:user_type:nk]' pivot='key' type='nominal' />
+            <column datatype='integer' name='[orders]' role='measure' type='quantitative' />
+            <column-instance column='[customers_dis]' derivation='Sum' name='[sum:customers_dis:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[orders]' derivation='Sum' name='[sum:orders:qk]' pivot='key' type='quantitative' />
+            <column datatype='string' name='[user_type]' role='dimension' type='nominal' />
+            <column-instance column='[month]' derivation='Year' name='[yr:month:ok]' pivot='key' type='ordinal' />
+          </datasource-dependencies>
+          <filter class='categorical' column='[federated.1r7nhal0elcs8k14l6r761vwseaw].[:Measure Names]'>
+            <groupfilter function='union' user:op='manual'>
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.1r7nhal0elcs8k14l6r761vwseaw].[avg:avg_frequency:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.1r7nhal0elcs8k14l6r761vwseaw].[sum:customers_dis:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.1r7nhal0elcs8k14l6r761vwseaw].[sum:orders:qk]&quot;' />
+            </groupfilter>
+          </filter>
+          <filter class='categorical' column='[federated.1r7nhal0elcs8k14l6r761vwseaw].[none:city:nk]'>
+            <groupfilter function='union' user:ui-domain='database' user:ui-enumeration='inclusive' user:ui-marker='enumerate'>
+              <groupfilter function='member' level='[none:city:nk]' member='&quot;vienna &quot;' />
+              <groupfilter function='member' level='[none:city:nk]' member='&quot;vienna,district1-23&quot;' />
+            </groupfilter>
+          </filter>
+          <filter class='categorical' column='[federated.1r7nhal0elcs8k14l6r761vwseaw].[none:user_type:nk]'>
+            <groupfilter function='level-members' level='[none:user_type:nk]' />
+          </filter>
+          <slices>
+            <column>[federated.1r7nhal0elcs8k14l6r761vwseaw].[none:city:nk]</column>
+            <column>[federated.1r7nhal0elcs8k14l6r761vwseaw].[:Measure Names]</column>
+            <column>[federated.1r7nhal0elcs8k14l6r761vwseaw].[none:user_type:nk]</column>
+          </slices>
+          <aggregation value='true' />
+        </view>
+        <style>
+          <style-rule element='cell'>
+            <format attr='text-format' field='[federated.1r7nhal0elcs8k14l6r761vwseaw].[avg:avg_frequency:qk]' value='n#,##0.00;-#,##0.00' />
+          </style-rule>
+        </style>
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Automatic' />
+            <encodings>
+              <text column='[federated.1r7nhal0elcs8k14l6r761vwseaw].[Multiple Values]' />
+            </encodings>
+            <style>
+              <style-rule element='mark'>
+                <format attr='mark-labels-show' value='true' />
+              </style-rule>
+            </style>
+          </pane>
+        </panes>
+        <rows total='true'>([federated.1r7nhal0elcs8k14l6r761vwseaw].[none:city:nk] / ([federated.1r7nhal0elcs8k14l6r761vwseaw].[none:freq_group:nk] / [federated.1r7nhal0elcs8k14l6r761vwseaw].[:Measure Names]))</rows>
+        <cols>([federated.1r7nhal0elcs8k14l6r761vwseaw].[yr:month:ok] / ([federated.1r7nhal0elcs8k14l6r761vwseaw].[my:month:ok] / [federated.1r7nhal0elcs8k14l6r761vwseaw].[none:user_type:nk]))</cols>
+      </table>
+      <simple-id uuid='{E1328E47-EEB8-484A-B0E0-6294DBF3C1E7}' />
+    </worksheet>
+  </worksheets>
+  <windows saved-dpi-scale-factor='1.5' source-height='51'>
+    <window class='worksheet' name='Bucket and KPI'>
+      <cards>
+        <edge name='left'>
+          <strip size='300'>
+            <card type='pages' />
+            <card type='filters' />
+            <card type='marks' />
+            <card type='measures' />
+          </strip>
+        </edge>
+        <edge name='top'>
+          <strip size='48'>
+            <card type='columns' />
+          </strip>
+          <strip size='48'>
+            <card type='rows' />
+          </strip>
+          <strip size='46'>
+            <card type='title' />
+          </strip>
+        </edge>
+        <edge name='right'>
+          <strip size='240'>
+            <card mode='checkdropdown' param='[federated.1r7nhal0elcs8k14l6r761vwseaw].[none:city:nk]' type='filter' />
+            <card param='[federated.1r7nhal0elcs8k14l6r761vwseaw].[none:user_type:nk]' type='filter' />
+          </strip>
+        </edge>
+      </cards>
+      <viewpoint>
+        <highlight>
+          <color-one-way>
+            <field>[federated.1r7nhal0elcs8k14l6r761vwseaw].[:Measure Names]</field>
+            <field>[federated.1r7nhal0elcs8k14l6r761vwseaw].[none:city:nk]</field>
+            <field>[federated.1r7nhal0elcs8k14l6r761vwseaw].[none:delivery_address_postcode:nk]</field>
+            <field>[federated.1r7nhal0elcs8k14l6r761vwseaw].[none:freq_group:nk]</field>
+            <field>[federated.1r7nhal0elcs8k14l6r761vwseaw].[none:user_type:nk]</field>
+            <field>[federated.1r7nhal0elcs8k14l6r761vwseaw].[yr:month:ok]</field>
+          </color-one-way>
+        </highlight>
+      </viewpoint>
+      <simple-id uuid='{170B07A5-FCA9-4501-A027-9DE8B5972B6E}' />
+    </window>
+    <window class='worksheet' maximized='true' name='Bar Chart'>
+      <cards>
+        <edge name='left'>
+          <strip size='300'>
+            <card type='pages' />
+            <card type='filters' />
+            <card type='marks' />
+            <card type='measures' />
+          </strip>
+        </edge>
+        <edge name='top'>
+          <strip size='48'>
+            <card type='columns' />
+          </strip>
+          <strip size='239'>
+            <card type='rows' />
+          </strip>
+          <strip size='46'>
+            <card type='title' />
+          </strip>
+        </edge>
+        <edge name='right'>
+          <strip size='240'>
+            <card mode='checkdropdown' param='[federated.1r7nhal0elcs8k14l6r761vwseaw].[none:city:nk]' type='filter' />
+            <card param='[federated.1r7nhal0elcs8k14l6r761vwseaw].[none:user_type:nk]' type='filter' />
+            <card pane-specification-id='3' param='[federated.1r7nhal0elcs8k14l6r761vwseaw].[my:month:ok]' type='color' />
+          </strip>
+        </edge>
+      </cards>
+      <viewpoint>
+        <highlight>
+          <color-one-way>
+            <field>[federated.1r7nhal0elcs8k14l6r761vwseaw].[:Measure Names]</field>
+            <field>[federated.1r7nhal0elcs8k14l6r761vwseaw].[my:month:ok]</field>
+            <field>[federated.1r7nhal0elcs8k14l6r761vwseaw].[none:city:nk]</field>
+            <field>[federated.1r7nhal0elcs8k14l6r761vwseaw].[none:freq_group:nk]</field>
+            <field>[federated.1r7nhal0elcs8k14l6r761vwseaw].[none:user_type:nk]</field>
+            <field>[federated.1r7nhal0elcs8k14l6r761vwseaw].[tyr:month:ok]</field>
+            <field>[federated.1r7nhal0elcs8k14l6r761vwseaw].[yr:month:ok]</field>
+          </color-one-way>
+        </highlight>
+      </viewpoint>
+      <simple-id uuid='{A2049408-2321-4546-B7DF-AB25DDAAC1C0}' />
+    </window>
+  </windows>
+</workbook>
