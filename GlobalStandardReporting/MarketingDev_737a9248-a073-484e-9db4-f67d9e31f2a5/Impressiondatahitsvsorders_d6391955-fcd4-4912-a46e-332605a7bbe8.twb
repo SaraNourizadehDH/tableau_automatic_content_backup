@@ -1,0 +1,977 @@
+<?xml version='1.0' encoding='utf-8' ?>
+
+<!-- build 20231.24.0118.1101                               -->
+<workbook original-version='18.1' source-build='2023.1.12 (20231.24.0424.0800)' source-platform='win' version='18.1' xml:base='https://tableau.deliveryhero.net' xmlns:user='http://www.tableausoftware.com/xml/user'>
+  <document-format-change-manifest>
+    <_.fcp.AnimationOnByDefault.true...AnimationOnByDefault />
+    <IntuitiveSorting />
+    <IntuitiveSorting_SP2 />
+    <_.fcp.MarkAnimation.true...MarkAnimation />
+    <_.fcp.ObjectModelEncapsulateLegacy.true...ObjectModelEncapsulateLegacy />
+    <_.fcp.ObjectModelExtractV2.true...ObjectModelExtractV2 />
+    <_.fcp.ObjectModelTableType.true...ObjectModelTableType />
+    <_.fcp.SchemaViewerObjectModel.true...SchemaViewerObjectModel />
+    <SheetIdentifierTracking />
+    <_.fcp.VConnDownstreamExtractsWithWarnings.true...VConnDownstreamExtractsWithWarnings />
+    <WindowsPersistSimpleIdentifiers />
+  </document-format-change-manifest>
+  <repository-location derived-from='https://tableau.deliveryhero.net/t/GlobalStandardReporting/workbooks/hitsvsorders?rev=1.0' id='hitsvsorders' path='/t/GlobalStandardReporting/workbooks' revision='1.1' site='GlobalStandardReporting' />
+  <preferences>
+    <preference name='ui.encoding.shelf.height' value='24' />
+    <preference name='ui.shelf.height' value='26' />
+  </preferences>
+  <_.fcp.AnimationOnByDefault.false...style>
+    <_.fcp.AnimationOnByDefault.false..._.fcp.MarkAnimation.true...style-rule element='animation'>
+      <_.fcp.AnimationOnByDefault.false...format attr='animation-on' value='ao-on' />
+    </_.fcp.AnimationOnByDefault.false..._.fcp.MarkAnimation.true...style-rule>
+  </_.fcp.AnimationOnByDefault.false...style>
+  <datasources>
+    <datasource caption='Custom SQL Query (curated_data_shared)' inline='true' name='federated.0250py91nvgv3m1h4ma4l126tra1' version='18.1'>
+      <connection class='federated'>
+        <named-connections>
+          <named-connection caption='BigQuery' name='bigquery.0mzp1lz1s5fmvu1fwwxgs1f9tic1'>
+            <connection CATALOG='fulfillment-dwh-production' EXECCATALOG='logistics-customer-staging' authentication='oauth' bq-dataset-fetch-rows='' bq-fetch-rows='' bq-fetch-tasks='' bq-large-fetch-rows='' bq-project-fetch-rows='' bq-response-rows='' class='bigquery' connection-dialect='google-sql' project='DataHub Production' schema='curated_data_shared' server-oauth='' username='laurent.broering@deliveryhero.com' workgroup-auth-mode='prompt' />
+          </named-connection>
+        </named-connections>
+        <_.fcp.ObjectModelEncapsulateLegacy.false...relation connection='bigquery.0mzp1lz1s5fmvu1fwwxgs1f9tic1' name='Custom SQL Query1' type='text'>select&#13;
+  entity_id,&#13;
+  vendor_id,&#13;
+  delivery_fee_local,&#13;
+  is_sent,&#13;
+  count(*) orders,&#13;
+from `fulfillment-dwh-production.cl.dps_sessions_mapped_to_orders`&#13;
+where created_date = &apos;2024-06-12&apos;&#13;
+  and entity_id = &apos;PY_BO&apos;&#13;
+group by all&#13;
+order by 1,2,3</_.fcp.ObjectModelEncapsulateLegacy.false...relation>
+        <_.fcp.ObjectModelEncapsulateLegacy.true...relation type='collection'>
+          <relation connection='bigquery.0mzp1lz1s5fmvu1fwwxgs1f9tic1' name='Custom SQL Query' type='text'>WITH&#13;
+impression_data AS (&#13;
+  SELECT DISTINCT&#13;
+    partition_date,&#13;
+    IFNULL(global_entity_id, (SELECT ANY_VALUE(v.value) FROM UNNEST(eventVariables) v WHERE v.name IN (&apos;globalEntityId&apos;))) global_entity_id,&#13;
+    (SELECT ANY_VALUE(v.value) FROM UNNEST(eventVariables) v WHERE v.name IN (&apos;shopId&apos;, &apos;vendorId&apos;)) vendor_id, -- shop- in PedidosYa and Talabat, vendor- in Pandora, missing in HS&#13;
+    IFNULL(sessionId, (SELECT ANY_VALUE(v.value) FROM UNNEST(eventVariables) v WHERE v.name IN (&apos;perseusSessionId&apos;))) perseus_session_id,&#13;
+    IFNULL(hitMatchId, (SELECT ANY_VALUE(v.value) FROM UNNEST(eventVariables) v WHERE v.name IN (&apos;perseusHitMatchId&apos;))) perseus_hit_match_id,&#13;
+    (SELECT ANY_VALUE(v.value) FROM UNNEST(eventVariables) v WHERE v.name IN (&apos;shopDeliveryFee&apos;, &apos;vendorDeliveryFee&apos;)) vendor_delivery_fee,&#13;
+  FROM `fulfillment-dwh-production.curated_data_shared_coredata_tracking.perseus_events`&#13;
+  WHERE partition_date = &apos;2024-06-12&apos;&#13;
+    AND (STARTS_WITH(global_entity_id, &apos;PY_BO&apos;))&#13;
+    AND eventAction IN (&#13;
+    &apos;shop_impressions.loaded&apos;,&#13;
+    &apos;shop.impressions.loaded&apos;,&#13;
+    &apos;shop.impressions_loaded&apos;,&#13;
+    &apos;shop_impressions_loaded&apos;&#13;
+    )&#13;
+)&#13;
+, aggregated_data AS (&#13;
+  SELECT&#13;
+    global_entity_id,&#13;
+    vendor_id,&#13;
+    (approx_top_count(cast(regexp_extract(vendor_delivery_fee,r&apos;(\d[\d.]*)&apos;) as numeric), 50)) fees,&#13;
+    count(distinct perseus_session_id) total_sessions,&#13;
+    count(distinct perseus_hit_match_id) total_hits,&#13;
+  FROM impression_data&#13;
+  where global_entity_id is not null&#13;
+  group by 1,2&#13;
+  order by 1,2&#13;
+)&#13;
+SELECT &#13;
+  global_entity_id,&#13;
+  vendor_id,&#13;
+  f.value fee,&#13;
+  f.count hits,&#13;
+  total_hits,&#13;
+  total_sessions,&#13;
+from aggregated_data,&#13;
+unnest (fees) f&#13;
+order by 1,2,3</relation>
+          <relation connection='bigquery.0mzp1lz1s5fmvu1fwwxgs1f9tic1' name='Custom SQL Query1' type='text'>select&#13;
+  entity_id,&#13;
+  vendor_id,&#13;
+  delivery_fee_local,&#13;
+  is_sent,&#13;
+  count(*) orders,&#13;
+from `fulfillment-dwh-production.cl.dps_sessions_mapped_to_orders`&#13;
+where created_date = &apos;2024-06-12&apos;&#13;
+  and entity_id = &apos;PY_BO&apos;&#13;
+group by all&#13;
+order by 1,2,3</relation>
+        </_.fcp.ObjectModelEncapsulateLegacy.true...relation>
+        <cols>
+          <map key='[delivery_fee_local]' value='[Custom SQL Query1].[delivery_fee_local]' />
+          <map key='[entity_id]' value='[Custom SQL Query1].[entity_id]' />
+          <map key='[fee]' value='[Custom SQL Query].[fee]' />
+          <map key='[global_entity_id]' value='[Custom SQL Query].[global_entity_id]' />
+          <map key='[hits]' value='[Custom SQL Query].[hits]' />
+          <map key='[is_sent]' value='[Custom SQL Query1].[is_sent]' />
+          <map key='[orders]' value='[Custom SQL Query1].[orders]' />
+          <map key='[total_hits]' value='[Custom SQL Query].[total_hits]' />
+          <map key='[total_sessions]' value='[Custom SQL Query].[total_sessions]' />
+          <map key='[vendor_id (Custom SQL Query1)]' value='[Custom SQL Query1].[vendor_id]' />
+          <map key='[vendor_id]' value='[Custom SQL Query].[vendor_id]' />
+        </cols>
+        <metadata-records>
+          <metadata-record class='column'>
+            <remote-name>global_entity_id</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[global_entity_id]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>global_entity_id</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_84CD925C74D94B01AF0D0ED5705A5C70]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>vendor_id</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[vendor_id]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>vendor_id</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_84CD925C74D94B01AF0D0ED5705A5C70]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>fee</remote-name>
+            <remote-type>5</remote-type>
+            <local-name>[fee]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>fee</remote-alias>
+            <local-type>real</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_84CD925C74D94B01AF0D0ED5705A5C70]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>hits</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[hits]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>hits</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_84CD925C74D94B01AF0D0ED5705A5C70]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>total_hits</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[total_hits]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>total_hits</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_84CD925C74D94B01AF0D0ED5705A5C70]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>total_sessions</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[total_sessions]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>total_sessions</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_84CD925C74D94B01AF0D0ED5705A5C70]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>entity_id</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[entity_id]</local-name>
+            <parent-name>[Custom SQL Query1]</parent-name>
+            <remote-alias>entity_id</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_33D3C35AFEFB4F70987ED29592AB1C42]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>vendor_id</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[vendor_id (Custom SQL Query1)]</local-name>
+            <parent-name>[Custom SQL Query1]</parent-name>
+            <remote-alias>vendor_id</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_33D3C35AFEFB4F70987ED29592AB1C42]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>delivery_fee_local</remote-name>
+            <remote-type>5</remote-type>
+            <local-name>[delivery_fee_local]</local-name>
+            <parent-name>[Custom SQL Query1]</parent-name>
+            <remote-alias>delivery_fee_local</remote-alias>
+            <local-type>real</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_33D3C35AFEFB4F70987ED29592AB1C42]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>is_sent</remote-name>
+            <remote-type>11</remote-type>
+            <local-name>[is_sent]</local-name>
+            <parent-name>[Custom SQL Query1]</parent-name>
+            <remote-alias>is_sent</remote-alias>
+            <local-type>boolean</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_33D3C35AFEFB4F70987ED29592AB1C42]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>orders</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[orders]</local-name>
+            <parent-name>[Custom SQL Query1]</parent-name>
+            <remote-alias>orders</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_33D3C35AFEFB4F70987ED29592AB1C42]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+        </metadata-records>
+      </connection>
+      <aliases enabled='yes' />
+      <_.fcp.ObjectModelTableType.true...column caption='Orders' datatype='table' name='[__tableau_internal_object_id__].[_33D3C35AFEFB4F70987ED29592AB1C42]' role='measure' type='quantitative' />
+      <_.fcp.ObjectModelTableType.true...column caption='Impressions' datatype='table' name='[__tableau_internal_object_id__].[_84CD925C74D94B01AF0D0ED5705A5C70]' role='measure' type='quantitative' />
+      <column datatype='string' name='[fee (group)]' role='dimension' type='nominal'>
+        <calculation class='categorical-bin' column='[fee]' new-bin='true'>
+          <bin default-name='true' value='&quot;0 &amp; 0.0&quot;' />
+        </calculation>
+      </column>
+      <column datatype='real' name='[fee]' role='dimension' type='ordinal' />
+      <column datatype='integer' name='[hits]' role='measure' type='quantitative' />
+      <column datatype='integer' name='[orders]' role='measure' type='quantitative' />
+      <column-instance column='[hits]' derivation='Sum' name='[pcto:sum:hits:qk]' pivot='key' type='quantitative'>
+        <table-calc ordering-type='Rows' type='PctTotal' />
+      </column-instance>
+      <column-instance column='[hits]' derivation='Sum' name='[sum:hits:qk]' pivot='key' type='quantitative' />
+      <column-instance column='[orders]' derivation='Sum' name='[sum:orders:qk]' pivot='key' type='quantitative' />
+      <extract _.fcp.ObjectModelExtractV2.true...object-id='' _.fcp.VConnDownstreamExtractsWithWarnings.true...user-specific='false' count='-1' enabled='true' units='records'>
+        <connection class='hyper' dbname='extract/5a/b3/{700DE10C-C74A-40CB-87CE-B9BF2FA7A99F}/federated_0250py91nvgv3m1h4ma4l1.hyper' default-settings='yes' extract-engine='true' schema='Extract' tablename='Extract' update-time='06/14/2024 06:08:09 PM'>
+          <_.fcp.ObjectModelEncapsulateLegacy.false...relation name='_33D3C35AFEFB4F70987ED29592AB1C42' table='[Extract].[_33D3C35AFEFB4F70987ED29592AB1C42]' type='table' />
+          <_.fcp.ObjectModelEncapsulateLegacy.true...relation type='collection'>
+            <relation name='_84CD925C74D94B01AF0D0ED5705A5C70' table='[Extract].[_84CD925C74D94B01AF0D0ED5705A5C70]' type='table' />
+            <relation name='_33D3C35AFEFB4F70987ED29592AB1C42' table='[Extract].[_33D3C35AFEFB4F70987ED29592AB1C42]' type='table' />
+          </_.fcp.ObjectModelEncapsulateLegacy.true...relation>
+          <cols>
+            <map key='[delivery_fee_local]' value='[_33D3C35AFEFB4F70987ED29592AB1C42].[delivery_fee_local]' />
+            <map key='[entity_id]' value='[_33D3C35AFEFB4F70987ED29592AB1C42].[entity_id]' />
+            <map key='[fee]' value='[_84CD925C74D94B01AF0D0ED5705A5C70].[fee]' />
+            <map key='[global_entity_id]' value='[_84CD925C74D94B01AF0D0ED5705A5C70].[global_entity_id]' />
+            <map key='[hits]' value='[_84CD925C74D94B01AF0D0ED5705A5C70].[hits]' />
+            <map key='[is_sent]' value='[_33D3C35AFEFB4F70987ED29592AB1C42].[is_sent]' />
+            <map key='[orders]' value='[_33D3C35AFEFB4F70987ED29592AB1C42].[orders]' />
+            <map key='[total_hits]' value='[_84CD925C74D94B01AF0D0ED5705A5C70].[total_hits]' />
+            <map key='[total_sessions]' value='[_84CD925C74D94B01AF0D0ED5705A5C70].[total_sessions]' />
+            <map key='[vendor_id (Custom SQL Query1)]' value='[_33D3C35AFEFB4F70987ED29592AB1C42].[vendor_id]' />
+            <map key='[vendor_id]' value='[_84CD925C74D94B01AF0D0ED5705A5C70].[vendor_id]' />
+          </cols>
+          <refresh>
+            <refresh-event add-from-file-path='Custom SQL Query (curated_data_shared)' increment-value='%null%' refresh-type='create' rows-inserted='66635' timestamp-start='2024-06-14 18:07:51.689' />
+          </refresh>
+          <metadata-records>
+            <metadata-record class='column'>
+              <remote-name>global_entity_id</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[global_entity_id]</local-name>
+              <parent-name>[_84CD925C74D94B01AF0D0ED5705A5C70]</parent-name>
+              <remote-alias>global_entity_id</remote-alias>
+              <ordinal>0</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>1</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>vendor_id</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[vendor_id]</local-name>
+              <parent-name>[_84CD925C74D94B01AF0D0ED5705A5C70]</parent-name>
+              <remote-alias>vendor_id</remote-alias>
+              <ordinal>1</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>11146</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>fee</remote-name>
+              <remote-type>5</remote-type>
+              <local-name>[fee]</local-name>
+              <parent-name>[_84CD925C74D94B01AF0D0ED5705A5C70]</parent-name>
+              <remote-alias>fee</remote-alias>
+              <ordinal>2</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>real</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>140</approx-count>
+              <contains-null>true</contains-null>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>hits</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[hits]</local-name>
+              <parent-name>[_84CD925C74D94B01AF0D0ED5705A5C70]</parent-name>
+              <remote-alias>hits</remote-alias>
+              <ordinal>3</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>680</approx-count>
+              <contains-null>true</contains-null>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>total_hits</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[total_hits]</local-name>
+              <parent-name>[_84CD925C74D94B01AF0D0ED5705A5C70]</parent-name>
+              <remote-alias>total_hits</remote-alias>
+              <ordinal>4</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>3152</approx-count>
+              <contains-null>true</contains-null>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>total_sessions</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[total_sessions]</local-name>
+              <parent-name>[_84CD925C74D94B01AF0D0ED5705A5C70]</parent-name>
+              <remote-alias>total_sessions</remote-alias>
+              <ordinal>5</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>2355</approx-count>
+              <contains-null>true</contains-null>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>entity_id</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[entity_id]</local-name>
+              <parent-name>[_33D3C35AFEFB4F70987ED29592AB1C42]</parent-name>
+              <remote-alias>entity_id</remote-alias>
+              <ordinal>6</ordinal>
+              <family>Custom SQL Query1</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>1</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>vendor_id</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[vendor_id (Custom SQL Query1)]</local-name>
+              <parent-name>[_33D3C35AFEFB4F70987ED29592AB1C42]</parent-name>
+              <remote-alias>vendor_id</remote-alias>
+              <ordinal>7</ordinal>
+              <family>Custom SQL Query1</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>2645</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>delivery_fee_local</remote-name>
+              <remote-type>5</remote-type>
+              <local-name>[delivery_fee_local]</local-name>
+              <parent-name>[_33D3C35AFEFB4F70987ED29592AB1C42]</parent-name>
+              <remote-alias>delivery_fee_local</remote-alias>
+              <ordinal>8</ordinal>
+              <family>Custom SQL Query1</family>
+              <local-type>real</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>18</approx-count>
+              <contains-null>true</contains-null>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>is_sent</remote-name>
+              <remote-type>11</remote-type>
+              <local-name>[is_sent]</local-name>
+              <parent-name>[_33D3C35AFEFB4F70987ED29592AB1C42]</parent-name>
+              <remote-alias>is_sent</remote-alias>
+              <ordinal>9</ordinal>
+              <family>Custom SQL Query1</family>
+              <local-type>boolean</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>2</approx-count>
+              <contains-null>true</contains-null>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>orders</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[orders]</local-name>
+              <parent-name>[_33D3C35AFEFB4F70987ED29592AB1C42]</parent-name>
+              <remote-alias>orders</remote-alias>
+              <ordinal>10</ordinal>
+              <family>Custom SQL Query1</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>41</approx-count>
+              <contains-null>true</contains-null>
+            </metadata-record>
+          </metadata-records>
+        </connection>
+      </extract>
+      <layout _.fcp.SchemaViewerObjectModel.false...dim-percentage='0.5' _.fcp.SchemaViewerObjectModel.false...measure-percentage='0.4' dim-ordering='alphabetic' measure-ordering='alphabetic' show-structure='true' />
+      <style>
+        <style-rule element='mark'>
+          <encoding attr='color' field='[:Measure Names]' type='palette'>
+            <map to='#4e79a7'>
+              <bucket>&quot;[federated.0250py91nvgv3m1h4ma4l126tra1].[pcto:sum:hits:qk]&quot;</bucket>
+            </map>
+            <map to='#4e79a7'>
+              <bucket>&quot;[federated.0250py91nvgv3m1h4ma4l126tra1].[sum:hits:qk]&quot;</bucket>
+            </map>
+            <map to='#4e79a7'>
+              <bucket>&quot;[federated.0250py91nvgv3m1h4ma4l126tra1].[usr:Calculation_223772635620102152:qk]&quot;</bucket>
+            </map>
+            <map to='#f28e2b'>
+              <bucket>&quot;[federated.0250py91nvgv3m1h4ma4l126tra1].[sum:orders:qk]&quot;</bucket>
+            </map>
+          </encoding>
+        </style-rule>
+      </style>
+      <semantic-values>
+        <semantic-value key='[Country].[Name]' value='&quot;Germany&quot;' />
+      </semantic-values>
+      <date-options start-of-week='monday' />
+      <_.fcp.ObjectModelEncapsulateLegacy.true...object-graph>
+        <objects>
+          <object caption='Orders' id='_33D3C35AFEFB4F70987ED29592AB1C42'>
+            <properties context=''>
+              <relation connection='bigquery.0mzp1lz1s5fmvu1fwwxgs1f9tic1' name='Custom SQL Query1' type='text'>select&#13;
+  entity_id,&#13;
+  vendor_id,&#13;
+  delivery_fee_local,&#13;
+  is_sent,&#13;
+  count(*) orders,&#13;
+from `fulfillment-dwh-production.cl.dps_sessions_mapped_to_orders`&#13;
+where created_date = &apos;2024-06-12&apos;&#13;
+  and entity_id = &apos;PY_BO&apos;&#13;
+group by all&#13;
+order by 1,2,3</relation>
+            </properties>
+            <properties context='extract'>
+              <relation name='_33D3C35AFEFB4F70987ED29592AB1C42' table='[Extract].[_33D3C35AFEFB4F70987ED29592AB1C42]' type='table' />
+            </properties>
+          </object>
+          <object caption='Impressions' id='_84CD925C74D94B01AF0D0ED5705A5C70'>
+            <properties context=''>
+              <relation connection='bigquery.0mzp1lz1s5fmvu1fwwxgs1f9tic1' name='Custom SQL Query' type='text'>WITH&#13;
+impression_data AS (&#13;
+  SELECT DISTINCT&#13;
+    partition_date,&#13;
+    IFNULL(global_entity_id, (SELECT ANY_VALUE(v.value) FROM UNNEST(eventVariables) v WHERE v.name IN (&apos;globalEntityId&apos;))) global_entity_id,&#13;
+    (SELECT ANY_VALUE(v.value) FROM UNNEST(eventVariables) v WHERE v.name IN (&apos;shopId&apos;, &apos;vendorId&apos;)) vendor_id, -- shop- in PedidosYa and Talabat, vendor- in Pandora, missing in HS&#13;
+    IFNULL(sessionId, (SELECT ANY_VALUE(v.value) FROM UNNEST(eventVariables) v WHERE v.name IN (&apos;perseusSessionId&apos;))) perseus_session_id,&#13;
+    IFNULL(hitMatchId, (SELECT ANY_VALUE(v.value) FROM UNNEST(eventVariables) v WHERE v.name IN (&apos;perseusHitMatchId&apos;))) perseus_hit_match_id,&#13;
+    (SELECT ANY_VALUE(v.value) FROM UNNEST(eventVariables) v WHERE v.name IN (&apos;shopDeliveryFee&apos;, &apos;vendorDeliveryFee&apos;)) vendor_delivery_fee,&#13;
+  FROM `fulfillment-dwh-production.curated_data_shared_coredata_tracking.perseus_events`&#13;
+  WHERE partition_date = &apos;2024-06-12&apos;&#13;
+    AND (STARTS_WITH(global_entity_id, &apos;PY_BO&apos;))&#13;
+    AND eventAction IN (&#13;
+    &apos;shop_impressions.loaded&apos;,&#13;
+    &apos;shop.impressions.loaded&apos;,&#13;
+    &apos;shop.impressions_loaded&apos;,&#13;
+    &apos;shop_impressions_loaded&apos;&#13;
+    )&#13;
+)&#13;
+, aggregated_data AS (&#13;
+  SELECT&#13;
+    global_entity_id,&#13;
+    vendor_id,&#13;
+    (approx_top_count(cast(regexp_extract(vendor_delivery_fee,r&apos;(\d[\d.]*)&apos;) as numeric), 50)) fees,&#13;
+    count(distinct perseus_session_id) total_sessions,&#13;
+    count(distinct perseus_hit_match_id) total_hits,&#13;
+  FROM impression_data&#13;
+  where global_entity_id is not null&#13;
+  group by 1,2&#13;
+  order by 1,2&#13;
+)&#13;
+SELECT &#13;
+  global_entity_id,&#13;
+  vendor_id,&#13;
+  f.value fee,&#13;
+  f.count hits,&#13;
+  total_hits,&#13;
+  total_sessions,&#13;
+from aggregated_data,&#13;
+unnest (fees) f&#13;
+order by 1,2,3</relation>
+            </properties>
+            <properties context='extract'>
+              <relation name='_84CD925C74D94B01AF0D0ED5705A5C70' table='[Extract].[_84CD925C74D94B01AF0D0ED5705A5C70]' type='table' />
+            </properties>
+          </object>
+        </objects>
+        <relationships>
+          <relationship>
+            <expression op='AND'>
+              <expression op='='>
+                <expression op='[vendor_id]' />
+                <expression op='[vendor_id (Custom SQL Query1)]' />
+              </expression>
+              <expression op='='>
+                <expression op='[fee]' />
+                <expression op='[delivery_fee_local]' />
+              </expression>
+              <expression op='='>
+                <expression op='[global_entity_id]' />
+                <expression op='[entity_id]' />
+              </expression>
+            </expression>
+            <first-end-point object-id='_84CD925C74D94B01AF0D0ED5705A5C70' />
+            <second-end-point object-id='_33D3C35AFEFB4F70987ED29592AB1C42' />
+          </relationship>
+        </relationships>
+      </_.fcp.ObjectModelEncapsulateLegacy.true...object-graph>
+    </datasource>
+  </datasources>
+  <worksheets>
+    <worksheet name='hits vs orders per vendor/fee'>
+      <repository-location id='hitsvsorderspervendorfee' path='/t/GlobalStandardReporting/workbooks/hitsvsorders' revision='' site='GlobalStandardReporting' />
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='Custom SQL Query (curated_data_shared)' name='federated.0250py91nvgv3m1h4ma4l126tra1' />
+          </datasources>
+          <datasource-dependencies datasource='federated.0250py91nvgv3m1h4ma4l126tra1'>
+            <column datatype='real' name='[fee]' role='dimension' type='ordinal' />
+            <column datatype='integer' name='[hits]' role='measure' type='quantitative' />
+            <column-instance column='[total_hits]' derivation='Max' name='[max:total_hits:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[fee]' derivation='None' name='[none:fee:ok]' pivot='key' type='ordinal' />
+            <column-instance column='[vendor_id]' derivation='None' name='[none:vendor_id:nk]' pivot='key' type='nominal' />
+            <column datatype='integer' name='[orders]' role='measure' type='quantitative' />
+            <column-instance column='[hits]' derivation='Sum' name='[sum:hits:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[orders]' derivation='Sum' name='[sum:orders:qk]' pivot='key' type='quantitative' />
+            <column datatype='integer' name='[total_hits]' role='measure' type='quantitative' />
+            <column datatype='string' name='[vendor_id]' role='dimension' type='nominal' />
+          </datasource-dependencies>
+          <filter class='categorical' column='[federated.0250py91nvgv3m1h4ma4l126tra1].[none:vendor_id:nk]'>
+            <groupfilter count='100' end='top' function='end' units='records' user:ui-marker='end' user:ui-top-by-field='true'>
+              <groupfilter direction='DESC' expression='SUM([orders])' function='order' user:ui-marker='order'>
+                <groupfilter function='except' user:ui-domain='database' user:ui-enumeration='exclusive' user:ui-manual-selection='true' user:ui-manual-selection-all-when-empty='true' user:ui-marker='enumerate'>
+                  <groupfilter function='level-members' level='[none:vendor_id:nk]' />
+                  <groupfilter function='union'>
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;104955&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;106991&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;107183&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;107188&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;107644&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;108794&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;109425&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;111712&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;111721&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;111725&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;112526&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;114624&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;115609&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;115615&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;118423&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;119926&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;120639&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;120686&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;123571&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;123620&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;127893&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;131580&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;133866&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;134729&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;135949&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;140056&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;141274&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;146929&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;153044&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;153680&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;154206&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;154478&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;154490&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;154895&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;158409&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;163128&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;163412&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;163753&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;164084&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;165755&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;166455&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;166885&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;168417&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;169845&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;171124&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;172580&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;173311&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;178289&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;178636&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;179537&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;179688&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;181904&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;181906&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;181907&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;183459&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;184179&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;184182&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;184781&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;187745&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;189046&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;189361&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;191329&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;191891&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;193799&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;200204&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;202425&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;203960&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;204330&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;206078&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;210159&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;223141&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;223827&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;224438&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;225660&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;226838&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;227820&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;228315&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;234282&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;238451&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;239377&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;241052&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;241362&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;243333&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;246294&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;246628&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;247207&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;247515&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;251394&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;257070&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;262365&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;263518&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;264654&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;264974&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;265413&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;265846&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;268402&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;269952&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;270932&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;272260&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;272925&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;274553&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;275851&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;277639&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;279239&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;280760&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;287065&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;287069&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;288191&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;288192&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;289496&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;291869&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;294984&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;295947&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;298857&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;299928&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;304135&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;310644&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;310776&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;312645&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;316411&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;318297&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;319387&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;319878&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;324192&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;327344&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;329954&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;332550&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;337445&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;341467&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;345731&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;346865&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;347238&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;347968&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;349729&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;352631&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;362161&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;362838&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;364939&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;367783&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;369049&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;370704&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;375159&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;376294&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;379008&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;381005&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;384498&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;385064&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;385243&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;386796&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;392374&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;392375&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;393583&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;393586&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;394790&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;398090&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;399475&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;399870&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;400495&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;401551&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;405084&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;407755&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;408947&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;409957&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;409979&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;410573&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;414105&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;414900&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;416798&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;417784&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;430348&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;430356&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;435051&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;437891&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;442795&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;442796&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;445115&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;446163&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;448390&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;450663&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;456063&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;456328&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;457113&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;457115&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;458270&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;458929&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;459103&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;459403&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;462042&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;463408&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;464669&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;464914&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;466509&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;467298&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;468625&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;469385&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;470313&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;471352&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;471500&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;471555&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;472088&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;474914&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;474960&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;475032&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;476273&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;477802&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;478960&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;479758&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;480618&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;480892&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;482108&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;482192&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;482516&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;482545&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;482572&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;482965&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;484592&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;484663&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;487423&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;488685&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;489273&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;489583&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;490290&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;490833&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;491481&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;492031&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;492586&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;493057&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;494910&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;497304&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;498541&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;498691&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;500127&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;55674&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;55678&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;55680&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;55687&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;55689&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;55702&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;55709&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;55726&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;55736&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;55739&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;55740&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;55741&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;55746&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;55755&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;55759&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;55771&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;55800&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;55804&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;56603&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;56604&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;56606&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;56709&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;56862&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;56871&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;56993&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;57135&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;57139&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;57142&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;57143&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;57166&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;57167&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;57221&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;57313&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;57956&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;58336&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;58978&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;59215&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;59732&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;59733&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;59734&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;59899&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;59900&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;59916&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;59917&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;60041&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;60053&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;60190&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;60517&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;61107&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;61169&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;62103&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;62377&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;63193&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;63374&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;63879&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;64499&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;64698&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;64774&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;64880&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;64922&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;65357&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;65653&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;65918&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;68123&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;87997&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;88019&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;99245&quot;' />
+                    <groupfilter function='member' level='[none:vendor_id:nk]' member='&quot;99423&quot;' />
+                  </groupfilter>
+                </groupfilter>
+              </groupfilter>
+            </groupfilter>
+          </filter>
+          <shelf-sorts>
+            <shelf-sort-v2 dimension-to-sort='[federated.0250py91nvgv3m1h4ma4l126tra1].[none:vendor_id:nk]' direction='DESC' is-on-innermost-dimension='true' measure-to-sort-by='[federated.0250py91nvgv3m1h4ma4l126tra1].[max:total_hits:qk]' shelf='rows' />
+          </shelf-sorts>
+          <slices>
+            <column>[federated.0250py91nvgv3m1h4ma4l126tra1].[none:vendor_id:nk]</column>
+          </slices>
+          <aggregation value='true' />
+        </view>
+        <style>
+          <style-rule element='axis'>
+            <format attr='height' field='[federated.0250py91nvgv3m1h4ma4l126tra1].[none:fee:ok]' value='49' />
+            <encoding attr='space' class='0' field='[federated.0250py91nvgv3m1h4ma4l126tra1].[sum:orders:qk]' field-type='quantitative' fold='true' scope='rows' synchronized='true' type='space' />
+            <encoding attr='space' class='0' field='[federated.0250py91nvgv3m1h4ma4l126tra1].[sum:hits:qk]' field-type='quantitative' range-type='independent' scope='rows' type='space' />
+          </style-rule>
+        </style>
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Bar' />
+            <encodings>
+              <lod column='[federated.0250py91nvgv3m1h4ma4l126tra1].[sum:hits:qk]' />
+              <color column='[federated.0250py91nvgv3m1h4ma4l126tra1].[:Measure Names]' />
+            </encodings>
+            <style>
+              <style-rule element='mark'>
+                <format attr='mark-labels-cull' value='true' />
+                <format attr='mark-labels-show' value='false' />
+              </style-rule>
+            </style>
+          </pane>
+          <pane id='1' selection-relaxation-option='selection-relaxation-allow' y-axis-name='[federated.0250py91nvgv3m1h4ma4l126tra1].[sum:hits:qk]'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Bar' />
+            <mark-sizing mark-sizing-setting='marks-scaling-off' />
+            <encodings>
+              <lod column='[federated.0250py91nvgv3m1h4ma4l126tra1].[sum:hits:qk]' />
+              <color column='[federated.0250py91nvgv3m1h4ma4l126tra1].[:Measure Names]' />
+            </encodings>
+            <style>
+              <style-rule element='mark'>
+                <format attr='mark-labels-cull' value='true' />
+                <format attr='mark-labels-show' value='false' />
+                <format attr='size' value='0.47176796197891235' />
+              </style-rule>
+            </style>
+          </pane>
+          <pane id='2' selection-relaxation-option='selection-relaxation-allow' y-axis-name='[federated.0250py91nvgv3m1h4ma4l126tra1].[sum:orders:qk]'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='GanttBar' />
+            <encodings>
+              <lod column='[federated.0250py91nvgv3m1h4ma4l126tra1].[sum:hits:qk]' />
+              <color column='[federated.0250py91nvgv3m1h4ma4l126tra1].[:Measure Names]' />
+            </encodings>
+            <style>
+              <style-rule element='mark'>
+                <format attr='mark-labels-cull' value='true' />
+                <format attr='mark-labels-show' value='false' />
+              </style-rule>
+            </style>
+          </pane>
+        </panes>
+        <rows>([federated.0250py91nvgv3m1h4ma4l126tra1].[none:vendor_id:nk] * ([federated.0250py91nvgv3m1h4ma4l126tra1].[sum:hits:qk] + [federated.0250py91nvgv3m1h4ma4l126tra1].[sum:orders:qk]))</rows>
+        <cols>[federated.0250py91nvgv3m1h4ma4l126tra1].[none:fee:ok]</cols>
+      </table>
+      <simple-id uuid='{12754C64-A547-4E42-97E8-98BD08BA79BC}' />
+    </worksheet>
+  </worksheets>
+  <windows source-height='30'>
+    <window class='worksheet' maximized='true' name='hits vs orders per vendor/fee'>
+      <cards>
+        <edge name='left'>
+          <strip size='160'>
+            <card type='pages' />
+            <card type='filters' />
+            <card type='marks' />
+          </strip>
+        </edge>
+        <edge name='top'>
+          <strip size='2147483647'>
+            <card type='columns' />
+          </strip>
+          <strip size='2147483647'>
+            <card type='rows' />
+          </strip>
+          <strip size='31'>
+            <card type='title' />
+          </strip>
+        </edge>
+        <edge name='right'>
+          <strip size='160'>
+            <card pane-specification-id='1' param='[federated.0250py91nvgv3m1h4ma4l126tra1].[:Measure Names]' type='color' />
+          </strip>
+        </edge>
+      </cards>
+      <simple-id uuid='{EEFD005D-A8AE-48EE-A17C-CCA0DEA2BBA2}' />
+    </window>
+  </windows>
+</workbook>
