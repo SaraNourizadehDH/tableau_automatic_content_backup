@@ -1,0 +1,2257 @@
+<?xml version='1.0' encoding='utf-8' ?>
+
+<!-- build 20233.25.0106.1650                               -->
+<workbook original-version='18.1' source-build='2024.3.1 (20243.24.1112.0850)' source-platform='mac' version='18.1' xml:base='https://tableau.deliveryhero.net' xmlns:user='http://www.tableausoftware.com/xml/user'>
+  <document-format-change-manifest>
+    <_.fcp.AccessibleZoneTabOrder.true...AccessibleZoneTabOrder />
+    <_.fcp.AnimationOnByDefault.true...AnimationOnByDefault />
+    <AutoCreateAndUpdateDSDPhoneLayouts />
+    <IntuitiveSorting />
+    <IntuitiveSorting_SP2 />
+    <_.fcp.MarkAnimation.true...MarkAnimation />
+    <_.fcp.ObjectModelEncapsulateLegacy.true...ObjectModelEncapsulateLegacy />
+    <_.fcp.ObjectModelExtractV2.true...ObjectModelExtractV2 />
+    <_.fcp.ObjectModelTableType.true...ObjectModelTableType />
+    <_.fcp.SchemaViewerObjectModel.true...SchemaViewerObjectModel />
+    <SetMembershipControl />
+    <SheetIdentifierTracking />
+    <SortTagCleanup />
+    <_.fcp.VConnDownstreamExtractsWithWarnings.true...VConnDownstreamExtractsWithWarnings />
+    <WindowsPersistSimpleIdentifiers />
+    <ZoneBackgroundTransparency />
+  </document-format-change-manifest>
+  <repository-location derived-from='https://tableau.deliveryhero.net/t/Talabat/workbooks/MerasXDineOut?rev=1.3' id='MerasXDineOut' path='/t/Talabat/workbooks' revision='1.4' site='Talabat' />
+  <preferences>
+    <preference name='ui.encoding.shelf.height' value='24' />
+    <preference name='ui.shelf.height' value='26' />
+  </preferences>
+  <style>
+    <style-rule element='all'>
+      <format attr='font-family' value='Benton Sans Book' />
+    </style-rule>
+  </style>
+  <datasources>
+    <datasource caption='vendor' inline='true' name='federated.1mb23z01kvb5ek1d5kd4v0xkg0iy' version='18.1'>
+      <connection class='federated'>
+        <named-connections>
+          <named-connection caption='BigQuery' name='bigquery.12fvgem1h04ntd1dcdojz1xtf9qy'>
+            <connection CATALOG='tlb-data-prod' EXECCATALOG='tlb-data-dev' authentication='oauth' bq-dataset-fetch-rows='' bq-fetch-rows='' bq-fetch-tasks='' bq-large-fetch-rows='' bq-project-fetch-rows='' bq-response-rows='' class='bigquery' connection-dialect='google-sql' project='tlb-data-prod' schema='data_platform' server-oauth='' username='hajira.zulfiqar@talabat.com' workgroup-auth-mode='prompt' />
+          </named-connection>
+        </named-connections>
+        <_.fcp.ObjectModelEncapsulateLegacy.false...relation connection='bigquery.12fvgem1h04ntd1dcdojz1xtf9qy' name='Custom SQL Query' type='text'>WITH dineout_acquisitions AS (
+  SELECT
+    o.account_id,
+    o.order_id,
+    o.order_date,
+    l.area_name,
+    v.vendor_id,
+    v.vendor_name,
+    ROW_NUMBER() OVER (PARTITION BY o.account_id ORDER BY o.order_time) AS rn
+  FROM `tlb-data-prod.data_platform.fct_order_info` o
+  INNER JOIN `tlb-data-prod.data_platform.dim_account` a
+    ON o.account_id = a.account_id
+  INNER JOIN `tlb-data-prod.data_platform.dim_vendor_info` v
+    ON o.vendor_id = v.vendor_id
+  INNER JOIN `tlb-data-prod.data_platform.dim_location_info` l
+    ON v.location_id = l.location_id
+  WHERE o.is_successful
+    AND LOWER(o.delivery_arrangement) = &apos;tdine&apos;
+    AND o.country_code = &apos;AE&apos;
+    
+),
+
+pre_post_acq AS (
+  SELECT
+CASE
+  WHEN order_date BETWEEN DATE(&apos;2025-07-23&apos;) AND DATE(&apos;2025-08-24&apos;)
+    THEN &apos;Post&apos;
+  WHEN order_date BETWEEN DATE(&apos;2025-06-02&apos;) AND DATE(&apos;2025-07-22&apos;)
+    AND NOT (order_date BETWEEN DATE(&apos;2025-06-13&apos;) AND DATE(&apos;2025-06-30&apos;))
+    THEN &apos;Pre&apos;
+END AS tag,
+    order_date,
+    area_name,
+    vendor_name,
+    vendor_id,
+    COUNT(DISTINCT account_id) AS total_acq
+  FROM dineout_acquisitions
+  WHERE rn=1
+  AND order_date&gt;&gt;=&quot;2025-03-28&quot;
+  AND area_name IN (
+        &apos;Al Wasl&apos;,
+        &apos;Jumeirah Beach Residence - JBR&apos;,
+        &apos;Al Safa&apos;
+    )
+  GROUP BY all
+),
+
+pre_post_orders AS (
+  SELECT
+CASE
+  WHEN order_date BETWEEN DATE(&apos;2025-07-23&apos;) AND DATE(&apos;2025-08-24&apos;)
+    THEN &apos;Post&apos;
+  WHEN order_date BETWEEN DATE(&apos;2025-06-02&apos;) AND DATE(&apos;2025-07-22&apos;)
+    AND NOT (order_date BETWEEN DATE(&apos;2025-06-13&apos;) AND DATE(&apos;2025-06-30&apos;))
+    THEN &apos;Pre&apos;
+END AS tag,
+    l.area_name,
+    order_date,
+    v.vendor_id,
+    v.vendor_name,
+    COUNT(DISTINCT o.order_id) AS total_orders,
+    COUNT(DISTINCT o.account_id) AS total_users,
+    SUM(COALESCE(o.discount_amount_lc,0)) AS discount_amount_lc,
+    SUM(COALESCE(o.gmv_amount_lc,0)) AS gmv_amount_lc
+  FROM `tlb-data-prod.data_platform.fct_order_info` o
+  INNER JOIN `tlb-data-prod.data_platform.dim_vendor_info` v
+    ON o.vendor_id = v.vendor_id
+  INNER JOIN `tlb-data-prod.data_platform.dim_location_info` l
+    ON v.location_id = l.location_id
+  WHERE LOWER(o.delivery_arrangement) = &apos;tdine&apos;
+    AND o.order_date &gt;&gt;= DATE(&apos;2025-03-28&apos;)
+    AND o.is_successful
+    AND area_name IN (
+        &apos;Al Wasl&apos;,
+        &apos;Jumeirah Beach Residence - JBR&apos;,
+        &apos;Al Safa&apos;
+    )
+     
+  GROUP BY all
+)
+
+SELECT a.tag,a.order_date,a.area_name,a.vendor_id,a.vendor_name,total_orders,total_users,discount_amount_lc,gmv_amount_lc,b.total_acq
+FROM pre_post_orders as a 
+left join pre_post_acq as b
+on a.tag=b.tag and a.area_name=b.area_name  and a.vendor_id=b.vendor_id and a.order_date=b.order_date
+where a.tag is not null</_.fcp.ObjectModelEncapsulateLegacy.false...relation>
+        <_.fcp.ObjectModelEncapsulateLegacy.true...relation connection='bigquery.12fvgem1h04ntd1dcdojz1xtf9qy' name='Custom SQL Query' type='text'>WITH dineout_acquisitions AS (
+  SELECT
+    o.account_id,
+    o.order_id,
+    o.order_date,
+    l.area_name,
+    v.vendor_id,
+    v.vendor_name,
+    ROW_NUMBER() OVER (PARTITION BY o.account_id ORDER BY o.order_time) AS rn
+  FROM `tlb-data-prod.data_platform.fct_order_info` o
+  INNER JOIN `tlb-data-prod.data_platform.dim_account` a
+    ON o.account_id = a.account_id
+  INNER JOIN `tlb-data-prod.data_platform.dim_vendor_info` v
+    ON o.vendor_id = v.vendor_id
+  INNER JOIN `tlb-data-prod.data_platform.dim_location_info` l
+    ON v.location_id = l.location_id
+  WHERE o.is_successful
+    AND LOWER(o.delivery_arrangement) = &apos;tdine&apos;
+    AND o.country_code = &apos;AE&apos;
+    
+),
+
+pre_post_acq AS (
+  SELECT
+CASE
+  WHEN order_date BETWEEN DATE(&apos;2025-07-23&apos;) AND DATE(&apos;2025-08-24&apos;)
+    THEN &apos;Post&apos;
+  WHEN order_date BETWEEN DATE(&apos;2025-06-02&apos;) AND DATE(&apos;2025-07-22&apos;)
+    AND NOT (order_date BETWEEN DATE(&apos;2025-06-13&apos;) AND DATE(&apos;2025-06-30&apos;))
+    THEN &apos;Pre&apos;
+END AS tag,
+    order_date,
+    area_name,
+    vendor_name,
+    vendor_id,
+    COUNT(DISTINCT account_id) AS total_acq
+  FROM dineout_acquisitions
+  WHERE rn=1
+  AND order_date&gt;&gt;=&quot;2025-03-28&quot;
+  AND area_name IN (
+        &apos;Al Wasl&apos;,
+        &apos;Jumeirah Beach Residence - JBR&apos;,
+        &apos;Al Safa&apos;
+    )
+  GROUP BY all
+),
+
+pre_post_orders AS (
+  SELECT
+CASE
+  WHEN order_date BETWEEN DATE(&apos;2025-07-23&apos;) AND DATE(&apos;2025-08-24&apos;)
+    THEN &apos;Post&apos;
+  WHEN order_date BETWEEN DATE(&apos;2025-06-02&apos;) AND DATE(&apos;2025-07-22&apos;)
+    AND NOT (order_date BETWEEN DATE(&apos;2025-06-13&apos;) AND DATE(&apos;2025-06-30&apos;))
+    THEN &apos;Pre&apos;
+END AS tag,
+    l.area_name,
+    order_date,
+    v.vendor_id,
+    v.vendor_name,
+    COUNT(DISTINCT o.order_id) AS total_orders,
+    COUNT(DISTINCT o.account_id) AS total_users,
+    SUM(COALESCE(o.discount_amount_lc,0)) AS discount_amount_lc,
+    SUM(COALESCE(o.gmv_amount_lc,0)) AS gmv_amount_lc
+  FROM `tlb-data-prod.data_platform.fct_order_info` o
+  INNER JOIN `tlb-data-prod.data_platform.dim_vendor_info` v
+    ON o.vendor_id = v.vendor_id
+  INNER JOIN `tlb-data-prod.data_platform.dim_location_info` l
+    ON v.location_id = l.location_id
+  WHERE LOWER(o.delivery_arrangement) = &apos;tdine&apos;
+    AND o.order_date &gt;&gt;= DATE(&apos;2025-03-28&apos;)
+    AND o.is_successful
+    AND area_name IN (
+        &apos;Al Wasl&apos;,
+        &apos;Jumeirah Beach Residence - JBR&apos;,
+        &apos;Al Safa&apos;
+    )
+     
+  GROUP BY all
+)
+
+SELECT a.tag,a.order_date,a.area_name,a.vendor_id,a.vendor_name,total_orders,total_users,discount_amount_lc,gmv_amount_lc,b.total_acq
+FROM pre_post_orders as a 
+left join pre_post_acq as b
+on a.tag=b.tag and a.area_name=b.area_name  and a.vendor_id=b.vendor_id and a.order_date=b.order_date
+where a.tag is not null</_.fcp.ObjectModelEncapsulateLegacy.true...relation>
+        <metadata-records>
+          <metadata-record class='column'>
+            <remote-name>tag</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[tag]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>tag</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_597644760B574A6EA0834531DDB9AFC8]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>order_date</remote-name>
+            <remote-type>7</remote-type>
+            <local-name>[order_date]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>order_date</remote-alias>
+            <local-type>date</local-type>
+            <aggregation>Year</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_597644760B574A6EA0834531DDB9AFC8]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>area_name</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[area_name]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>area_name</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_597644760B574A6EA0834531DDB9AFC8]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>vendor_id</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[vendor_id]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>vendor_id</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_597644760B574A6EA0834531DDB9AFC8]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>vendor_name</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[vendor_name]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>vendor_name</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_597644760B574A6EA0834531DDB9AFC8]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>total_orders</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[total_orders]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>total_orders</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_597644760B574A6EA0834531DDB9AFC8]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>total_users</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[total_users]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>total_users</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_597644760B574A6EA0834531DDB9AFC8]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>discount_amount_lc</remote-name>
+            <remote-type>5</remote-type>
+            <local-name>[discount_amount_lc]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>discount_amount_lc</remote-alias>
+            <local-type>real</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_597644760B574A6EA0834531DDB9AFC8]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>gmv_amount_lc</remote-name>
+            <remote-type>5</remote-type>
+            <local-name>[gmv_amount_lc]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>gmv_amount_lc</remote-alias>
+            <local-type>real</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_597644760B574A6EA0834531DDB9AFC8]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>total_acq</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[total_acq]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>total_acq</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_597644760B574A6EA0834531DDB9AFC8]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+        </metadata-records>
+      </connection>
+      <aliases enabled='yes' />
+      <column datatype='string' name='[:Measure Names]' role='dimension' type='nominal'>
+        <aliases>
+          <alias key='&quot;[federated.1mb23z01kvb5ek1d5kd4v0xkg0iy].[pcdf:sum:gmv_amount_lc:qk:2]&quot;' value='% Difference in gmv_amount_lc ' />
+          <alias key='&quot;[federated.1mb23z01kvb5ek1d5kd4v0xkg0iy].[pcdf:sum:total_acq:qk]&quot;' value='% Difference in total_acq' />
+          <alias key='&quot;[federated.1mb23z01kvb5ek1d5kd4v0xkg0iy].[pcdf:sum:total_orders:qk:2]&quot;' value='% Difference in total_orders' />
+          <alias key='&quot;[federated.1mb23z01kvb5ek1d5kd4v0xkg0iy].[sum:gmv_amount_lc:qk]&quot;' value='Gmv amount (LC)' />
+          <alias key='&quot;[federated.1mb23z01kvb5ek1d5kd4v0xkg0iy].[sum:total_acq:qk]&quot;' value='Total DineOut Acquisitions' />
+          <alias key='&quot;[federated.1mb23z01kvb5ek1d5kd4v0xkg0iy].[sum:total_orders:qk]&quot;' value='Total Orders' />
+          <alias key='&quot;[federated.1mb23z01kvb5ek1d5kd4v0xkg0iy].[sum:total_users:qk]&quot;' value='Total Users' />
+        </aliases>
+      </column>
+      <column datatype='real' default-format='p0.00%' name='[Calculation1]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='(ZN(SUM([total_orders])) - LOOKUP(ZN(SUM([total_orders])), -1)) / ABS(LOOKUP(ZN(SUM([total_orders])), -1))'>
+          <table-calc ordering-type='RowInPane' />
+        </calculation>
+      </column>
+      <column datatype='real' default-format='p0.00%' name='[Calculation2]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='(ZN(SUM([gmv_amount_lc])) - LOOKUP(ZN(SUM([gmv_amount_lc])), -1)) / ABS(LOOKUP(ZN(SUM([gmv_amount_lc])), -1))'>
+          <table-calc ordering-type='RowInPane' />
+        </calculation>
+      </column>
+      <column datatype='real' default-format='p0.00%' name='[Calculation3]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='(ZN(SUM([total_acq])) - LOOKUP(ZN(SUM([total_acq])), -1)) / ABS(LOOKUP(ZN(SUM([total_acq])), -1))'>
+          <table-calc ordering-type='Rows' />
+        </calculation>
+      </column>
+      <_.fcp.ObjectModelTableType.true...column caption='Custom SQL Query' datatype='table' name='[__tableau_internal_object_id__].[_597644760B574A6EA0834531DDB9AFC8]' role='measure' type='quantitative' />
+      <column datatype='string' name='[area_name (group)]' role='dimension' type='nominal'>
+        <calculation class='categorical-bin' column='[area_name]' new-bin='true'>
+          <bin default-name='true' value='&quot;Al Safa &amp; Al Wasl&quot;'>
+            <value>&quot;Al Safa&quot;</value>
+            <value>&quot;Al Wasl&quot;</value>
+          </bin>
+        </calculation>
+      </column>
+      <column datatype='string' name='[area_name]' role='dimension' type='nominal' />
+      <column datatype='real' name='[gmv_amount_lc]' role='measure' type='quantitative' />
+      <column datatype='integer' name='[total_acq]' role='measure' type='quantitative' />
+      <column datatype='integer' name='[total_orders]' role='measure' type='quantitative' />
+      <column datatype='integer' name='[total_users]' role='measure' type='quantitative' />
+      <column-instance column='[gmv_amount_lc]' derivation='Sum' name='[pcdf:sum:gmv_amount_lc:qk:2]' pivot='key' type='quantitative'>
+        <table-calc diff-options='Relative' ordering-type='RowInPane' type='PctDiff'>
+          <address>
+            <value>-1</value>
+          </address>
+        </table-calc>
+      </column-instance>
+      <column-instance column='[total_acq]' derivation='Sum' name='[pcdf:sum:total_acq:qk]' pivot='key' type='quantitative'>
+        <table-calc diff-options='Relative' ordering-type='Rows' type='PctDiff'>
+          <address>
+            <value>-1</value>
+          </address>
+        </table-calc>
+      </column-instance>
+      <column-instance column='[total_orders]' derivation='Sum' name='[pcdf:sum:total_orders:qk:2]' pivot='key' type='quantitative'>
+        <table-calc diff-options='Relative' ordering-type='RowInPane' type='PctDiff'>
+          <address>
+            <value>-1</value>
+          </address>
+        </table-calc>
+      </column-instance>
+      <column-instance column='[gmv_amount_lc]' derivation='Sum' name='[sum:gmv_amount_lc:qk]' pivot='key' type='quantitative' />
+      <column-instance column='[total_acq]' derivation='Sum' name='[sum:total_acq:qk]' pivot='key' type='quantitative' />
+      <column-instance column='[total_orders]' derivation='Sum' name='[sum:total_orders:qk]' pivot='key' type='quantitative' />
+      <column-instance column='[total_users]' derivation='Sum' name='[sum:total_users:qk]' pivot='key' type='quantitative' />
+      <extract _.fcp.ObjectModelExtractV2.true...object-id='' _.fcp.VConnDownstreamExtractsWithWarnings.true...user-specific='false' count='-1' enabled='true' units='records'>
+        <connection class='hyper' dbname='extract/0d/53/{C288A988-B8B3-485A-85B4-105C08BD8A40}/federated_1mb23z01kvb5ek1d5kd4v0.hyper' default-settings='yes' extract-engine='true' schema='Extract' tablename='Extract' update-time='08/25/2025 07:31:31 AM'>
+          <_.fcp.ObjectModelEncapsulateLegacy.false...relation name='Extract' table='[Extract].[Extract]' type='table' />
+          <_.fcp.ObjectModelEncapsulateLegacy.true...relation name='Extract' table='[Extract].[Extract]' type='table' />
+          <refresh>
+            <refresh-event add-from-file-path='vendor' increment-value='%null%' refresh-type='create' rows-inserted='970' timestamp-start='2025-08-25 07:31:25.321' />
+          </refresh>
+          <metadata-records>
+            <metadata-record class='column'>
+              <remote-name>tag</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[tag]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>tag</remote-alias>
+              <ordinal>0</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>2</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>order_date</remote-name>
+              <remote-type>133</remote-type>
+              <local-name>[order_date]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>order_date</remote-alias>
+              <ordinal>1</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>date</local-type>
+              <aggregation>Year</aggregation>
+              <approx-count>66</approx-count>
+              <contains-null>true</contains-null>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>area_name</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[area_name]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>area_name</remote-alias>
+              <ordinal>2</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>3</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>vendor_id</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[vendor_id]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>vendor_id</remote-alias>
+              <ordinal>3</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>61</approx-count>
+              <contains-null>true</contains-null>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>vendor_name</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[vendor_name]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>vendor_name</remote-alias>
+              <ordinal>4</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>61</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>total_orders</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[total_orders]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>total_orders</remote-alias>
+              <ordinal>5</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>50</approx-count>
+              <contains-null>true</contains-null>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>total_users</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[total_users]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>total_users</remote-alias>
+              <ordinal>6</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>46</approx-count>
+              <contains-null>true</contains-null>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>discount_amount_lc</remote-name>
+              <remote-type>5</remote-type>
+              <local-name>[discount_amount_lc]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>discount_amount_lc</remote-alias>
+              <ordinal>7</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>real</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>720</approx-count>
+              <contains-null>true</contains-null>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>gmv_amount_lc</remote-name>
+              <remote-type>5</remote-type>
+              <local-name>[gmv_amount_lc]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>gmv_amount_lc</remote-alias>
+              <ordinal>8</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>real</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>794</approx-count>
+              <contains-null>true</contains-null>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>total_acq</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[total_acq]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>total_acq</remote-alias>
+              <ordinal>9</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>8</approx-count>
+              <contains-null>true</contains-null>
+            </metadata-record>
+          </metadata-records>
+        </connection>
+      </extract>
+      <layout _.fcp.SchemaViewerObjectModel.false...dim-percentage='0.5' _.fcp.SchemaViewerObjectModel.false...measure-percentage='0.4' dim-ordering='alphabetic' measure-ordering='alphabetic' show-structure='true' />
+      <style>
+        <style-rule element='mark'>
+          <encoding attr='color' field='[area_name (group)]' type='palette'>
+            <map to='#aa7942'>
+              <bucket>&quot;Al Safa &amp; Al Wasl&quot;</bucket>
+            </map>
+            <map to='#f28e2b'>
+              <bucket>&quot;Jumeirah Beach Residence - JBR&quot;</bucket>
+            </map>
+          </encoding>
+        </style-rule>
+      </style>
+      <semantic-values>
+        <semantic-value key='[Country].[Name]' value='&quot;United States&quot;' />
+      </semantic-values>
+      <date-options start-of-week='saturday' />
+      <_.fcp.ObjectModelEncapsulateLegacy.true...object-graph>
+        <objects>
+          <object caption='Custom SQL Query' id='_597644760B574A6EA0834531DDB9AFC8'>
+            <properties context=''>
+              <relation connection='bigquery.12fvgem1h04ntd1dcdojz1xtf9qy' name='Custom SQL Query' type='text'>WITH dineout_acquisitions AS (
+  SELECT
+    o.account_id,
+    o.order_id,
+    o.order_date,
+    l.area_name,
+    v.vendor_id,
+    v.vendor_name,
+    ROW_NUMBER() OVER (PARTITION BY o.account_id ORDER BY o.order_time) AS rn
+  FROM `tlb-data-prod.data_platform.fct_order_info` o
+  INNER JOIN `tlb-data-prod.data_platform.dim_account` a
+    ON o.account_id = a.account_id
+  INNER JOIN `tlb-data-prod.data_platform.dim_vendor_info` v
+    ON o.vendor_id = v.vendor_id
+  INNER JOIN `tlb-data-prod.data_platform.dim_location_info` l
+    ON v.location_id = l.location_id
+  WHERE o.is_successful
+    AND LOWER(o.delivery_arrangement) = &apos;tdine&apos;
+    AND o.country_code = &apos;AE&apos;
+    
+),
+
+pre_post_acq AS (
+  SELECT
+CASE
+  WHEN order_date BETWEEN DATE(&apos;2025-07-23&apos;) AND DATE(&apos;2025-08-24&apos;)
+    THEN &apos;Post&apos;
+  WHEN order_date BETWEEN DATE(&apos;2025-06-02&apos;) AND DATE(&apos;2025-07-22&apos;)
+    AND NOT (order_date BETWEEN DATE(&apos;2025-06-13&apos;) AND DATE(&apos;2025-06-30&apos;))
+    THEN &apos;Pre&apos;
+END AS tag,
+    order_date,
+    area_name,
+    vendor_name,
+    vendor_id,
+    COUNT(DISTINCT account_id) AS total_acq
+  FROM dineout_acquisitions
+  WHERE rn=1
+  AND order_date&gt;&gt;=&quot;2025-03-28&quot;
+  AND area_name IN (
+        &apos;Al Wasl&apos;,
+        &apos;Jumeirah Beach Residence - JBR&apos;,
+        &apos;Al Safa&apos;
+    )
+  GROUP BY all
+),
+
+pre_post_orders AS (
+  SELECT
+CASE
+  WHEN order_date BETWEEN DATE(&apos;2025-07-23&apos;) AND DATE(&apos;2025-08-24&apos;)
+    THEN &apos;Post&apos;
+  WHEN order_date BETWEEN DATE(&apos;2025-06-02&apos;) AND DATE(&apos;2025-07-22&apos;)
+    AND NOT (order_date BETWEEN DATE(&apos;2025-06-13&apos;) AND DATE(&apos;2025-06-30&apos;))
+    THEN &apos;Pre&apos;
+END AS tag,
+    l.area_name,
+    order_date,
+    v.vendor_id,
+    v.vendor_name,
+    COUNT(DISTINCT o.order_id) AS total_orders,
+    COUNT(DISTINCT o.account_id) AS total_users,
+    SUM(COALESCE(o.discount_amount_lc,0)) AS discount_amount_lc,
+    SUM(COALESCE(o.gmv_amount_lc,0)) AS gmv_amount_lc
+  FROM `tlb-data-prod.data_platform.fct_order_info` o
+  INNER JOIN `tlb-data-prod.data_platform.dim_vendor_info` v
+    ON o.vendor_id = v.vendor_id
+  INNER JOIN `tlb-data-prod.data_platform.dim_location_info` l
+    ON v.location_id = l.location_id
+  WHERE LOWER(o.delivery_arrangement) = &apos;tdine&apos;
+    AND o.order_date &gt;&gt;= DATE(&apos;2025-03-28&apos;)
+    AND o.is_successful
+    AND area_name IN (
+        &apos;Al Wasl&apos;,
+        &apos;Jumeirah Beach Residence - JBR&apos;,
+        &apos;Al Safa&apos;
+    )
+     
+  GROUP BY all
+)
+
+SELECT a.tag,a.order_date,a.area_name,a.vendor_id,a.vendor_name,total_orders,total_users,discount_amount_lc,gmv_amount_lc,b.total_acq
+FROM pre_post_orders as a 
+left join pre_post_acq as b
+on a.tag=b.tag and a.area_name=b.area_name  and a.vendor_id=b.vendor_id and a.order_date=b.order_date
+where a.tag is not null</relation>
+            </properties>
+            <properties context='extract'>
+              <relation name='Extract' table='[Extract].[Extract]' type='table' />
+            </properties>
+          </object>
+        </objects>
+      </_.fcp.ObjectModelEncapsulateLegacy.true...object-graph>
+    </datasource>
+    <datasource caption='summary' inline='true' name='federated.0n0t4f71o14k591bglfw4178as03' version='18.1'>
+      <connection class='federated'>
+        <named-connections>
+          <named-connection caption='BigQuery' name='bigquery.04rgj1d1taslb91h79uww03yczee'>
+            <connection CATALOG='tlb-data-prod' EXECCATALOG='tlb-data-dev' authentication='oauth' bq-dataset-fetch-rows='' bq-fetch-rows='' bq-fetch-tasks='' bq-large-fetch-rows='' bq-project-fetch-rows='' bq-response-rows='' class='bigquery' connection-dialect='google-sql' project='tlb-data-prod' schema='data_platform' server-oauth='' username='hajira.zulfiqar@talabat.com' workgroup-auth-mode='prompt' />
+          </named-connection>
+        </named-connections>
+        <_.fcp.ObjectModelEncapsulateLegacy.false...relation connection='bigquery.04rgj1d1taslb91h79uww03yczee' name='Custom SQL Query' type='text'>WITH dineout_acquisitions AS (
+  SELECT
+    o.account_id,
+    o.order_id,
+    o.order_date,
+    l.area_name,
+    v.vendor_id,
+    v.vendor_name,
+    ROW_NUMBER() OVER (PARTITION BY o.account_id ORDER BY o.order_time) AS rn
+  FROM `tlb-data-prod.data_platform.fct_order_info` o
+  INNER JOIN `tlb-data-prod.data_platform.dim_account` a
+    ON o.account_id = a.account_id
+  INNER JOIN `tlb-data-prod.data_platform.dim_vendor_info` v
+    ON o.vendor_id = v.vendor_id
+  INNER JOIN `tlb-data-prod.data_platform.dim_location_info` l
+    ON v.location_id = l.location_id
+  WHERE o.is_successful
+    AND LOWER(o.delivery_arrangement) = &apos;tdine&apos;
+    AND o.country_code = &apos;AE&apos;
+),
+
+pre_post_acq AS (
+  SELECT
+CASE
+  WHEN order_date BETWEEN DATE(&apos;2025-07-23&apos;) AND DATE(&apos;2025-08-24&apos;)
+    THEN &apos;Post&apos;
+  WHEN order_date BETWEEN DATE(&apos;2025-06-02&apos;) AND DATE(&apos;2025-07-22&apos;)
+    AND NOT (order_date BETWEEN DATE(&apos;2025-06-13&apos;) AND DATE(&apos;2025-06-30&apos;))
+    THEN &apos;Pre&apos;
+END AS tag,
+
+    order_date,
+    area_name,
+    case when vendor_id=(699895) then &quot;Everday Roastary&quot; else &quot;Non-Everday&quot; end as vendor_tag,
+    -- vendor_name,
+    -- vendor_id,
+    COUNT(DISTINCT account_id) AS total_acq
+  FROM dineout_acquisitions
+  WHERE rn=1
+  AND order_date&gt;&gt;=&quot;2025-03-28&quot;
+  AND area_name IN (
+        &apos;Al Wasl&apos;,
+        &apos;Jumeirah Beach Residence - JBR&apos;,
+        &apos;Al Safa&apos;
+    )
+  GROUP BY all
+),
+
+pre_post_orders AS (
+  SELECT
+CASE
+  WHEN order_date BETWEEN DATE(&apos;2025-07-23&apos;) AND DATE(&apos;2025-08-24&apos;)
+    THEN &apos;Post&apos;
+  WHEN order_date BETWEEN DATE(&apos;2025-06-02&apos;) AND DATE(&apos;2025-07-22&apos;)
+    AND NOT (order_date BETWEEN DATE(&apos;2025-06-13&apos;) AND DATE(&apos;2025-06-30&apos;))
+    THEN &apos;Pre&apos;
+END AS tag,
+
+    order_date,
+    l.area_name,
+    case when o.vendor_id=(699895) then &quot;Everday Roastary&quot; else &quot;Non-Everday&quot; end as vendor_tag,
+    -- v.vendor_id,
+    -- v.vendor_name,
+    COUNT(DISTINCT o.order_id) AS total_orders,
+    COUNT(DISTINCT o.account_id) AS total_users,
+    SUM(COALESCE(o.discount_amount_lc,0)) AS discount_amount_lc,
+    SUM(COALESCE(o.gmv_amount_lc,0)) AS gmv_amount_lc
+  FROM `tlb-data-prod.data_platform.fct_order_info` o
+  INNER JOIN `tlb-data-prod.data_platform.dim_vendor_info` v
+    ON o.vendor_id = v.vendor_id
+  INNER JOIN `tlb-data-prod.data_platform.dim_location_info` l
+    ON v.location_id = l.location_id
+  WHERE LOWER(o.delivery_arrangement) = &apos;tdine&apos;
+    AND o.order_date &gt;&gt;= DATE(&apos;2025-03-28&apos;)
+    AND o.is_successful
+    AND area_name IN (
+        &apos;Al Wasl&apos;,
+        &apos;Jumeirah Beach Residence - JBR&apos;,
+        &apos;Al Safa&apos;
+    )
+  GROUP BY all
+)
+
+SELECT a.order_date,a.tag,a.vendor_tag,a.area_name,total_orders,total_users,discount_amount_lc,gmv_amount_lc,b.total_acq
+FROM pre_post_orders as a 
+left join pre_post_acq as b
+on a.tag=b.tag 
+and a.area_name=b.area_name  
+and a.order_date=b.order_date
+and a.vendor_tag=b.vendor_tag
+-- and a.vendor_id=b.vendor_id
+where a.tag is not null 
+order by 1</_.fcp.ObjectModelEncapsulateLegacy.false...relation>
+        <_.fcp.ObjectModelEncapsulateLegacy.true...relation connection='bigquery.04rgj1d1taslb91h79uww03yczee' name='Custom SQL Query' type='text'>WITH dineout_acquisitions AS (
+  SELECT
+    o.account_id,
+    o.order_id,
+    o.order_date,
+    l.area_name,
+    v.vendor_id,
+    v.vendor_name,
+    ROW_NUMBER() OVER (PARTITION BY o.account_id ORDER BY o.order_time) AS rn
+  FROM `tlb-data-prod.data_platform.fct_order_info` o
+  INNER JOIN `tlb-data-prod.data_platform.dim_account` a
+    ON o.account_id = a.account_id
+  INNER JOIN `tlb-data-prod.data_platform.dim_vendor_info` v
+    ON o.vendor_id = v.vendor_id
+  INNER JOIN `tlb-data-prod.data_platform.dim_location_info` l
+    ON v.location_id = l.location_id
+  WHERE o.is_successful
+    AND LOWER(o.delivery_arrangement) = &apos;tdine&apos;
+    AND o.country_code = &apos;AE&apos;
+),
+
+pre_post_acq AS (
+  SELECT
+CASE
+  WHEN order_date BETWEEN DATE(&apos;2025-07-23&apos;) AND DATE(&apos;2025-08-24&apos;)
+    THEN &apos;Post&apos;
+  WHEN order_date BETWEEN DATE(&apos;2025-06-02&apos;) AND DATE(&apos;2025-07-22&apos;)
+    AND NOT (order_date BETWEEN DATE(&apos;2025-06-13&apos;) AND DATE(&apos;2025-06-30&apos;))
+    THEN &apos;Pre&apos;
+END AS tag,
+
+    order_date,
+    area_name,
+    case when vendor_id=(699895) then &quot;Everday Roastary&quot; else &quot;Non-Everday&quot; end as vendor_tag,
+    -- vendor_name,
+    -- vendor_id,
+    COUNT(DISTINCT account_id) AS total_acq
+  FROM dineout_acquisitions
+  WHERE rn=1
+  AND order_date&gt;&gt;=&quot;2025-03-28&quot;
+  AND area_name IN (
+        &apos;Al Wasl&apos;,
+        &apos;Jumeirah Beach Residence - JBR&apos;,
+        &apos;Al Safa&apos;
+    )
+  GROUP BY all
+),
+
+pre_post_orders AS (
+  SELECT
+CASE
+  WHEN order_date BETWEEN DATE(&apos;2025-07-23&apos;) AND DATE(&apos;2025-08-24&apos;)
+    THEN &apos;Post&apos;
+  WHEN order_date BETWEEN DATE(&apos;2025-06-02&apos;) AND DATE(&apos;2025-07-22&apos;)
+    AND NOT (order_date BETWEEN DATE(&apos;2025-06-13&apos;) AND DATE(&apos;2025-06-30&apos;))
+    THEN &apos;Pre&apos;
+END AS tag,
+
+    order_date,
+    l.area_name,
+    case when o.vendor_id=(699895) then &quot;Everday Roastary&quot; else &quot;Non-Everday&quot; end as vendor_tag,
+    -- v.vendor_id,
+    -- v.vendor_name,
+    COUNT(DISTINCT o.order_id) AS total_orders,
+    COUNT(DISTINCT o.account_id) AS total_users,
+    SUM(COALESCE(o.discount_amount_lc,0)) AS discount_amount_lc,
+    SUM(COALESCE(o.gmv_amount_lc,0)) AS gmv_amount_lc
+  FROM `tlb-data-prod.data_platform.fct_order_info` o
+  INNER JOIN `tlb-data-prod.data_platform.dim_vendor_info` v
+    ON o.vendor_id = v.vendor_id
+  INNER JOIN `tlb-data-prod.data_platform.dim_location_info` l
+    ON v.location_id = l.location_id
+  WHERE LOWER(o.delivery_arrangement) = &apos;tdine&apos;
+    AND o.order_date &gt;&gt;= DATE(&apos;2025-03-28&apos;)
+    AND o.is_successful
+    AND area_name IN (
+        &apos;Al Wasl&apos;,
+        &apos;Jumeirah Beach Residence - JBR&apos;,
+        &apos;Al Safa&apos;
+    )
+  GROUP BY all
+)
+
+SELECT a.order_date,a.tag,a.vendor_tag,a.area_name,total_orders,total_users,discount_amount_lc,gmv_amount_lc,b.total_acq
+FROM pre_post_orders as a 
+left join pre_post_acq as b
+on a.tag=b.tag 
+and a.area_name=b.area_name  
+and a.order_date=b.order_date
+and a.vendor_tag=b.vendor_tag
+-- and a.vendor_id=b.vendor_id
+where a.tag is not null 
+order by 1</_.fcp.ObjectModelEncapsulateLegacy.true...relation>
+        <metadata-records>
+          <metadata-record class='column'>
+            <remote-name>order_date</remote-name>
+            <remote-type>7</remote-type>
+            <local-name>[order_date]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>order_date</remote-alias>
+            <local-type>date</local-type>
+            <aggregation>Year</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_9C361A9EBDEA420788122AEECECBAD89]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>tag</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[tag]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>tag</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_9C361A9EBDEA420788122AEECECBAD89]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>vendor_tag</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[vendor_tag]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>vendor_tag</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_9C361A9EBDEA420788122AEECECBAD89]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>area_name</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[area_name]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>area_name</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_9C361A9EBDEA420788122AEECECBAD89]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>total_orders</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[total_orders]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>total_orders</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_9C361A9EBDEA420788122AEECECBAD89]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>total_users</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[total_users]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>total_users</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_9C361A9EBDEA420788122AEECECBAD89]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>discount_amount_lc</remote-name>
+            <remote-type>5</remote-type>
+            <local-name>[discount_amount_lc]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>discount_amount_lc</remote-alias>
+            <local-type>real</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_9C361A9EBDEA420788122AEECECBAD89]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>gmv_amount_lc</remote-name>
+            <remote-type>5</remote-type>
+            <local-name>[gmv_amount_lc]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>gmv_amount_lc</remote-alias>
+            <local-type>real</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_9C361A9EBDEA420788122AEECECBAD89]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>total_acq</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[total_acq]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>total_acq</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_9C361A9EBDEA420788122AEECECBAD89]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+        </metadata-records>
+      </connection>
+      <aliases enabled='yes' />
+      <column datatype='string' name='[:Measure Names]' role='dimension' type='nominal'>
+        <aliases>
+          <alias key='&quot;[federated.0n0t4f71o14k591bglfw4178as03].[sum:gmv_amount_lc:qk]&quot;' value='GMV (LC)' />
+          <alias key='&quot;[federated.0n0t4f71o14k591bglfw4178as03].[sum:total_acq:qk]&quot;' value='New Users to DineOut' />
+          <alias key='&quot;[federated.0n0t4f71o14k591bglfw4178as03].[sum:total_orders:qk]&quot;' value='DineOut Orders' />
+          <alias key='&quot;[federated.0n0t4f71o14k591bglfw4178as03].[sum:total_users:qk]&quot;' value='DineOut Users' />
+        </aliases>
+      </column>
+      <_.fcp.ObjectModelTableType.true...column caption='Custom SQL Query' datatype='table' name='[__tableau_internal_object_id__].[_9C361A9EBDEA420788122AEECECBAD89]' role='measure' type='quantitative' />
+      <column datatype='string' name='[area_name (group)]' role='dimension' type='nominal'>
+        <calculation class='categorical-bin' column='[area_name]' new-bin='true'>
+          <bin default-name='true' value='&quot;Al Safa &amp; Al Wasl&quot;'>
+            <value>&quot;Al Safa&quot;</value>
+            <value>&quot;Al Wasl&quot;</value>
+          </bin>
+        </calculation>
+      </column>
+      <column datatype='string' name='[area_name]' role='dimension' type='nominal' />
+      <column datatype='real' name='[gmv_amount_lc]' role='measure' type='quantitative' />
+      <column datatype='integer' name='[total_acq]' role='measure' type='quantitative' />
+      <column datatype='integer' name='[total_orders]' role='measure' type='quantitative' />
+      <column datatype='integer' name='[total_users]' role='measure' type='quantitative' />
+      <column datatype='string' name='[vendor_tag]' role='dimension' type='nominal'>
+        <aliases>
+          <alias key='&quot;Everday Roastary&quot;' value='Everyday Roastary' />
+          <alias key='&quot;Non-Everday&quot;' value='Other Vendors' />
+        </aliases>
+      </column>
+      <column-instance column='[gmv_amount_lc]' derivation='Sum' name='[sum:gmv_amount_lc:qk]' pivot='key' type='quantitative' />
+      <column-instance column='[total_acq]' derivation='Sum' name='[sum:total_acq:qk]' pivot='key' type='quantitative' />
+      <column-instance column='[total_orders]' derivation='Sum' name='[sum:total_orders:qk]' pivot='key' type='quantitative' />
+      <column-instance column='[total_users]' derivation='Sum' name='[sum:total_users:qk]' pivot='key' type='quantitative' />
+      <extract _.fcp.ObjectModelExtractV2.true...object-id='' _.fcp.VConnDownstreamExtractsWithWarnings.true...user-specific='false' count='-1' enabled='true' units='records'>
+        <connection class='hyper' dbname='extract/0d/53/{C288A988-B8B3-485A-85B4-105C08BD8A40}/federated_0n0t4f71o14k591bglfw41.hyper' default-settings='yes' extract-engine='true' schema='Extract' tablename='Extract' update-time='08/25/2025 07:45:35 AM'>
+          <_.fcp.ObjectModelEncapsulateLegacy.false...relation name='Extract' table='[Extract].[Extract]' type='table' />
+          <_.fcp.ObjectModelEncapsulateLegacy.true...relation name='Extract' table='[Extract].[Extract]' type='table' />
+          <refresh>
+            <refresh-event add-from-file-path='summary' increment-value='%null%' refresh-type='create' rows-inserted='258' timestamp-start='2025-08-25 07:45:28' />
+          </refresh>
+          <metadata-records>
+            <metadata-record class='column'>
+              <remote-name>order_date</remote-name>
+              <remote-type>133</remote-type>
+              <local-name>[order_date]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>order_date</remote-alias>
+              <ordinal>0</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>date</local-type>
+              <aggregation>Year</aggregation>
+              <approx-count>66</approx-count>
+              <contains-null>true</contains-null>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>tag</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[tag]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>tag</remote-alias>
+              <ordinal>1</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>2</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>vendor_tag</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[vendor_tag]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>vendor_tag</remote-alias>
+              <ordinal>2</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>2</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>area_name</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[area_name]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>area_name</remote-alias>
+              <ordinal>3</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>3</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>total_orders</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[total_orders]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>total_orders</remote-alias>
+              <ordinal>4</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>66</approx-count>
+              <contains-null>true</contains-null>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>total_users</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[total_users]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>total_users</remote-alias>
+              <ordinal>5</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>59</approx-count>
+              <contains-null>true</contains-null>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>discount_amount_lc</remote-name>
+              <remote-type>5</remote-type>
+              <local-name>[discount_amount_lc]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>discount_amount_lc</remote-alias>
+              <ordinal>6</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>real</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>255</approx-count>
+              <contains-null>true</contains-null>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>gmv_amount_lc</remote-name>
+              <remote-type>5</remote-type>
+              <local-name>[gmv_amount_lc]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>gmv_amount_lc</remote-alias>
+              <ordinal>7</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>real</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>257</approx-count>
+              <contains-null>true</contains-null>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>total_acq</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[total_acq]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>total_acq</remote-alias>
+              <ordinal>8</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>8</approx-count>
+              <contains-null>true</contains-null>
+            </metadata-record>
+          </metadata-records>
+        </connection>
+      </extract>
+      <layout _.fcp.SchemaViewerObjectModel.false...dim-percentage='0.5' _.fcp.SchemaViewerObjectModel.false...measure-percentage='0.4' dim-ordering='alphabetic' measure-ordering='alphabetic' show-aliased-fields='true' show-structure='true' />
+      <style>
+        <style-rule element='mark'>
+          <encoding attr='color' field='[area_name (group)]' type='palette'>
+            <map to='#aa7942'>
+              <bucket>&quot;Jumeirah Beach Residence - JBR&quot;</bucket>
+            </map>
+            <map to='#ff9300'>
+              <bucket>&quot;Al Safa &amp; Al Wasl&quot;</bucket>
+            </map>
+          </encoding>
+        </style-rule>
+      </style>
+      <semantic-values>
+        <semantic-value key='[Country].[Name]' value='&quot;United States&quot;' />
+      </semantic-values>
+      <date-options start-of-week='saturday' />
+      <_.fcp.ObjectModelEncapsulateLegacy.true...object-graph>
+        <objects>
+          <object caption='Custom SQL Query' id='_9C361A9EBDEA420788122AEECECBAD89'>
+            <properties context=''>
+              <relation connection='bigquery.04rgj1d1taslb91h79uww03yczee' name='Custom SQL Query' type='text'>WITH dineout_acquisitions AS (
+  SELECT
+    o.account_id,
+    o.order_id,
+    o.order_date,
+    l.area_name,
+    v.vendor_id,
+    v.vendor_name,
+    ROW_NUMBER() OVER (PARTITION BY o.account_id ORDER BY o.order_time) AS rn
+  FROM `tlb-data-prod.data_platform.fct_order_info` o
+  INNER JOIN `tlb-data-prod.data_platform.dim_account` a
+    ON o.account_id = a.account_id
+  INNER JOIN `tlb-data-prod.data_platform.dim_vendor_info` v
+    ON o.vendor_id = v.vendor_id
+  INNER JOIN `tlb-data-prod.data_platform.dim_location_info` l
+    ON v.location_id = l.location_id
+  WHERE o.is_successful
+    AND LOWER(o.delivery_arrangement) = &apos;tdine&apos;
+    AND o.country_code = &apos;AE&apos;
+),
+
+pre_post_acq AS (
+  SELECT
+CASE
+  WHEN order_date BETWEEN DATE(&apos;2025-07-23&apos;) AND DATE(&apos;2025-08-24&apos;)
+    THEN &apos;Post&apos;
+  WHEN order_date BETWEEN DATE(&apos;2025-06-02&apos;) AND DATE(&apos;2025-07-22&apos;)
+    AND NOT (order_date BETWEEN DATE(&apos;2025-06-13&apos;) AND DATE(&apos;2025-06-30&apos;))
+    THEN &apos;Pre&apos;
+END AS tag,
+
+    order_date,
+    area_name,
+    case when vendor_id=(699895) then &quot;Everday Roastary&quot; else &quot;Non-Everday&quot; end as vendor_tag,
+    -- vendor_name,
+    -- vendor_id,
+    COUNT(DISTINCT account_id) AS total_acq
+  FROM dineout_acquisitions
+  WHERE rn=1
+  AND order_date&gt;&gt;=&quot;2025-03-28&quot;
+  AND area_name IN (
+        &apos;Al Wasl&apos;,
+        &apos;Jumeirah Beach Residence - JBR&apos;,
+        &apos;Al Safa&apos;
+    )
+  GROUP BY all
+),
+
+pre_post_orders AS (
+  SELECT
+CASE
+  WHEN order_date BETWEEN DATE(&apos;2025-07-23&apos;) AND DATE(&apos;2025-08-24&apos;)
+    THEN &apos;Post&apos;
+  WHEN order_date BETWEEN DATE(&apos;2025-06-02&apos;) AND DATE(&apos;2025-07-22&apos;)
+    AND NOT (order_date BETWEEN DATE(&apos;2025-06-13&apos;) AND DATE(&apos;2025-06-30&apos;))
+    THEN &apos;Pre&apos;
+END AS tag,
+
+    order_date,
+    l.area_name,
+    case when o.vendor_id=(699895) then &quot;Everday Roastary&quot; else &quot;Non-Everday&quot; end as vendor_tag,
+    -- v.vendor_id,
+    -- v.vendor_name,
+    COUNT(DISTINCT o.order_id) AS total_orders,
+    COUNT(DISTINCT o.account_id) AS total_users,
+    SUM(COALESCE(o.discount_amount_lc,0)) AS discount_amount_lc,
+    SUM(COALESCE(o.gmv_amount_lc,0)) AS gmv_amount_lc
+  FROM `tlb-data-prod.data_platform.fct_order_info` o
+  INNER JOIN `tlb-data-prod.data_platform.dim_vendor_info` v
+    ON o.vendor_id = v.vendor_id
+  INNER JOIN `tlb-data-prod.data_platform.dim_location_info` l
+    ON v.location_id = l.location_id
+  WHERE LOWER(o.delivery_arrangement) = &apos;tdine&apos;
+    AND o.order_date &gt;&gt;= DATE(&apos;2025-03-28&apos;)
+    AND o.is_successful
+    AND area_name IN (
+        &apos;Al Wasl&apos;,
+        &apos;Jumeirah Beach Residence - JBR&apos;,
+        &apos;Al Safa&apos;
+    )
+  GROUP BY all
+)
+
+SELECT a.order_date,a.tag,a.vendor_tag,a.area_name,total_orders,total_users,discount_amount_lc,gmv_amount_lc,b.total_acq
+FROM pre_post_orders as a 
+left join pre_post_acq as b
+on a.tag=b.tag 
+and a.area_name=b.area_name  
+and a.order_date=b.order_date
+and a.vendor_tag=b.vendor_tag
+-- and a.vendor_id=b.vendor_id
+where a.tag is not null 
+order by 1</relation>
+            </properties>
+            <properties context='extract'>
+              <relation name='Extract' table='[Extract].[Extract]' type='table' />
+            </properties>
+          </object>
+        </objects>
+      </_.fcp.ObjectModelEncapsulateLegacy.true...object-graph>
+    </datasource>
+  </datasources>
+  <worksheets>
+    <worksheet name='pre and post'>
+      <layout-options>
+        <title>
+          <formatted-text>
+            <run>Summary&#10; </run>
+            <run fontsize='10'>July 23rd - till date</run>
+          </formatted-text>
+        </title>
+      </layout-options>
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='summary' name='federated.0n0t4f71o14k591bglfw4178as03' />
+          </datasources>
+          <datasource-dependencies datasource='federated.0n0t4f71o14k591bglfw4178as03'>
+            <column datatype='string' name='[area_name (group)]' role='dimension' type='nominal'>
+              <calculation class='categorical-bin' column='[area_name]' new-bin='true'>
+                <bin default-name='true' value='&quot;Al Safa &amp; Al Wasl&quot;'>
+                  <value>&quot;Al Safa&quot;</value>
+                  <value>&quot;Al Wasl&quot;</value>
+                </bin>
+              </calculation>
+            </column>
+            <column datatype='string' name='[area_name]' role='dimension' type='nominal' />
+            <column datatype='real' name='[gmv_amount_lc]' role='measure' type='quantitative' />
+            <column-instance column='[tag]' derivation='None' name='[none:tag:nk]' pivot='key' type='nominal' />
+            <column-instance column='[total_orders]' derivation='Sum' name='[pcdf:sum:total_orders:qk]' pivot='key' type='quantitative'>
+              <table-calc diff-options='Relative' ordering-type='Rows' type='PctDiff'>
+                <address>
+                  <value>-1</value>
+                </address>
+              </table-calc>
+            </column-instance>
+            <column-instance column='[gmv_amount_lc]' derivation='Sum' name='[sum:gmv_amount_lc:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[total_acq]' derivation='Sum' name='[sum:total_acq:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[total_orders]' derivation='Sum' name='[sum:total_orders:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[total_users]' derivation='Sum' name='[sum:total_users:qk]' pivot='key' type='quantitative' />
+            <column datatype='string' name='[tag]' role='dimension' type='nominal' />
+            <column datatype='integer' name='[total_acq]' role='measure' type='quantitative' />
+            <column datatype='integer' name='[total_orders]' role='measure' type='quantitative' />
+            <column datatype='integer' name='[total_users]' role='measure' type='quantitative' />
+          </datasource-dependencies>
+          <filter class='categorical' column='[federated.0n0t4f71o14k591bglfw4178as03].[:Measure Names]'>
+            <groupfilter function='union' user:op='manual'>
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.0n0t4f71o14k591bglfw4178as03].[sum:total_orders:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.0n0t4f71o14k591bglfw4178as03].[pcdf:sum:total_orders:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.0n0t4f71o14k591bglfw4178as03].[sum:total_users:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.0n0t4f71o14k591bglfw4178as03].[sum:total_acq:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.0n0t4f71o14k591bglfw4178as03].[sum:gmv_amount_lc:qk]&quot;' />
+            </groupfilter>
+          </filter>
+          <manual-sort column='[federated.0n0t4f71o14k591bglfw4178as03].[:Measure Names]' direction='ASC'>
+            <dictionary>
+              <bucket>&quot;[federated.0n0t4f71o14k591bglfw4178as03].[sum:total_orders:qk]&quot;</bucket>
+              <bucket>&quot;[federated.0n0t4f71o14k591bglfw4178as03].[pcdf:sum:total_orders:qk]&quot;</bucket>
+              <bucket>&quot;[federated.0n0t4f71o14k591bglfw4178as03].[sum:total_users:qk]&quot;</bucket>
+              <bucket>&quot;[federated.0n0t4f71o14k591bglfw4178as03].[sum:total_acq:qk]&quot;</bucket>
+              <bucket>&quot;[federated.0n0t4f71o14k591bglfw4178as03].[sum:gmv_amount_lc:qk]&quot;</bucket>
+            </dictionary>
+          </manual-sort>
+          <manual-sort column='[federated.0n0t4f71o14k591bglfw4178as03].[none:tag:nk]' direction='ASC'>
+            <dictionary>
+              <bucket>&quot;Pre&quot;</bucket>
+              <bucket>&quot;Post&quot;</bucket>
+            </dictionary>
+          </manual-sort>
+          <slices>
+            <column>[federated.0n0t4f71o14k591bglfw4178as03].[:Measure Names]</column>
+          </slices>
+          <aggregation value='true' />
+        </view>
+        <style>
+          <style-rule element='cell'>
+            <format attr='width' field='[federated.0n0t4f71o14k591bglfw4178as03].[:Measure Names]' value='153' />
+            <format attr='height' field='[federated.0n0t4f71o14k591bglfw4178as03].[area_name (group)]' value='69' />
+            <format attr='width' field='[federated.0n0t4f71o14k591bglfw4178as03].[none:tag:nk]' value='161' />
+            <format attr='text-align' value='center' />
+            <format attr='text-format' field='[federated.0n0t4f71o14k591bglfw4178as03].[pcdf:sum:total_orders:qk]' value='p0%' />
+          </style-rule>
+          <style-rule element='header'>
+            <format attr='width' field='[federated.0n0t4f71o14k591bglfw4178as03].[area_name (group)]' value='184' />
+          </style-rule>
+          <style-rule element='label'>
+            <format attr='font-weight' field='[federated.0n0t4f71o14k591bglfw4178as03].[:Measure Names]' value='bold' />
+            <format attr='font-weight' field='[federated.0n0t4f71o14k591bglfw4178as03].[none:tag:nk]' value='bold' />
+          </style-rule>
+          <style-rule element='worksheet'>
+            <format attr='display-field-labels' scope='rows' value='false' />
+            <format attr='display-field-labels' scope='cols' value='false' />
+          </style-rule>
+        </style>
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Automatic' />
+            <encodings>
+              <text column='[federated.0n0t4f71o14k591bglfw4178as03].[Multiple Values]' />
+            </encodings>
+            <style>
+              <style-rule element='mark'>
+                <format attr='mark-labels-show' value='true' />
+              </style-rule>
+              <style-rule element='pane'>
+                <format attr='minwidth' value='-1' />
+                <format attr='maxwidth' value='-1' />
+                <format attr='minheight' value='-1' />
+                <format attr='maxheight' value='-1' />
+              </style-rule>
+            </style>
+          </pane>
+        </panes>
+        <rows>[federated.0n0t4f71o14k591bglfw4178as03].[area_name (group)]</rows>
+        <cols>([federated.0n0t4f71o14k591bglfw4178as03].[:Measure Names] / [federated.0n0t4f71o14k591bglfw4178as03].[none:tag:nk])</cols>
+      </table>
+      <simple-id uuid='{73485E03-766D-44A6-A12D-C06DFF820197}' />
+    </worksheet>
+    <worksheet name='summary pre and post'>
+      <layout-options>
+        <title>
+          <formatted-text>
+            <run bold='true' fontsize='12'>Summary</run>
+            <run>Æ&#10; </run>
+            <run fontsize='10'>July 23rd - till date</run>
+          </formatted-text>
+        </title>
+      </layout-options>
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='summary' name='federated.0n0t4f71o14k591bglfw4178as03' />
+          </datasources>
+          <datasource-dependencies datasource='federated.0n0t4f71o14k591bglfw4178as03'>
+            <column datatype='string' name='[area_name (group)]' role='dimension' type='nominal'>
+              <calculation class='categorical-bin' column='[area_name]' new-bin='true'>
+                <bin default-name='true' value='&quot;Al Safa &amp; Al Wasl&quot;'>
+                  <value>&quot;Al Safa&quot;</value>
+                  <value>&quot;Al Wasl&quot;</value>
+                </bin>
+              </calculation>
+            </column>
+            <column datatype='string' name='[area_name]' role='dimension' type='nominal' />
+            <column datatype='real' name='[gmv_amount_lc]' role='measure' type='quantitative' />
+            <column-instance column='[tag]' derivation='None' name='[none:tag:nk]' pivot='key' type='nominal' />
+            <column-instance column='[vendor_tag]' derivation='None' name='[none:vendor_tag:nk]' pivot='key' type='nominal' />
+            <column-instance column='[gmv_amount_lc]' derivation='Sum' name='[sum:gmv_amount_lc:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[total_acq]' derivation='Sum' name='[sum:total_acq:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[total_orders]' derivation='Sum' name='[sum:total_orders:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[total_users]' derivation='Sum' name='[sum:total_users:qk]' pivot='key' type='quantitative' />
+            <column datatype='string' name='[tag]' role='dimension' type='nominal' />
+            <column datatype='integer' name='[total_acq]' role='measure' type='quantitative' />
+            <column datatype='integer' name='[total_orders]' role='measure' type='quantitative' />
+            <column datatype='integer' name='[total_users]' role='measure' type='quantitative' />
+            <column datatype='string' name='[vendor_tag]' role='dimension' type='nominal'>
+              <aliases>
+                <alias key='&quot;Everday Roastary&quot;' value='Everyday Roastary' />
+                <alias key='&quot;Non-Everday&quot;' value='Other Vendors' />
+              </aliases>
+            </column>
+          </datasource-dependencies>
+          <filter class='categorical' column='[federated.0n0t4f71o14k591bglfw4178as03].[:Measure Names]'>
+            <groupfilter function='union' user:op='manual'>
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.0n0t4f71o14k591bglfw4178as03].[sum:total_orders:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.0n0t4f71o14k591bglfw4178as03].[sum:total_users:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.0n0t4f71o14k591bglfw4178as03].[sum:total_acq:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.0n0t4f71o14k591bglfw4178as03].[sum:gmv_amount_lc:qk]&quot;' />
+            </groupfilter>
+          </filter>
+          <manual-sort column='[federated.0n0t4f71o14k591bglfw4178as03].[:Measure Names]' direction='ASC'>
+            <dictionary>
+              <bucket>&quot;[federated.0n0t4f71o14k591bglfw4178as03].[sum:total_orders:qk]&quot;</bucket>
+              <bucket>&quot;[federated.0n0t4f71o14k591bglfw4178as03].[sum:total_users:qk]&quot;</bucket>
+              <bucket>&quot;[federated.0n0t4f71o14k591bglfw4178as03].[sum:total_acq:qk]&quot;</bucket>
+            </dictionary>
+          </manual-sort>
+          <filter class='categorical' column='[federated.0n0t4f71o14k591bglfw4178as03].[none:tag:nk]'>
+            <groupfilter function='member' level='[none:tag:nk]' member='&quot;Post&quot;' user:ui-domain='database' user:ui-enumeration='inclusive' user:ui-marker='enumerate' />
+          </filter>
+          <filter class='categorical' column='[federated.0n0t4f71o14k591bglfw4178as03].[none:vendor_tag:nk]'>
+            <groupfilter function='member' level='[none:vendor_tag:nk]' member='&quot;Non-Everday&quot;' user:ui-domain='database' user:ui-enumeration='inclusive' user:ui-marker='enumerate' />
+          </filter>
+          <slices>
+            <column>[federated.0n0t4f71o14k591bglfw4178as03].[none:tag:nk]</column>
+            <column>[federated.0n0t4f71o14k591bglfw4178as03].[:Measure Names]</column>
+            <column>[federated.0n0t4f71o14k591bglfw4178as03].[none:vendor_tag:nk]</column>
+          </slices>
+          <aggregation value='true' />
+        </view>
+        <style>
+          <style-rule element='cell'>
+            <format attr='width' field='[federated.0n0t4f71o14k591bglfw4178as03].[:Measure Names]' value='216' />
+            <format attr='height' field='[federated.0n0t4f71o14k591bglfw4178as03].[area_name (group)]' value='69' />
+            <format attr='width' field='[federated.0n0t4f71o14k591bglfw4178as03].[none:tag:nk]' value='161' />
+            <format attr='text-align' value='center' />
+            <format attr='border-width' value='0' />
+            <format attr='border-style' value='none' />
+          </style-rule>
+          <style-rule element='header'>
+            <format attr='width' field='[federated.0n0t4f71o14k591bglfw4178as03].[area_name (group)]' value='284' />
+            <format attr='height' field='[federated.0n0t4f71o14k591bglfw4178as03].[:Measure Names]' value='10' />
+            <format attr='border-color' data-class='subtotal' scope='rows' value='#000000' />
+            <format attr='border-color' data-class='subtotal' scope='cols' value='#000000' />
+            <format attr='border-color' data-class='total' value='#000000' />
+            <format attr='band-color' scope='rows' value='#00000000' />
+            <format attr='border-width' value='0' />
+            <format attr='border-style' value='none' />
+            <format attr='border-width' data-class='subtotal' value='1' />
+          </style-rule>
+          <style-rule element='label'>
+            <format attr='display' field='[federated.0n0t4f71o14k591bglfw4178as03].[none:tag:nk]' value='false' />
+            <format attr='font-weight' field='[federated.0n0t4f71o14k591bglfw4178as03].[:Measure Names]' value='bold' />
+            <format attr='color' field='[federated.0n0t4f71o14k591bglfw4178as03].[:Measure Names]' value='#000000' />
+          </style-rule>
+          <style-rule element='pane'>
+            <format attr='border-color' data-class='subtotal' scope='rows' value='#000000' />
+            <format attr='border-color' data-class='subtotal' scope='cols' value='#000000' />
+            <format attr='border-color' data-class='total' value='#000000' />
+            <format attr='band-color' scope='rows' value='#00000000' />
+            <format attr='border-width' value='0' />
+            <format attr='border-style' value='none' />
+          </style-rule>
+          <style-rule element='table'>
+            <format attr='band-size' scope='rows' value='1' />
+          </style-rule>
+          <style-rule element='worksheet'>
+            <format attr='display-field-labels' scope='rows' value='false' />
+            <format attr='display-field-labels' scope='cols' value='false' />
+          </style-rule>
+          <style-rule element='dropline'>
+            <format attr='stroke-color' value='#000000' />
+          </style-rule>
+          <style-rule element='zeroline'>
+            <format attr='line-visibility' scope='rows' value='on' />
+            <format attr='line-pattern-only' scope='rows' value='solid' />
+          </style-rule>
+          <style-rule element='table-div'>
+            <format attr='stroke-color' scope='rows' value='#000000' />
+            <format attr='stroke-color' scope='cols' value='#000000' />
+            <format attr='stroke-size' scope='rows' value='1' />
+            <format attr='line-visibility' scope='rows' value='on' />
+            <format attr='line-pattern-only' scope='rows' value='solid' />
+            <format attr='stroke-size' scope='cols' value='1' />
+            <format attr='line-visibility' scope='cols' value='on' />
+            <format attr='line-pattern-only' scope='cols' value='solid' />
+          </style-rule>
+          <style-rule element='header-div'>
+            <format attr='stroke-size' scope='cols' value='1' />
+            <format attr='line-visibility' scope='cols' value='on' />
+            <format attr='line-pattern-only' scope='cols' value='solid' />
+          </style-rule>
+        </style>
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Automatic' />
+            <encodings>
+              <text column='[federated.0n0t4f71o14k591bglfw4178as03].[Multiple Values]' />
+            </encodings>
+            <style>
+              <style-rule element='mark'>
+                <format attr='mark-labels-show' value='true' />
+              </style-rule>
+              <style-rule element='pane'>
+                <format attr='minwidth' value='-1' />
+                <format attr='maxwidth' value='-1' />
+                <format attr='minheight' value='-1' />
+                <format attr='maxheight' value='-1' />
+              </style-rule>
+            </style>
+          </pane>
+        </panes>
+        <rows>[federated.0n0t4f71o14k591bglfw4178as03].[area_name (group)]</rows>
+        <cols>([federated.0n0t4f71o14k591bglfw4178as03].[none:tag:nk] / [federated.0n0t4f71o14k591bglfw4178as03].[:Measure Names])</cols>
+      </table>
+      <simple-id uuid='{43271A25-33A4-4212-A29B-388C919F451E}' />
+    </worksheet>
+    <worksheet name='vendor'>
+      <layout-options>
+        <title>
+          <formatted-text>
+            <run bold='true' fontsize='12'>Vendor Wise Breakdown</run>
+          </formatted-text>
+        </title>
+      </layout-options>
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='vendor' name='federated.1mb23z01kvb5ek1d5kd4v0xkg0iy' />
+          </datasources>
+          <datasource-dependencies datasource='federated.1mb23z01kvb5ek1d5kd4v0xkg0iy'>
+            <column datatype='string' name='[area_name (group)]' role='dimension' type='nominal'>
+              <calculation class='categorical-bin' column='[area_name]' new-bin='true'>
+                <bin default-name='true' value='&quot;Al Safa &amp; Al Wasl&quot;'>
+                  <value>&quot;Al Safa&quot;</value>
+                  <value>&quot;Al Wasl&quot;</value>
+                </bin>
+              </calculation>
+            </column>
+            <column datatype='string' name='[area_name]' role='dimension' type='nominal' />
+            <column datatype='real' name='[gmv_amount_lc]' role='measure' type='quantitative' />
+            <column-instance column='[tag]' derivation='None' name='[none:tag:nk]' pivot='key' type='nominal' />
+            <column-instance column='[vendor_name]' derivation='None' name='[none:vendor_name:nk]' pivot='key' type='nominal' />
+            <column-instance column='[total_orders]' derivation='Sum' name='[rank:sum:total_orders:qk:2]' pivot='key' type='quantitative'>
+              <table-calc ordering-type='ColumnInPane' rank-options='Competition,Descending' type='Rank' />
+            </column-instance>
+            <column-instance column='[gmv_amount_lc]' derivation='Sum' name='[sum:gmv_amount_lc:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[total_acq]' derivation='Sum' name='[sum:total_acq:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[total_orders]' derivation='Sum' name='[sum:total_orders:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[total_users]' derivation='Sum' name='[sum:total_users:qk]' pivot='key' type='quantitative' />
+            <column datatype='string' name='[tag]' role='dimension' type='nominal' />
+            <column datatype='integer' name='[total_acq]' role='measure' type='quantitative' />
+            <column datatype='integer' name='[total_orders]' role='measure' type='quantitative' />
+            <column datatype='integer' name='[total_users]' role='measure' type='quantitative' />
+            <column datatype='string' name='[vendor_name]' role='dimension' type='nominal' />
+          </datasource-dependencies>
+          <filter class='categorical' column='[federated.1mb23z01kvb5ek1d5kd4v0xkg0iy].[:Measure Names]'>
+            <groupfilter function='union' user:op='manual'>
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.1mb23z01kvb5ek1d5kd4v0xkg0iy].[sum:total_orders:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.1mb23z01kvb5ek1d5kd4v0xkg0iy].[sum:total_users:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.1mb23z01kvb5ek1d5kd4v0xkg0iy].[sum:total_acq:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.1mb23z01kvb5ek1d5kd4v0xkg0iy].[sum:gmv_amount_lc:qk]&quot;' />
+            </groupfilter>
+          </filter>
+          <manual-sort column='[federated.1mb23z01kvb5ek1d5kd4v0xkg0iy].[:Measure Names]' direction='ASC'>
+            <dictionary>
+              <bucket>&quot;[federated.1mb23z01kvb5ek1d5kd4v0xkg0iy].[sum:total_orders:qk]&quot;</bucket>
+              <bucket>&quot;[federated.1mb23z01kvb5ek1d5kd4v0xkg0iy].[rank:sum:total_orders:qk:2]&quot;</bucket>
+              <bucket>&quot;[federated.1mb23z01kvb5ek1d5kd4v0xkg0iy].[sum:total_users:qk]&quot;</bucket>
+              <bucket>&quot;[federated.1mb23z01kvb5ek1d5kd4v0xkg0iy].[sum:total_acq:qk]&quot;</bucket>
+              <bucket>&quot;[federated.1mb23z01kvb5ek1d5kd4v0xkg0iy].[sum:gmv_amount_lc:qk]&quot;</bucket>
+            </dictionary>
+          </manual-sort>
+          <filter class='categorical' column='[federated.1mb23z01kvb5ek1d5kd4v0xkg0iy].[none:tag:nk]'>
+            <groupfilter function='member' level='[none:tag:nk]' member='&quot;Post&quot;' user:ui-domain='database' user:ui-enumeration='inclusive' user:ui-marker='enumerate' />
+          </filter>
+          <filter class='categorical' column='[federated.1mb23z01kvb5ek1d5kd4v0xkg0iy].[none:vendor_name:nk]' filter-group='3'>
+            <groupfilter function='union' user:ui-domain='database' user:ui-enumeration='inclusive' user:ui-marker='enumerate'>
+              <groupfilter function='member' level='[none:vendor_name:nk]' member='&quot;AJ1881&quot;' />
+              <groupfilter function='member' level='[none:vendor_name:nk]' member='&quot;Allo Beirut, JBR&quot;' />
+              <groupfilter function='member' level='[none:vendor_name:nk]' member='&quot;AMG Kaffeehaus, Al Wasl&quot;' />
+              <groupfilter function='member' level='[none:vendor_name:nk]' member='&quot;Aprons &amp; Hammers, Jumeirah Beach Residence - JBR&quot;' />
+              <groupfilter function='member' level='[none:vendor_name:nk]' member='&quot;Aqaya Café &amp; Restaurant, City Walk&quot;' />
+              <groupfilter function='member' level='[none:vendor_name:nk]' member='&quot;Back to Roots, Jumeirah Beach Residence - JBR&quot;' />
+              <groupfilter function='member' level='[none:vendor_name:nk]' member='&quot;Barracuda,Al Safa&quot;' />
+              <groupfilter function='member' level='[none:vendor_name:nk]' member='&quot;Beekeeper - Healthy &amp; Wholesome Eatery, City Walk&quot;' />
+              <groupfilter function='member' level='[none:vendor_name:nk]' member='&quot;Boga Superfoods, Al Wasl&quot;' />
+              <groupfilter function='member' level='[none:vendor_name:nk]' member='&quot;Boga Superfoods, Jumeirah Beach Residence - JBR&quot;' />
+              <groupfilter function='member' level='[none:vendor_name:nk]' member='&quot;Bombay Bungalow, Jumeirah Beach Residence - JBR&quot;' />
+              <groupfilter function='member' level='[none:vendor_name:nk]' member='&quot;Bosporus Express, JBR&quot;' />
+              <groupfilter function='member' level='[none:vendor_name:nk]' member='&quot;Buffalo Wild Wings, Jumeirah Beach Residence - JBR&quot;' />
+              <groupfilter function='member' level='[none:vendor_name:nk]' member='&quot;Butcha Steakhouse,  Al Wasl&quot;' />
+              <groupfilter function='member' level='[none:vendor_name:nk]' member='&quot;CAFFÉ DIVINO, City Walk&quot;' />
+              <groupfilter function='member' level='[none:vendor_name:nk]' member='&quot;Caffeine Coffee Roaster, Al Wasl&quot;' />
+              <groupfilter function='member' level='[none:vendor_name:nk]' member='&quot;China Garden, Al Wasl&quot;' />
+              <groupfilter function='member' level='[none:vendor_name:nk]' member='&quot;Derwandi, Al Wasl&quot;' />
+              <groupfilter function='member' level='[none:vendor_name:nk]' member='&quot;Dickey&apos;s Barbecue Pit, Jumeirah Beach Residence - JBR&quot;' />
+              <groupfilter function='member' level='[none:vendor_name:nk]' member='&quot;DRVN Coffee by Porsche, Jumeirah Beach Residence - JBR&quot;' />
+              <groupfilter function='member' level='[none:vendor_name:nk]' member='&quot;Eggspectation, Al Safa&quot;' />
+              <groupfilter function='member' level='[none:vendor_name:nk]' member='&quot;Eggspectation, Jumeirah Beach Residence - JBR&quot;' />
+              <groupfilter function='member' level='[none:vendor_name:nk]' member='&quot;Eric&apos;s Restaurant, Al Safa&quot;' />
+              <groupfilter function='member' level='[none:vendor_name:nk]' member='&quot;Gazebo, City Walk&quot;' />
+              <groupfilter function='member' level='[none:vendor_name:nk]' member='&quot;Go Thai, Al Wasl&quot;' />
+              <groupfilter function='member' level='[none:vendor_name:nk]' member='&quot;Hangry Joe&apos;s Hot Chicken &amp; Wings, City Walk&quot;' />
+              <groupfilter function='member' level='[none:vendor_name:nk]' member='&quot;Hoya Café &amp; Restaurant, Al Wasl&quot;' />
+              <groupfilter function='member' level='[none:vendor_name:nk]' member='&quot;Ketch Up, Jumeirah Beach Residence - JBR&quot;' />
+              <groupfilter function='member' level='[none:vendor_name:nk]' member='&quot;Keventers Milk Shakes, City Walk&quot;' />
+              <groupfilter function='member' level='[none:vendor_name:nk]' member='&quot;Keventers Milk Shakes, Jumeirah Beach Residence - JBR&quot;' />
+              <groupfilter function='member' level='[none:vendor_name:nk]' member='&quot;L&apos;Antica Da Michele Pizzeria, Jumeirah Beach Residence&quot;' />
+              <groupfilter function='member' level='[none:vendor_name:nk]' member='&quot;L’antica Pizzeria da Michele, Al Wasl&quot;' />
+              <groupfilter function='member' level='[none:vendor_name:nk]' member='&quot;L’OCCITANE CAFÉ, City Walk&quot;' />
+              <groupfilter function='member' level='[none:vendor_name:nk]' member='&quot;La Serre,  City Walk&quot;' />
+              <groupfilter function='member' level='[none:vendor_name:nk]' member='&quot;M`OISHÎ, City Walk&quot;' />
+              <groupfilter function='member' level='[none:vendor_name:nk]' member='&quot;MELENZANÈ, City Walk&quot;' />
+              <groupfilter function='member' level='[none:vendor_name:nk]' member='&quot;Menchie&apos;s, Jumeirah Beach Residence - JBR&quot;' />
+              <groupfilter function='member' level='[none:vendor_name:nk]' member='&quot;MINT, City Walk&quot;' />
+              <groupfilter function='member' level='[none:vendor_name:nk]' member='&quot;Miyabi Japanese Fusion, City Walk&quot;' />
+              <groupfilter function='member' level='[none:vendor_name:nk]' member='&quot;Mondoux Restaurant, Jumeirah Beach Residence - JBR&quot;' />
+              <groupfilter function='member' level='[none:vendor_name:nk]' member='&quot;NOX, Al Safa&quot;' />
+              <groupfilter function='member' level='[none:vendor_name:nk]' member='&quot;O Lab Coffee Shop, Jumeirah Beach Residence - JBR&quot;' />
+              <groupfilter function='member' level='[none:vendor_name:nk]' member='&quot;Obeli, Al Safa&quot;' />
+              <groupfilter function='member' level='[none:vendor_name:nk]' member='&quot;Pappa Roti Cafe, Jumeirah Beach Residence - JBR&quot;' />
+              <groupfilter function='member' level='[none:vendor_name:nk]' member='&quot;Parx Cafe, Al Safa&quot;' />
+              <groupfilter function='member' level='[none:vendor_name:nk]' member='&quot;PIMS Tea, Jumeirah Beach Residence&quot;' />
+              <groupfilter function='member' level='[none:vendor_name:nk]' member='&quot;PizzaExpress, Al Safa&quot;' />
+              <groupfilter function='member' level='[none:vendor_name:nk]' member='&quot;Prime Burger, Al Safa&quot;' />
+              <groupfilter function='member' level='[none:vendor_name:nk]' member='&quot;Primi - City Walk&quot;' />
+              <groupfilter function='member' level='[none:vendor_name:nk]' member='&quot;Rosa&apos;s Thai, Jumeirah Beach Residence - JBR&quot;' />
+              <groupfilter function='member' level='[none:vendor_name:nk]' member='&quot;SAID DAL 1923, City Walk&quot;' />
+              <groupfilter function='member' level='[none:vendor_name:nk]' member='&quot;Sarabeth`s, City Walk&quot;' />
+              <groupfilter function='member' level='[none:vendor_name:nk]' member='&quot;Saya Braserrie Cafe, Al Bada&apos;a City Walk&quot;' />
+              <groupfilter function='member' level='[none:vendor_name:nk]' member='&quot;STAY CAFE, Al Wasl&quot;' />
+              <groupfilter function='member' level='[none:vendor_name:nk]' member='&quot;Tayba Gourmet Restaurant, Al Safa&quot;' />
+              <groupfilter function='member' level='[none:vendor_name:nk]' member='&quot;Terrazza By Eataly, JBR&quot;' />
+              <groupfilter function='member' level='[none:vendor_name:nk]' member='&quot;Un Dimanche à Paris, Jumeirah Beach Residence&quot;' />
+              <groupfilter function='member' level='[none:vendor_name:nk]' member='&quot;Urban Seafood, Jumeirah Beach Residence&quot;' />
+              <groupfilter function='member' level='[none:vendor_name:nk]' member='&quot;Wagamama, City Walk&quot;' />
+              <groupfilter function='member' level='[none:vendor_name:nk]' member='&quot;Wofl Bakery, Jumeirah Beach Residence -JBR&quot;' />
+            </groupfilter>
+          </filter>
+          <filter class='quantitative' column='[federated.1mb23z01kvb5ek1d5kd4v0xkg0iy].[rank:sum:total_orders:qk:2]' included-values='in-range'>
+            <min>1</min>
+            <max>5</max>
+          </filter>
+          <filter class='quantitative' column='[federated.1mb23z01kvb5ek1d5kd4v0xkg0iy].[sum:total_orders:qk]' included-values='in-range' />
+          <shelf-sorts>
+            <shelf-sort-v2 dimension-to-sort='[federated.1mb23z01kvb5ek1d5kd4v0xkg0iy].[none:vendor_name:nk]' direction='DESC' is-on-innermost-dimension='true' measure-to-sort-by='[federated.1mb23z01kvb5ek1d5kd4v0xkg0iy].[sum:total_orders:qk]' shelf='rows' />
+          </shelf-sorts>
+          <slices>
+            <column>[federated.1mb23z01kvb5ek1d5kd4v0xkg0iy].[:Measure Names]</column>
+            <column>[federated.1mb23z01kvb5ek1d5kd4v0xkg0iy].[none:tag:nk]</column>
+            <column>[federated.1mb23z01kvb5ek1d5kd4v0xkg0iy].[rank:sum:total_orders:qk:2]</column>
+            <column>[federated.1mb23z01kvb5ek1d5kd4v0xkg0iy].[sum:total_orders:qk]</column>
+            <column>[federated.1mb23z01kvb5ek1d5kd4v0xkg0iy].[none:vendor_name:nk]</column>
+          </slices>
+          <aggregation value='true' />
+        </view>
+        <style>
+          <style-rule element='cell'>
+            <format attr='width' field='[federated.1mb23z01kvb5ek1d5kd4v0xkg0iy].[none:tag:nk]' value='106' />
+            <format attr='width' field='[federated.1mb23z01kvb5ek1d5kd4v0xkg0iy].[:Measure Names]' value='394' />
+            <format attr='text-align' value='center' />
+            <format attr='font-weight' field='[federated.1mb23z01kvb5ek1d5kd4v0xkg0iy].[none:vendor_name:nk]' value='bold' />
+            <format attr='font-weight' data-class='subtotal' scope='rows' value='bold' />
+            <format attr='font-size' data-class='subtotal' scope='rows' value='10' />
+          </style-rule>
+          <style-rule element='header'>
+            <format attr='width' field='[federated.1mb23z01kvb5ek1d5kd4v0xkg0iy].[none:vendor_name:nk]' value='244' />
+            <format attr='width' field='[federated.1mb23z01kvb5ek1d5kd4v0xkg0iy].[area_name (group)]' value='136' />
+            <format attr='height' field='[federated.1mb23z01kvb5ek1d5kd4v0xkg0iy].[:Measure Names]' value='39' />
+            <format attr='background-color' field='[federated.1mb23z01kvb5ek1d5kd4v0xkg0iy].[area_name (group)]' value='#ffffff' />
+            <format attr='border-color' data-class='subtotal' scope='rows' value='#000000' />
+            <format attr='border-color' data-class='subtotal' scope='cols' value='#000000' />
+            <format attr='band-color' scope='rows' value='#f6eee3' />
+            <format attr='font-weight' data-class='total' field='[federated.1mb23z01kvb5ek1d5kd4v0xkg0iy].[none:vendor_name:nk]' value='bold' />
+            <format attr='color' data-class='total' field='[federated.1mb23z01kvb5ek1d5kd4v0xkg0iy].[none:vendor_name:nk]' value='#000000' />
+            <format attr='font-weight' data-class='subtotal' scope='rows' value='bold' />
+            <format attr='font-size' data-class='subtotal' scope='rows' value='10' />
+          </style-rule>
+          <style-rule element='label'>
+            <format attr='font-weight' field='[federated.1mb23z01kvb5ek1d5kd4v0xkg0iy].[:Measure Names]' value='bold' />
+            <format attr='font-weight' field='[federated.1mb23z01kvb5ek1d5kd4v0xkg0iy].[area_name (group)]' value='bold' />
+            <format attr='font-size' field='[federated.1mb23z01kvb5ek1d5kd4v0xkg0iy].[area_name (group)]' value='10' />
+          </style-rule>
+          <style-rule element='pane'>
+            <format attr='border-color' data-class='subtotal' scope='rows' value='#000000' />
+            <format attr='border-color' data-class='subtotal' scope='cols' value='#000000' />
+            <format attr='band-color' scope='rows' value='#f6eee3' />
+          </style-rule>
+          <style-rule element='table'>
+            <format attr='band-size' scope='rows' value='1' />
+          </style-rule>
+          <style-rule element='worksheet'>
+            <format attr='display-field-labels' scope='rows' value='false' />
+          </style-rule>
+          <style-rule element='table-div'>
+            <format attr='stroke-color' scope='rows' value='#000000' />
+            <format attr='stroke-color' scope='cols' value='#000000' />
+          </style-rule>
+        </style>
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Automatic' />
+            <encodings>
+              <text column='[federated.1mb23z01kvb5ek1d5kd4v0xkg0iy].[Multiple Values]' />
+            </encodings>
+            <style>
+              <style-rule element='mark'>
+                <format attr='mark-labels-show' value='true' />
+              </style-rule>
+              <style-rule element='pane'>
+                <format attr='minwidth' value='-1' />
+                <format attr='maxwidth' value='-1' />
+              </style-rule>
+            </style>
+          </pane>
+        </panes>
+        <rows>([federated.1mb23z01kvb5ek1d5kd4v0xkg0iy].[area_name (group)] / [federated.1mb23z01kvb5ek1d5kd4v0xkg0iy].[none:vendor_name:nk])</rows>
+        <cols>[federated.1mb23z01kvb5ek1d5kd4v0xkg0iy].[:Measure Names]</cols>
+        <subtotals>
+          <column>[federated.1mb23z01kvb5ek1d5kd4v0xkg0iy].[area_name (group)]</column>
+        </subtotals>
+      </table>
+      <simple-id uuid='{BCE84046-EF3D-47D7-8B23-39A7CB80F66A}' />
+    </worksheet>
+    <worksheet name='weekly trend'>
+      <layout-options>
+        <title>
+          <formatted-text>
+            <run bold='true' fontsize='12'>Total Orders - Weekly Trend</run>
+          </formatted-text>
+        </title>
+      </layout-options>
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='vendor' name='federated.1mb23z01kvb5ek1d5kd4v0xkg0iy' />
+          </datasources>
+          <datasource-dependencies datasource='federated.1mb23z01kvb5ek1d5kd4v0xkg0iy'>
+            <column datatype='string' name='[area_name (group)]' role='dimension' type='nominal'>
+              <calculation class='categorical-bin' column='[area_name]' new-bin='true'>
+                <bin default-name='true' value='&quot;Al Safa &amp; Al Wasl&quot;'>
+                  <value>&quot;Al Safa&quot;</value>
+                  <value>&quot;Al Wasl&quot;</value>
+                </bin>
+              </calculation>
+            </column>
+            <column datatype='string' name='[area_name]' role='dimension' type='nominal' />
+            <column-instance column='[tag]' derivation='None' name='[none:tag:nk]' pivot='key' type='nominal' />
+            <column-instance column='[vendor_name]' derivation='None' name='[none:vendor_name:nk]' pivot='key' type='nominal' />
+            <column datatype='date' name='[order_date]' role='dimension' type='ordinal' />
+            <column-instance column='[total_orders]' derivation='Sum' name='[sum:total_orders:qk]' pivot='key' type='quantitative' />
+            <column datatype='string' name='[tag]' role='dimension' type='nominal' />
+            <column datatype='integer' name='[total_orders]' role='measure' type='quantitative' />
+            <column-instance column='[order_date]' derivation='Week-Trunc' name='[twk:order_date:qk]' pivot='key' type='quantitative' />
+            <column datatype='string' name='[vendor_name]' role='dimension' type='nominal' />
+          </datasource-dependencies>
+          <filter class='categorical' column='[federated.1mb23z01kvb5ek1d5kd4v0xkg0iy].[none:tag:nk]'>
+            <groupfilter function='member' level='[none:tag:nk]' member='&quot;Post&quot;' user:ui-domain='database' user:ui-enumeration='inclusive' user:ui-marker='enumerate' />
+          </filter>
+          <filter class='categorical' column='[federated.1mb23z01kvb5ek1d5kd4v0xkg0iy].[none:vendor_name:nk]' filter-group='3'>
+            <groupfilter function='union' user:ui-domain='database' user:ui-enumeration='inclusive' user:ui-marker='enumerate'>
+              <groupfilter function='member' level='[none:vendor_name:nk]' member='&quot;AJ1881&quot;' />
+              <groupfilter function='member' level='[none:vendor_name:nk]' member='&quot;Allo Beirut, JBR&quot;' />
+              <groupfilter function='member' level='[none:vendor_name:nk]' member='&quot;AMG Kaffeehaus, Al Wasl&quot;' />
+              <groupfilter function='member' level='[none:vendor_name:nk]' member='&quot;Aprons &amp; Hammers, Jumeirah Beach Residence - JBR&quot;' />
+              <groupfilter function='member' level='[none:vendor_name:nk]' member='&quot;Aqaya Café &amp; Restaurant, City Walk&quot;' />
+              <groupfilter function='member' level='[none:vendor_name:nk]' member='&quot;Back to Roots, Jumeirah Beach Residence - JBR&quot;' />
+              <groupfilter function='member' level='[none:vendor_name:nk]' member='&quot;Barracuda,Al Safa&quot;' />
+              <groupfilter function='member' level='[none:vendor_name:nk]' member='&quot;Beekeeper - Healthy &amp; Wholesome Eatery, City Walk&quot;' />
+              <groupfilter function='member' level='[none:vendor_name:nk]' member='&quot;Boga Superfoods, Al Wasl&quot;' />
+              <groupfilter function='member' level='[none:vendor_name:nk]' member='&quot;Boga Superfoods, Jumeirah Beach Residence - JBR&quot;' />
+              <groupfilter function='member' level='[none:vendor_name:nk]' member='&quot;Bombay Bungalow, Jumeirah Beach Residence - JBR&quot;' />
+              <groupfilter function='member' level='[none:vendor_name:nk]' member='&quot;Bosporus Express, JBR&quot;' />
+              <groupfilter function='member' level='[none:vendor_name:nk]' member='&quot;Buffalo Wild Wings, Jumeirah Beach Residence - JBR&quot;' />
+              <groupfilter function='member' level='[none:vendor_name:nk]' member='&quot;Butcha Steakhouse,  Al Wasl&quot;' />
+              <groupfilter function='member' level='[none:vendor_name:nk]' member='&quot;CAFFÉ DIVINO, City Walk&quot;' />
+              <groupfilter function='member' level='[none:vendor_name:nk]' member='&quot;Caffeine Coffee Roaster, Al Wasl&quot;' />
+              <groupfilter function='member' level='[none:vendor_name:nk]' member='&quot;China Garden, Al Wasl&quot;' />
+              <groupfilter function='member' level='[none:vendor_name:nk]' member='&quot;Derwandi, Al Wasl&quot;' />
+              <groupfilter function='member' level='[none:vendor_name:nk]' member='&quot;Dickey&apos;s Barbecue Pit, Jumeirah Beach Residence - JBR&quot;' />
+              <groupfilter function='member' level='[none:vendor_name:nk]' member='&quot;DRVN Coffee by Porsche, Jumeirah Beach Residence - JBR&quot;' />
+              <groupfilter function='member' level='[none:vendor_name:nk]' member='&quot;Eggspectation, Al Safa&quot;' />
+              <groupfilter function='member' level='[none:vendor_name:nk]' member='&quot;Eggspectation, Jumeirah Beach Residence - JBR&quot;' />
+              <groupfilter function='member' level='[none:vendor_name:nk]' member='&quot;Eric&apos;s Restaurant, Al Safa&quot;' />
+              <groupfilter function='member' level='[none:vendor_name:nk]' member='&quot;Gazebo, City Walk&quot;' />
+              <groupfilter function='member' level='[none:vendor_name:nk]' member='&quot;Go Thai, Al Wasl&quot;' />
+              <groupfilter function='member' level='[none:vendor_name:nk]' member='&quot;Hangry Joe&apos;s Hot Chicken &amp; Wings, City Walk&quot;' />
+              <groupfilter function='member' level='[none:vendor_name:nk]' member='&quot;Hoya Café &amp; Restaurant, Al Wasl&quot;' />
+              <groupfilter function='member' level='[none:vendor_name:nk]' member='&quot;Ketch Up, Jumeirah Beach Residence - JBR&quot;' />
+              <groupfilter function='member' level='[none:vendor_name:nk]' member='&quot;Keventers Milk Shakes, City Walk&quot;' />
+              <groupfilter function='member' level='[none:vendor_name:nk]' member='&quot;Keventers Milk Shakes, Jumeirah Beach Residence - JBR&quot;' />
+              <groupfilter function='member' level='[none:vendor_name:nk]' member='&quot;L&apos;Antica Da Michele Pizzeria, Jumeirah Beach Residence&quot;' />
+              <groupfilter function='member' level='[none:vendor_name:nk]' member='&quot;L’antica Pizzeria da Michele, Al Wasl&quot;' />
+              <groupfilter function='member' level='[none:vendor_name:nk]' member='&quot;L’OCCITANE CAFÉ, City Walk&quot;' />
+              <groupfilter function='member' level='[none:vendor_name:nk]' member='&quot;La Serre,  City Walk&quot;' />
+              <groupfilter function='member' level='[none:vendor_name:nk]' member='&quot;M`OISHÎ, City Walk&quot;' />
+              <groupfilter function='member' level='[none:vendor_name:nk]' member='&quot;MELENZANÈ, City Walk&quot;' />
+              <groupfilter function='member' level='[none:vendor_name:nk]' member='&quot;Menchie&apos;s, Jumeirah Beach Residence - JBR&quot;' />
+              <groupfilter function='member' level='[none:vendor_name:nk]' member='&quot;MINT, City Walk&quot;' />
+              <groupfilter function='member' level='[none:vendor_name:nk]' member='&quot;Miyabi Japanese Fusion, City Walk&quot;' />
+              <groupfilter function='member' level='[none:vendor_name:nk]' member='&quot;Mondoux Restaurant, Jumeirah Beach Residence - JBR&quot;' />
+              <groupfilter function='member' level='[none:vendor_name:nk]' member='&quot;NOX, Al Safa&quot;' />
+              <groupfilter function='member' level='[none:vendor_name:nk]' member='&quot;O Lab Coffee Shop, Jumeirah Beach Residence - JBR&quot;' />
+              <groupfilter function='member' level='[none:vendor_name:nk]' member='&quot;Obeli, Al Safa&quot;' />
+              <groupfilter function='member' level='[none:vendor_name:nk]' member='&quot;Pappa Roti Cafe, Jumeirah Beach Residence - JBR&quot;' />
+              <groupfilter function='member' level='[none:vendor_name:nk]' member='&quot;Parx Cafe, Al Safa&quot;' />
+              <groupfilter function='member' level='[none:vendor_name:nk]' member='&quot;PIMS Tea, Jumeirah Beach Residence&quot;' />
+              <groupfilter function='member' level='[none:vendor_name:nk]' member='&quot;PizzaExpress, Al Safa&quot;' />
+              <groupfilter function='member' level='[none:vendor_name:nk]' member='&quot;Prime Burger, Al Safa&quot;' />
+              <groupfilter function='member' level='[none:vendor_name:nk]' member='&quot;Primi - City Walk&quot;' />
+              <groupfilter function='member' level='[none:vendor_name:nk]' member='&quot;Rosa&apos;s Thai, Jumeirah Beach Residence - JBR&quot;' />
+              <groupfilter function='member' level='[none:vendor_name:nk]' member='&quot;SAID DAL 1923, City Walk&quot;' />
+              <groupfilter function='member' level='[none:vendor_name:nk]' member='&quot;Sarabeth`s, City Walk&quot;' />
+              <groupfilter function='member' level='[none:vendor_name:nk]' member='&quot;Saya Braserrie Cafe, Al Bada&apos;a City Walk&quot;' />
+              <groupfilter function='member' level='[none:vendor_name:nk]' member='&quot;STAY CAFE, Al Wasl&quot;' />
+              <groupfilter function='member' level='[none:vendor_name:nk]' member='&quot;Tayba Gourmet Restaurant, Al Safa&quot;' />
+              <groupfilter function='member' level='[none:vendor_name:nk]' member='&quot;Terrazza By Eataly, JBR&quot;' />
+              <groupfilter function='member' level='[none:vendor_name:nk]' member='&quot;Un Dimanche à Paris, Jumeirah Beach Residence&quot;' />
+              <groupfilter function='member' level='[none:vendor_name:nk]' member='&quot;Urban Seafood, Jumeirah Beach Residence&quot;' />
+              <groupfilter function='member' level='[none:vendor_name:nk]' member='&quot;Wagamama, City Walk&quot;' />
+              <groupfilter function='member' level='[none:vendor_name:nk]' member='&quot;Wofl Bakery, Jumeirah Beach Residence -JBR&quot;' />
+            </groupfilter>
+          </filter>
+          <slices>
+            <column>[federated.1mb23z01kvb5ek1d5kd4v0xkg0iy].[none:tag:nk]</column>
+            <column>[federated.1mb23z01kvb5ek1d5kd4v0xkg0iy].[none:vendor_name:nk]</column>
+          </slices>
+          <aggregation value='true' />
+        </view>
+        <style>
+          <style-rule element='axis'>
+            <format attr='display' class='0' field='[federated.1mb23z01kvb5ek1d5kd4v0xkg0iy].[sum:total_orders:qk]' scope='rows' value='false' />
+            <format attr='title' class='0' field='[federated.1mb23z01kvb5ek1d5kd4v0xkg0iy].[twk:order_date:qk]' scope='cols' value='order date (week)' />
+          </style-rule>
+          <style-rule element='cell'>
+            <format attr='width' field='[federated.1mb23z01kvb5ek1d5kd4v0xkg0iy].[none:tag:nk]' value='106' />
+            <format attr='text-align' value='center' />
+          </style-rule>
+          <style-rule element='header'>
+            <format attr='width' field='[federated.1mb23z01kvb5ek1d5kd4v0xkg0iy].[none:vendor_name:nk]' value='196' />
+            <format attr='width' field='[federated.1mb23z01kvb5ek1d5kd4v0xkg0iy].[area_name (group)]' value='136' />
+          </style-rule>
+          <style-rule element='label'>
+            <format attr='font-weight' scope='rows' value='bold' />
+          </style-rule>
+          <style-rule element='worksheet'>
+            <format attr='display-field-labels' scope='rows' value='false' />
+          </style-rule>
+          <style-rule element='dropline'>
+            <format attr='stroke-size' value='0' />
+            <format attr='line-visibility' value='off' />
+          </style-rule>
+          <style-rule element='refline'>
+            <format attr='stroke-size' value='0' />
+            <format attr='line-visibility' value='off' />
+          </style-rule>
+          <style-rule element='gridline'>
+            <format attr='stroke-size' scope='rows' value='0' />
+            <format attr='line-visibility' scope='rows' value='off' />
+          </style-rule>
+          <style-rule element='zeroline'>
+            <format attr='stroke-size' value='0' />
+            <format attr='line-visibility' value='off' />
+          </style-rule>
+          <style-rule element='legend'>
+            <format attr='col-width' field='[federated.1mb23z01kvb5ek1d5kd4v0xkg0iy].[area_name (group)]' value='200' />
+          </style-rule>
+          <style-rule element='quick-filter'>
+            <format attr='title' field='[federated.1mb23z01kvb5ek1d5kd4v0xkg0iy].[none:vendor_name:nk]' value='Vendor Name'>
+              <formatted-text>
+                <run>Vendor Name</run>
+              </formatted-text>
+            </format>
+          </style-rule>
+        </style>
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Bar' />
+            <mark-sizing custom-mark-size-in-axis-units='1.0' mark-alignment='mark-alignment-left' mark-sizing-setting='marks-scaling-on' use-custom-mark-size='false' />
+            <encodings>
+              <color column='[federated.1mb23z01kvb5ek1d5kd4v0xkg0iy].[area_name (group)]' />
+              <text column='[federated.1mb23z01kvb5ek1d5kd4v0xkg0iy].[sum:total_orders:qk]' />
+            </encodings>
+            <style>
+              <style-rule element='mark'>
+                <format attr='mark-labels-show' value='true' />
+                <format attr='mark-labels-cull' value='true' />
+              </style-rule>
+              <style-rule element='pane'>
+                <format attr='minwidth' value='-1' />
+                <format attr='maxwidth' value='-1' />
+              </style-rule>
+              <style-rule element='trendline'>
+                <format attr='stroke-size' value='0' />
+                <format attr='line-visibility' value='off' />
+              </style-rule>
+            </style>
+          </pane>
+        </panes>
+        <rows>[federated.1mb23z01kvb5ek1d5kd4v0xkg0iy].[sum:total_orders:qk]</rows>
+        <cols>[federated.1mb23z01kvb5ek1d5kd4v0xkg0iy].[twk:order_date:qk]</cols>
+      </table>
+      <simple-id uuid='{B25F3749-9530-45EB-B41F-6BE28E62935A}' />
+    </worksheet>
+  </worksheets>
+  <dashboards>
+    <dashboard _.fcp.AccessibleZoneTabOrder.true...enable-sort-zone-taborder='true' name='Dashboard 2'>
+      <repository-location id='Dashboard2' path='/t/Talabat/workbooks/MerasXDineOut' revision='' site='Talabat' />
+      <layout-options>
+        <title>
+          <formatted-text>
+            <run bold='true' fontalignment='1' fontcolor='#ffffff' fontsize='16'> Merex X DineOut</run>
+          </formatted-text>
+        </title>
+      </layout-options>
+      <style />
+      <size maxheight='1400' maxwidth='1200' minheight='1400' minwidth='1200' sizing-mode='fixed' />
+      <datasources>
+        <datasource caption='vendor' name='federated.1mb23z01kvb5ek1d5kd4v0xkg0iy' />
+      </datasources>
+      <datasource-dependencies datasource='federated.1mb23z01kvb5ek1d5kd4v0xkg0iy'>
+        <column-instance column='[vendor_name]' derivation='None' name='[none:vendor_name:nk]' pivot='key' type='nominal' />
+        <column datatype='string' name='[vendor_name]' role='dimension' type='nominal' />
+      </datasource-dependencies>
+      <zones>
+        <zone h='100000' id='4' type-v2='layout-basic' w='100000' x='0' y='0'>
+          <zone h='95371' id='22' param='vert' type-v2='layout-flow' w='98666' x='667' y='4058'>
+            <zone fixed-size='41' h='2929' id='23' is-fixed='true' type-v2='title' w='98666' x='667' y='4058'>
+              <zone-style>
+                <format attr='border-color' value='#000000' />
+                <format attr='border-style' value='none' />
+                <format attr='border-width' value='0' />
+                <format attr='margin' value='0' />
+                <format attr='background-color' value='#690000' />
+              </zone-style>
+            </zone>
+            <zone h='92442' id='18' param='horz' type-v2='layout-flow' w='98666' x='667' y='6987'>
+              <zone h='92442' id='15' param='horz' type-v2='layout-flow' w='98666' x='667' y='6987'>
+                <zone h='92442' id='8' param='horz' type-v2='layout-flow' w='98666' x='667' y='6987'>
+                  <zone h='92442' id='6' type-v2='layout-basic' w='98666' x='667' y='6987'>
+                    <zone h='15314' id='12' name='summary pre and post' w='98666' x='667' y='6987'>
+                      <zone-style>
+                        <format attr='border-color' value='#000000' />
+                        <format attr='border-style' value='none' />
+                        <format attr='border-width' value='0' />
+                        <format attr='margin' value='10' />
+                        <format attr='padding' value='10' />
+                      </zone-style>
+                    </zone>
+                    <zone h='30347' id='10' param='vert' type-v2='layout-flow' w='98666' x='667' y='26811'>
+                      <zone h='30347' id='13' name='weekly trend' w='98666' x='667' y='26811'>
+                        <layout-cache minheight='188' type-h='scalable' type-w='fixed' />
+                        <zone-style>
+                          <format attr='border-color' value='#000000' />
+                          <format attr='border-style' value='none' />
+                          <format attr='border-width' value='0' />
+                          <format attr='margin' value='4' />
+                        </zone-style>
+                      </zone>
+                    </zone>
+                    <zone h='42271' id='11' name='vendor' w='98666' x='667' y='57158'>
+                      <zone-style>
+                        <format attr='border-color' value='#000000' />
+                        <format attr='border-style' value='solid' />
+                        <format attr='border-width' value='1' />
+                        <format attr='margin' value='10' />
+                        <format attr='padding' value='10' />
+                      </zone-style>
+                    </zone>
+                    <zone h='4510' id='19' mode='checkdropdown' name='weekly trend' param='[federated.1mb23z01kvb5ek1d5kd4v0xkg0iy].[none:vendor_name:nk]' type-v2='filter' values='database' w='28833' x='667' y='22301'>
+                      <zone-style>
+                        <format attr='border-color' value='#000000' />
+                        <format attr='border-style' value='none' />
+                        <format attr='border-width' value='0' />
+                        <format attr='margin' value='10' />
+                      </zone-style>
+                    </zone>
+                    <zone h='4510' id='16' name='weekly trend' pane-specification-id='0' param='[federated.1mb23z01kvb5ek1d5kd4v0xkg0iy].[area_name (group)]' show-title='false' type-v2='color' w='69833' x='29500' y='22301'>
+                      <zone-style>
+                        <format attr='border-color' value='#000000' />
+                        <format attr='border-style' value='none' />
+                        <format attr='border-width' value='0' />
+                        <format attr='margin' value='4' />
+                      </zone-style>
+                    </zone>
+                  </zone>
+                </zone>
+              </zone>
+            </zone>
+          </zone>
+          <zone h='3487' id='27' is-centered='0' is-scaled='1' param='Image/talabat logo_Secondary_EN_RGB_Orange 2.png' type-v2='bitmap' w='93250' x='667' y='571'>
+            <zone-style>
+              <format attr='border-color' value='#000000' />
+              <format attr='border-style' value='none' />
+              <format attr='border-width' value='0' />
+              <format attr='margin' value='4' />
+            </zone-style>
+          </zone>
+          <zone h='3487' id='29' is-centered='0' is-scaled='1' param='Image/DineOut_Illustrations_Cuisine Types_01.png' type-v2='bitmap' w='5416' x='93917' y='571'>
+            <zone-style>
+              <format attr='border-color' value='#000000' />
+              <format attr='border-style' value='none' />
+              <format attr='border-width' value='0' />
+              <format attr='margin' value='4' />
+            </zone-style>
+          </zone>
+          <zone-style>
+            <format attr='border-color' value='#000000' />
+            <format attr='border-style' value='none' />
+            <format attr='border-width' value='0' />
+            <format attr='margin' value='8' />
+          </zone-style>
+        </zone>
+      </zones>
+      <devicelayouts>
+        <devicelayout auto-generated='true' name='Phone'>
+          <layout-options>
+            <title>
+              <formatted-text>
+                <run bold='true' fontalignment='1' fontcolor='#ffffff' fontsize='16'> Merex X DineOut</run>
+              </formatted-text>
+            </title>
+          </layout-options>
+          <size maxheight='1050' minheight='1050' sizing-mode='vscroll' />
+          <zones>
+            <zone h='100000' id='38' type-v2='layout-basic' w='100000' x='0' y='0'>
+              <zone h='98858' id='37' param='vert' type-v2='layout-flow' w='98666' x='667' y='571'>
+                <zone fixed-size='41' h='2929' id='23' type-v2='title' w='98666' x='667' y='4058'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                    <format attr='background-color' value='#690000' />
+                  </zone-style>
+                </zone>
+                <zone fixed-size='41' h='3487' id='27' is-centered='0' is-fixed='true' is-scaled='1' param='Image/talabat logo_Secondary_EN_RGB_Orange 2.png' type-v2='bitmap' w='93250' x='667' y='571'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone fixed-size='41' h='3487' id='29' is-centered='0' is-fixed='true' is-scaled='1' param='Image/DineOut_Illustrations_Cuisine Types_01.png' type-v2='bitmap' w='5416' x='93917' y='571'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone fixed-size='174' h='15314' id='12' is-fixed='true' name='summary pre and post' w='98666' x='667' y='6987'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone h='4510' id='19' mode='checkdropdown' name='weekly trend' param='[federated.1mb23z01kvb5ek1d5kd4v0xkg0iy].[none:vendor_name:nk]' type-v2='filter' values='database' w='28833' x='667' y='22301'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone fixed-size='280' h='30347' id='13' is-fixed='true' name='weekly trend' w='98666' x='667' y='26811'>
+                  <layout-cache minheight='188' type-h='scalable' type-w='fixed' />
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone h='4510' id='16' name='weekly trend' pane-specification-id='0' param='[federated.1mb23z01kvb5ek1d5kd4v0xkg0iy].[area_name (group)]' show-title='false' type-v2='color' w='69833' x='29500' y='22301'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone fixed-size='280' h='42271' id='11' is-fixed='true' name='vendor' w='98666' x='667' y='57158'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='solid' />
+                    <format attr='border-width' value='1' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+              </zone>
+              <zone-style>
+                <format attr='border-color' value='#000000' />
+                <format attr='border-style' value='none' />
+                <format attr='border-width' value='0' />
+                <format attr='margin' value='8' />
+              </zone-style>
+            </zone>
+          </zones>
+        </devicelayout>
+      </devicelayouts>
+      <simple-id uuid='{ECB13314-2824-42E0-B02C-58FE2465D2C1}' />
+    </dashboard>
+  </dashboards>
+  <windows source-height='51'>
+    <window class='worksheet' name='pre and post'>
+      <cards>
+        <edge name='left'>
+          <strip size='160'>
+            <card type='pages' />
+            <card type='filters' />
+            <card type='marks' />
+            <card type='measures' />
+          </strip>
+        </edge>
+        <edge name='top'>
+          <strip size='2147483647'>
+            <card type='columns' />
+          </strip>
+          <strip size='2147483647'>
+            <card type='rows' />
+          </strip>
+          <strip size='31'>
+            <card type='title' />
+          </strip>
+        </edge>
+      </cards>
+      <viewpoint>
+        <highlight>
+          <color-one-way>
+            <field>[federated.0n0t4f71o14k591bglfw4178as03].[:Measure Names]</field>
+          </color-one-way>
+        </highlight>
+      </viewpoint>
+      <simple-id uuid='{8102B951-2F38-4D55-B57B-2AD1DA5E034F}' />
+    </window>
+    <window class='worksheet' name='vendor'>
+      <cards>
+        <edge name='left'>
+          <strip size='160'>
+            <card type='pages' />
+            <card type='filters' />
+            <card type='marks' />
+            <card type='measures' />
+          </strip>
+        </edge>
+        <edge name='top'>
+          <strip size='2147483647'>
+            <card type='columns' />
+          </strip>
+          <strip size='2147483647'>
+            <card type='rows' />
+          </strip>
+          <strip size='31'>
+            <card type='title' />
+          </strip>
+        </edge>
+      </cards>
+      <simple-id uuid='{045472F2-78D3-43CB-90F0-B58FFFD5033F}' />
+    </window>
+    <window class='worksheet' name='weekly trend'>
+      <cards>
+        <edge name='left'>
+          <strip size='160'>
+            <card type='pages' />
+            <card type='filters' />
+            <card type='marks' />
+          </strip>
+        </edge>
+        <edge name='top'>
+          <strip size='2147483647'>
+            <card type='columns' />
+          </strip>
+          <strip size='2147483647'>
+            <card type='rows' />
+          </strip>
+          <strip size='31'>
+            <card type='title' />
+          </strip>
+        </edge>
+        <edge name='right'>
+          <strip size='160'>
+            <card pane-specification-id='0' param='[federated.1mb23z01kvb5ek1d5kd4v0xkg0iy].[area_name (group)]' type='color' />
+          </strip>
+        </edge>
+      </cards>
+      <viewpoint>
+        <highlight>
+          <color-one-way>
+            <field>[federated.1mb23z01kvb5ek1d5kd4v0xkg0iy].[area_name (group)]</field>
+            <field>[federated.1mb23z01kvb5ek1d5kd4v0xkg0iy].[none:vendor_name:nk]</field>
+          </color-one-way>
+        </highlight>
+      </viewpoint>
+      <simple-id uuid='{A2FA63CF-FFDF-4EEA-93F2-A14AACDAD172}' />
+    </window>
+    <window class='worksheet' name='summary pre and post'>
+      <cards>
+        <edge name='left'>
+          <strip size='160'>
+            <card type='pages' />
+            <card type='filters' />
+            <card type='marks' />
+            <card type='measures' />
+          </strip>
+        </edge>
+        <edge name='top'>
+          <strip size='2147483647'>
+            <card type='columns' />
+          </strip>
+          <strip size='2147483647'>
+            <card type='rows' />
+          </strip>
+          <strip size='31'>
+            <card type='title' />
+          </strip>
+        </edge>
+      </cards>
+      <viewpoint>
+        <highlight>
+          <color-one-way>
+            <field>[federated.0n0t4f71o14k591bglfw4178as03].[none:vendor_tag:nk]</field>
+          </color-one-way>
+        </highlight>
+      </viewpoint>
+      <simple-id uuid='{8BC1EAF1-58C5-4048-8302-D19A2E4EE950}' />
+    </window>
+    <window class='dashboard' maximized='true' name='Dashboard 2'>
+      <viewpoints>
+        <viewpoint name='summary pre and post'>
+          <zoom type='entire-view' />
+        </viewpoint>
+        <viewpoint name='vendor'>
+          <zoom type='fit-height' />
+        </viewpoint>
+        <viewpoint name='weekly trend'>
+          <zoom type='entire-view' />
+        </viewpoint>
+      </viewpoints>
+      <active id='19' />
+      <simple-id uuid='{B9336E61-08E2-435B-888E-783ED3782BCF}' />
+    </window>
+  </windows>
+</workbook>
