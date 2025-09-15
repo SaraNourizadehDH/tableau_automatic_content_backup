@@ -1,0 +1,2887 @@
+<?xml version='1.0' encoding='utf-8' ?>
+
+<!-- build 20233.25.0106.1650                               -->
+<workbook original-version='18.1' source-build='2023.1.9 (20231.24.0118.1101)' source-platform='mac' version='18.1' xml:base='https://tableau.deliveryhero.net' xmlns:user='http://www.tableausoftware.com/xml/user'>
+  <document-format-change-manifest>
+    <_.fcp.AccessibleZoneTabOrder.true...AccessibleZoneTabOrder />
+    <_.fcp.AnimationOnByDefault.true...AnimationOnByDefault />
+    <AutoCreateAndUpdateDSDPhoneLayouts />
+    <_.fcp.MarkAnimation.true...MarkAnimation />
+    <_.fcp.ObjectModelEncapsulateLegacy.true...ObjectModelEncapsulateLegacy />
+    <_.fcp.ObjectModelExtractV2.true...ObjectModelExtractV2 />
+    <_.fcp.ObjectModelTableType.true...ObjectModelTableType />
+    <_.fcp.SchemaViewerObjectModel.true...SchemaViewerObjectModel />
+    <SetMembershipControl />
+    <SheetIdentifierTracking />
+    <SortTagCleanup />
+    <_.fcp.VConnDownstreamExtractsWithWarnings.true...VConnDownstreamExtractsWithWarnings />
+    <WindowsPersistSimpleIdentifiers />
+    <WorksheetBackgroundTransparency />
+  </document-format-change-manifest>
+  <repository-location id='7NCRTracking' path='/t/Talabat/workbooks' revision='1.0' site='Talabat' />
+  <preferences>
+    <preference name='ui.encoding.shelf.height' value='24' />
+    <preference name='ui.shelf.height' value='26' />
+  </preferences>
+  <_.fcp.AnimationOnByDefault.false...style>
+    <_.fcp.AnimationOnByDefault.false..._.fcp.MarkAnimation.true...style-rule element='animation'>
+      <_.fcp.AnimationOnByDefault.false...format attr='animation-on' value='ao-on' />
+    </_.fcp.AnimationOnByDefault.false..._.fcp.MarkAnimation.true...style-rule>
+  </_.fcp.AnimationOnByDefault.false...style>
+  <datasources>
+    <datasource caption='7%' inline='true' name='federated.0ns4l6y1qugfak1ft1qul102vvfo' version='18.1'>
+      <connection class='federated'>
+        <named-connections>
+          <named-connection caption='BigQuery' name='bigquery.0iwdglf1az3z4n11624600hrpsfd'>
+            <connection CATALOG='publicdata' EXECCATALOG='tlb-data-dev' authentication='oauth' class='bigquery' connection-dialect='google-sql' project='publicdata' schema='samples' server-oauth='server-custom' username='muhammad.afzal@talabat.com' workgroup-auth-mode='prompt' />
+          </named-connection>
+        </named-connections>
+        <_.fcp.ObjectModelEncapsulateLegacy.false...relation connection='bigquery.0iwdglf1az3z4n11624600hrpsfd' name='Custom SQL Query' type='text'>with multioutlet as (with entity AS (
+SELECT
+brand_name
+, sub_entity
+, global_entity_id
+FROM `fulfillment-dwh-production.curated_data_shared_coredata.global_entities`
+WHERE is_entity_online = TRUE
+and management_entity=&apos;Talabat&apos;
+),
+
+raw_data as
+(Select date_trunc(fielddate, month) as date_month,
+fielddate,
+brand_name,
+a.global_entity_id, event_timestamp_utc, user_id,
+(SELECT params.value.string_value FROM unnest(event_params) as params WHERE params.key = &apos;is_multiple_outlets_landing&apos;) is_multiple_outlets_landing,
+(SELECT params.value.string_value FROM unnest(event_params) as params WHERE params.key = &apos;is_multiple_outlets_mode&apos;) is_multiple_outlets_mode,
+(SELECT params.value.string_value FROM unnest(event_params) as params WHERE params.key = &apos;multiple_outlets_available&apos;) is_multiple_outlets_available,
+
+SPLIT((select coalesce(params.value.string_value, cast(params.value.int_value as string), cast(params.value.float_value as string), cast(params.value.double_value as string)) FROM unnest(event_params) as params WHERE params.key = &apos;budget_value&apos;), &apos;,&apos;) as budget_value,
+
+SPLIT((select coalesce(params.value.string_value, cast(params.value.int_value as string), cast(params.value.float_value as string), cast(params.value.double_value as string)) FROM unnest(event_params) as params WHERE params.key = &apos;currency_code&apos;), &apos;,&apos;) as currency_code,
+
+SPLIT((select coalesce(params.value.string_value, cast(params.value.int_value as string), cast(params.value.float_value as string), cast(params.value.double_value as string)) FROM unnest(event_params) as params WHERE params.key = &apos;campaign_id&apos;), &apos;,&apos;) as campaign_id
+
+FROM fulfillment-dwh-production.curated_data_shared_sales_revenue.vp_events a
+JOIN entity e on a.global_entity_id=e.global_entity_id
+WHERE date_trunc(fielddate, month) &gt;&gt;= &apos;2025-01-01&apos;
+and COALESCE(is_impersonated, &apos;no&apos;)=&apos;no&apos;
+and device_platform=&apos;WEB&apos;
+and event_name = &apos;request_succeed&apos;
+and label = &apos;booking_confirm&apos;
+and (SELECT params.value.string_value FROM unnest(event_params) as params WHERE params.key = &apos;page_name&apos;) =&apos;cpc_booking&apos;
+and (SELECT params.value.string_value FROM unnest(event_params) as params WHERE params.key = &apos;plugin_code&apos;) = &apos;MIDAS&apos;
+and ((SELECT params.value.string_value FROM unnest(event_params) as params WHERE params.key = &apos;is_multiple_outlets_mode&apos;) = &apos;true&apos;
+OR
+(SELECT params.value.string_value FROM unnest(event_params) as params WHERE params.key = &apos;is_multiple_outlets_landing&apos;) = &apos;true&apos;
+OR
+(SELECT params.value.string_value FROM unnest(event_params) as params WHERE params.key = &apos;multiple_outlets_available&apos;) = &apos;true&apos;)
+GROUP BY ALL),
+
+vertical_parent as
+(select a.global_entity_id, campaign_id, advertiser.type as vertical_parent, pricing.budget_eur, vendors.id as vendor_id,
+case when pricing.budget_eur &gt;&gt;
+((stddev(pricing.budget_eur) over (partition by a.global_entity_id)) * 6) then 1 else 0 end as is_outlier
+FROM `fulfillment-dwh-production.curated_data_shared_adtech.dim_campaigns` a , unnest(advertiser.vendors) vendors
+JOIN entity e on a.global_entity_id=e.global_entity_id
+WHERE date(created_at_utc)&gt;&gt;=&apos;2025-01-01&apos;
+and product in (&apos;premium_placements&apos;, &apos;organic_placements&apos;)
+and origin=&apos;vendor&apos;
+qualify row_number() OVER (PARTITION BY global_entity_id, campaign_id ORDER BY modified_at_utc) = 1
+),
+
+raw_data_vertical as
+(select
+date_month,
+fielddate,
+brand_name,
+a.global_entity_id,
+event_timestamp_utc,
+user_id,
+is_outlier,
+vendor_id,
+vertical_parent,
+campaign_id,
+budget_eur,
+is_multiple_outlets_landing,
+is_multiple_outlets_mode,
+is_multiple_outlets_available
+FROM raw_data a, UNNEST(campaign_id) campaign_id
+JOIN vertical_parent b on a.global_entity_id=b.global_entity_id and campaign_id=b.campaign_id
+GROUP BY ALL)
+
+select
+distinct date_month as month,
+global_entity_id,
+sum(budget_eur) as multioutlet_budget_eur
+FROM raw_data_vertical
+WHERE coalesce(is_multiple_outlets_landing,is_multiple_outlets_mode)=&apos;true&apos;
+and vertical_parent = &apos;restaurants&apos;
+GROUP BY ALL)
+
+, nba as 
+(-- Define online entities
+WITH entity AS (
+    SELECT
+        brand_name,
+        global_entity_id
+    FROM `fulfillment-dwh-production.curated_data_shared_coredata.global_entities`
+    WHERE is_entity_online = TRUE
+),
+
+-- Count distinct sessions for page loads
+sessions AS (
+    SELECT
+        COUNT(DISTINCT session_id) AS page_load_sessions,
+        fielddate,
+        global_entity_id
+    FROM `fulfillment-dwh-production.curated_data_shared_sales_revenue.vp_events` a,
+    UNNEST(event_params) AS params
+    WHERE 
+        fielddate BETWEEN DATE_SUB(CURRENT_DATE(), INTERVAL 100 DAY) AND DATE_SUB(CURRENT_DATE(), INTERVAL 1 DAY)
+        AND label = &apos;page_load&apos; 
+        AND event_name = &apos;page_open&apos; 
+        AND section = &apos;cpc.performance_landing_page&apos; 
+        AND is_impersonated = &apos;no&apos; 
+        AND (SELECT params.value.string_value FROM UNNEST(event_params) AS params WHERE params.key = &apos;tag&apos;) = &apos;GA4.cpc_performance&apos;
+    GROUP BY fielddate, global_entity_id
+),
+
+-- Count sessions where recommendations were shown
+shown AS (
+    SELECT
+        fielddate,
+        global_entity_id,
+        COUNT(DISTINCT session_id) AS shown_sessions
+    FROM `fulfillment-dwh-production.curated_data_shared_sales_revenue.vp_events` a,
+    UNNEST(event_params) AS params
+    WHERE 
+        fielddate BETWEEN DATE_SUB(CURRENT_DATE(), INTERVAL 100 DAY) AND DATE_SUB(CURRENT_DATE(), INTERVAL 1 DAY)
+        AND label = &apos;page_load&apos; 
+        AND section = &apos;cpc.performance_landing_page&apos; 
+        AND params.key = &quot;rec_actions_count&quot; 
+        AND params.value.int_value = 1 
+        AND is_impersonated = &apos;no&apos; 
+        AND (SELECT params.value.string_value FROM UNNEST(event_params) AS params WHERE params.key = &apos;tag&apos;) = &apos;GA4.cpc_performance&apos;
+    GROUP BY fielddate, global_entity_id
+),
+
+-- Count sessions with &quot;add budget&quot; button clicked
+clicked AS (
+    SELECT
+        fielddate,
+        global_entity_id,
+        COUNT(DISTINCT session_id) AS clicked_sessions
+    FROM `fulfillment-dwh-production.curated_data_shared_sales_revenue.vp_events` a,
+    UNNEST(event_params) AS params
+    WHERE 
+        fielddate BETWEEN DATE_SUB(CURRENT_DATE(), INTERVAL 100 DAY) AND DATE_SUB(CURRENT_DATE(), INTERVAL 1 DAY)
+        AND event_name = &apos;button_tap&apos; 
+        AND (label = &apos;add_budget_action&apos;  or label = &apos;rec_card_clicked&apos;)
+        AND section = &apos;cpc.performance_landing_page&apos; 
+        AND is_impersonated = &apos;no&apos; 
+        AND (SELECT params.value.string_value FROM UNNEST(event_params) AS params WHERE params.key = &apos;tag&apos;) = &apos;GA4.cpc_performance&apos;
+    GROUP BY fielddate, global_entity_id
+),
+
+-- Count sessions with budget increase confirmations
+top_up AS (
+    SELECT
+        fielddate,
+        global_entity_id,
+        COUNT(DISTINCT session_id) AS top_up_sessions
+    FROM `fulfillment-dwh-production.curated_data_shared_sales_revenue.vp_events` a,
+    UNNEST(event_params) AS params
+    WHERE 
+        fielddate BETWEEN DATE_SUB(CURRENT_DATE(), INTERVAL 100 DAY) AND DATE_SUB(CURRENT_DATE(), INTERVAL 1 DAY)
+        AND event_name = &apos;request_succeed&apos; 
+        AND label = &apos;increase_budget_confirm&apos; 
+        AND section = &apos;cpc.performance_landing_page&apos; 
+        AND params.key = &apos;budget_increase_value&apos; 
+        AND is_impersonated = &apos;no&apos; 
+        AND (SELECT params.value.string_value FROM UNNEST(event_params) AS params WHERE params.key = &apos;tag&apos;) = &apos;GA4.cpc_performance&apos;
+    GROUP BY fielddate, global_entity_id
+),
+
+-- Calculate total budget increase in EUR
+increase AS (
+    WITH budget_values AS (
+        SELECT
+            fielddate,
+            session_id,
+            global_entity_id,
+	        event_timestamp_utc, --- added this line 05 11
+            CASE 
+                -- Replace [object Object] with the correct currency_code based on global_entity_id
+                WHEN (SELECT params.value.string_value FROM UNNEST(event_params) AS params WHERE params.key = &apos;currency_code&apos;) = &apos;[object Object]&apos; THEN
+                    CASE global_entity_id
+                        WHEN &apos;YS_TR&apos; THEN &apos;TRY&apos;
+                        WHEN &apos;TB_QA&apos; THEN &apos;QAR&apos;
+                        WHEN &apos;TB_OM&apos; THEN &apos;OMR&apos;
+                        WHEN &apos;TB_KW&apos; THEN &apos;KWD&apos;
+                        WHEN &apos;TB_JO&apos; THEN &apos;JOD&apos;
+                        WHEN &apos;TB_IQ&apos; THEN &apos;IQD&apos;
+                        WHEN &apos;TB_BH&apos; THEN &apos;BHD&apos;
+                        WHEN &apos;TB_AE&apos; THEN &apos;AED&apos;
+                        WHEN &apos;PY_VE&apos; THEN &apos;VEF&apos;
+                        WHEN &apos;PY_UY&apos; THEN &apos;UYU&apos;
+                        WHEN &apos;PY_PY&apos; THEN &apos;PYG&apos;
+                        WHEN &apos;PY_PE&apos; THEN &apos;PEN&apos;
+                        WHEN &apos;PY_NI&apos; THEN &apos;NIO&apos;
+                        WHEN &apos;PY_HN&apos; THEN &apos;HNL&apos;
+                        WHEN &apos;PY_GT&apos; THEN &apos;GTQ&apos;
+                        WHEN &apos;PY_EC&apos; THEN &apos;USD&apos;
+                        WHEN &apos;PY_DO&apos; THEN &apos;DOP&apos;
+                        WHEN &apos;PY_CL&apos; THEN &apos;CLP&apos;
+                        WHEN &apos;PY_BO&apos; THEN &apos;BOB&apos;
+                        WHEN &apos;PY_AR&apos; THEN &apos;ARS&apos;
+                        WHEN &apos;PO_FI&apos; THEN &apos;EUR&apos;
+                        WHEN &apos;OP_SE&apos; THEN &apos;SEK&apos;
+                        WHEN &apos;NP_HU&apos; THEN &apos;HUF&apos;
+                        WHEN &apos;MJM_AT&apos; THEN &apos;EUR&apos;
+                        WHEN &apos;HS_SA&apos; THEN &apos;SAR&apos;
+                        WHEN &apos;HF_EG&apos; THEN &apos;EGP&apos;
+                        WHEN &apos;FP_TW&apos; THEN &apos;TWD&apos;
+                        WHEN &apos;FP_TH&apos; THEN &apos;THB&apos;
+                        WHEN &apos;FP_SG&apos; THEN &apos;SGD&apos;
+                        WHEN &apos;FP_PK&apos; THEN &apos;PKR&apos;
+                        WHEN &apos;FP_PH&apos; THEN &apos;PHP&apos;
+                        WHEN &apos;FP_MY&apos; THEN &apos;MYR&apos;
+                        WHEN &apos;FP_KH&apos; THEN &apos;USD&apos;
+                        WHEN &apos;FP_HK&apos; THEN &apos;HKD&apos;
+                        WHEN &apos;FP_BD&apos; THEN &apos;BDT&apos;
+                        WHEN &apos;FO_NO&apos; THEN &apos;NOK&apos;
+                        WHEN &apos;DJ_CZ&apos; THEN &apos;CZK&apos;
+                        WHEN &apos;CG_QA&apos; THEN &apos;OMR&apos;
+                        WHEN &apos;AP_PA&apos; THEN &apos;USD&apos;
+                        ELSE NULL -- Handle unexpected cases
+                    END
+                ELSE (SELECT params.value.string_value FROM UNNEST(event_params) AS params WHERE params.key = &apos;currency_code&apos;)
+            END AS currency_code,
+            coalesce(params.value.string_value, cast(params.value.int_value as string), cast(params.value.double_value as string)) AS total_budget_increase_value
+        FROM `fulfillment-dwh-production.curated_data_shared_sales_revenue.vp_events` a,
+        UNNEST(event_params) AS params
+        WHERE 
+            fielddate BETWEEN DATE_SUB(CURRENT_DATE(), INTERVAL 100 DAY) AND DATE_SUB(CURRENT_DATE(), INTERVAL 1 DAY)
+            AND event_name = &apos;request_succeed&apos; 
+            AND label = &apos;increase_budget_confirm&apos; 
+            AND section = &apos;cpc.performance_landing_page&apos; 
+            AND params.key = &apos;budget_increase_value&apos; 
+            AND is_impersonated = &apos;no&apos; 
+            AND (SELECT params.value.string_value FROM UNNEST(event_params) AS params WHERE params.key = &apos;tag&apos;) = &apos;GA4.cpc_performance&apos;
+      		AND (
+      				session_id != &apos;f729f378525a0c6a2e73b62b6afb764e&apos; -- oct
+      				and
+              		session_id != &apos;38d3dc0f7811cc2d8b3554c47dd45500&apos; -- 28 nov
+              )
+        GROUP BY all
+    )
+    SELECT
+        fielddate,
+        global_entity_id,
+        SUM(CAST(total_budget_increase_value AS FLOAT64) / CAST(fx_rate_eur AS FLOAT64)) AS total_budget_in_eur
+    FROM budget_values a
+    JOIN `fulfillment-dwh-production.curated_data_shared_coredata.fx_rates` b 
+        ON a.currency_code = b.currency_code 
+        AND a.fielddate = b.fx_rate_date
+    GROUP BY fielddate, global_entity_id
+)
+
+-- Aggregate results with LEFT JOINs across session metrics and budget increases
+SELECT 
+DATE_TRUNC(fielddate,month) AS month,
+sessions.global_entity_id,
+sum(total_budget_in_eur) as nba_topup_budget,
+ROUND((SUM(shown_sessions) / NULLIF(SUM(page_load_sessions), 0)) * 100, 2) AS nba_shown_rate,
+ROUND((SUM(clicked_sessions) / NULLIF(SUM(shown_sessions), 0)) * 100, 2) AS nba_click_rate,
+ROUND((SUM(top_up_sessions) / NULLIF(SUM(clicked_sessions), 0)) * 100, 2) AS nba_applied_rate,
+SUM(page_load_sessions) as nba_page_load_sessions,
+SUM(shown_sessions) as nba_shown_sessions,
+SUM(clicked_sessions) as nba_clicked_sessions,
+SUM(top_up_sessions)as nba_top_up_sessions,
+
+FROM sessions 
+LEFT JOIN entity USING (global_entity_id)
+LEFT JOIN shown USING (fielddate, global_entity_id)
+LEFT JOIN clicked USING (fielddate, global_entity_id)
+LEFT JOIN top_up USING (fielddate, global_entity_id)
+LEFT JOIN increase USING (fielddate, global_entity_id)
+group by all)
+
+
+, newbranch as
+(-- Define online entities
+WITH entity AS (
+SELECT
+brand_name,
+global_entity_id
+FROM `fulfillment-dwh-production.curated_data_shared_coredata.global_entities`
+WHERE is_entity_online = TRUE
+),
+
+
+
+-- Count distinct sessions, users for page loads
+nba_outlets_views AS (
+SELECT
+date_trunc(fielddate, month) as date_month,
+brand_name,
+global_entity_id,
+count(distinct session_id) as sessions_brand_reporting_views,
+count(distinct user_id) as users_brand_reporting_views,
+COUNT(DISTINCT CASE WHEN is_grow_outlets_available=&apos;true&apos; then session_id END) as sessions_nba_outlets_views,
+COUNT(DISTINCT CASE WHEN is_grow_outlets_available=&apos;true&apos; then user_id END) as users_nba_outlets_views
+FROM
+(SELECT
+brand_name,
+session_id,
+user_id,
+fielddate,
+a.global_entity_id,
+(SELECT params.value.string_value FROM UNNEST(event_params) AS params WHERE params.key = &apos;is_grow_outlets_available&apos;) as is_grow_outlets_available
+FROM `fulfillment-dwh-production.curated_data_shared_sales_revenue.vp_events` a,
+UNNEST(event_params) AS params
+JOIN entity e ON a.global_entity_id=e.global_entity_id
+WHERE
+fielddate BETWEEN DATE_SUB(CURRENT_DATE(), INTERVAL 100 DAY) AND DATE_SUB(CURRENT_DATE(), INTERVAL 1 DAY)
+AND label = &apos;outlets_list_load&apos;
+AND event_name = &apos;section_succeed&apos;
+AND section = &apos;cpc.performance_landing_page&apos;
+AND is_impersonated = &apos;no&apos;
+AND (SELECT params.value.string_value FROM UNNEST(event_params) AS params WHERE params.key = &apos;tag&apos;) = &apos;GA4.cpc_performance&apos;
+GROUP BY ALL)
+GROUP BY ALL
+),
+-- Count sessions with &quot;grow all your outlets&quot; button clicked
+nba_outlets_clicks AS (
+SELECT
+fielddate,
+global_entity_id,
+session_id,
+user_id,
+MIN(event_timestamp_utc) as nba_click_timestamp_utc
+FROM `fulfillment-dwh-production.curated_data_shared_sales_revenue.vp_events`,
+UNNEST(event_params) AS params
+WHERE
+fielddate BETWEEN DATE_SUB(CURRENT_DATE(), INTERVAL 100 DAY) AND DATE_SUB(CURRENT_DATE(), INTERVAL 1 DAY)
+AND ((event_name = &apos;button_tap&apos;
+AND label = &apos;rec_card_clicked&apos;)
+OR
+(event_name = &apos;drawer_button_tap&apos;
+AND label = &apos;add_budget_action&apos;))
+AND (SELECT params.value.int_value FROM UNNEST(event_params) AS params WHERE params.key = &apos;grow_outlets_count&apos;) &gt;&gt;0
+AND section = &apos;cpc.performance_landing_page&apos;
+AND is_impersonated = &apos;no&apos;
+AND (SELECT params.value.string_value FROM UNNEST(event_params) AS params WHERE params.key = &apos;tag&apos;) = &apos;GA4.cpc_performance&apos;
+GROUP BY ALL
+),
+
+nba_outlets_clicks_agg AS (
+SELECT DATE_TRUNC(fielddate, MONTH) as date_month,
+global_entity_id,
+COUNT(DISTINCT session_id) sessions_clicks,
+COUNT(DISTINCT user_id) users_clicks
+FROM nba_outlets_clicks
+GROUP BY ALL
+),
+
+
+-- Bookings data
+bookings AS (
+SELECT
+session_id,
+user_id,
+event_timestamp_utc as booking_timestamp_utc,
+global_entity_id,
+fielddate,
+(SELECT params.value.string_value FROM UNNEST(event_params) AS params WHERE params.key = &apos;campaign_id&apos;) as campaign_id,
+SPLIT((SELECT params.value.string_value FROM UNNEST(event_params) AS params WHERE params.key = &apos;selected_vendor_id&apos;), &apos;;&apos; )[OFFSET(1)] as vendor_id
+FROM `fulfillment-dwh-production.curated_data_shared_sales_revenue.vp_events`,
+UNNEST(event_params) AS params
+WHERE
+fielddate BETWEEN DATE_SUB(CURRENT_DATE(), INTERVAL 100 DAY) AND DATE_SUB(CURRENT_DATE(), INTERVAL 1 DAY)
+AND event_name = &apos;request_succeed&apos;
+AND label = &apos;booking_confirm&apos;
+AND section in (&apos;cpc.booking_page&apos;, &apos;cpc.landing_page&apos;)
+AND is_impersonated = &apos;no&apos;
+GROUP BY ALL
+),
+
+
+-- Bookings data from nba
+nba_outlets_bookings AS (
+SELECT
+a.session_id,
+a.user_id,
+booking_timestamp_utc as nba_booking_timestamp_utc,
+a.global_entity_id,
+a.fielddate,
+campaigns as campaign_id,
+vendor_id
+FROM bookings a, UNNEST(SPLIT(a.campaign_id,&apos;,&apos;)) campaigns
+JOIN nba_outlets_clicks b on a.global_entity_id=b.global_entity_id and a.session_id=b.session_id and booking_timestamp_utc&gt;&gt;=nba_click_timestamp_utc
+QUALIFY ROW_NUMBER() OVER (PARTITION BY a.global_entity_id, a.session_id ORDER BY booking_timestamp_utc)=1
+),
+
+
+-- Bookings data from nba with budgets
+nba_outlets_bookings_budget AS (
+SELECT
+date_month,
+global_entity_id,
+COUNT(DISTINCT session_id) as sessions_bookings,
+COUNT(DISTINCT user_id) as users_bookings,
+COUNT(DISTINCT campaign_id) as bookings,
+SUM(budget_eur) as budget_eur
+FROM
+(SELECT
+DATE_TRUNC(fielddate, MONTH) as date_month,
+a.global_entity_id,
+session_id,user_id,
+a.campaign_id,
+pricing.budget_eur
+FROM nba_outlets_bookings a
+JOIN fulfillment-dwh-production.curated_data_shared_adtech.dim_campaigns b ON a.global_entity_id=b.global_entity_id and a.campaign_id=b.campaign_id
+QUALIFY ROW_NUMBER() OVER (PARTITION BY b.global_entity_id, b.campaign_id ORDER BY modified_at_utc)=1
+)
+GROUP BY ALL
+)
+
+-- Totals
+SELECT
+a.date_month as month,
+a.global_entity_id,
+budget_eur as nba_new_branch
+FROM nba_outlets_views a
+LEFT JOIN nba_outlets_clicks_agg b ON a.global_entity_id=b.global_entity_id and a.date_month=b.date_month
+LEFT JOIN nba_outlets_bookings_budget c ON a.global_entity_id=c.global_entity_id and a.date_month=c.date_month
+GROUP BY ALL
+)
+
+, ncr_reporting as
+
+(WITH cmp AS (
+  SELECT
+    global_entity_id,
+    CAST(vendor.id AS STRING) AS vendor_id,
+    campaign_id,
+    origin,
+    DATE_TRUNC(DATE(started_at_utc), MONTH) AS month,
+    FORMAT_TIMESTAMP(&apos;%Y-%m-%d %H:%M&apos;, MIN(started_at_utc)) AS started,
+    FORMAT_TIMESTAMP(&apos;%Y-%m-%d %H:%M&apos;, MIN(ended_at_utc)) AS ended_at_utc
+  FROM `fulfillment-dwh-production.curated_data_shared_adtech.dim_campaigns`,
+  UNNEST(advertiser.vendors) AS vendor
+  WHERE DATE(started_at_utc) &gt;&gt;= DATE(&apos;2025-05-01&apos;)  -- adjust start date as needed
+  GROUP BY
+    global_entity_id,
+    vendor_id,
+    campaign_id,
+    origin,
+    month
+),
+
+rep AS (
+  SELECT
+    global_entity_id,
+    DATE_TRUNC(DATE(fielddate), MONTH) AS month,
+    (SELECT SPLIT(p.value.string_value, &apos;;&apos;)[SAFE_OFFSET(1)]
+     FROM UNNEST(event_params) AS p
+     WHERE p.key = &apos;selected_vendor_id&apos;) AS vendor_id,
+    TRUE AS visited
+  FROM `fulfillment-dwh-production.curated_data_shared_sales_revenue.vp_events`
+  WHERE DATE(fielddate) &gt;&gt;= DATE(&apos;2025-05-01&apos;)  -- same window as cmp
+    AND label = &apos;page_load&apos;
+    AND event_name = &apos;page_open&apos;
+    AND section = &apos;cpc.performance_landing_page&apos;
+    AND is_impersonated = &apos;no&apos;
+    AND (SELECT p.value.string_value FROM UNNEST(event_params) AS p WHERE p.key = &apos;tag&apos;) = &apos;GA4.cpc_performance&apos;
+  GROUP BY
+    global_entity_id,
+    month,
+    vendor_id
+)
+
+, final as (SELECT
+  cmp.month,
+  CASE
+    WHEN ge.brand IN (&apos;Appetito24&apos;, &apos;Damejidlo&apos;, &apos;Hungry&apos;, &apos;Mjam&apos;, &apos;NetPincer&apos;) THEN &apos;Foodora&apos;
+    ELSE ge.brand
+  END AS brand,
+  cmp.global_entity_id,
+  cmp.origin,
+  CASE
+    WHEN rep.visited = TRUE THEN &apos;true&apos;
+    WHEN rep.visited IS NULL THEN &apos;false&apos;
+    ELSE &apos;other&apos;
+  END AS opened_report,
+  COUNT(DISTINCT cmp.vendor_id) AS unique_vendor_count
+FROM cmp
+LEFT JOIN rep
+  ON cmp.vendor_id = rep.vendor_id
+  AND cmp.global_entity_id = rep.global_entity_id
+  AND cmp.month = rep.month
+LEFT JOIN `fulfillment-dwh-production.curated_data_shared_central_dwh.global_entities` AS ge
+  ON cmp.global_entity_id = ge.global_entity_id
+GROUP BY
+  cmp.month,
+  CASE
+    WHEN ge.brand IN (&apos;Appetito24&apos;, &apos;Damejidlo&apos;, &apos;Hungry&apos;, &apos;Mjam&apos;, &apos;NetPincer&apos;) THEN &apos;Foodora&apos;
+    ELSE ge.brand
+  END,
+  cmp.global_entity_id,
+  cmp.origin,
+  CASE
+    WHEN rep.visited = TRUE THEN &apos;true&apos;
+    WHEN rep.visited IS NULL THEN &apos;false&apos;
+    ELSE &apos;other&apos;
+  END
+ORDER BY
+  cmp.month,
+  cmp.global_entity_id,
+  cmp.origin,
+  opened_report)
+
+
+  SELECT 
+  distinct month,
+  global_entity_id,
+  SUM(CASE WHEN opened_report=&quot;true&quot; then unique_vendor_count end) as ncr_adopted_vendors,
+  sum(unique_vendor_count) as ncr_adopted_total
+  from final
+  GROUP BY ALL)
+
+
+, vfd as 
+(WITH vpe AS (
+  SELECT
+    event_timestamp_utc,
+    fielddate AS event_date,
+    user_id,
+    session_id,
+    global_vendor_count,
+    is_impersonated,
+    event_name,
+    global_entity_id,
+
+    geo_continent,
+    geo_region,
+    geo_country,
+    geo_city,
+
+    vpm_webview_id,
+    app_id,
+    device_category,
+    device_os,
+    device_brand,
+    device_model,
+
+    section,
+    subsection,
+    label,
+    (SELECT params.value.string_value FROM UNNEST(event_params) AS params WHERE params.key = &quot;plugin_id&quot;) AS plugin_id,
+    (SELECT params.value.string_value FROM UNNEST(event_params) AS params WHERE params.key = &quot;plugin_name&quot;) AS plugin_name,
+    (SELECT params.value.string_value FROM UNNEST(event_params) AS params WHERE params.key = &quot;page_name&quot;) AS page_name,
+    (SELECT params.value.string_value FROM UNNEST(event_params) AS params WHERE params.key = &quot;plugin_code&quot;) AS plugin_code,
+    (SELECT params.value.string_value FROM UNNEST(event_params) AS params WHERE params.key = &quot;tag&quot;) AS tag,
+    (SELECT params.value.string_value FROM UNNEST(event_params) AS params WHERE params.key = &quot;selected_vendor_id&quot;) AS selected_vendor_id,
+    (SELECT params.value.string_value FROM UNNEST(event_params) AS params WHERE params.key = &quot;selected_vendor_count&quot;) AS selected_vendor_count,
+
+    (SELECT params.value.string_value FROM UNNEST(event_params) AS params WHERE params.key = &quot;discount_notification_banner&quot;) AS is_notification_banner_loaded,
+    (SELECT params.value.string_value FROM UNNEST(event_params) AS params WHERE params.key = &quot;discount_form&quot;) AS is_create_form_loaded,
+    (SELECT params.value.string_value FROM UNNEST(event_params) AS params WHERE params.key = &quot;discount_carousel&quot;) AS is_carousel_loaded,
+    (SELECT params.value.string_value FROM UNNEST(event_params) AS params WHERE params.key = &quot;discount_report&quot;) AS is_report_loaded,
+    (SELECT params.value.string_value FROM UNNEST(event_params) AS params WHERE params.key = &quot;discount_listing&quot;) AS is_listing_loaded,
+    (SELECT params.value.string_value FROM UNNEST(event_params) AS params WHERE params.key = &quot;discount_membership&quot;) AS is_subscription_loaded,
+    (SELECT params.value.string_value FROM UNNEST(event_params) AS params WHERE params.key = &quot;discount_referral&quot;) AS is_referral_loaded,
+
+    (SELECT params.value.string_value FROM UNNEST(event_params) AS params WHERE params.key = &quot;subscription_program_id&quot;) AS subscription_program_id,
+
+    (SELECT params.value.string_value FROM UNNEST(event_params) AS params WHERE params.key = &quot;audience_targeting&quot;) AS audience_targeting,
+    (SELECT params.value.string_value FROM UNNEST(event_params) AS params WHERE params.key = &quot;menu_selection_available&quot;) AS menu_selection_available,
+    (SELECT params.value.string_value FROM UNNEST(event_params) AS params WHERE params.key = &quot;branch_selection_available&quot;) AS branch_selection_available,
+    (SELECT params.value.string_value FROM UNNEST(event_params) AS params WHERE params.key = &quot;selected_value&quot;) AS selected_string_value,
+    (SELECT params.value.int_value FROM UNNEST(event_params) AS params WHERE params.key = &quot;selected_value&quot;) AS selected_int_value,
+    (SELECT params.value.float_value FROM UNNEST(event_params) AS params WHERE params.key = &quot;selected_value&quot;) AS selected_float_value,
+    (SELECT params.value.string_value FROM UNNEST(event_params) AS params WHERE params.key = &quot;discount_type&quot;) AS discount_type,
+    (SELECT params.value.string_value FROM UNNEST(event_params) AS params WHERE params.key = &quot;audience_selected&quot;) AS audience_selected,
+    (SELECT params.value.int_value FROM UNNEST(event_params) AS params WHERE params.key = &quot;num_menu_items_selected&quot;) AS num_menu_items_selected,
+    (SELECT params.value.int_value FROM UNNEST(event_params) AS params WHERE params.key = &quot;num_vendors_selected&quot;) AS num_vendors_selected,
+    (SELECT params.value.int_value FROM UNNEST(event_params) AS params WHERE params.key = &quot;min_order_value&quot;) AS min_order_value,
+    (SELECT params.value.int_value FROM UNNEST(event_params) AS params WHERE params.key = &quot;max_order_value&quot;) AS max_order_value,
+    (SELECT params.value.int_value FROM UNNEST(event_params) AS params WHERE params.key = &quot;discount_value&quot;) AS discount_value,
+    (SELECT params.value.string_value FROM UNNEST(event_params) AS params WHERE params.key = &quot;start_date&quot;) AS start_date,
+    (SELECT params.value.string_value FROM UNNEST(event_params) AS params WHERE params.key = &quot;end_date&quot;) AS end_date,
+    (SELECT params.value.string_value FROM UNNEST(event_params) AS params WHERE params.key = &quot;is_full_day&quot;) AS is_full_day,
+    (SELECT params.value.string_value FROM UNNEST(event_params) AS params WHERE params.key = &quot;is_recurring&quot;) AS is_recurring,
+    (SELECT params.value.string_value FROM UNNEST(event_params) AS params WHERE params.key = &quot;days_of_week&quot;) AS days_of_week,
+    (SELECT params.value.string_value FROM UNNEST(event_params) AS params WHERE params.key = &quot;template_id&quot;) AS template_id,
+
+    (SELECT params.value.string_value FROM UNNEST(event_params) AS params WHERE params.key = &quot;carousel_pos_1&quot;) AS carousel_pos_1,
+    (SELECT params.value.string_value FROM UNNEST(event_params) AS params WHERE params.key = &quot;carousel_pos_2&quot;) AS carousel_pos_2,
+    (SELECT params.value.string_value FROM UNNEST(event_params) AS params WHERE params.key = &quot;carousel_pos_3&quot;) AS carousel_pos_3,
+    (SELECT params.value.string_value FROM UNNEST(event_params) AS params WHERE params.key = &quot;carousel_pos_4&quot;) AS carousel_pos_4,
+    (SELECT params.value.string_value FROM UNNEST(event_params) AS params WHERE params.key = &quot;carousel_pos_5&quot;) AS carousel_pos_5,
+    (SELECT params.value.string_value FROM UNNEST(event_params) AS params WHERE params.key = &quot;carousel_pos_6&quot;) AS carousel_pos_6,
+    (SELECT params.value.string_value FROM UNNEST(event_params) AS params WHERE params.key = &quot;carousel_pos_7&quot;) AS carousel_pos_7,
+    (SELECT params.value.string_value FROM UNNEST(event_params) AS params WHERE params.key = &quot;carousel_pos_8&quot;) AS carousel_pos_8,
+    (SELECT params.value.string_value FROM UNNEST(event_params) AS params WHERE params.key = &quot;carousel_pos_9&quot;) AS carousel_pos_9,
+    (SELECT params.value.string_value FROM UNNEST(event_params) AS params WHERE params.key = &quot;carousel_pos_10&quot;) AS carousel_pos_10,
+    (SELECT params.value.int_value FROM UNNEST(event_params) AS params WHERE params.key = &quot;discount_campaign_pos&quot;) AS discount_campaign_pos,
+    (SELECT params.value.string_value FROM UNNEST(event_params) AS params WHERE params.key = &quot;discount_campaign_id&quot;) AS discount_campaign_id,
+
+    (SELECT params.value.string_value FROM UNNEST(event_params) AS params WHERE params.key = &quot;deal_id&quot;) AS deal_id,
+
+    (SELECT params.value.string_value FROM UNNEST(event_params) AS params WHERE params.key = &quot;discount_level_report&quot;) AS discount_level_report,
+    (SELECT params.value.string_value FROM UNNEST(event_params) AS params WHERE params.key = &quot;discount_edit&quot;) AS discount_edit,
+    (SELECT params.value.string_value FROM UNNEST(event_params) AS params WHERE params.key = &quot;discount_cancel&quot;) AS discount_cancel,
+
+    (SELECT params.value.string_value FROM UNNEST(event_params) AS params WHERE params.key LIKE &quot;%error%&quot;) AS error_msg
+
+  FROM `fulfillment-dwh-production.curated_data_shared_sales_revenue.vp_events`
+  WHERE user_id IS NOT NULL
+    AND fielddate &gt;&gt;= &quot;2024-12-01&quot;
+),
+
+vp_users AS (
+  SELECT
+    user_id,
+    ven.vendor_id,
+    ven.global_entity_id,
+    ven.role AS user_role
+  FROM `fulfillment-dwh-production.curated_data_shared_sales_revenue.vp_users`
+  LEFT JOIN UNNEST(vendors) AS ven
+  WHERE ven.role IN (&quot;ADMIN&quot;, &quot;MANAGER&quot;)
+),
+
+md AS (
+  SELECT DISTINCT event_date, user_id, vendor_id, session_id
+  FROM vpe
+  LEFT JOIN vp_users AS vpu USING(user_id)
+  WHERE event_name = &quot;page_view&quot;
+    AND plugin_code = &quot;VENDOR_DEALS&quot;
+    AND label = &quot;view_performance_tab&quot;
+),
+
+adopted_vendors AS (
+  SELECT
+    DATE_TRUNC(event_date, MONTH) AS month,
+    vendor_id,
+    COUNT(DISTINCT session_id) AS no_of_sessions
+  FROM md
+  GROUP BY month, vendor_id
+),
+
+vfd AS (
+  SELECT
+    month,
+    country_code,
+    vendor_id,
+    SUM(incentive_amount_eur) AS savings
+  FROM (
+    SELECT
+      DATE_TRUNC(order_date, MONTH) AS month,
+      b.country_code,
+      orders.vendor_id,
+      orders.vertical,
+      a.vendor_name,
+      a.chain_id,
+      d.system_creation,
+      d.platform_campaign_type,
+      a.account_manager_name AS am,
+      orders.campaign_id,
+      incentive_sub_type,
+      incentive_amount_eur,
+      order_id,
+      a.is_dh_kitchen,
+      gmv_amount_eur
+    FROM `tlb-data-prod.data_platform.fct_incentive_order_detail` orders
+    LEFT JOIN `tlb-data-prod.data_platform.dim_vendor_info` a
+      ON a.vendor_id = orders.vendor_id
+    LEFT JOIN `tlb-data-prod.data_platform.dim_chain` b
+      ON b.chain_id = a.chain_id
+    LEFT JOIN `tlb-data-prod.data_platform.dim_incentives_discount` d
+      ON orders.campaign_id = d.campaign_id
+    WHERE order_date &gt;&gt;= &quot;2024-12-01&quot;
+      AND is_successful = TRUE
+      AND orders.vertical = &apos;food&apos;
+      AND incentive_sub_type IN (&apos;menu discount&apos;,&apos;item discount&apos;)
+  )
+  WHERE country_code != &apos;SA&apos;
+  GROUP BY month, country_code, vendor_id
+),
+
+final AS (
+  SELECT
+    vfd.*,
+    av.no_of_sessions
+  FROM vfd
+  LEFT JOIN adopted_vendors av
+    ON SAFE_CAST(vfd.vendor_id AS STRING) = av.vendor_id
+    AND vfd.month = av.month
+),
+
+final2 AS (
+  SELECT
+    *,
+    CASE WHEN no_of_sessions &gt;&gt;= 1 THEN &quot;Y&quot; ELSE &quot;N&quot; END AS adopted_flag
+  FROM final
+)
+
+SELECT
+  month,
+CASE 
+    WHEN country_code = &apos;EG&apos; THEN CONCAT(&apos;HF_&apos;, country_code)
+    ELSE CONCAT(&apos;TB_&apos;, country_code)
+END AS global_entity_id,
+  COUNT(DISTINCT vendor_id) AS total_vfd_vendors,
+  COUNT(DISTINCT CASE WHEN adopted_flag = &quot;Y&quot; THEN vendor_id END) AS adopted_vendors
+FROM final2
+GROUP BY month, country_code
+ORDER BY month, country_code)
+
+
+
+SELECT distinct mt.* ,nba.* except(global_entity_id,month),nb.* except(global_entity_id,month),ncr.* except(month,global_entity_id),vfd.* except(month,global_entity_id)
+FROM multioutlet mt
+JOIN nba 
+ON mt.month=nba.month and mt.global_entity_id=nba.global_entity_id
+JOIN newbranch nb
+ON mt.month=nb.month and mt.global_entity_id=nb.global_entity_id
+JOIN ncr_reporting ncr
+ON safe_cast(mt.month as string)=safe_cast(ncr.month as string) and mt.global_entity_id=ncr.global_entity_id
+JOIN vfd
+ON mt.month=vfd.month and mt.global_entity_id=vfd.global_entity_id</_.fcp.ObjectModelEncapsulateLegacy.false...relation>
+        <_.fcp.ObjectModelEncapsulateLegacy.true...relation connection='bigquery.0iwdglf1az3z4n11624600hrpsfd' name='Custom SQL Query' type='text'>with multioutlet as (with entity AS (
+SELECT
+brand_name
+, sub_entity
+, global_entity_id
+FROM `fulfillment-dwh-production.curated_data_shared_coredata.global_entities`
+WHERE is_entity_online = TRUE
+and management_entity=&apos;Talabat&apos;
+),
+
+raw_data as
+(Select date_trunc(fielddate, month) as date_month,
+fielddate,
+brand_name,
+a.global_entity_id, event_timestamp_utc, user_id,
+(SELECT params.value.string_value FROM unnest(event_params) as params WHERE params.key = &apos;is_multiple_outlets_landing&apos;) is_multiple_outlets_landing,
+(SELECT params.value.string_value FROM unnest(event_params) as params WHERE params.key = &apos;is_multiple_outlets_mode&apos;) is_multiple_outlets_mode,
+(SELECT params.value.string_value FROM unnest(event_params) as params WHERE params.key = &apos;multiple_outlets_available&apos;) is_multiple_outlets_available,
+
+SPLIT((select coalesce(params.value.string_value, cast(params.value.int_value as string), cast(params.value.float_value as string), cast(params.value.double_value as string)) FROM unnest(event_params) as params WHERE params.key = &apos;budget_value&apos;), &apos;,&apos;) as budget_value,
+
+SPLIT((select coalesce(params.value.string_value, cast(params.value.int_value as string), cast(params.value.float_value as string), cast(params.value.double_value as string)) FROM unnest(event_params) as params WHERE params.key = &apos;currency_code&apos;), &apos;,&apos;) as currency_code,
+
+SPLIT((select coalesce(params.value.string_value, cast(params.value.int_value as string), cast(params.value.float_value as string), cast(params.value.double_value as string)) FROM unnest(event_params) as params WHERE params.key = &apos;campaign_id&apos;), &apos;,&apos;) as campaign_id
+
+FROM fulfillment-dwh-production.curated_data_shared_sales_revenue.vp_events a
+JOIN entity e on a.global_entity_id=e.global_entity_id
+WHERE date_trunc(fielddate, month) &gt;&gt;= &apos;2025-01-01&apos;
+and COALESCE(is_impersonated, &apos;no&apos;)=&apos;no&apos;
+and device_platform=&apos;WEB&apos;
+and event_name = &apos;request_succeed&apos;
+and label = &apos;booking_confirm&apos;
+and (SELECT params.value.string_value FROM unnest(event_params) as params WHERE params.key = &apos;page_name&apos;) =&apos;cpc_booking&apos;
+and (SELECT params.value.string_value FROM unnest(event_params) as params WHERE params.key = &apos;plugin_code&apos;) = &apos;MIDAS&apos;
+and ((SELECT params.value.string_value FROM unnest(event_params) as params WHERE params.key = &apos;is_multiple_outlets_mode&apos;) = &apos;true&apos;
+OR
+(SELECT params.value.string_value FROM unnest(event_params) as params WHERE params.key = &apos;is_multiple_outlets_landing&apos;) = &apos;true&apos;
+OR
+(SELECT params.value.string_value FROM unnest(event_params) as params WHERE params.key = &apos;multiple_outlets_available&apos;) = &apos;true&apos;)
+GROUP BY ALL),
+
+vertical_parent as
+(select a.global_entity_id, campaign_id, advertiser.type as vertical_parent, pricing.budget_eur, vendors.id as vendor_id,
+case when pricing.budget_eur &gt;&gt;
+((stddev(pricing.budget_eur) over (partition by a.global_entity_id)) * 6) then 1 else 0 end as is_outlier
+FROM `fulfillment-dwh-production.curated_data_shared_adtech.dim_campaigns` a , unnest(advertiser.vendors) vendors
+JOIN entity e on a.global_entity_id=e.global_entity_id
+WHERE date(created_at_utc)&gt;&gt;=&apos;2025-01-01&apos;
+and product in (&apos;premium_placements&apos;, &apos;organic_placements&apos;)
+and origin=&apos;vendor&apos;
+qualify row_number() OVER (PARTITION BY global_entity_id, campaign_id ORDER BY modified_at_utc) = 1
+),
+
+raw_data_vertical as
+(select
+date_month,
+fielddate,
+brand_name,
+a.global_entity_id,
+event_timestamp_utc,
+user_id,
+is_outlier,
+vendor_id,
+vertical_parent,
+campaign_id,
+budget_eur,
+is_multiple_outlets_landing,
+is_multiple_outlets_mode,
+is_multiple_outlets_available
+FROM raw_data a, UNNEST(campaign_id) campaign_id
+JOIN vertical_parent b on a.global_entity_id=b.global_entity_id and campaign_id=b.campaign_id
+GROUP BY ALL)
+
+select
+distinct date_month as month,
+global_entity_id,
+sum(budget_eur) as multioutlet_budget_eur
+FROM raw_data_vertical
+WHERE coalesce(is_multiple_outlets_landing,is_multiple_outlets_mode)=&apos;true&apos;
+and vertical_parent = &apos;restaurants&apos;
+GROUP BY ALL)
+
+, nba as 
+(-- Define online entities
+WITH entity AS (
+    SELECT
+        brand_name,
+        global_entity_id
+    FROM `fulfillment-dwh-production.curated_data_shared_coredata.global_entities`
+    WHERE is_entity_online = TRUE
+),
+
+-- Count distinct sessions for page loads
+sessions AS (
+    SELECT
+        COUNT(DISTINCT session_id) AS page_load_sessions,
+        fielddate,
+        global_entity_id
+    FROM `fulfillment-dwh-production.curated_data_shared_sales_revenue.vp_events` a,
+    UNNEST(event_params) AS params
+    WHERE 
+        fielddate BETWEEN DATE_SUB(CURRENT_DATE(), INTERVAL 100 DAY) AND DATE_SUB(CURRENT_DATE(), INTERVAL 1 DAY)
+        AND label = &apos;page_load&apos; 
+        AND event_name = &apos;page_open&apos; 
+        AND section = &apos;cpc.performance_landing_page&apos; 
+        AND is_impersonated = &apos;no&apos; 
+        AND (SELECT params.value.string_value FROM UNNEST(event_params) AS params WHERE params.key = &apos;tag&apos;) = &apos;GA4.cpc_performance&apos;
+    GROUP BY fielddate, global_entity_id
+),
+
+-- Count sessions where recommendations were shown
+shown AS (
+    SELECT
+        fielddate,
+        global_entity_id,
+        COUNT(DISTINCT session_id) AS shown_sessions
+    FROM `fulfillment-dwh-production.curated_data_shared_sales_revenue.vp_events` a,
+    UNNEST(event_params) AS params
+    WHERE 
+        fielddate BETWEEN DATE_SUB(CURRENT_DATE(), INTERVAL 100 DAY) AND DATE_SUB(CURRENT_DATE(), INTERVAL 1 DAY)
+        AND label = &apos;page_load&apos; 
+        AND section = &apos;cpc.performance_landing_page&apos; 
+        AND params.key = &quot;rec_actions_count&quot; 
+        AND params.value.int_value = 1 
+        AND is_impersonated = &apos;no&apos; 
+        AND (SELECT params.value.string_value FROM UNNEST(event_params) AS params WHERE params.key = &apos;tag&apos;) = &apos;GA4.cpc_performance&apos;
+    GROUP BY fielddate, global_entity_id
+),
+
+-- Count sessions with &quot;add budget&quot; button clicked
+clicked AS (
+    SELECT
+        fielddate,
+        global_entity_id,
+        COUNT(DISTINCT session_id) AS clicked_sessions
+    FROM `fulfillment-dwh-production.curated_data_shared_sales_revenue.vp_events` a,
+    UNNEST(event_params) AS params
+    WHERE 
+        fielddate BETWEEN DATE_SUB(CURRENT_DATE(), INTERVAL 100 DAY) AND DATE_SUB(CURRENT_DATE(), INTERVAL 1 DAY)
+        AND event_name = &apos;button_tap&apos; 
+        AND (label = &apos;add_budget_action&apos;  or label = &apos;rec_card_clicked&apos;)
+        AND section = &apos;cpc.performance_landing_page&apos; 
+        AND is_impersonated = &apos;no&apos; 
+        AND (SELECT params.value.string_value FROM UNNEST(event_params) AS params WHERE params.key = &apos;tag&apos;) = &apos;GA4.cpc_performance&apos;
+    GROUP BY fielddate, global_entity_id
+),
+
+-- Count sessions with budget increase confirmations
+top_up AS (
+    SELECT
+        fielddate,
+        global_entity_id,
+        COUNT(DISTINCT session_id) AS top_up_sessions
+    FROM `fulfillment-dwh-production.curated_data_shared_sales_revenue.vp_events` a,
+    UNNEST(event_params) AS params
+    WHERE 
+        fielddate BETWEEN DATE_SUB(CURRENT_DATE(), INTERVAL 100 DAY) AND DATE_SUB(CURRENT_DATE(), INTERVAL 1 DAY)
+        AND event_name = &apos;request_succeed&apos; 
+        AND label = &apos;increase_budget_confirm&apos; 
+        AND section = &apos;cpc.performance_landing_page&apos; 
+        AND params.key = &apos;budget_increase_value&apos; 
+        AND is_impersonated = &apos;no&apos; 
+        AND (SELECT params.value.string_value FROM UNNEST(event_params) AS params WHERE params.key = &apos;tag&apos;) = &apos;GA4.cpc_performance&apos;
+    GROUP BY fielddate, global_entity_id
+),
+
+-- Calculate total budget increase in EUR
+increase AS (
+    WITH budget_values AS (
+        SELECT
+            fielddate,
+            session_id,
+            global_entity_id,
+	        event_timestamp_utc, --- added this line 05 11
+            CASE 
+                -- Replace [object Object] with the correct currency_code based on global_entity_id
+                WHEN (SELECT params.value.string_value FROM UNNEST(event_params) AS params WHERE params.key = &apos;currency_code&apos;) = &apos;[object Object]&apos; THEN
+                    CASE global_entity_id
+                        WHEN &apos;YS_TR&apos; THEN &apos;TRY&apos;
+                        WHEN &apos;TB_QA&apos; THEN &apos;QAR&apos;
+                        WHEN &apos;TB_OM&apos; THEN &apos;OMR&apos;
+                        WHEN &apos;TB_KW&apos; THEN &apos;KWD&apos;
+                        WHEN &apos;TB_JO&apos; THEN &apos;JOD&apos;
+                        WHEN &apos;TB_IQ&apos; THEN &apos;IQD&apos;
+                        WHEN &apos;TB_BH&apos; THEN &apos;BHD&apos;
+                        WHEN &apos;TB_AE&apos; THEN &apos;AED&apos;
+                        WHEN &apos;PY_VE&apos; THEN &apos;VEF&apos;
+                        WHEN &apos;PY_UY&apos; THEN &apos;UYU&apos;
+                        WHEN &apos;PY_PY&apos; THEN &apos;PYG&apos;
+                        WHEN &apos;PY_PE&apos; THEN &apos;PEN&apos;
+                        WHEN &apos;PY_NI&apos; THEN &apos;NIO&apos;
+                        WHEN &apos;PY_HN&apos; THEN &apos;HNL&apos;
+                        WHEN &apos;PY_GT&apos; THEN &apos;GTQ&apos;
+                        WHEN &apos;PY_EC&apos; THEN &apos;USD&apos;
+                        WHEN &apos;PY_DO&apos; THEN &apos;DOP&apos;
+                        WHEN &apos;PY_CL&apos; THEN &apos;CLP&apos;
+                        WHEN &apos;PY_BO&apos; THEN &apos;BOB&apos;
+                        WHEN &apos;PY_AR&apos; THEN &apos;ARS&apos;
+                        WHEN &apos;PO_FI&apos; THEN &apos;EUR&apos;
+                        WHEN &apos;OP_SE&apos; THEN &apos;SEK&apos;
+                        WHEN &apos;NP_HU&apos; THEN &apos;HUF&apos;
+                        WHEN &apos;MJM_AT&apos; THEN &apos;EUR&apos;
+                        WHEN &apos;HS_SA&apos; THEN &apos;SAR&apos;
+                        WHEN &apos;HF_EG&apos; THEN &apos;EGP&apos;
+                        WHEN &apos;FP_TW&apos; THEN &apos;TWD&apos;
+                        WHEN &apos;FP_TH&apos; THEN &apos;THB&apos;
+                        WHEN &apos;FP_SG&apos; THEN &apos;SGD&apos;
+                        WHEN &apos;FP_PK&apos; THEN &apos;PKR&apos;
+                        WHEN &apos;FP_PH&apos; THEN &apos;PHP&apos;
+                        WHEN &apos;FP_MY&apos; THEN &apos;MYR&apos;
+                        WHEN &apos;FP_KH&apos; THEN &apos;USD&apos;
+                        WHEN &apos;FP_HK&apos; THEN &apos;HKD&apos;
+                        WHEN &apos;FP_BD&apos; THEN &apos;BDT&apos;
+                        WHEN &apos;FO_NO&apos; THEN &apos;NOK&apos;
+                        WHEN &apos;DJ_CZ&apos; THEN &apos;CZK&apos;
+                        WHEN &apos;CG_QA&apos; THEN &apos;OMR&apos;
+                        WHEN &apos;AP_PA&apos; THEN &apos;USD&apos;
+                        ELSE NULL -- Handle unexpected cases
+                    END
+                ELSE (SELECT params.value.string_value FROM UNNEST(event_params) AS params WHERE params.key = &apos;currency_code&apos;)
+            END AS currency_code,
+            coalesce(params.value.string_value, cast(params.value.int_value as string), cast(params.value.double_value as string)) AS total_budget_increase_value
+        FROM `fulfillment-dwh-production.curated_data_shared_sales_revenue.vp_events` a,
+        UNNEST(event_params) AS params
+        WHERE 
+            fielddate BETWEEN DATE_SUB(CURRENT_DATE(), INTERVAL 100 DAY) AND DATE_SUB(CURRENT_DATE(), INTERVAL 1 DAY)
+            AND event_name = &apos;request_succeed&apos; 
+            AND label = &apos;increase_budget_confirm&apos; 
+            AND section = &apos;cpc.performance_landing_page&apos; 
+            AND params.key = &apos;budget_increase_value&apos; 
+            AND is_impersonated = &apos;no&apos; 
+            AND (SELECT params.value.string_value FROM UNNEST(event_params) AS params WHERE params.key = &apos;tag&apos;) = &apos;GA4.cpc_performance&apos;
+      		AND (
+      				session_id != &apos;f729f378525a0c6a2e73b62b6afb764e&apos; -- oct
+      				and
+              		session_id != &apos;38d3dc0f7811cc2d8b3554c47dd45500&apos; -- 28 nov
+              )
+        GROUP BY all
+    )
+    SELECT
+        fielddate,
+        global_entity_id,
+        SUM(CAST(total_budget_increase_value AS FLOAT64) / CAST(fx_rate_eur AS FLOAT64)) AS total_budget_in_eur
+    FROM budget_values a
+    JOIN `fulfillment-dwh-production.curated_data_shared_coredata.fx_rates` b 
+        ON a.currency_code = b.currency_code 
+        AND a.fielddate = b.fx_rate_date
+    GROUP BY fielddate, global_entity_id
+)
+
+-- Aggregate results with LEFT JOINs across session metrics and budget increases
+SELECT 
+DATE_TRUNC(fielddate,month) AS month,
+sessions.global_entity_id,
+sum(total_budget_in_eur) as nba_topup_budget,
+ROUND((SUM(shown_sessions) / NULLIF(SUM(page_load_sessions), 0)) * 100, 2) AS nba_shown_rate,
+ROUND((SUM(clicked_sessions) / NULLIF(SUM(shown_sessions), 0)) * 100, 2) AS nba_click_rate,
+ROUND((SUM(top_up_sessions) / NULLIF(SUM(clicked_sessions), 0)) * 100, 2) AS nba_applied_rate,
+SUM(page_load_sessions) as nba_page_load_sessions,
+SUM(shown_sessions) as nba_shown_sessions,
+SUM(clicked_sessions) as nba_clicked_sessions,
+SUM(top_up_sessions)as nba_top_up_sessions,
+
+FROM sessions 
+LEFT JOIN entity USING (global_entity_id)
+LEFT JOIN shown USING (fielddate, global_entity_id)
+LEFT JOIN clicked USING (fielddate, global_entity_id)
+LEFT JOIN top_up USING (fielddate, global_entity_id)
+LEFT JOIN increase USING (fielddate, global_entity_id)
+group by all)
+
+
+, newbranch as
+(-- Define online entities
+WITH entity AS (
+SELECT
+brand_name,
+global_entity_id
+FROM `fulfillment-dwh-production.curated_data_shared_coredata.global_entities`
+WHERE is_entity_online = TRUE
+),
+
+
+
+-- Count distinct sessions, users for page loads
+nba_outlets_views AS (
+SELECT
+date_trunc(fielddate, month) as date_month,
+brand_name,
+global_entity_id,
+count(distinct session_id) as sessions_brand_reporting_views,
+count(distinct user_id) as users_brand_reporting_views,
+COUNT(DISTINCT CASE WHEN is_grow_outlets_available=&apos;true&apos; then session_id END) as sessions_nba_outlets_views,
+COUNT(DISTINCT CASE WHEN is_grow_outlets_available=&apos;true&apos; then user_id END) as users_nba_outlets_views
+FROM
+(SELECT
+brand_name,
+session_id,
+user_id,
+fielddate,
+a.global_entity_id,
+(SELECT params.value.string_value FROM UNNEST(event_params) AS params WHERE params.key = &apos;is_grow_outlets_available&apos;) as is_grow_outlets_available
+FROM `fulfillment-dwh-production.curated_data_shared_sales_revenue.vp_events` a,
+UNNEST(event_params) AS params
+JOIN entity e ON a.global_entity_id=e.global_entity_id
+WHERE
+fielddate BETWEEN DATE_SUB(CURRENT_DATE(), INTERVAL 100 DAY) AND DATE_SUB(CURRENT_DATE(), INTERVAL 1 DAY)
+AND label = &apos;outlets_list_load&apos;
+AND event_name = &apos;section_succeed&apos;
+AND section = &apos;cpc.performance_landing_page&apos;
+AND is_impersonated = &apos;no&apos;
+AND (SELECT params.value.string_value FROM UNNEST(event_params) AS params WHERE params.key = &apos;tag&apos;) = &apos;GA4.cpc_performance&apos;
+GROUP BY ALL)
+GROUP BY ALL
+),
+-- Count sessions with &quot;grow all your outlets&quot; button clicked
+nba_outlets_clicks AS (
+SELECT
+fielddate,
+global_entity_id,
+session_id,
+user_id,
+MIN(event_timestamp_utc) as nba_click_timestamp_utc
+FROM `fulfillment-dwh-production.curated_data_shared_sales_revenue.vp_events`,
+UNNEST(event_params) AS params
+WHERE
+fielddate BETWEEN DATE_SUB(CURRENT_DATE(), INTERVAL 100 DAY) AND DATE_SUB(CURRENT_DATE(), INTERVAL 1 DAY)
+AND ((event_name = &apos;button_tap&apos;
+AND label = &apos;rec_card_clicked&apos;)
+OR
+(event_name = &apos;drawer_button_tap&apos;
+AND label = &apos;add_budget_action&apos;))
+AND (SELECT params.value.int_value FROM UNNEST(event_params) AS params WHERE params.key = &apos;grow_outlets_count&apos;) &gt;&gt;0
+AND section = &apos;cpc.performance_landing_page&apos;
+AND is_impersonated = &apos;no&apos;
+AND (SELECT params.value.string_value FROM UNNEST(event_params) AS params WHERE params.key = &apos;tag&apos;) = &apos;GA4.cpc_performance&apos;
+GROUP BY ALL
+),
+
+nba_outlets_clicks_agg AS (
+SELECT DATE_TRUNC(fielddate, MONTH) as date_month,
+global_entity_id,
+COUNT(DISTINCT session_id) sessions_clicks,
+COUNT(DISTINCT user_id) users_clicks
+FROM nba_outlets_clicks
+GROUP BY ALL
+),
+
+
+-- Bookings data
+bookings AS (
+SELECT
+session_id,
+user_id,
+event_timestamp_utc as booking_timestamp_utc,
+global_entity_id,
+fielddate,
+(SELECT params.value.string_value FROM UNNEST(event_params) AS params WHERE params.key = &apos;campaign_id&apos;) as campaign_id,
+SPLIT((SELECT params.value.string_value FROM UNNEST(event_params) AS params WHERE params.key = &apos;selected_vendor_id&apos;), &apos;;&apos; )[OFFSET(1)] as vendor_id
+FROM `fulfillment-dwh-production.curated_data_shared_sales_revenue.vp_events`,
+UNNEST(event_params) AS params
+WHERE
+fielddate BETWEEN DATE_SUB(CURRENT_DATE(), INTERVAL 100 DAY) AND DATE_SUB(CURRENT_DATE(), INTERVAL 1 DAY)
+AND event_name = &apos;request_succeed&apos;
+AND label = &apos;booking_confirm&apos;
+AND section in (&apos;cpc.booking_page&apos;, &apos;cpc.landing_page&apos;)
+AND is_impersonated = &apos;no&apos;
+GROUP BY ALL
+),
+
+
+-- Bookings data from nba
+nba_outlets_bookings AS (
+SELECT
+a.session_id,
+a.user_id,
+booking_timestamp_utc as nba_booking_timestamp_utc,
+a.global_entity_id,
+a.fielddate,
+campaigns as campaign_id,
+vendor_id
+FROM bookings a, UNNEST(SPLIT(a.campaign_id,&apos;,&apos;)) campaigns
+JOIN nba_outlets_clicks b on a.global_entity_id=b.global_entity_id and a.session_id=b.session_id and booking_timestamp_utc&gt;&gt;=nba_click_timestamp_utc
+QUALIFY ROW_NUMBER() OVER (PARTITION BY a.global_entity_id, a.session_id ORDER BY booking_timestamp_utc)=1
+),
+
+
+-- Bookings data from nba with budgets
+nba_outlets_bookings_budget AS (
+SELECT
+date_month,
+global_entity_id,
+COUNT(DISTINCT session_id) as sessions_bookings,
+COUNT(DISTINCT user_id) as users_bookings,
+COUNT(DISTINCT campaign_id) as bookings,
+SUM(budget_eur) as budget_eur
+FROM
+(SELECT
+DATE_TRUNC(fielddate, MONTH) as date_month,
+a.global_entity_id,
+session_id,user_id,
+a.campaign_id,
+pricing.budget_eur
+FROM nba_outlets_bookings a
+JOIN fulfillment-dwh-production.curated_data_shared_adtech.dim_campaigns b ON a.global_entity_id=b.global_entity_id and a.campaign_id=b.campaign_id
+QUALIFY ROW_NUMBER() OVER (PARTITION BY b.global_entity_id, b.campaign_id ORDER BY modified_at_utc)=1
+)
+GROUP BY ALL
+)
+
+-- Totals
+SELECT
+a.date_month as month,
+a.global_entity_id,
+budget_eur as nba_new_branch
+FROM nba_outlets_views a
+LEFT JOIN nba_outlets_clicks_agg b ON a.global_entity_id=b.global_entity_id and a.date_month=b.date_month
+LEFT JOIN nba_outlets_bookings_budget c ON a.global_entity_id=c.global_entity_id and a.date_month=c.date_month
+GROUP BY ALL
+)
+
+, ncr_reporting as
+
+(WITH cmp AS (
+  SELECT
+    global_entity_id,
+    CAST(vendor.id AS STRING) AS vendor_id,
+    campaign_id,
+    origin,
+    DATE_TRUNC(DATE(started_at_utc), MONTH) AS month,
+    FORMAT_TIMESTAMP(&apos;%Y-%m-%d %H:%M&apos;, MIN(started_at_utc)) AS started,
+    FORMAT_TIMESTAMP(&apos;%Y-%m-%d %H:%M&apos;, MIN(ended_at_utc)) AS ended_at_utc
+  FROM `fulfillment-dwh-production.curated_data_shared_adtech.dim_campaigns`,
+  UNNEST(advertiser.vendors) AS vendor
+  WHERE DATE(started_at_utc) &gt;&gt;= DATE(&apos;2025-05-01&apos;)  -- adjust start date as needed
+  GROUP BY
+    global_entity_id,
+    vendor_id,
+    campaign_id,
+    origin,
+    month
+),
+
+rep AS (
+  SELECT
+    global_entity_id,
+    DATE_TRUNC(DATE(fielddate), MONTH) AS month,
+    (SELECT SPLIT(p.value.string_value, &apos;;&apos;)[SAFE_OFFSET(1)]
+     FROM UNNEST(event_params) AS p
+     WHERE p.key = &apos;selected_vendor_id&apos;) AS vendor_id,
+    TRUE AS visited
+  FROM `fulfillment-dwh-production.curated_data_shared_sales_revenue.vp_events`
+  WHERE DATE(fielddate) &gt;&gt;= DATE(&apos;2025-05-01&apos;)  -- same window as cmp
+    AND label = &apos;page_load&apos;
+    AND event_name = &apos;page_open&apos;
+    AND section = &apos;cpc.performance_landing_page&apos;
+    AND is_impersonated = &apos;no&apos;
+    AND (SELECT p.value.string_value FROM UNNEST(event_params) AS p WHERE p.key = &apos;tag&apos;) = &apos;GA4.cpc_performance&apos;
+  GROUP BY
+    global_entity_id,
+    month,
+    vendor_id
+)
+
+, final as (SELECT
+  cmp.month,
+  CASE
+    WHEN ge.brand IN (&apos;Appetito24&apos;, &apos;Damejidlo&apos;, &apos;Hungry&apos;, &apos;Mjam&apos;, &apos;NetPincer&apos;) THEN &apos;Foodora&apos;
+    ELSE ge.brand
+  END AS brand,
+  cmp.global_entity_id,
+  cmp.origin,
+  CASE
+    WHEN rep.visited = TRUE THEN &apos;true&apos;
+    WHEN rep.visited IS NULL THEN &apos;false&apos;
+    ELSE &apos;other&apos;
+  END AS opened_report,
+  COUNT(DISTINCT cmp.vendor_id) AS unique_vendor_count
+FROM cmp
+LEFT JOIN rep
+  ON cmp.vendor_id = rep.vendor_id
+  AND cmp.global_entity_id = rep.global_entity_id
+  AND cmp.month = rep.month
+LEFT JOIN `fulfillment-dwh-production.curated_data_shared_central_dwh.global_entities` AS ge
+  ON cmp.global_entity_id = ge.global_entity_id
+GROUP BY
+  cmp.month,
+  CASE
+    WHEN ge.brand IN (&apos;Appetito24&apos;, &apos;Damejidlo&apos;, &apos;Hungry&apos;, &apos;Mjam&apos;, &apos;NetPincer&apos;) THEN &apos;Foodora&apos;
+    ELSE ge.brand
+  END,
+  cmp.global_entity_id,
+  cmp.origin,
+  CASE
+    WHEN rep.visited = TRUE THEN &apos;true&apos;
+    WHEN rep.visited IS NULL THEN &apos;false&apos;
+    ELSE &apos;other&apos;
+  END
+ORDER BY
+  cmp.month,
+  cmp.global_entity_id,
+  cmp.origin,
+  opened_report)
+
+
+  SELECT 
+  distinct month,
+  global_entity_id,
+  SUM(CASE WHEN opened_report=&quot;true&quot; then unique_vendor_count end) as ncr_adopted_vendors,
+  sum(unique_vendor_count) as ncr_adopted_total
+  from final
+  GROUP BY ALL)
+
+
+, vfd as 
+(WITH vpe AS (
+  SELECT
+    event_timestamp_utc,
+    fielddate AS event_date,
+    user_id,
+    session_id,
+    global_vendor_count,
+    is_impersonated,
+    event_name,
+    global_entity_id,
+
+    geo_continent,
+    geo_region,
+    geo_country,
+    geo_city,
+
+    vpm_webview_id,
+    app_id,
+    device_category,
+    device_os,
+    device_brand,
+    device_model,
+
+    section,
+    subsection,
+    label,
+    (SELECT params.value.string_value FROM UNNEST(event_params) AS params WHERE params.key = &quot;plugin_id&quot;) AS plugin_id,
+    (SELECT params.value.string_value FROM UNNEST(event_params) AS params WHERE params.key = &quot;plugin_name&quot;) AS plugin_name,
+    (SELECT params.value.string_value FROM UNNEST(event_params) AS params WHERE params.key = &quot;page_name&quot;) AS page_name,
+    (SELECT params.value.string_value FROM UNNEST(event_params) AS params WHERE params.key = &quot;plugin_code&quot;) AS plugin_code,
+    (SELECT params.value.string_value FROM UNNEST(event_params) AS params WHERE params.key = &quot;tag&quot;) AS tag,
+    (SELECT params.value.string_value FROM UNNEST(event_params) AS params WHERE params.key = &quot;selected_vendor_id&quot;) AS selected_vendor_id,
+    (SELECT params.value.string_value FROM UNNEST(event_params) AS params WHERE params.key = &quot;selected_vendor_count&quot;) AS selected_vendor_count,
+
+    (SELECT params.value.string_value FROM UNNEST(event_params) AS params WHERE params.key = &quot;discount_notification_banner&quot;) AS is_notification_banner_loaded,
+    (SELECT params.value.string_value FROM UNNEST(event_params) AS params WHERE params.key = &quot;discount_form&quot;) AS is_create_form_loaded,
+    (SELECT params.value.string_value FROM UNNEST(event_params) AS params WHERE params.key = &quot;discount_carousel&quot;) AS is_carousel_loaded,
+    (SELECT params.value.string_value FROM UNNEST(event_params) AS params WHERE params.key = &quot;discount_report&quot;) AS is_report_loaded,
+    (SELECT params.value.string_value FROM UNNEST(event_params) AS params WHERE params.key = &quot;discount_listing&quot;) AS is_listing_loaded,
+    (SELECT params.value.string_value FROM UNNEST(event_params) AS params WHERE params.key = &quot;discount_membership&quot;) AS is_subscription_loaded,
+    (SELECT params.value.string_value FROM UNNEST(event_params) AS params WHERE params.key = &quot;discount_referral&quot;) AS is_referral_loaded,
+
+    (SELECT params.value.string_value FROM UNNEST(event_params) AS params WHERE params.key = &quot;subscription_program_id&quot;) AS subscription_program_id,
+
+    (SELECT params.value.string_value FROM UNNEST(event_params) AS params WHERE params.key = &quot;audience_targeting&quot;) AS audience_targeting,
+    (SELECT params.value.string_value FROM UNNEST(event_params) AS params WHERE params.key = &quot;menu_selection_available&quot;) AS menu_selection_available,
+    (SELECT params.value.string_value FROM UNNEST(event_params) AS params WHERE params.key = &quot;branch_selection_available&quot;) AS branch_selection_available,
+    (SELECT params.value.string_value FROM UNNEST(event_params) AS params WHERE params.key = &quot;selected_value&quot;) AS selected_string_value,
+    (SELECT params.value.int_value FROM UNNEST(event_params) AS params WHERE params.key = &quot;selected_value&quot;) AS selected_int_value,
+    (SELECT params.value.float_value FROM UNNEST(event_params) AS params WHERE params.key = &quot;selected_value&quot;) AS selected_float_value,
+    (SELECT params.value.string_value FROM UNNEST(event_params) AS params WHERE params.key = &quot;discount_type&quot;) AS discount_type,
+    (SELECT params.value.string_value FROM UNNEST(event_params) AS params WHERE params.key = &quot;audience_selected&quot;) AS audience_selected,
+    (SELECT params.value.int_value FROM UNNEST(event_params) AS params WHERE params.key = &quot;num_menu_items_selected&quot;) AS num_menu_items_selected,
+    (SELECT params.value.int_value FROM UNNEST(event_params) AS params WHERE params.key = &quot;num_vendors_selected&quot;) AS num_vendors_selected,
+    (SELECT params.value.int_value FROM UNNEST(event_params) AS params WHERE params.key = &quot;min_order_value&quot;) AS min_order_value,
+    (SELECT params.value.int_value FROM UNNEST(event_params) AS params WHERE params.key = &quot;max_order_value&quot;) AS max_order_value,
+    (SELECT params.value.int_value FROM UNNEST(event_params) AS params WHERE params.key = &quot;discount_value&quot;) AS discount_value,
+    (SELECT params.value.string_value FROM UNNEST(event_params) AS params WHERE params.key = &quot;start_date&quot;) AS start_date,
+    (SELECT params.value.string_value FROM UNNEST(event_params) AS params WHERE params.key = &quot;end_date&quot;) AS end_date,
+    (SELECT params.value.string_value FROM UNNEST(event_params) AS params WHERE params.key = &quot;is_full_day&quot;) AS is_full_day,
+    (SELECT params.value.string_value FROM UNNEST(event_params) AS params WHERE params.key = &quot;is_recurring&quot;) AS is_recurring,
+    (SELECT params.value.string_value FROM UNNEST(event_params) AS params WHERE params.key = &quot;days_of_week&quot;) AS days_of_week,
+    (SELECT params.value.string_value FROM UNNEST(event_params) AS params WHERE params.key = &quot;template_id&quot;) AS template_id,
+
+    (SELECT params.value.string_value FROM UNNEST(event_params) AS params WHERE params.key = &quot;carousel_pos_1&quot;) AS carousel_pos_1,
+    (SELECT params.value.string_value FROM UNNEST(event_params) AS params WHERE params.key = &quot;carousel_pos_2&quot;) AS carousel_pos_2,
+    (SELECT params.value.string_value FROM UNNEST(event_params) AS params WHERE params.key = &quot;carousel_pos_3&quot;) AS carousel_pos_3,
+    (SELECT params.value.string_value FROM UNNEST(event_params) AS params WHERE params.key = &quot;carousel_pos_4&quot;) AS carousel_pos_4,
+    (SELECT params.value.string_value FROM UNNEST(event_params) AS params WHERE params.key = &quot;carousel_pos_5&quot;) AS carousel_pos_5,
+    (SELECT params.value.string_value FROM UNNEST(event_params) AS params WHERE params.key = &quot;carousel_pos_6&quot;) AS carousel_pos_6,
+    (SELECT params.value.string_value FROM UNNEST(event_params) AS params WHERE params.key = &quot;carousel_pos_7&quot;) AS carousel_pos_7,
+    (SELECT params.value.string_value FROM UNNEST(event_params) AS params WHERE params.key = &quot;carousel_pos_8&quot;) AS carousel_pos_8,
+    (SELECT params.value.string_value FROM UNNEST(event_params) AS params WHERE params.key = &quot;carousel_pos_9&quot;) AS carousel_pos_9,
+    (SELECT params.value.string_value FROM UNNEST(event_params) AS params WHERE params.key = &quot;carousel_pos_10&quot;) AS carousel_pos_10,
+    (SELECT params.value.int_value FROM UNNEST(event_params) AS params WHERE params.key = &quot;discount_campaign_pos&quot;) AS discount_campaign_pos,
+    (SELECT params.value.string_value FROM UNNEST(event_params) AS params WHERE params.key = &quot;discount_campaign_id&quot;) AS discount_campaign_id,
+
+    (SELECT params.value.string_value FROM UNNEST(event_params) AS params WHERE params.key = &quot;deal_id&quot;) AS deal_id,
+
+    (SELECT params.value.string_value FROM UNNEST(event_params) AS params WHERE params.key = &quot;discount_level_report&quot;) AS discount_level_report,
+    (SELECT params.value.string_value FROM UNNEST(event_params) AS params WHERE params.key = &quot;discount_edit&quot;) AS discount_edit,
+    (SELECT params.value.string_value FROM UNNEST(event_params) AS params WHERE params.key = &quot;discount_cancel&quot;) AS discount_cancel,
+
+    (SELECT params.value.string_value FROM UNNEST(event_params) AS params WHERE params.key LIKE &quot;%error%&quot;) AS error_msg
+
+  FROM `fulfillment-dwh-production.curated_data_shared_sales_revenue.vp_events`
+  WHERE user_id IS NOT NULL
+    AND fielddate &gt;&gt;= &quot;2024-12-01&quot;
+),
+
+vp_users AS (
+  SELECT
+    user_id,
+    ven.vendor_id,
+    ven.global_entity_id,
+    ven.role AS user_role
+  FROM `fulfillment-dwh-production.curated_data_shared_sales_revenue.vp_users`
+  LEFT JOIN UNNEST(vendors) AS ven
+  WHERE ven.role IN (&quot;ADMIN&quot;, &quot;MANAGER&quot;)
+),
+
+md AS (
+  SELECT DISTINCT event_date, user_id, vendor_id, session_id
+  FROM vpe
+  LEFT JOIN vp_users AS vpu USING(user_id)
+  WHERE event_name = &quot;page_view&quot;
+    AND plugin_code = &quot;VENDOR_DEALS&quot;
+    AND label = &quot;view_performance_tab&quot;
+),
+
+adopted_vendors AS (
+  SELECT
+    DATE_TRUNC(event_date, MONTH) AS month,
+    vendor_id,
+    COUNT(DISTINCT session_id) AS no_of_sessions
+  FROM md
+  GROUP BY month, vendor_id
+),
+
+vfd AS (
+  SELECT
+    month,
+    country_code,
+    vendor_id,
+    SUM(incentive_amount_eur) AS savings
+  FROM (
+    SELECT
+      DATE_TRUNC(order_date, MONTH) AS month,
+      b.country_code,
+      orders.vendor_id,
+      orders.vertical,
+      a.vendor_name,
+      a.chain_id,
+      d.system_creation,
+      d.platform_campaign_type,
+      a.account_manager_name AS am,
+      orders.campaign_id,
+      incentive_sub_type,
+      incentive_amount_eur,
+      order_id,
+      a.is_dh_kitchen,
+      gmv_amount_eur
+    FROM `tlb-data-prod.data_platform.fct_incentive_order_detail` orders
+    LEFT JOIN `tlb-data-prod.data_platform.dim_vendor_info` a
+      ON a.vendor_id = orders.vendor_id
+    LEFT JOIN `tlb-data-prod.data_platform.dim_chain` b
+      ON b.chain_id = a.chain_id
+    LEFT JOIN `tlb-data-prod.data_platform.dim_incentives_discount` d
+      ON orders.campaign_id = d.campaign_id
+    WHERE order_date &gt;&gt;= &quot;2024-12-01&quot;
+      AND is_successful = TRUE
+      AND orders.vertical = &apos;food&apos;
+      AND incentive_sub_type IN (&apos;menu discount&apos;,&apos;item discount&apos;)
+  )
+  WHERE country_code != &apos;SA&apos;
+  GROUP BY month, country_code, vendor_id
+),
+
+final AS (
+  SELECT
+    vfd.*,
+    av.no_of_sessions
+  FROM vfd
+  LEFT JOIN adopted_vendors av
+    ON SAFE_CAST(vfd.vendor_id AS STRING) = av.vendor_id
+    AND vfd.month = av.month
+),
+
+final2 AS (
+  SELECT
+    *,
+    CASE WHEN no_of_sessions &gt;&gt;= 1 THEN &quot;Y&quot; ELSE &quot;N&quot; END AS adopted_flag
+  FROM final
+)
+
+SELECT
+  month,
+CASE 
+    WHEN country_code = &apos;EG&apos; THEN CONCAT(&apos;HF_&apos;, country_code)
+    ELSE CONCAT(&apos;TB_&apos;, country_code)
+END AS global_entity_id,
+  COUNT(DISTINCT vendor_id) AS total_vfd_vendors,
+  COUNT(DISTINCT CASE WHEN adopted_flag = &quot;Y&quot; THEN vendor_id END) AS adopted_vendors
+FROM final2
+GROUP BY month, country_code
+ORDER BY month, country_code)
+
+
+
+SELECT distinct mt.* ,nba.* except(global_entity_id,month),nb.* except(global_entity_id,month),ncr.* except(month,global_entity_id),vfd.* except(month,global_entity_id)
+FROM multioutlet mt
+JOIN nba 
+ON mt.month=nba.month and mt.global_entity_id=nba.global_entity_id
+JOIN newbranch nb
+ON mt.month=nb.month and mt.global_entity_id=nb.global_entity_id
+JOIN ncr_reporting ncr
+ON safe_cast(mt.month as string)=safe_cast(ncr.month as string) and mt.global_entity_id=ncr.global_entity_id
+JOIN vfd
+ON mt.month=vfd.month and mt.global_entity_id=vfd.global_entity_id</_.fcp.ObjectModelEncapsulateLegacy.true...relation>
+        <metadata-records>
+          <metadata-record class='column'>
+            <remote-name>month</remote-name>
+            <remote-type>7</remote-type>
+            <local-name>[month]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>month</remote-alias>
+            <local-type>date</local-type>
+            <aggregation>Year</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_C2BCD10DC19D4B8BB27DEEC6C6338F1A]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>global_entity_id</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[global_entity_id]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>global_entity_id</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_C2BCD10DC19D4B8BB27DEEC6C6338F1A]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>multioutlet_budget_eur</remote-name>
+            <remote-type>5</remote-type>
+            <local-name>[multioutlet_budget_eur]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>multioutlet_budget_eur</remote-alias>
+            <local-type>real</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_C2BCD10DC19D4B8BB27DEEC6C6338F1A]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>nba_topup_budget</remote-name>
+            <remote-type>5</remote-type>
+            <local-name>[nba_topup_budget]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>nba_topup_budget</remote-alias>
+            <local-type>real</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_C2BCD10DC19D4B8BB27DEEC6C6338F1A]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>nba_shown_rate</remote-name>
+            <remote-type>5</remote-type>
+            <local-name>[nba_shown_rate]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>nba_shown_rate</remote-alias>
+            <local-type>real</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_C2BCD10DC19D4B8BB27DEEC6C6338F1A]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>nba_click_rate</remote-name>
+            <remote-type>5</remote-type>
+            <local-name>[nba_click_rate]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>nba_click_rate</remote-alias>
+            <local-type>real</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_C2BCD10DC19D4B8BB27DEEC6C6338F1A]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>nba_applied_rate</remote-name>
+            <remote-type>5</remote-type>
+            <local-name>[nba_applied_rate]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>nba_applied_rate</remote-alias>
+            <local-type>real</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_C2BCD10DC19D4B8BB27DEEC6C6338F1A]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>nba_page_load_sessions</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[nba_page_load_sessions]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>nba_page_load_sessions</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_C2BCD10DC19D4B8BB27DEEC6C6338F1A]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>nba_shown_sessions</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[nba_shown_sessions]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>nba_shown_sessions</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_C2BCD10DC19D4B8BB27DEEC6C6338F1A]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>nba_clicked_sessions</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[nba_clicked_sessions]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>nba_clicked_sessions</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_C2BCD10DC19D4B8BB27DEEC6C6338F1A]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>nba_top_up_sessions</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[nba_top_up_sessions]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>nba_top_up_sessions</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_C2BCD10DC19D4B8BB27DEEC6C6338F1A]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>nba_new_branch</remote-name>
+            <remote-type>5</remote-type>
+            <local-name>[nba_new_branch]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>nba_new_branch</remote-alias>
+            <local-type>real</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_C2BCD10DC19D4B8BB27DEEC6C6338F1A]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>ncr_adopted_vendors</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[ncr_adopted_vendors]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>ncr_adopted_vendors</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_C2BCD10DC19D4B8BB27DEEC6C6338F1A]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>ncr_adopted_total</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[ncr_adopted_total]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>ncr_adopted_total</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_C2BCD10DC19D4B8BB27DEEC6C6338F1A]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>total_vfd_vendors</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[total_vfd_vendors]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>total_vfd_vendors</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_C2BCD10DC19D4B8BB27DEEC6C6338F1A]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>adopted_vendors</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[adopted_vendors]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>adopted_vendors</remote-alias>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_C2BCD10DC19D4B8BB27DEEC6C6338F1A]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+        </metadata-records>
+      </connection>
+      <aliases enabled='yes' />
+      <column caption='NCR Adoption %' datatype='real' name='[Calculation_2013460930842738688]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='SUM([ncr_adopted_vendors])/SUM([ncr_adopted_total])' />
+      </column>
+      <column caption='VFD Adoption %' datatype='real' name='[Calculation_2013460930843369473]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='SUM([adopted_vendors])/SUM([total_vfd_vendors])' />
+      </column>
+      <_.fcp.ObjectModelTableType.true...column caption='7%' datatype='table' hidden='true' name='[__tableau_internal_object_id__].[_C2BCD10DC19D4B8BB27DEEC6C6338F1A]' role='measure' type='quantitative' />
+      <column caption='VFD Adopted Vendors' datatype='integer' name='[adopted_vendors]' role='measure' type='quantitative' />
+      <column caption='Country' datatype='string' name='[global_entity_id]' role='dimension' type='nominal' />
+      <column caption='Month' datatype='date' name='[month]' role='dimension' type='ordinal' />
+      <column caption='Multiout budget' datatype='real' name='[multioutlet_budget_eur]' role='measure' type='quantitative' />
+      <column caption='NBA applied rate' datatype='real' name='[nba_applied_rate]' role='measure' type='quantitative' />
+      <column caption='NBA click rate' datatype='real' name='[nba_click_rate]' role='measure' type='quantitative' />
+      <column caption='NBA clicked sessions' datatype='integer' name='[nba_clicked_sessions]' role='measure' type='quantitative' />
+      <column caption='NBA New Branch ' datatype='real' name='[nba_new_branch]' role='measure' type='quantitative' />
+      <column caption='NBA page load sessions' datatype='integer' name='[nba_page_load_sessions]' role='measure' type='quantitative' />
+      <column caption='NBA shown rate' datatype='real' name='[nba_shown_rate]' role='measure' type='quantitative' />
+      <column caption='NBA shown sessions' datatype='integer' name='[nba_shown_sessions]' role='measure' type='quantitative' />
+      <column caption='NBA topup sessions' datatype='integer' name='[nba_top_up_sessions]' role='measure' type='quantitative' />
+      <column caption='NBA topup budget' datatype='real' name='[nba_topup_budget]' role='measure' type='quantitative' />
+      <column caption='NCR Vendors' datatype='integer' name='[ncr_adopted_total]' role='measure' type='quantitative' />
+      <column caption='NCR Adopted Vendors' datatype='integer' name='[ncr_adopted_vendors]' role='measure' type='quantitative' />
+      <column caption='VFD Vendors' datatype='integer' name='[total_vfd_vendors]' role='measure' type='quantitative' />
+      <extract _.fcp.ObjectModelExtractV2.true...object-id='' _.fcp.VConnDownstreamExtractsWithWarnings.true...user-specific='false' count='-1' enabled='true' units='records'>
+        <connection class='hyper' dbname='extract/87/42/{3409BBAA-507E-4E03-BED1-A27520790042}/federated_0ns4l6y1qugfak1ft1qul1.hyper' default-settings='yes' extract-engine='true' schema='Extract' tablename='Extract' update-time='09/15/2025 11:31:08 AM'>
+          <_.fcp.ObjectModelEncapsulateLegacy.false...relation name='Extract' table='[Extract].[Extract]' type='table' />
+          <_.fcp.ObjectModelEncapsulateLegacy.true...relation name='Extract' table='[Extract].[Extract]' type='table' />
+          <refresh>
+            <refresh-event add-from-file-path='7%' increment-value='%null%' refresh-type='create' rows-inserted='22' timestamp-start='2025-09-15 11:20:06.231' />
+          </refresh>
+          <metadata-records>
+            <metadata-record class='column'>
+              <remote-name>month</remote-name>
+              <remote-type>133</remote-type>
+              <local-name>[month]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>month</remote-alias>
+              <ordinal>0</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>date</local-type>
+              <aggregation>Year</aggregation>
+              <approx-count>4</approx-count>
+              <contains-null>true</contains-null>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>global_entity_id</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[global_entity_id]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>global_entity_id</remote-alias>
+              <ordinal>1</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>8</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>multioutlet_budget_eur</remote-name>
+              <remote-type>5</remote-type>
+              <local-name>[multioutlet_budget_eur]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>multioutlet_budget_eur</remote-alias>
+              <ordinal>2</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>real</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>22</approx-count>
+              <contains-null>true</contains-null>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>nba_topup_budget</remote-name>
+              <remote-type>5</remote-type>
+              <local-name>[nba_topup_budget]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>nba_topup_budget</remote-alias>
+              <ordinal>3</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>real</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>22</approx-count>
+              <contains-null>true</contains-null>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>nba_shown_rate</remote-name>
+              <remote-type>5</remote-type>
+              <local-name>[nba_shown_rate]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>nba_shown_rate</remote-alias>
+              <ordinal>4</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>real</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>22</approx-count>
+              <contains-null>true</contains-null>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>nba_click_rate</remote-name>
+              <remote-type>5</remote-type>
+              <local-name>[nba_click_rate]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>nba_click_rate</remote-alias>
+              <ordinal>5</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>real</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>22</approx-count>
+              <contains-null>true</contains-null>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>nba_applied_rate</remote-name>
+              <remote-type>5</remote-type>
+              <local-name>[nba_applied_rate]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>nba_applied_rate</remote-alias>
+              <ordinal>6</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>real</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>22</approx-count>
+              <contains-null>true</contains-null>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>nba_page_load_sessions</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[nba_page_load_sessions]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>nba_page_load_sessions</remote-alias>
+              <ordinal>7</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>22</approx-count>
+              <contains-null>true</contains-null>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>nba_shown_sessions</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[nba_shown_sessions]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>nba_shown_sessions</remote-alias>
+              <ordinal>8</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>22</approx-count>
+              <contains-null>true</contains-null>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>nba_clicked_sessions</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[nba_clicked_sessions]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>nba_clicked_sessions</remote-alias>
+              <ordinal>9</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>21</approx-count>
+              <contains-null>true</contains-null>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>nba_top_up_sessions</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[nba_top_up_sessions]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>nba_top_up_sessions</remote-alias>
+              <ordinal>10</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>20</approx-count>
+              <contains-null>true</contains-null>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>nba_new_branch</remote-name>
+              <remote-type>5</remote-type>
+              <local-name>[nba_new_branch]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>nba_new_branch</remote-alias>
+              <ordinal>11</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>real</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>7</approx-count>
+              <contains-null>true</contains-null>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>ncr_adopted_vendors</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[ncr_adopted_vendors]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>ncr_adopted_vendors</remote-alias>
+              <ordinal>12</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>22</approx-count>
+              <contains-null>true</contains-null>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>ncr_adopted_total</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[ncr_adopted_total]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>ncr_adopted_total</remote-alias>
+              <ordinal>13</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>22</approx-count>
+              <contains-null>true</contains-null>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>total_vfd_vendors</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[total_vfd_vendors]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>total_vfd_vendors</remote-alias>
+              <ordinal>14</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>22</approx-count>
+              <contains-null>true</contains-null>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>adopted_vendors</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[adopted_vendors]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>adopted_vendors</remote-alias>
+              <ordinal>15</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>22</approx-count>
+              <contains-null>true</contains-null>
+            </metadata-record>
+          </metadata-records>
+        </connection>
+      </extract>
+      <layout _.fcp.SchemaViewerObjectModel.false...dim-percentage='0.5' _.fcp.SchemaViewerObjectModel.false...measure-percentage='0.4' dim-ordering='alphabetic' measure-ordering='alphabetic' show-structure='true' />
+      <semantic-values>
+        <semantic-value key='[Country].[Name]' value='&quot;United States&quot;' />
+      </semantic-values>
+      <date-options start-of-week='saturday' />
+      <_.fcp.ObjectModelEncapsulateLegacy.true...object-graph>
+        <objects>
+          <object caption='7%' id='_C2BCD10DC19D4B8BB27DEEC6C6338F1A'>
+            <properties context=''>
+              <relation connection='bigquery.0iwdglf1az3z4n11624600hrpsfd' name='Custom SQL Query' type='text'>with multioutlet as (with entity AS (
+SELECT
+brand_name
+, sub_entity
+, global_entity_id
+FROM `fulfillment-dwh-production.curated_data_shared_coredata.global_entities`
+WHERE is_entity_online = TRUE
+and management_entity=&apos;Talabat&apos;
+),
+
+raw_data as
+(Select date_trunc(fielddate, month) as date_month,
+fielddate,
+brand_name,
+a.global_entity_id, event_timestamp_utc, user_id,
+(SELECT params.value.string_value FROM unnest(event_params) as params WHERE params.key = &apos;is_multiple_outlets_landing&apos;) is_multiple_outlets_landing,
+(SELECT params.value.string_value FROM unnest(event_params) as params WHERE params.key = &apos;is_multiple_outlets_mode&apos;) is_multiple_outlets_mode,
+(SELECT params.value.string_value FROM unnest(event_params) as params WHERE params.key = &apos;multiple_outlets_available&apos;) is_multiple_outlets_available,
+
+SPLIT((select coalesce(params.value.string_value, cast(params.value.int_value as string), cast(params.value.float_value as string), cast(params.value.double_value as string)) FROM unnest(event_params) as params WHERE params.key = &apos;budget_value&apos;), &apos;,&apos;) as budget_value,
+
+SPLIT((select coalesce(params.value.string_value, cast(params.value.int_value as string), cast(params.value.float_value as string), cast(params.value.double_value as string)) FROM unnest(event_params) as params WHERE params.key = &apos;currency_code&apos;), &apos;,&apos;) as currency_code,
+
+SPLIT((select coalesce(params.value.string_value, cast(params.value.int_value as string), cast(params.value.float_value as string), cast(params.value.double_value as string)) FROM unnest(event_params) as params WHERE params.key = &apos;campaign_id&apos;), &apos;,&apos;) as campaign_id
+
+FROM fulfillment-dwh-production.curated_data_shared_sales_revenue.vp_events a
+JOIN entity e on a.global_entity_id=e.global_entity_id
+WHERE date_trunc(fielddate, month) &gt;&gt;= &apos;2025-01-01&apos;
+and COALESCE(is_impersonated, &apos;no&apos;)=&apos;no&apos;
+and device_platform=&apos;WEB&apos;
+and event_name = &apos;request_succeed&apos;
+and label = &apos;booking_confirm&apos;
+and (SELECT params.value.string_value FROM unnest(event_params) as params WHERE params.key = &apos;page_name&apos;) =&apos;cpc_booking&apos;
+and (SELECT params.value.string_value FROM unnest(event_params) as params WHERE params.key = &apos;plugin_code&apos;) = &apos;MIDAS&apos;
+and ((SELECT params.value.string_value FROM unnest(event_params) as params WHERE params.key = &apos;is_multiple_outlets_mode&apos;) = &apos;true&apos;
+OR
+(SELECT params.value.string_value FROM unnest(event_params) as params WHERE params.key = &apos;is_multiple_outlets_landing&apos;) = &apos;true&apos;
+OR
+(SELECT params.value.string_value FROM unnest(event_params) as params WHERE params.key = &apos;multiple_outlets_available&apos;) = &apos;true&apos;)
+GROUP BY ALL),
+
+vertical_parent as
+(select a.global_entity_id, campaign_id, advertiser.type as vertical_parent, pricing.budget_eur, vendors.id as vendor_id,
+case when pricing.budget_eur &gt;&gt;
+((stddev(pricing.budget_eur) over (partition by a.global_entity_id)) * 6) then 1 else 0 end as is_outlier
+FROM `fulfillment-dwh-production.curated_data_shared_adtech.dim_campaigns` a , unnest(advertiser.vendors) vendors
+JOIN entity e on a.global_entity_id=e.global_entity_id
+WHERE date(created_at_utc)&gt;&gt;=&apos;2025-01-01&apos;
+and product in (&apos;premium_placements&apos;, &apos;organic_placements&apos;)
+and origin=&apos;vendor&apos;
+qualify row_number() OVER (PARTITION BY global_entity_id, campaign_id ORDER BY modified_at_utc) = 1
+),
+
+raw_data_vertical as
+(select
+date_month,
+fielddate,
+brand_name,
+a.global_entity_id,
+event_timestamp_utc,
+user_id,
+is_outlier,
+vendor_id,
+vertical_parent,
+campaign_id,
+budget_eur,
+is_multiple_outlets_landing,
+is_multiple_outlets_mode,
+is_multiple_outlets_available
+FROM raw_data a, UNNEST(campaign_id) campaign_id
+JOIN vertical_parent b on a.global_entity_id=b.global_entity_id and campaign_id=b.campaign_id
+GROUP BY ALL)
+
+select
+distinct date_month as month,
+global_entity_id,
+sum(budget_eur) as multioutlet_budget_eur
+FROM raw_data_vertical
+WHERE coalesce(is_multiple_outlets_landing,is_multiple_outlets_mode)=&apos;true&apos;
+and vertical_parent = &apos;restaurants&apos;
+GROUP BY ALL)
+
+, nba as 
+(-- Define online entities
+WITH entity AS (
+    SELECT
+        brand_name,
+        global_entity_id
+    FROM `fulfillment-dwh-production.curated_data_shared_coredata.global_entities`
+    WHERE is_entity_online = TRUE
+),
+
+-- Count distinct sessions for page loads
+sessions AS (
+    SELECT
+        COUNT(DISTINCT session_id) AS page_load_sessions,
+        fielddate,
+        global_entity_id
+    FROM `fulfillment-dwh-production.curated_data_shared_sales_revenue.vp_events` a,
+    UNNEST(event_params) AS params
+    WHERE 
+        fielddate BETWEEN DATE_SUB(CURRENT_DATE(), INTERVAL 100 DAY) AND DATE_SUB(CURRENT_DATE(), INTERVAL 1 DAY)
+        AND label = &apos;page_load&apos; 
+        AND event_name = &apos;page_open&apos; 
+        AND section = &apos;cpc.performance_landing_page&apos; 
+        AND is_impersonated = &apos;no&apos; 
+        AND (SELECT params.value.string_value FROM UNNEST(event_params) AS params WHERE params.key = &apos;tag&apos;) = &apos;GA4.cpc_performance&apos;
+    GROUP BY fielddate, global_entity_id
+),
+
+-- Count sessions where recommendations were shown
+shown AS (
+    SELECT
+        fielddate,
+        global_entity_id,
+        COUNT(DISTINCT session_id) AS shown_sessions
+    FROM `fulfillment-dwh-production.curated_data_shared_sales_revenue.vp_events` a,
+    UNNEST(event_params) AS params
+    WHERE 
+        fielddate BETWEEN DATE_SUB(CURRENT_DATE(), INTERVAL 100 DAY) AND DATE_SUB(CURRENT_DATE(), INTERVAL 1 DAY)
+        AND label = &apos;page_load&apos; 
+        AND section = &apos;cpc.performance_landing_page&apos; 
+        AND params.key = &quot;rec_actions_count&quot; 
+        AND params.value.int_value = 1 
+        AND is_impersonated = &apos;no&apos; 
+        AND (SELECT params.value.string_value FROM UNNEST(event_params) AS params WHERE params.key = &apos;tag&apos;) = &apos;GA4.cpc_performance&apos;
+    GROUP BY fielddate, global_entity_id
+),
+
+-- Count sessions with &quot;add budget&quot; button clicked
+clicked AS (
+    SELECT
+        fielddate,
+        global_entity_id,
+        COUNT(DISTINCT session_id) AS clicked_sessions
+    FROM `fulfillment-dwh-production.curated_data_shared_sales_revenue.vp_events` a,
+    UNNEST(event_params) AS params
+    WHERE 
+        fielddate BETWEEN DATE_SUB(CURRENT_DATE(), INTERVAL 100 DAY) AND DATE_SUB(CURRENT_DATE(), INTERVAL 1 DAY)
+        AND event_name = &apos;button_tap&apos; 
+        AND (label = &apos;add_budget_action&apos;  or label = &apos;rec_card_clicked&apos;)
+        AND section = &apos;cpc.performance_landing_page&apos; 
+        AND is_impersonated = &apos;no&apos; 
+        AND (SELECT params.value.string_value FROM UNNEST(event_params) AS params WHERE params.key = &apos;tag&apos;) = &apos;GA4.cpc_performance&apos;
+    GROUP BY fielddate, global_entity_id
+),
+
+-- Count sessions with budget increase confirmations
+top_up AS (
+    SELECT
+        fielddate,
+        global_entity_id,
+        COUNT(DISTINCT session_id) AS top_up_sessions
+    FROM `fulfillment-dwh-production.curated_data_shared_sales_revenue.vp_events` a,
+    UNNEST(event_params) AS params
+    WHERE 
+        fielddate BETWEEN DATE_SUB(CURRENT_DATE(), INTERVAL 100 DAY) AND DATE_SUB(CURRENT_DATE(), INTERVAL 1 DAY)
+        AND event_name = &apos;request_succeed&apos; 
+        AND label = &apos;increase_budget_confirm&apos; 
+        AND section = &apos;cpc.performance_landing_page&apos; 
+        AND params.key = &apos;budget_increase_value&apos; 
+        AND is_impersonated = &apos;no&apos; 
+        AND (SELECT params.value.string_value FROM UNNEST(event_params) AS params WHERE params.key = &apos;tag&apos;) = &apos;GA4.cpc_performance&apos;
+    GROUP BY fielddate, global_entity_id
+),
+
+-- Calculate total budget increase in EUR
+increase AS (
+    WITH budget_values AS (
+        SELECT
+            fielddate,
+            session_id,
+            global_entity_id,
+	        event_timestamp_utc, --- added this line 05 11
+            CASE 
+                -- Replace [object Object] with the correct currency_code based on global_entity_id
+                WHEN (SELECT params.value.string_value FROM UNNEST(event_params) AS params WHERE params.key = &apos;currency_code&apos;) = &apos;[object Object]&apos; THEN
+                    CASE global_entity_id
+                        WHEN &apos;YS_TR&apos; THEN &apos;TRY&apos;
+                        WHEN &apos;TB_QA&apos; THEN &apos;QAR&apos;
+                        WHEN &apos;TB_OM&apos; THEN &apos;OMR&apos;
+                        WHEN &apos;TB_KW&apos; THEN &apos;KWD&apos;
+                        WHEN &apos;TB_JO&apos; THEN &apos;JOD&apos;
+                        WHEN &apos;TB_IQ&apos; THEN &apos;IQD&apos;
+                        WHEN &apos;TB_BH&apos; THEN &apos;BHD&apos;
+                        WHEN &apos;TB_AE&apos; THEN &apos;AED&apos;
+                        WHEN &apos;PY_VE&apos; THEN &apos;VEF&apos;
+                        WHEN &apos;PY_UY&apos; THEN &apos;UYU&apos;
+                        WHEN &apos;PY_PY&apos; THEN &apos;PYG&apos;
+                        WHEN &apos;PY_PE&apos; THEN &apos;PEN&apos;
+                        WHEN &apos;PY_NI&apos; THEN &apos;NIO&apos;
+                        WHEN &apos;PY_HN&apos; THEN &apos;HNL&apos;
+                        WHEN &apos;PY_GT&apos; THEN &apos;GTQ&apos;
+                        WHEN &apos;PY_EC&apos; THEN &apos;USD&apos;
+                        WHEN &apos;PY_DO&apos; THEN &apos;DOP&apos;
+                        WHEN &apos;PY_CL&apos; THEN &apos;CLP&apos;
+                        WHEN &apos;PY_BO&apos; THEN &apos;BOB&apos;
+                        WHEN &apos;PY_AR&apos; THEN &apos;ARS&apos;
+                        WHEN &apos;PO_FI&apos; THEN &apos;EUR&apos;
+                        WHEN &apos;OP_SE&apos; THEN &apos;SEK&apos;
+                        WHEN &apos;NP_HU&apos; THEN &apos;HUF&apos;
+                        WHEN &apos;MJM_AT&apos; THEN &apos;EUR&apos;
+                        WHEN &apos;HS_SA&apos; THEN &apos;SAR&apos;
+                        WHEN &apos;HF_EG&apos; THEN &apos;EGP&apos;
+                        WHEN &apos;FP_TW&apos; THEN &apos;TWD&apos;
+                        WHEN &apos;FP_TH&apos; THEN &apos;THB&apos;
+                        WHEN &apos;FP_SG&apos; THEN &apos;SGD&apos;
+                        WHEN &apos;FP_PK&apos; THEN &apos;PKR&apos;
+                        WHEN &apos;FP_PH&apos; THEN &apos;PHP&apos;
+                        WHEN &apos;FP_MY&apos; THEN &apos;MYR&apos;
+                        WHEN &apos;FP_KH&apos; THEN &apos;USD&apos;
+                        WHEN &apos;FP_HK&apos; THEN &apos;HKD&apos;
+                        WHEN &apos;FP_BD&apos; THEN &apos;BDT&apos;
+                        WHEN &apos;FO_NO&apos; THEN &apos;NOK&apos;
+                        WHEN &apos;DJ_CZ&apos; THEN &apos;CZK&apos;
+                        WHEN &apos;CG_QA&apos; THEN &apos;OMR&apos;
+                        WHEN &apos;AP_PA&apos; THEN &apos;USD&apos;
+                        ELSE NULL -- Handle unexpected cases
+                    END
+                ELSE (SELECT params.value.string_value FROM UNNEST(event_params) AS params WHERE params.key = &apos;currency_code&apos;)
+            END AS currency_code,
+            coalesce(params.value.string_value, cast(params.value.int_value as string), cast(params.value.double_value as string)) AS total_budget_increase_value
+        FROM `fulfillment-dwh-production.curated_data_shared_sales_revenue.vp_events` a,
+        UNNEST(event_params) AS params
+        WHERE 
+            fielddate BETWEEN DATE_SUB(CURRENT_DATE(), INTERVAL 100 DAY) AND DATE_SUB(CURRENT_DATE(), INTERVAL 1 DAY)
+            AND event_name = &apos;request_succeed&apos; 
+            AND label = &apos;increase_budget_confirm&apos; 
+            AND section = &apos;cpc.performance_landing_page&apos; 
+            AND params.key = &apos;budget_increase_value&apos; 
+            AND is_impersonated = &apos;no&apos; 
+            AND (SELECT params.value.string_value FROM UNNEST(event_params) AS params WHERE params.key = &apos;tag&apos;) = &apos;GA4.cpc_performance&apos;
+      		AND (
+      				session_id != &apos;f729f378525a0c6a2e73b62b6afb764e&apos; -- oct
+      				and
+              		session_id != &apos;38d3dc0f7811cc2d8b3554c47dd45500&apos; -- 28 nov
+              )
+        GROUP BY all
+    )
+    SELECT
+        fielddate,
+        global_entity_id,
+        SUM(CAST(total_budget_increase_value AS FLOAT64) / CAST(fx_rate_eur AS FLOAT64)) AS total_budget_in_eur
+    FROM budget_values a
+    JOIN `fulfillment-dwh-production.curated_data_shared_coredata.fx_rates` b 
+        ON a.currency_code = b.currency_code 
+        AND a.fielddate = b.fx_rate_date
+    GROUP BY fielddate, global_entity_id
+)
+
+-- Aggregate results with LEFT JOINs across session metrics and budget increases
+SELECT 
+DATE_TRUNC(fielddate,month) AS month,
+sessions.global_entity_id,
+sum(total_budget_in_eur) as nba_topup_budget,
+ROUND((SUM(shown_sessions) / NULLIF(SUM(page_load_sessions), 0)) * 100, 2) AS nba_shown_rate,
+ROUND((SUM(clicked_sessions) / NULLIF(SUM(shown_sessions), 0)) * 100, 2) AS nba_click_rate,
+ROUND((SUM(top_up_sessions) / NULLIF(SUM(clicked_sessions), 0)) * 100, 2) AS nba_applied_rate,
+SUM(page_load_sessions) as nba_page_load_sessions,
+SUM(shown_sessions) as nba_shown_sessions,
+SUM(clicked_sessions) as nba_clicked_sessions,
+SUM(top_up_sessions)as nba_top_up_sessions,
+
+FROM sessions 
+LEFT JOIN entity USING (global_entity_id)
+LEFT JOIN shown USING (fielddate, global_entity_id)
+LEFT JOIN clicked USING (fielddate, global_entity_id)
+LEFT JOIN top_up USING (fielddate, global_entity_id)
+LEFT JOIN increase USING (fielddate, global_entity_id)
+group by all)
+
+
+, newbranch as
+(-- Define online entities
+WITH entity AS (
+SELECT
+brand_name,
+global_entity_id
+FROM `fulfillment-dwh-production.curated_data_shared_coredata.global_entities`
+WHERE is_entity_online = TRUE
+),
+
+
+
+-- Count distinct sessions, users for page loads
+nba_outlets_views AS (
+SELECT
+date_trunc(fielddate, month) as date_month,
+brand_name,
+global_entity_id,
+count(distinct session_id) as sessions_brand_reporting_views,
+count(distinct user_id) as users_brand_reporting_views,
+COUNT(DISTINCT CASE WHEN is_grow_outlets_available=&apos;true&apos; then session_id END) as sessions_nba_outlets_views,
+COUNT(DISTINCT CASE WHEN is_grow_outlets_available=&apos;true&apos; then user_id END) as users_nba_outlets_views
+FROM
+(SELECT
+brand_name,
+session_id,
+user_id,
+fielddate,
+a.global_entity_id,
+(SELECT params.value.string_value FROM UNNEST(event_params) AS params WHERE params.key = &apos;is_grow_outlets_available&apos;) as is_grow_outlets_available
+FROM `fulfillment-dwh-production.curated_data_shared_sales_revenue.vp_events` a,
+UNNEST(event_params) AS params
+JOIN entity e ON a.global_entity_id=e.global_entity_id
+WHERE
+fielddate BETWEEN DATE_SUB(CURRENT_DATE(), INTERVAL 100 DAY) AND DATE_SUB(CURRENT_DATE(), INTERVAL 1 DAY)
+AND label = &apos;outlets_list_load&apos;
+AND event_name = &apos;section_succeed&apos;
+AND section = &apos;cpc.performance_landing_page&apos;
+AND is_impersonated = &apos;no&apos;
+AND (SELECT params.value.string_value FROM UNNEST(event_params) AS params WHERE params.key = &apos;tag&apos;) = &apos;GA4.cpc_performance&apos;
+GROUP BY ALL)
+GROUP BY ALL
+),
+-- Count sessions with &quot;grow all your outlets&quot; button clicked
+nba_outlets_clicks AS (
+SELECT
+fielddate,
+global_entity_id,
+session_id,
+user_id,
+MIN(event_timestamp_utc) as nba_click_timestamp_utc
+FROM `fulfillment-dwh-production.curated_data_shared_sales_revenue.vp_events`,
+UNNEST(event_params) AS params
+WHERE
+fielddate BETWEEN DATE_SUB(CURRENT_DATE(), INTERVAL 100 DAY) AND DATE_SUB(CURRENT_DATE(), INTERVAL 1 DAY)
+AND ((event_name = &apos;button_tap&apos;
+AND label = &apos;rec_card_clicked&apos;)
+OR
+(event_name = &apos;drawer_button_tap&apos;
+AND label = &apos;add_budget_action&apos;))
+AND (SELECT params.value.int_value FROM UNNEST(event_params) AS params WHERE params.key = &apos;grow_outlets_count&apos;) &gt;&gt;0
+AND section = &apos;cpc.performance_landing_page&apos;
+AND is_impersonated = &apos;no&apos;
+AND (SELECT params.value.string_value FROM UNNEST(event_params) AS params WHERE params.key = &apos;tag&apos;) = &apos;GA4.cpc_performance&apos;
+GROUP BY ALL
+),
+
+nba_outlets_clicks_agg AS (
+SELECT DATE_TRUNC(fielddate, MONTH) as date_month,
+global_entity_id,
+COUNT(DISTINCT session_id) sessions_clicks,
+COUNT(DISTINCT user_id) users_clicks
+FROM nba_outlets_clicks
+GROUP BY ALL
+),
+
+
+-- Bookings data
+bookings AS (
+SELECT
+session_id,
+user_id,
+event_timestamp_utc as booking_timestamp_utc,
+global_entity_id,
+fielddate,
+(SELECT params.value.string_value FROM UNNEST(event_params) AS params WHERE params.key = &apos;campaign_id&apos;) as campaign_id,
+SPLIT((SELECT params.value.string_value FROM UNNEST(event_params) AS params WHERE params.key = &apos;selected_vendor_id&apos;), &apos;;&apos; )[OFFSET(1)] as vendor_id
+FROM `fulfillment-dwh-production.curated_data_shared_sales_revenue.vp_events`,
+UNNEST(event_params) AS params
+WHERE
+fielddate BETWEEN DATE_SUB(CURRENT_DATE(), INTERVAL 100 DAY) AND DATE_SUB(CURRENT_DATE(), INTERVAL 1 DAY)
+AND event_name = &apos;request_succeed&apos;
+AND label = &apos;booking_confirm&apos;
+AND section in (&apos;cpc.booking_page&apos;, &apos;cpc.landing_page&apos;)
+AND is_impersonated = &apos;no&apos;
+GROUP BY ALL
+),
+
+
+-- Bookings data from nba
+nba_outlets_bookings AS (
+SELECT
+a.session_id,
+a.user_id,
+booking_timestamp_utc as nba_booking_timestamp_utc,
+a.global_entity_id,
+a.fielddate,
+campaigns as campaign_id,
+vendor_id
+FROM bookings a, UNNEST(SPLIT(a.campaign_id,&apos;,&apos;)) campaigns
+JOIN nba_outlets_clicks b on a.global_entity_id=b.global_entity_id and a.session_id=b.session_id and booking_timestamp_utc&gt;&gt;=nba_click_timestamp_utc
+QUALIFY ROW_NUMBER() OVER (PARTITION BY a.global_entity_id, a.session_id ORDER BY booking_timestamp_utc)=1
+),
+
+
+-- Bookings data from nba with budgets
+nba_outlets_bookings_budget AS (
+SELECT
+date_month,
+global_entity_id,
+COUNT(DISTINCT session_id) as sessions_bookings,
+COUNT(DISTINCT user_id) as users_bookings,
+COUNT(DISTINCT campaign_id) as bookings,
+SUM(budget_eur) as budget_eur
+FROM
+(SELECT
+DATE_TRUNC(fielddate, MONTH) as date_month,
+a.global_entity_id,
+session_id,user_id,
+a.campaign_id,
+pricing.budget_eur
+FROM nba_outlets_bookings a
+JOIN fulfillment-dwh-production.curated_data_shared_adtech.dim_campaigns b ON a.global_entity_id=b.global_entity_id and a.campaign_id=b.campaign_id
+QUALIFY ROW_NUMBER() OVER (PARTITION BY b.global_entity_id, b.campaign_id ORDER BY modified_at_utc)=1
+)
+GROUP BY ALL
+)
+
+-- Totals
+SELECT
+a.date_month as month,
+a.global_entity_id,
+budget_eur as nba_new_branch
+FROM nba_outlets_views a
+LEFT JOIN nba_outlets_clicks_agg b ON a.global_entity_id=b.global_entity_id and a.date_month=b.date_month
+LEFT JOIN nba_outlets_bookings_budget c ON a.global_entity_id=c.global_entity_id and a.date_month=c.date_month
+GROUP BY ALL
+)
+
+, ncr_reporting as
+
+(WITH cmp AS (
+  SELECT
+    global_entity_id,
+    CAST(vendor.id AS STRING) AS vendor_id,
+    campaign_id,
+    origin,
+    DATE_TRUNC(DATE(started_at_utc), MONTH) AS month,
+    FORMAT_TIMESTAMP(&apos;%Y-%m-%d %H:%M&apos;, MIN(started_at_utc)) AS started,
+    FORMAT_TIMESTAMP(&apos;%Y-%m-%d %H:%M&apos;, MIN(ended_at_utc)) AS ended_at_utc
+  FROM `fulfillment-dwh-production.curated_data_shared_adtech.dim_campaigns`,
+  UNNEST(advertiser.vendors) AS vendor
+  WHERE DATE(started_at_utc) &gt;&gt;= DATE(&apos;2025-05-01&apos;)  -- adjust start date as needed
+  GROUP BY
+    global_entity_id,
+    vendor_id,
+    campaign_id,
+    origin,
+    month
+),
+
+rep AS (
+  SELECT
+    global_entity_id,
+    DATE_TRUNC(DATE(fielddate), MONTH) AS month,
+    (SELECT SPLIT(p.value.string_value, &apos;;&apos;)[SAFE_OFFSET(1)]
+     FROM UNNEST(event_params) AS p
+     WHERE p.key = &apos;selected_vendor_id&apos;) AS vendor_id,
+    TRUE AS visited
+  FROM `fulfillment-dwh-production.curated_data_shared_sales_revenue.vp_events`
+  WHERE DATE(fielddate) &gt;&gt;= DATE(&apos;2025-05-01&apos;)  -- same window as cmp
+    AND label = &apos;page_load&apos;
+    AND event_name = &apos;page_open&apos;
+    AND section = &apos;cpc.performance_landing_page&apos;
+    AND is_impersonated = &apos;no&apos;
+    AND (SELECT p.value.string_value FROM UNNEST(event_params) AS p WHERE p.key = &apos;tag&apos;) = &apos;GA4.cpc_performance&apos;
+  GROUP BY
+    global_entity_id,
+    month,
+    vendor_id
+)
+
+, final as (SELECT
+  cmp.month,
+  CASE
+    WHEN ge.brand IN (&apos;Appetito24&apos;, &apos;Damejidlo&apos;, &apos;Hungry&apos;, &apos;Mjam&apos;, &apos;NetPincer&apos;) THEN &apos;Foodora&apos;
+    ELSE ge.brand
+  END AS brand,
+  cmp.global_entity_id,
+  cmp.origin,
+  CASE
+    WHEN rep.visited = TRUE THEN &apos;true&apos;
+    WHEN rep.visited IS NULL THEN &apos;false&apos;
+    ELSE &apos;other&apos;
+  END AS opened_report,
+  COUNT(DISTINCT cmp.vendor_id) AS unique_vendor_count
+FROM cmp
+LEFT JOIN rep
+  ON cmp.vendor_id = rep.vendor_id
+  AND cmp.global_entity_id = rep.global_entity_id
+  AND cmp.month = rep.month
+LEFT JOIN `fulfillment-dwh-production.curated_data_shared_central_dwh.global_entities` AS ge
+  ON cmp.global_entity_id = ge.global_entity_id
+GROUP BY
+  cmp.month,
+  CASE
+    WHEN ge.brand IN (&apos;Appetito24&apos;, &apos;Damejidlo&apos;, &apos;Hungry&apos;, &apos;Mjam&apos;, &apos;NetPincer&apos;) THEN &apos;Foodora&apos;
+    ELSE ge.brand
+  END,
+  cmp.global_entity_id,
+  cmp.origin,
+  CASE
+    WHEN rep.visited = TRUE THEN &apos;true&apos;
+    WHEN rep.visited IS NULL THEN &apos;false&apos;
+    ELSE &apos;other&apos;
+  END
+ORDER BY
+  cmp.month,
+  cmp.global_entity_id,
+  cmp.origin,
+  opened_report)
+
+
+  SELECT 
+  distinct month,
+  global_entity_id,
+  SUM(CASE WHEN opened_report=&quot;true&quot; then unique_vendor_count end) as ncr_adopted_vendors,
+  sum(unique_vendor_count) as ncr_adopted_total
+  from final
+  GROUP BY ALL)
+
+
+, vfd as 
+(WITH vpe AS (
+  SELECT
+    event_timestamp_utc,
+    fielddate AS event_date,
+    user_id,
+    session_id,
+    global_vendor_count,
+    is_impersonated,
+    event_name,
+    global_entity_id,
+
+    geo_continent,
+    geo_region,
+    geo_country,
+    geo_city,
+
+    vpm_webview_id,
+    app_id,
+    device_category,
+    device_os,
+    device_brand,
+    device_model,
+
+    section,
+    subsection,
+    label,
+    (SELECT params.value.string_value FROM UNNEST(event_params) AS params WHERE params.key = &quot;plugin_id&quot;) AS plugin_id,
+    (SELECT params.value.string_value FROM UNNEST(event_params) AS params WHERE params.key = &quot;plugin_name&quot;) AS plugin_name,
+    (SELECT params.value.string_value FROM UNNEST(event_params) AS params WHERE params.key = &quot;page_name&quot;) AS page_name,
+    (SELECT params.value.string_value FROM UNNEST(event_params) AS params WHERE params.key = &quot;plugin_code&quot;) AS plugin_code,
+    (SELECT params.value.string_value FROM UNNEST(event_params) AS params WHERE params.key = &quot;tag&quot;) AS tag,
+    (SELECT params.value.string_value FROM UNNEST(event_params) AS params WHERE params.key = &quot;selected_vendor_id&quot;) AS selected_vendor_id,
+    (SELECT params.value.string_value FROM UNNEST(event_params) AS params WHERE params.key = &quot;selected_vendor_count&quot;) AS selected_vendor_count,
+
+    (SELECT params.value.string_value FROM UNNEST(event_params) AS params WHERE params.key = &quot;discount_notification_banner&quot;) AS is_notification_banner_loaded,
+    (SELECT params.value.string_value FROM UNNEST(event_params) AS params WHERE params.key = &quot;discount_form&quot;) AS is_create_form_loaded,
+    (SELECT params.value.string_value FROM UNNEST(event_params) AS params WHERE params.key = &quot;discount_carousel&quot;) AS is_carousel_loaded,
+    (SELECT params.value.string_value FROM UNNEST(event_params) AS params WHERE params.key = &quot;discount_report&quot;) AS is_report_loaded,
+    (SELECT params.value.string_value FROM UNNEST(event_params) AS params WHERE params.key = &quot;discount_listing&quot;) AS is_listing_loaded,
+    (SELECT params.value.string_value FROM UNNEST(event_params) AS params WHERE params.key = &quot;discount_membership&quot;) AS is_subscription_loaded,
+    (SELECT params.value.string_value FROM UNNEST(event_params) AS params WHERE params.key = &quot;discount_referral&quot;) AS is_referral_loaded,
+
+    (SELECT params.value.string_value FROM UNNEST(event_params) AS params WHERE params.key = &quot;subscription_program_id&quot;) AS subscription_program_id,
+
+    (SELECT params.value.string_value FROM UNNEST(event_params) AS params WHERE params.key = &quot;audience_targeting&quot;) AS audience_targeting,
+    (SELECT params.value.string_value FROM UNNEST(event_params) AS params WHERE params.key = &quot;menu_selection_available&quot;) AS menu_selection_available,
+    (SELECT params.value.string_value FROM UNNEST(event_params) AS params WHERE params.key = &quot;branch_selection_available&quot;) AS branch_selection_available,
+    (SELECT params.value.string_value FROM UNNEST(event_params) AS params WHERE params.key = &quot;selected_value&quot;) AS selected_string_value,
+    (SELECT params.value.int_value FROM UNNEST(event_params) AS params WHERE params.key = &quot;selected_value&quot;) AS selected_int_value,
+    (SELECT params.value.float_value FROM UNNEST(event_params) AS params WHERE params.key = &quot;selected_value&quot;) AS selected_float_value,
+    (SELECT params.value.string_value FROM UNNEST(event_params) AS params WHERE params.key = &quot;discount_type&quot;) AS discount_type,
+    (SELECT params.value.string_value FROM UNNEST(event_params) AS params WHERE params.key = &quot;audience_selected&quot;) AS audience_selected,
+    (SELECT params.value.int_value FROM UNNEST(event_params) AS params WHERE params.key = &quot;num_menu_items_selected&quot;) AS num_menu_items_selected,
+    (SELECT params.value.int_value FROM UNNEST(event_params) AS params WHERE params.key = &quot;num_vendors_selected&quot;) AS num_vendors_selected,
+    (SELECT params.value.int_value FROM UNNEST(event_params) AS params WHERE params.key = &quot;min_order_value&quot;) AS min_order_value,
+    (SELECT params.value.int_value FROM UNNEST(event_params) AS params WHERE params.key = &quot;max_order_value&quot;) AS max_order_value,
+    (SELECT params.value.int_value FROM UNNEST(event_params) AS params WHERE params.key = &quot;discount_value&quot;) AS discount_value,
+    (SELECT params.value.string_value FROM UNNEST(event_params) AS params WHERE params.key = &quot;start_date&quot;) AS start_date,
+    (SELECT params.value.string_value FROM UNNEST(event_params) AS params WHERE params.key = &quot;end_date&quot;) AS end_date,
+    (SELECT params.value.string_value FROM UNNEST(event_params) AS params WHERE params.key = &quot;is_full_day&quot;) AS is_full_day,
+    (SELECT params.value.string_value FROM UNNEST(event_params) AS params WHERE params.key = &quot;is_recurring&quot;) AS is_recurring,
+    (SELECT params.value.string_value FROM UNNEST(event_params) AS params WHERE params.key = &quot;days_of_week&quot;) AS days_of_week,
+    (SELECT params.value.string_value FROM UNNEST(event_params) AS params WHERE params.key = &quot;template_id&quot;) AS template_id,
+
+    (SELECT params.value.string_value FROM UNNEST(event_params) AS params WHERE params.key = &quot;carousel_pos_1&quot;) AS carousel_pos_1,
+    (SELECT params.value.string_value FROM UNNEST(event_params) AS params WHERE params.key = &quot;carousel_pos_2&quot;) AS carousel_pos_2,
+    (SELECT params.value.string_value FROM UNNEST(event_params) AS params WHERE params.key = &quot;carousel_pos_3&quot;) AS carousel_pos_3,
+    (SELECT params.value.string_value FROM UNNEST(event_params) AS params WHERE params.key = &quot;carousel_pos_4&quot;) AS carousel_pos_4,
+    (SELECT params.value.string_value FROM UNNEST(event_params) AS params WHERE params.key = &quot;carousel_pos_5&quot;) AS carousel_pos_5,
+    (SELECT params.value.string_value FROM UNNEST(event_params) AS params WHERE params.key = &quot;carousel_pos_6&quot;) AS carousel_pos_6,
+    (SELECT params.value.string_value FROM UNNEST(event_params) AS params WHERE params.key = &quot;carousel_pos_7&quot;) AS carousel_pos_7,
+    (SELECT params.value.string_value FROM UNNEST(event_params) AS params WHERE params.key = &quot;carousel_pos_8&quot;) AS carousel_pos_8,
+    (SELECT params.value.string_value FROM UNNEST(event_params) AS params WHERE params.key = &quot;carousel_pos_9&quot;) AS carousel_pos_9,
+    (SELECT params.value.string_value FROM UNNEST(event_params) AS params WHERE params.key = &quot;carousel_pos_10&quot;) AS carousel_pos_10,
+    (SELECT params.value.int_value FROM UNNEST(event_params) AS params WHERE params.key = &quot;discount_campaign_pos&quot;) AS discount_campaign_pos,
+    (SELECT params.value.string_value FROM UNNEST(event_params) AS params WHERE params.key = &quot;discount_campaign_id&quot;) AS discount_campaign_id,
+
+    (SELECT params.value.string_value FROM UNNEST(event_params) AS params WHERE params.key = &quot;deal_id&quot;) AS deal_id,
+
+    (SELECT params.value.string_value FROM UNNEST(event_params) AS params WHERE params.key = &quot;discount_level_report&quot;) AS discount_level_report,
+    (SELECT params.value.string_value FROM UNNEST(event_params) AS params WHERE params.key = &quot;discount_edit&quot;) AS discount_edit,
+    (SELECT params.value.string_value FROM UNNEST(event_params) AS params WHERE params.key = &quot;discount_cancel&quot;) AS discount_cancel,
+
+    (SELECT params.value.string_value FROM UNNEST(event_params) AS params WHERE params.key LIKE &quot;%error%&quot;) AS error_msg
+
+  FROM `fulfillment-dwh-production.curated_data_shared_sales_revenue.vp_events`
+  WHERE user_id IS NOT NULL
+    AND fielddate &gt;&gt;= &quot;2024-12-01&quot;
+),
+
+vp_users AS (
+  SELECT
+    user_id,
+    ven.vendor_id,
+    ven.global_entity_id,
+    ven.role AS user_role
+  FROM `fulfillment-dwh-production.curated_data_shared_sales_revenue.vp_users`
+  LEFT JOIN UNNEST(vendors) AS ven
+  WHERE ven.role IN (&quot;ADMIN&quot;, &quot;MANAGER&quot;)
+),
+
+md AS (
+  SELECT DISTINCT event_date, user_id, vendor_id, session_id
+  FROM vpe
+  LEFT JOIN vp_users AS vpu USING(user_id)
+  WHERE event_name = &quot;page_view&quot;
+    AND plugin_code = &quot;VENDOR_DEALS&quot;
+    AND label = &quot;view_performance_tab&quot;
+),
+
+adopted_vendors AS (
+  SELECT
+    DATE_TRUNC(event_date, MONTH) AS month,
+    vendor_id,
+    COUNT(DISTINCT session_id) AS no_of_sessions
+  FROM md
+  GROUP BY month, vendor_id
+),
+
+vfd AS (
+  SELECT
+    month,
+    country_code,
+    vendor_id,
+    SUM(incentive_amount_eur) AS savings
+  FROM (
+    SELECT
+      DATE_TRUNC(order_date, MONTH) AS month,
+      b.country_code,
+      orders.vendor_id,
+      orders.vertical,
+      a.vendor_name,
+      a.chain_id,
+      d.system_creation,
+      d.platform_campaign_type,
+      a.account_manager_name AS am,
+      orders.campaign_id,
+      incentive_sub_type,
+      incentive_amount_eur,
+      order_id,
+      a.is_dh_kitchen,
+      gmv_amount_eur
+    FROM `tlb-data-prod.data_platform.fct_incentive_order_detail` orders
+    LEFT JOIN `tlb-data-prod.data_platform.dim_vendor_info` a
+      ON a.vendor_id = orders.vendor_id
+    LEFT JOIN `tlb-data-prod.data_platform.dim_chain` b
+      ON b.chain_id = a.chain_id
+    LEFT JOIN `tlb-data-prod.data_platform.dim_incentives_discount` d
+      ON orders.campaign_id = d.campaign_id
+    WHERE order_date &gt;&gt;= &quot;2024-12-01&quot;
+      AND is_successful = TRUE
+      AND orders.vertical = &apos;food&apos;
+      AND incentive_sub_type IN (&apos;menu discount&apos;,&apos;item discount&apos;)
+  )
+  WHERE country_code != &apos;SA&apos;
+  GROUP BY month, country_code, vendor_id
+),
+
+final AS (
+  SELECT
+    vfd.*,
+    av.no_of_sessions
+  FROM vfd
+  LEFT JOIN adopted_vendors av
+    ON SAFE_CAST(vfd.vendor_id AS STRING) = av.vendor_id
+    AND vfd.month = av.month
+),
+
+final2 AS (
+  SELECT
+    *,
+    CASE WHEN no_of_sessions &gt;&gt;= 1 THEN &quot;Y&quot; ELSE &quot;N&quot; END AS adopted_flag
+  FROM final
+)
+
+SELECT
+  month,
+CASE 
+    WHEN country_code = &apos;EG&apos; THEN CONCAT(&apos;HF_&apos;, country_code)
+    ELSE CONCAT(&apos;TB_&apos;, country_code)
+END AS global_entity_id,
+  COUNT(DISTINCT vendor_id) AS total_vfd_vendors,
+  COUNT(DISTINCT CASE WHEN adopted_flag = &quot;Y&quot; THEN vendor_id END) AS adopted_vendors
+FROM final2
+GROUP BY month, country_code
+ORDER BY month, country_code)
+
+
+
+SELECT distinct mt.* ,nba.* except(global_entity_id,month),nb.* except(global_entity_id,month),ncr.* except(month,global_entity_id),vfd.* except(month,global_entity_id)
+FROM multioutlet mt
+JOIN nba 
+ON mt.month=nba.month and mt.global_entity_id=nba.global_entity_id
+JOIN newbranch nb
+ON mt.month=nb.month and mt.global_entity_id=nb.global_entity_id
+JOIN ncr_reporting ncr
+ON safe_cast(mt.month as string)=safe_cast(ncr.month as string) and mt.global_entity_id=ncr.global_entity_id
+JOIN vfd
+ON mt.month=vfd.month and mt.global_entity_id=vfd.global_entity_id</relation>
+            </properties>
+            <properties context='extract'>
+              <relation name='Extract' table='[Extract].[Extract]' type='table' />
+            </properties>
+          </object>
+        </objects>
+      </_.fcp.ObjectModelEncapsulateLegacy.true...object-graph>
+    </datasource>
+  </datasources>
+  <worksheets>
+    <worksheet name='Sheet 2'>
+      <layout-options>
+        <title>
+          <formatted-text>
+            <run fontname='Tableau Bold' fontsize='20'>7% NCR Tracking Metrics</run>
+          </formatted-text>
+        </title>
+      </layout-options>
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='7%' name='federated.0ns4l6y1qugfak1ft1qul102vvfo' />
+          </datasources>
+          <datasource-dependencies datasource='federated.0ns4l6y1qugfak1ft1qul102vvfo'>
+            <column caption='NCR Adoption %' datatype='real' name='[Calculation_2013460930842738688]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='SUM([ncr_adopted_vendors])/SUM([ncr_adopted_total])' />
+            </column>
+            <column caption='VFD Adoption %' datatype='real' name='[Calculation_2013460930843369473]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='SUM([adopted_vendors])/SUM([total_vfd_vendors])' />
+            </column>
+            <column caption='VFD Adopted Vendors' datatype='integer' name='[adopted_vendors]' role='measure' type='quantitative' />
+            <column caption='Country' datatype='string' name='[global_entity_id]' role='dimension' type='nominal' />
+            <column caption='Month' datatype='date' name='[month]' role='dimension' type='ordinal' />
+            <column caption='Multiout budget' datatype='real' name='[multioutlet_budget_eur]' role='measure' type='quantitative' />
+            <column caption='NBA applied rate' datatype='real' name='[nba_applied_rate]' role='measure' type='quantitative' />
+            <column caption='NBA click rate' datatype='real' name='[nba_click_rate]' role='measure' type='quantitative' />
+            <column caption='NBA New Branch ' datatype='real' name='[nba_new_branch]' role='measure' type='quantitative' />
+            <column caption='NBA shown rate' datatype='real' name='[nba_shown_rate]' role='measure' type='quantitative' />
+            <column caption='NBA topup budget' datatype='real' name='[nba_topup_budget]' role='measure' type='quantitative' />
+            <column caption='NCR Vendors' datatype='integer' name='[ncr_adopted_total]' role='measure' type='quantitative' />
+            <column caption='NCR Adopted Vendors' datatype='integer' name='[ncr_adopted_vendors]' role='measure' type='quantitative' />
+            <column-instance column='[global_entity_id]' derivation='None' name='[none:global_entity_id:nk]' pivot='key' type='nominal' />
+            <column-instance column='[adopted_vendors]' derivation='Sum' name='[sum:adopted_vendors:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[multioutlet_budget_eur]' derivation='Sum' name='[sum:multioutlet_budget_eur:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[nba_applied_rate]' derivation='Sum' name='[sum:nba_applied_rate:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[nba_click_rate]' derivation='Sum' name='[sum:nba_click_rate:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[nba_new_branch]' derivation='Sum' name='[sum:nba_new_branch:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[nba_shown_rate]' derivation='Sum' name='[sum:nba_shown_rate:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[nba_topup_budget]' derivation='Sum' name='[sum:nba_topup_budget:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[ncr_adopted_total]' derivation='Sum' name='[sum:ncr_adopted_total:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[ncr_adopted_vendors]' derivation='Sum' name='[sum:ncr_adopted_vendors:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[total_vfd_vendors]' derivation='Sum' name='[sum:total_vfd_vendors:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[month]' derivation='Month-Trunc' name='[tmn:month:ok]' pivot='key' type='ordinal' />
+            <column caption='VFD Vendors' datatype='integer' name='[total_vfd_vendors]' role='measure' type='quantitative' />
+            <column-instance column='[Calculation_2013460930842738688]' derivation='User' name='[usr:Calculation_2013460930842738688:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[Calculation_2013460930843369473]' derivation='User' name='[usr:Calculation_2013460930843369473:qk]' pivot='key' type='quantitative' />
+          </datasource-dependencies>
+          <filter class='categorical' column='[federated.0ns4l6y1qugfak1ft1qul102vvfo].[:Measure Names]'>
+            <groupfilter function='union' user:op='manual'>
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.0ns4l6y1qugfak1ft1qul102vvfo].[sum:nba_topup_budget:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.0ns4l6y1qugfak1ft1qul102vvfo].[sum:multioutlet_budget_eur:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.0ns4l6y1qugfak1ft1qul102vvfo].[usr:Calculation_2013460930842738688:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.0ns4l6y1qugfak1ft1qul102vvfo].[sum:ncr_adopted_vendors:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.0ns4l6y1qugfak1ft1qul102vvfo].[sum:ncr_adopted_total:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.0ns4l6y1qugfak1ft1qul102vvfo].[usr:Calculation_2013460930843369473:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.0ns4l6y1qugfak1ft1qul102vvfo].[sum:adopted_vendors:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.0ns4l6y1qugfak1ft1qul102vvfo].[sum:total_vfd_vendors:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.0ns4l6y1qugfak1ft1qul102vvfo].[sum:nba_applied_rate:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.0ns4l6y1qugfak1ft1qul102vvfo].[sum:nba_click_rate:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.0ns4l6y1qugfak1ft1qul102vvfo].[sum:nba_shown_rate:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.0ns4l6y1qugfak1ft1qul102vvfo].[sum:nba_new_branch:qk]&quot;' />
+            </groupfilter>
+          </filter>
+          <manual-sort column='[federated.0ns4l6y1qugfak1ft1qul102vvfo].[:Measure Names]' direction='ASC'>
+            <dictionary>
+              <bucket>&quot;[federated.0ns4l6y1qugfak1ft1qul102vvfo].[sum:nba_topup_budget:qk]&quot;</bucket>
+              <bucket>&quot;[federated.0ns4l6y1qugfak1ft1qul102vvfo].[sum:multioutlet_budget_eur:qk]&quot;</bucket>
+              <bucket>&quot;[federated.0ns4l6y1qugfak1ft1qul102vvfo].[usr:Calculation_2013460930842738688:qk]&quot;</bucket>
+              <bucket>&quot;[federated.0ns4l6y1qugfak1ft1qul102vvfo].[sum:ncr_adopted_vendors:qk]&quot;</bucket>
+              <bucket>&quot;[federated.0ns4l6y1qugfak1ft1qul102vvfo].[sum:ncr_adopted_total:qk]&quot;</bucket>
+              <bucket>&quot;[federated.0ns4l6y1qugfak1ft1qul102vvfo].[usr:Calculation_2013460930843369473:qk]&quot;</bucket>
+              <bucket>&quot;[federated.0ns4l6y1qugfak1ft1qul102vvfo].[sum:adopted_vendors:qk]&quot;</bucket>
+              <bucket>&quot;[federated.0ns4l6y1qugfak1ft1qul102vvfo].[sum:total_vfd_vendors:qk]&quot;</bucket>
+              <bucket>&quot;[federated.0ns4l6y1qugfak1ft1qul102vvfo].[sum:nba_applied_rate:qk]&quot;</bucket>
+              <bucket>&quot;[federated.0ns4l6y1qugfak1ft1qul102vvfo].[sum:nba_click_rate:qk]&quot;</bucket>
+              <bucket>&quot;[federated.0ns4l6y1qugfak1ft1qul102vvfo].[sum:nba_shown_rate:qk]&quot;</bucket>
+              <bucket>&quot;[federated.0ns4l6y1qugfak1ft1qul102vvfo].[sum:nba_new_branch:qk]&quot;</bucket>
+            </dictionary>
+          </manual-sort>
+          <slices>
+            <column>[federated.0ns4l6y1qugfak1ft1qul102vvfo].[:Measure Names]</column>
+          </slices>
+          <aggregation value='true' />
+        </view>
+        <style>
+          <style-rule element='cell'>
+            <format attr='width' field='[federated.0ns4l6y1qugfak1ft1qul102vvfo].[tmn:month:ok]' value='102' />
+            <format attr='text-format' field='[federated.0ns4l6y1qugfak1ft1qul102vvfo].[usr:Calculation_2013460930842738688:qk]' value='p0.0%' />
+            <format attr='text-align' field='[federated.0ns4l6y1qugfak1ft1qul102vvfo].[Multiple Values]' value='center' />
+            <format attr='vertical-align' field='[federated.0ns4l6y1qugfak1ft1qul102vvfo].[Multiple Values]' value='center' />
+            <format attr='font-size' field='[federated.0ns4l6y1qugfak1ft1qul102vvfo].[Multiple Values]' value='10' />
+            <format attr='text-format' field='[federated.0ns4l6y1qugfak1ft1qul102vvfo].[usr:Calculation_2013460930843369473:qk]' value='p0.0%' />
+          </style-rule>
+          <style-rule element='header'>
+            <format attr='width' field='[federated.0ns4l6y1qugfak1ft1qul102vvfo].[none:global_entity_id:nk]' value='96' />
+            <format attr='height' field='[federated.0ns4l6y1qugfak1ft1qul102vvfo].[tmn:month:ok]' value='32' />
+            <format attr='background-color' field='[federated.0ns4l6y1qugfak1ft1qul102vvfo].[none:global_entity_id:nk]' value='#f5ede4' />
+            <format attr='background-color' field='[federated.0ns4l6y1qugfak1ft1qul102vvfo].[tmn:month:ok]' value='#3e1613' />
+          </style-rule>
+          <style-rule element='label'>
+            <format attr='text-align' field='[federated.0ns4l6y1qugfak1ft1qul102vvfo].[none:global_entity_id:nk]' value='center' />
+            <format attr='vertical-align' field='[federated.0ns4l6y1qugfak1ft1qul102vvfo].[none:global_entity_id:nk]' value='center' />
+            <format attr='vertical-align' field='[federated.0ns4l6y1qugfak1ft1qul102vvfo].[tmn:month:ok]' value='center' />
+            <format attr='color' field='[federated.0ns4l6y1qugfak1ft1qul102vvfo].[tmn:month:ok]' value='#ffffff' />
+            <format attr='font-size' field='[federated.0ns4l6y1qugfak1ft1qul102vvfo].[tmn:month:ok]' value='11' />
+            <format attr='font-size' field='[federated.0ns4l6y1qugfak1ft1qul102vvfo].[none:global_entity_id:nk]' value='11' />
+            <format attr='text-align' field='[federated.0ns4l6y1qugfak1ft1qul102vvfo].[tmn:month:ok]' value='center' />
+          </style-rule>
+          <style-rule element='worksheet'>
+            <format attr='display-field-labels' scope='cols' value='false' />
+          </style-rule>
+          <style-rule element='title'>
+            <format attr='background-color' value='#f5ede4' />
+          </style-rule>
+        </style>
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Automatic' />
+            <encodings>
+              <text column='[federated.0ns4l6y1qugfak1ft1qul102vvfo].[Multiple Values]' />
+            </encodings>
+            <style>
+              <style-rule element='mark'>
+                <format attr='mark-labels-show' value='true' />
+              </style-rule>
+              <style-rule element='pane'>
+                <format attr='minwidth' value='-1' />
+                <format attr='maxwidth' value='-1' />
+              </style-rule>
+            </style>
+          </pane>
+        </panes>
+        <rows onTop='true' total='true'>([federated.0ns4l6y1qugfak1ft1qul102vvfo].[none:global_entity_id:nk] / [federated.0ns4l6y1qugfak1ft1qul102vvfo].[:Measure Names])</rows>
+        <cols>[federated.0ns4l6y1qugfak1ft1qul102vvfo].[tmn:month:ok]</cols>
+      </table>
+      <simple-id uuid='{35FE99E4-3AE5-4EC4-A7F2-F47856BE0724}' />
+    </worksheet>
+  </worksheets>
+  <dashboards>
+    <dashboard _.fcp.AccessibleZoneTabOrder.true...enable-sort-zone-taborder='true' name='Summary'>
+      <repository-location id='Summary' path='/t/Talabat/workbooks/7NCRTracking' revision='' site='Talabat' />
+      <style />
+      <size maxheight='1000' maxwidth='1200' minheight='1000' minwidth='1200' sizing-mode='fixed' />
+      <zones>
+        <zone h='89400' id='3' name='Sheet 2' w='94250' x='3333' y='9900' />
+        <zone forceUpdate='true' h='5000' id='4' type-v2='text' w='100000' x='0' y='0'>
+          <formatted-text>
+            <run bold='true' fontalignment='1' fontcolor='#ffffff' fontname='Tableau Bold' fontsize='22'>Monthly Tracking</run>
+          </formatted-text>
+          <zone-style>
+            <format attr='border-color' value='#000000' />
+            <format attr='border-style' value='none' />
+            <format attr='border-width' value='0' />
+            <format attr='background-color' value='#eb652b' />
+          </zone-style>
+        </zone>
+        <zone forceUpdate='true' h='2100' id='5' type-v2='text' w='16917' x='83000' y='2800'>
+          <formatted-text>
+            <run bold='true' fontcolor='#ffffff' fontsize='10' italic='true'>Dashboard Owner: Hassan Afzal</run>
+          </formatted-text>
+        </zone>
+      </zones>
+      <devicelayouts>
+        <devicelayout auto-generated='true' name='Phone'>
+          <size maxheight='700' minheight='700' sizing-mode='vscroll' />
+          <zones>
+            <zone h='100000' id='9' type-v2='layout-basic' w='100000' x='0' y='0'>
+              <zone h='98400' id='8' param='vert' type-v2='layout-flow' w='98666' x='667' y='800'>
+                <zone forceUpdate='true' h='5000' id='4' type-v2='text' w='100000' x='0' y='0'>
+                  <formatted-text>
+                    <run bold='true' fontalignment='1' fontcolor='#ffffff' fontname='Tableau Bold' fontsize='22'>Monthly Tracking</run>
+                  </formatted-text>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                    <format attr='background-color' value='#eb652b' />
+                  </zone-style>
+                </zone>
+                <zone forceUpdate='true' h='2100' id='5' type-v2='text' w='16917' x='83000' y='2800'>
+                  <formatted-text>
+                    <run bold='true' fontcolor='#ffffff' fontsize='10' italic='true'>Dashboard Owner: Hassan Afzal</run>
+                  </formatted-text>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone fixed-size='280' h='89400' id='3' is-fixed='true' name='Sheet 2' w='94250' x='3333' y='9900'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+              </zone>
+              <zone-style>
+                <format attr='border-color' value='#000000' />
+                <format attr='border-style' value='none' />
+                <format attr='border-width' value='0' />
+                <format attr='margin' value='8' />
+              </zone-style>
+            </zone>
+          </zones>
+        </devicelayout>
+      </devicelayouts>
+      <simple-id uuid='{90CF93FF-2AA0-4567-8050-8C3024580ABF}' />
+    </dashboard>
+  </dashboards>
+  <windows show-side-pane='false' source-height='30'>
+    <window class='worksheet' name='Sheet 2'>
+      <cards>
+        <edge name='left'>
+          <strip size='300'>
+            <card type='pages' />
+            <card type='filters' />
+            <card type='marks' />
+            <card type='measures' />
+          </strip>
+        </edge>
+        <edge name='top'>
+          <strip size='2147483647'>
+            <card type='columns' />
+          </strip>
+          <strip size='2147483647'>
+            <card type='rows' />
+          </strip>
+          <strip size='31'>
+            <card type='title' />
+          </strip>
+        </edge>
+      </cards>
+      <viewpoint>
+        <zoom type='fit-width' />
+        <highlight>
+          <color-one-way>
+            <field>[federated.0ns4l6y1qugfak1ft1qul102vvfo].[:Measure Names]</field>
+            <field>[federated.0ns4l6y1qugfak1ft1qul102vvfo].[none:global_entity_id:nk]</field>
+            <field>[federated.0ns4l6y1qugfak1ft1qul102vvfo].[yr:month:ok]</field>
+          </color-one-way>
+        </highlight>
+      </viewpoint>
+      <simple-id uuid='{DF607258-D280-4C4F-8A26-7CF41AE6DD60}' />
+    </window>
+    <window class='dashboard' maximized='true' name='Summary'>
+      <viewpoints>
+        <viewpoint name='Sheet 2'>
+          <zoom type='fit-width' />
+        </viewpoint>
+      </viewpoints>
+      <active id='-1' />
+      <simple-id uuid='{14A3E1B0-F2CC-404C-B51E-0DA7444C8C55}' />
+    </window>
+  </windows>
+</workbook>
