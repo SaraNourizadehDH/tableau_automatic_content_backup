@@ -1,0 +1,1683 @@
+<?xml version='1.0' encoding='utf-8' ?>
+
+<!-- build 20233.25.0106.1650                               -->
+<workbook original-version='18.1' source-build='2023.3.14 (20233.25.0106.1650)' version='18.1' xml:base='https://tableau.deliveryhero.net' xmlns:user='http://www.tableausoftware.com/xml/user'>
+  <document-format-change-manifest>
+    <_.fcp.AccessibleZoneTabOrder.true...AccessibleZoneTabOrder />
+    <_.fcp.AnimationOnByDefault.true...AnimationOnByDefault />
+    <AutoCreateAndUpdateDSDPhoneLayouts />
+    <_.fcp.MarkAnimation.true...MarkAnimation />
+    <_.fcp.ObjectModelEncapsulateLegacy.true...ObjectModelEncapsulateLegacy />
+    <_.fcp.ObjectModelExtractV2.true...ObjectModelExtractV2 />
+    <_.fcp.ObjectModelTableType.true...ObjectModelTableType />
+    <_.fcp.SchemaViewerObjectModel.true...SchemaViewerObjectModel />
+    <SetMembershipControl />
+    <SheetIdentifierTracking />
+    <SortTagCleanup />
+    <WindowsPersistSimpleIdentifiers />
+    <ZoneBackgroundTransparency />
+  </document-format-change-manifest>
+  <repository-location derived-from='https://tableau.deliveryhero.net/t/Foodora/workbooks/DraftSalesPackagesAdd-onsAdsDealsv1?rev=1.2' id='DraftSalesPackagesAdd-onsAdsDealsv1' path='/t/Foodora/workbooks' revision='1.3' site='Foodora' />
+  <preferences />
+  <_.fcp.AnimationOnByDefault.false...style>
+    <_.fcp.AnimationOnByDefault.false..._.fcp.MarkAnimation.true...style-rule element='animation'>
+      <_.fcp.AnimationOnByDefault.false...format attr='animation-on' value='ao-on' />
+    </_.fcp.AnimationOnByDefault.false..._.fcp.MarkAnimation.true...style-rule>
+  </_.fcp.AnimationOnByDefault.false...style>
+  <datasources>
+    <datasource caption='ads deals % ' inline='true' name='federated.17k3lcp0qwdcel116v4ap0thlqph' version='18.1'>
+      <connection class='federated'>
+        <named-connections>
+          <named-connection caption='BigQuery' name='bigquery.0qtarb40fqy6t614c0b2w05p9vs6'>
+            <connection CATALOG='fulfillment-dwh-production' EXECCATALOG='pd-data--adhoc' authentication='oauth' bq-dataset-fetch-rows='' bq-fetch-rows='' bq-fetch-tasks='' bq-large-fetch-rows='' bq-project-fetch-rows='' bq-response-rows='' class='bigquery' connection-dialect='google-sql' project='fulfillment-dwh-production' schema='pandata_report' server-oauth='' username='theeranop.wongtitirote@foodpanda.co.th' workgroup-auth-mode='prompt' />
+          </named-connection>
+        </named-connections>
+        <_.fcp.ObjectModelEncapsulateLegacy.false...relation connection='bigquery.0qtarb40fqy6t614c0b2w05p9vs6' name='Custom SQL Query' type='text'>WITH cte1 AS (
+SELECT 
+sf_add_on_services.country_code,
+sf_add_on_services.global_entity_id,
+countries.name AS country,
+sf_add_on_services.opportunity__c,
+sf_list_add_on.id_country__c, 
+sf_list_add_on.is_active__c, 
+sf_list_add_on.recordtypeid, 
+sf_list_add_on.name, 
+sf_list_add_on.contract_addition__c, 
+sf_list_add_on.type__c 
+FROM `fulfillment-dwh-production.curated_data_shared_salesforce.add_on_service__c` AS sf_add_on_services
+LEFT JOIN `fulfillment-dwh-production.curated_data_shared_salesforce.list_add_on__c` AS sf_list_add_on
+         ON sf_add_on_services.id_list_add_on__c = sf_list_add_on.id
+INNER JOIN `fulfillment-dwh-production.pandata_curated.shared_countries` AS countries
+        ON sf_add_on_services.global_entity_id = countries.global_entity_id 
+),
+
+deals_final AS (
+SELECT 
+cte1.*, mapping.product, mapping.key_words
+FROM cte1
+INNER JOIN `fulfillment-dwh-production.pandata_report.commercial__sales_packages_add_on` AS mapping
+ON cte1.country = mapping.country
+AND cte1.name = mapping.add_on_package_name
+AND cte1.type__c  = mapping.type
+AND (
+    (
+      -- Condition for Czech Republic and Finland
+      cte1.country IN (&apos;Czech Republic&apos;, &apos;Finland&apos;, &apos;Austria&apos;, &apos;Singapore&apos;)
+      AND LOWER(cte1.name) LIKE CONCAT(&apos;%&apos;, LOWER(mapping.key_words), &apos;%&apos;)
+    )
+    OR
+    (
+      -- Condition for all other countries
+      cte1.country NOT IN (&apos;Czech Republic&apos;, &apos;Finland&apos;, &apos;Singapore&apos;)
+      AND LOWER(cte1.contract_addition__c) LIKE CONCAT(&apos;%&apos;, LOWER(mapping.key_words), &apos;%&apos;)
+    )
+  )
+)
+
+SELECT 
+lao.global_entity_id,
+lao.country,
+lao.sf_opportunity_owner_id, 
+lao.full_name_internal_non_pii, 
+lao.user_type, 
+lao.activation_date,
+lao.sf_opportunity_id,
+lao.vendor_grade,
+lao.vendor_code,
+
+deals_final.product
+FROM `fulfillment-dwh-production.pandata_report.sales_lead_account_opp_aggregated` AS lao
+LEFT JOIN deals_final
+       ON  lao.global_entity_id = deals_final.global_entity_id 
+      AND  lao.sf_opportunity_id = deals_final.opportunity__c
+
+WHERE is_closed
+  AND is_won
+  AND    ((lao.country IN (&apos;Hong Kong&apos;, &apos;Finland&apos;)
+    AND opportunity_business_type IN (&apos;Legal Form Change&apos;, &apos;New Business&apos;, &apos;Owner Change&apos;, &apos;Win Back&apos;))
+    OR
+    (lao.country NOT IN (&apos;Hong Kong&apos;, &apos;Finland&apos;)
+     AND opportunity_business_type IN (&apos;New Business&apos;, &apos;Win Back&apos;)))
+  AND vendor_type = &apos;Restaurants&apos;
+  AND vertical_segment != &apos;caterers&apos;
+  AND DATE_TRUNC(activation_date, MONTH) &gt;&gt;= &quot;2024-01-01&quot;</_.fcp.ObjectModelEncapsulateLegacy.false...relation>
+        <_.fcp.ObjectModelEncapsulateLegacy.true...relation connection='bigquery.0qtarb40fqy6t614c0b2w05p9vs6' name='Custom SQL Query' type='text'>WITH cte1 AS (
+SELECT 
+sf_add_on_services.country_code,
+sf_add_on_services.global_entity_id,
+countries.name AS country,
+sf_add_on_services.opportunity__c,
+sf_list_add_on.id_country__c, 
+sf_list_add_on.is_active__c, 
+sf_list_add_on.recordtypeid, 
+sf_list_add_on.name, 
+sf_list_add_on.contract_addition__c, 
+sf_list_add_on.type__c 
+FROM `fulfillment-dwh-production.curated_data_shared_salesforce.add_on_service__c` AS sf_add_on_services
+LEFT JOIN `fulfillment-dwh-production.curated_data_shared_salesforce.list_add_on__c` AS sf_list_add_on
+         ON sf_add_on_services.id_list_add_on__c = sf_list_add_on.id
+INNER JOIN `fulfillment-dwh-production.pandata_curated.shared_countries` AS countries
+        ON sf_add_on_services.global_entity_id = countries.global_entity_id 
+),
+
+deals_final AS (
+SELECT 
+cte1.*, mapping.product, mapping.key_words
+FROM cte1
+INNER JOIN `fulfillment-dwh-production.pandata_report.commercial__sales_packages_add_on` AS mapping
+ON cte1.country = mapping.country
+AND cte1.name = mapping.add_on_package_name
+AND cte1.type__c  = mapping.type
+AND (
+    (
+      -- Condition for Czech Republic and Finland
+      cte1.country IN (&apos;Czech Republic&apos;, &apos;Finland&apos;, &apos;Austria&apos;, &apos;Singapore&apos;)
+      AND LOWER(cte1.name) LIKE CONCAT(&apos;%&apos;, LOWER(mapping.key_words), &apos;%&apos;)
+    )
+    OR
+    (
+      -- Condition for all other countries
+      cte1.country NOT IN (&apos;Czech Republic&apos;, &apos;Finland&apos;, &apos;Singapore&apos;)
+      AND LOWER(cte1.contract_addition__c) LIKE CONCAT(&apos;%&apos;, LOWER(mapping.key_words), &apos;%&apos;)
+    )
+  )
+)
+
+SELECT 
+lao.global_entity_id,
+lao.country,
+lao.sf_opportunity_owner_id, 
+lao.full_name_internal_non_pii, 
+lao.user_type, 
+lao.activation_date,
+lao.sf_opportunity_id,
+lao.vendor_grade,
+lao.vendor_code,
+
+deals_final.product
+FROM `fulfillment-dwh-production.pandata_report.sales_lead_account_opp_aggregated` AS lao
+LEFT JOIN deals_final
+       ON  lao.global_entity_id = deals_final.global_entity_id 
+      AND  lao.sf_opportunity_id = deals_final.opportunity__c
+
+WHERE is_closed
+  AND is_won
+  AND    ((lao.country IN (&apos;Hong Kong&apos;, &apos;Finland&apos;)
+    AND opportunity_business_type IN (&apos;Legal Form Change&apos;, &apos;New Business&apos;, &apos;Owner Change&apos;, &apos;Win Back&apos;))
+    OR
+    (lao.country NOT IN (&apos;Hong Kong&apos;, &apos;Finland&apos;)
+     AND opportunity_business_type IN (&apos;New Business&apos;, &apos;Win Back&apos;)))
+  AND vendor_type = &apos;Restaurants&apos;
+  AND vertical_segment != &apos;caterers&apos;
+  AND DATE_TRUNC(activation_date, MONTH) &gt;&gt;= &quot;2024-01-01&quot;</_.fcp.ObjectModelEncapsulateLegacy.true...relation>
+        <metadata-records>
+          <metadata-record class='column'>
+            <remote-name>global_entity_id</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[global_entity_id]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>global_entity_id</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_4FA323C6ACFC40D7A8DE7BA85A91F7E0]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>country</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[country]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>country</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_4FA323C6ACFC40D7A8DE7BA85A91F7E0]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>sf_opportunity_owner_id</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[sf_opportunity_owner_id]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>sf_opportunity_owner_id</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_4FA323C6ACFC40D7A8DE7BA85A91F7E0]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>full_name_internal_non_pii</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[full_name_internal_non_pii]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>full_name_internal_non_pii</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_4FA323C6ACFC40D7A8DE7BA85A91F7E0]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>user_type</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[user_type]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>user_type</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_4FA323C6ACFC40D7A8DE7BA85A91F7E0]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>activation_date</remote-name>
+            <remote-type>7</remote-type>
+            <local-name>[activation_date]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>activation_date</remote-alias>
+            <local-type>date</local-type>
+            <aggregation>Year</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_4FA323C6ACFC40D7A8DE7BA85A91F7E0]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>sf_opportunity_id</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[sf_opportunity_id]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>sf_opportunity_id</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_4FA323C6ACFC40D7A8DE7BA85A91F7E0]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>vendor_grade</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[vendor_grade]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>vendor_grade</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_4FA323C6ACFC40D7A8DE7BA85A91F7E0]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>vendor_code</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[vendor_code]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>vendor_code</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_4FA323C6ACFC40D7A8DE7BA85A91F7E0]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>product</remote-name>
+            <remote-type>130</remote-type>
+            <local-name>[product]</local-name>
+            <parent-name>[Custom SQL Query]</parent-name>
+            <remote-alias>product</remote-alias>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_4FA323C6ACFC40D7A8DE7BA85A91F7E0]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+          </metadata-record>
+        </metadata-records>
+      </connection>
+      <aliases enabled='yes' />
+      <column caption='% deals' datatype='real' name='[% ads (copy)_233835384171593734]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='[Calculation_233835384170827776]/[Calculation_233835384171323396]' />
+      </column>
+      <column caption='% deal &amp; ads' datatype='real' name='[% deals (copy)_233835384171634695]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='[count ads (copy)_233835384171053058]/[Calculation_233835384171323396]' />
+      </column>
+      <column caption='count deal' datatype='integer' name='[Calculation_233835384170827776]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='COUNTD(IF [product] = &quot;Deal&quot; THEN [sf_opportunity_id] ELSE NULL END)' />
+      </column>
+      <column caption='# activations' datatype='integer' name='[Calculation_233835384171323396]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='COUNTD([sf_opportunity_id])' />
+      </column>
+      <column caption='% ads' datatype='real' name='[Calculation_233835384171409413]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='[count deal (copy)_233835384170987521]/[Calculation_233835384171323396]' />
+      </column>
+      <column caption='sum total %' datatype='real' name='[Calculation_6531556514492227584]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='[Calculation_233835384171409413]+[% deals (copy)_233835384171634695]+[% ads (copy)_233835384171593734]' />
+      </column>
+      <column caption='dup flag' datatype='integer' name='[Calculation_6531556514504888322]' role='measure' type='ordinal'>
+        <calculation class='tableau' formula='RANK_UNIQUE(MIN([sf_opportunity_id]))'>
+          <table-calc ordering-type='Rows' />
+        </calculation>
+      </column>
+      <_.fcp.ObjectModelTableType.true...column caption='Custom SQL Query' datatype='table' name='[__tableau_internal_object_id__].[_4FA323C6ACFC40D7A8DE7BA85A91F7E0]' role='measure' type='quantitative' />
+      <column caption='count deal &amp; ads' datatype='integer' name='[count ads (copy)_233835384171053058]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='COUNTD(IF [product] = &quot;Deal and Ads&quot; THEN [sf_opportunity_id] ELSE NULL END)' />
+      </column>
+      <column caption='count ads' datatype='integer' name='[count deal (copy)_233835384170987521]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='COUNTD(IF [product] = &quot;Ads&quot; THEN [sf_opportunity_id] ELSE NULL END)' />
+      </column>
+      <column datatype='string' name='[country]' role='dimension' semantic-role='[Country].[ISO3166_2]' type='nominal' />
+      <column datatype='string' name='[product]' role='dimension' type='nominal' />
+      <column aggregation='CountD' datatype='string' default-role='measure' default-type='quantitative' name='[sf_opportunity_id]' role='dimension' type='nominal' />
+      <column-instance column='[__tableau_internal_object_id__].[_4FA323C6ACFC40D7A8DE7BA85A91F7E0]' derivation='Count' name='[__tableau_internal_object_id__].[cnt:_4FA323C6ACFC40D7A8DE7BA85A91F7E0:qk]' pivot='key' type='quantitative' />
+      <column-instance column='[product]' derivation='None' name='[none:product:nk]' pivot='key' type='nominal' />
+      <column-instance column='[% ads (copy)_233835384171593734]' derivation='User' name='[usr:% ads (copy)_233835384171593734:qk]' pivot='key' type='quantitative' />
+      <column-instance column='[% deals (copy)_233835384171634695]' derivation='User' name='[usr:% deals (copy)_233835384171634695:qk]' pivot='key' type='quantitative' />
+      <column-instance column='[Calculation_233835384170827776]' derivation='User' name='[usr:Calculation_233835384170827776:qk]' pivot='key' type='quantitative' />
+      <column-instance column='[Calculation_233835384171323396]' derivation='User' name='[usr:Calculation_233835384171323396:qk]' pivot='key' type='quantitative' />
+      <column-instance column='[Calculation_233835384171409413]' derivation='User' name='[usr:Calculation_233835384171409413:qk]' pivot='key' type='quantitative' />
+      <column-instance column='[Calculation_6531556514492227584]' derivation='User' name='[usr:Calculation_6531556514492227584:qk]' pivot='key' type='quantitative' />
+      <column-instance column='[Calculation_6531556514504888322]' derivation='User' name='[usr:Calculation_6531556514504888322:ok]' pivot='key' type='ordinal'>
+        <table-calc ordering-type='Rows' />
+      </column-instance>
+      <column-instance column='[count ads (copy)_233835384171053058]' derivation='User' name='[usr:count ads (copy)_233835384171053058:qk]' pivot='key' type='quantitative' />
+      <column-instance column='[count deal (copy)_233835384170987521]' derivation='User' name='[usr:count deal (copy)_233835384170987521:qk]' pivot='key' type='quantitative' />
+      <extract _.fcp.ObjectModelExtractV2.true...object-id='' count='-1' enabled='true' units='records'>
+        <connection access_mode='readonly' author-locale='en_US' class='hyper' dbname='extract/ab/d0/{2982B9EE-A3DF-40B7-85D8-C07950DECDCC}/federated_17k3lcp0qwdcel116v4ap0.hyper' extract-engine='true' schema='Extract' sslmode='' tablename='Extract' update-time='09/15/2025 02:30:52 AM'>
+          <_.fcp.ObjectModelEncapsulateLegacy.false...relation name='Extract' table='[Extract].[Extract]' type='table' />
+          <_.fcp.ObjectModelEncapsulateLegacy.true...relation name='Extract' table='[Extract].[Extract]' type='table' />
+          <metadata-records>
+            <metadata-record class='column'>
+              <remote-name>global_entity_id</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[global_entity_id]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>global_entity_id</remote-alias>
+              <ordinal>0</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>17</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_4FA323C6ACFC40D7A8DE7BA85A91F7E0]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>country</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[country]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>country</remote-alias>
+              <ordinal>1</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>17</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_4FA323C6ACFC40D7A8DE7BA85A91F7E0]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>sf_opportunity_owner_id</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[sf_opportunity_owner_id]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>sf_opportunity_owner_id</remote-alias>
+              <ordinal>2</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>3098</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_4FA323C6ACFC40D7A8DE7BA85A91F7E0]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>full_name_internal_non_pii</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[full_name_internal_non_pii]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>full_name_internal_non_pii</remote-alias>
+              <ordinal>3</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>3332</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_4FA323C6ACFC40D7A8DE7BA85A91F7E0]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>user_type</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[user_type]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>user_type</remote-alias>
+              <ordinal>4</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>6</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_4FA323C6ACFC40D7A8DE7BA85A91F7E0]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>activation_date</remote-name>
+              <remote-type>133</remote-type>
+              <local-name>[activation_date]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>activation_date</remote-alias>
+              <ordinal>5</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>date</local-type>
+              <aggregation>Year</aggregation>
+              <approx-count>1957</approx-count>
+              <contains-null>true</contains-null>
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_4FA323C6ACFC40D7A8DE7BA85A91F7E0]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>sf_opportunity_id</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[sf_opportunity_id]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>sf_opportunity_id</remote-alias>
+              <ordinal>6</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>299526</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_4FA323C6ACFC40D7A8DE7BA85A91F7E0]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>vendor_grade</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[vendor_grade]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>vendor_grade</remote-alias>
+              <ordinal>7</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>7</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_4FA323C6ACFC40D7A8DE7BA85A91F7E0]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>vendor_code</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[vendor_code]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>vendor_code</remote-alias>
+              <ordinal>8</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>299526</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_4FA323C6ACFC40D7A8DE7BA85A91F7E0]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>product</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[product]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>product</remote-alias>
+              <ordinal>9</ordinal>
+              <family>Custom SQL Query</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>4</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LROOT' />
+              <_.fcp.ObjectModelEncapsulateLegacy.true...object-id>[_4FA323C6ACFC40D7A8DE7BA85A91F7E0]</_.fcp.ObjectModelEncapsulateLegacy.true...object-id>
+            </metadata-record>
+          </metadata-records>
+        </connection>
+      </extract>
+      <layout _.fcp.SchemaViewerObjectModel.false...dim-percentage='0.5' _.fcp.SchemaViewerObjectModel.false...measure-percentage='0.4' dim-ordering='alphabetic' measure-ordering='alphabetic' show-structure='true' />
+      <style>
+        <style-rule element='mark'>
+          <encoding attr='color' field='[none:product:nk]' type='palette'>
+            <map to='#3896c4'>
+              <bucket>&quot;Deal&quot;</bucket>
+            </map>
+            <map to='#4e79a7'>
+              <bucket>%null%</bucket>
+            </map>
+            <map to='#59a14f'>
+              <bucket>&quot;Deal and Ads&quot;</bucket>
+            </map>
+            <map to='#ba7e45'>
+              <bucket>&quot;Ads and Deal&quot;</bucket>
+            </map>
+            <map to='#f28e2b'>
+              <bucket>&quot;Ads&quot;</bucket>
+            </map>
+          </encoding>
+          <encoding attr='color' field='[:Measure Names]' palette='cyclic_10_0' type='palette'>
+            <map to='#1ba3c6'>
+              <bucket>&quot;[federated.17k3lcp0qwdcel116v4ap0thlqph].[usr:Calculation_233835384171409413:qk]&quot;</bucket>
+            </map>
+            <map to='#4f7cba'>
+              <bucket>&quot;[federated.17k3lcp0qwdcel116v4ap0thlqph].[usr:\% ads (copy)_233835384171593734:qk]&quot;</bucket>
+            </map>
+            <map to='#59a14f'>
+              <bucket>&quot;[federated.17k3lcp0qwdcel116v4ap0thlqph].[__tableau_internal_object_id__].[cnt:_4FA323C6ACFC40D7A8DE7BA85A91F7E0:qk]&quot;</bucket>
+            </map>
+            <map to='#76b7b2'>
+              <bucket>&quot;[federated.17k3lcp0qwdcel116v4ap0thlqph].[usr:Calculation_233835384171323396:qk]&quot;</bucket>
+            </map>
+            <map to='#9c755f'>
+              <bucket>&quot;[federated.17k3lcp0qwdcel116v4ap0thlqph].[usr:Calculation_6531556514504888322:ok]&quot;</bucket>
+            </map>
+            <map to='#b07aa1'>
+              <bucket>&quot;[federated.17k3lcp0qwdcel116v4ap0thlqph].[usr:Calculation_233835384170827776:qk]&quot;</bucket>
+            </map>
+            <map to='#bab0ac'>
+              <bucket>&quot;[federated.17k3lcp0qwdcel116v4ap0thlqph].[usr:Calculation_6531556514492227584:qk]&quot;</bucket>
+            </map>
+            <map to='#edc948'>
+              <bucket>&quot;[federated.17k3lcp0qwdcel116v4ap0thlqph].[usr:count deal (copy)_233835384170987521:qk]&quot;</bucket>
+            </map>
+            <map to='#f88113'>
+              <bucket>&quot;[federated.17k3lcp0qwdcel116v4ap0thlqph].[usr:\% deals (copy)_233835384171634695:qk]&quot;</bucket>
+            </map>
+            <map to='#ff9da7'>
+              <bucket>&quot;[federated.17k3lcp0qwdcel116v4ap0thlqph].[usr:count ads (copy)_233835384171053058:qk]&quot;</bucket>
+            </map>
+          </encoding>
+        </style-rule>
+      </style>
+      <semantic-values>
+        <semantic-value key='[Country].[Name]' value='&quot;Singapore&quot;' />
+      </semantic-values>
+      <_.fcp.ObjectModelEncapsulateLegacy.true...object-graph>
+        <objects>
+          <object caption='Custom SQL Query' id='_4FA323C6ACFC40D7A8DE7BA85A91F7E0'>
+            <properties context=''>
+              <relation connection='bigquery.0qtarb40fqy6t614c0b2w05p9vs6' name='Custom SQL Query' type='text'>WITH cte1 AS (
+SELECT 
+sf_add_on_services.country_code,
+sf_add_on_services.global_entity_id,
+countries.name AS country,
+sf_add_on_services.opportunity__c,
+sf_list_add_on.id_country__c, 
+sf_list_add_on.is_active__c, 
+sf_list_add_on.recordtypeid, 
+sf_list_add_on.name, 
+sf_list_add_on.contract_addition__c, 
+sf_list_add_on.type__c 
+FROM `fulfillment-dwh-production.curated_data_shared_salesforce.add_on_service__c` AS sf_add_on_services
+LEFT JOIN `fulfillment-dwh-production.curated_data_shared_salesforce.list_add_on__c` AS sf_list_add_on
+         ON sf_add_on_services.id_list_add_on__c = sf_list_add_on.id
+INNER JOIN `fulfillment-dwh-production.pandata_curated.shared_countries` AS countries
+        ON sf_add_on_services.global_entity_id = countries.global_entity_id 
+),
+
+deals_final AS (
+SELECT 
+cte1.*, mapping.product, mapping.key_words
+FROM cte1
+INNER JOIN `fulfillment-dwh-production.pandata_report.commercial__sales_packages_add_on` AS mapping
+ON cte1.country = mapping.country
+AND cte1.name = mapping.add_on_package_name
+AND cte1.type__c  = mapping.type
+AND (
+    (
+      -- Condition for Czech Republic and Finland
+      cte1.country IN (&apos;Czech Republic&apos;, &apos;Finland&apos;, &apos;Austria&apos;, &apos;Singapore&apos;)
+      AND LOWER(cte1.name) LIKE CONCAT(&apos;%&apos;, LOWER(mapping.key_words), &apos;%&apos;)
+    )
+    OR
+    (
+      -- Condition for all other countries
+      cte1.country NOT IN (&apos;Czech Republic&apos;, &apos;Finland&apos;, &apos;Singapore&apos;)
+      AND LOWER(cte1.contract_addition__c) LIKE CONCAT(&apos;%&apos;, LOWER(mapping.key_words), &apos;%&apos;)
+    )
+  )
+)
+
+SELECT 
+lao.global_entity_id,
+lao.country,
+lao.sf_opportunity_owner_id, 
+lao.full_name_internal_non_pii, 
+lao.user_type, 
+lao.activation_date,
+lao.sf_opportunity_id,
+lao.vendor_grade,
+lao.vendor_code,
+
+deals_final.product
+FROM `fulfillment-dwh-production.pandata_report.sales_lead_account_opp_aggregated` AS lao
+LEFT JOIN deals_final
+       ON  lao.global_entity_id = deals_final.global_entity_id 
+      AND  lao.sf_opportunity_id = deals_final.opportunity__c
+
+WHERE is_closed
+  AND is_won
+  AND    ((lao.country IN (&apos;Hong Kong&apos;, &apos;Finland&apos;)
+    AND opportunity_business_type IN (&apos;Legal Form Change&apos;, &apos;New Business&apos;, &apos;Owner Change&apos;, &apos;Win Back&apos;))
+    OR
+    (lao.country NOT IN (&apos;Hong Kong&apos;, &apos;Finland&apos;)
+     AND opportunity_business_type IN (&apos;New Business&apos;, &apos;Win Back&apos;)))
+  AND vendor_type = &apos;Restaurants&apos;
+  AND vertical_segment != &apos;caterers&apos;
+  AND DATE_TRUNC(activation_date, MONTH) &gt;&gt;= &quot;2024-01-01&quot;</relation>
+            </properties>
+            <properties context='extract'>
+              <relation name='Extract' table='[Extract].[Extract]' type='table' />
+            </properties>
+          </object>
+        </objects>
+      </_.fcp.ObjectModelEncapsulateLegacy.true...object-graph>
+    </datasource>
+  </datasources>
+  <worksheets>
+    <worksheet name='Sheet 1'>
+      <layout-options>
+        <title>
+          <formatted-text>
+            <run bold='true' fontcolor='#ffffff'>% Sales Packages Products (Ads, Deal) / Activations</run>
+          </formatted-text>
+        </title>
+      </layout-options>
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='ads deals % ' name='federated.17k3lcp0qwdcel116v4ap0thlqph' />
+          </datasources>
+          <datasource-dependencies datasource='federated.17k3lcp0qwdcel116v4ap0thlqph'>
+            <column caption='% deals' datatype='real' name='[% ads (copy)_233835384171593734]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='[Calculation_233835384170827776]/[Calculation_233835384171323396]' />
+            </column>
+            <column caption='% deal &amp; ads' datatype='real' name='[% deals (copy)_233835384171634695]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='[count ads (copy)_233835384171053058]/[Calculation_233835384171323396]' />
+            </column>
+            <column caption='count deal' datatype='integer' name='[Calculation_233835384170827776]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='COUNTD(IF [product] = &quot;Deal&quot; THEN [sf_opportunity_id] ELSE NULL END)' />
+            </column>
+            <column caption='# activations' datatype='integer' name='[Calculation_233835384171323396]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='COUNTD([sf_opportunity_id])' />
+            </column>
+            <column caption='% ads' datatype='real' name='[Calculation_233835384171409413]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='[count deal (copy)_233835384170987521]/[Calculation_233835384171323396]' />
+            </column>
+            <column datatype='date' name='[activation_date]' role='dimension' type='ordinal' />
+            <column caption='count deal &amp; ads' datatype='integer' name='[count ads (copy)_233835384171053058]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='COUNTD(IF [product] = &quot;Deal and Ads&quot; THEN [sf_opportunity_id] ELSE NULL END)' />
+            </column>
+            <column caption='count ads' datatype='integer' name='[count deal (copy)_233835384170987521]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='COUNTD(IF [product] = &quot;Ads&quot; THEN [sf_opportunity_id] ELSE NULL END)' />
+            </column>
+            <column datatype='string' name='[country]' role='dimension' semantic-role='[Country].[ISO3166_2]' type='nominal' />
+            <column-instance column='[activation_date]' derivation='Month' name='[mn:activation_date:ok]' pivot='key' type='ordinal' />
+            <column-instance column='[activation_date]' derivation='MY' name='[my:activation_date:ok]' pivot='key' type='ordinal' />
+            <column-instance column='[country]' derivation='None' name='[none:country:nk]' pivot='key' type='nominal' />
+            <column-instance column='[user_type]' derivation='None' name='[none:user_type:nk]' pivot='key' type='nominal' />
+            <column-instance column='[vendor_grade]' derivation='None' name='[none:vendor_grade:nk]' pivot='key' type='nominal' />
+            <column datatype='string' name='[product]' role='dimension' type='nominal' />
+            <column aggregation='CountD' datatype='string' default-role='measure' default-type='quantitative' name='[sf_opportunity_id]' role='dimension' type='nominal' />
+            <column-instance column='[activation_date]' derivation='Month-Trunc' name='[tmn:activation_date:ok]' pivot='key' type='ordinal' />
+            <column datatype='string' name='[user_type]' role='dimension' type='nominal' />
+            <column-instance column='[% ads (copy)_233835384171593734]' derivation='User' name='[usr:% ads (copy)_233835384171593734:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[% deals (copy)_233835384171634695]' derivation='User' name='[usr:% deals (copy)_233835384171634695:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[Calculation_233835384170827776]' derivation='User' name='[usr:Calculation_233835384170827776:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[Calculation_233835384171323396]' derivation='User' name='[usr:Calculation_233835384171323396:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[Calculation_233835384171409413]' derivation='User' name='[usr:Calculation_233835384171409413:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[count ads (copy)_233835384171053058]' derivation='User' name='[usr:count ads (copy)_233835384171053058:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[count deal (copy)_233835384170987521]' derivation='User' name='[usr:count deal (copy)_233835384170987521:qk]' pivot='key' type='quantitative' />
+            <column datatype='string' name='[vendor_grade]' role='dimension' type='nominal' />
+          </datasource-dependencies>
+          <filter class='categorical' column='[federated.17k3lcp0qwdcel116v4ap0thlqph].[:Measure Names]'>
+            <groupfilter function='union' user:op='manual'>
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.17k3lcp0qwdcel116v4ap0thlqph].[usr:Calculation_233835384171323396:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.17k3lcp0qwdcel116v4ap0thlqph].[usr:Calculation_233835384171409413:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.17k3lcp0qwdcel116v4ap0thlqph].[usr:\% ads (copy)_233835384171593734:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.17k3lcp0qwdcel116v4ap0thlqph].[usr:\% deals (copy)_233835384171634695:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.17k3lcp0qwdcel116v4ap0thlqph].[usr:count deal (copy)_233835384170987521:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.17k3lcp0qwdcel116v4ap0thlqph].[usr:Calculation_233835384170827776:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.17k3lcp0qwdcel116v4ap0thlqph].[usr:count ads (copy)_233835384171053058:qk]&quot;' />
+            </groupfilter>
+          </filter>
+          <manual-sort column='[federated.17k3lcp0qwdcel116v4ap0thlqph].[:Measure Names]' direction='ASC'>
+            <dictionary>
+              <bucket>&quot;[federated.17k3lcp0qwdcel116v4ap0thlqph].[usr:Calculation_233835384171323396:qk]&quot;</bucket>
+              <bucket>&quot;[federated.17k3lcp0qwdcel116v4ap0thlqph].[usr:Calculation_233835384171409413:qk]&quot;</bucket>
+              <bucket>&quot;[federated.17k3lcp0qwdcel116v4ap0thlqph].[usr:\% ads (copy)_233835384171593734:qk]&quot;</bucket>
+              <bucket>&quot;[federated.17k3lcp0qwdcel116v4ap0thlqph].[usr:\% deals (copy)_233835384171634695:qk]&quot;</bucket>
+              <bucket>&quot;[federated.17k3lcp0qwdcel116v4ap0thlqph].[usr:count deal (copy)_233835384170987521:qk]&quot;</bucket>
+              <bucket>&quot;[federated.17k3lcp0qwdcel116v4ap0thlqph].[usr:Calculation_233835384170827776:qk]&quot;</bucket>
+              <bucket>&quot;[federated.17k3lcp0qwdcel116v4ap0thlqph].[usr:count ads (copy)_233835384171053058:qk]&quot;</bucket>
+            </dictionary>
+          </manual-sort>
+          <filter class='categorical' column='[federated.17k3lcp0qwdcel116v4ap0thlqph].[my:activation_date:ok]' filter-group='6'>
+            <groupfilter function='union' user:ui-domain='relevant' user:ui-enumeration='inclusive' user:ui-marker='enumerate'>
+              <groupfilter function='member' level='[my:activation_date:ok]' member='202501' />
+              <groupfilter function='member' level='[my:activation_date:ok]' member='202502' />
+              <groupfilter function='member' level='[my:activation_date:ok]' member='202503' />
+              <groupfilter function='member' level='[my:activation_date:ok]' member='202504' />
+              <groupfilter function='member' level='[my:activation_date:ok]' member='202505' />
+              <groupfilter function='member' level='[my:activation_date:ok]' member='202506' />
+              <groupfilter function='member' level='[my:activation_date:ok]' member='202507' />
+              <groupfilter function='member' level='[my:activation_date:ok]' member='202508' />
+            </groupfilter>
+          </filter>
+          <filter class='categorical' column='[federated.17k3lcp0qwdcel116v4ap0thlqph].[none:country:nk]' filter-group='4'>
+            <groupfilter function='level-members' level='[none:country:nk]' user:ui-enumeration='all' user:ui-marker='enumerate' />
+          </filter>
+          <filter class='categorical' column='[federated.17k3lcp0qwdcel116v4ap0thlqph].[none:user_type:nk]' filter-group='3'>
+            <groupfilter function='member' level='[none:user_type:nk]' member='&quot;field rep&quot;' user:ui-domain='relevant' user:ui-enumeration='inclusive' user:ui-marker='enumerate' />
+          </filter>
+          <filter class='categorical' column='[federated.17k3lcp0qwdcel116v4ap0thlqph].[none:vendor_grade:nk]' filter-group='5'>
+            <groupfilter function='level-members' level='[none:vendor_grade:nk]' user:ui-enumeration='all' user:ui-marker='enumerate' />
+          </filter>
+          <slices>
+            <column>[federated.17k3lcp0qwdcel116v4ap0thlqph].[none:user_type:nk]</column>
+            <column>[federated.17k3lcp0qwdcel116v4ap0thlqph].[my:activation_date:ok]</column>
+            <column>[federated.17k3lcp0qwdcel116v4ap0thlqph].[:Measure Names]</column>
+            <column>[federated.17k3lcp0qwdcel116v4ap0thlqph].[none:vendor_grade:nk]</column>
+            <column>[federated.17k3lcp0qwdcel116v4ap0thlqph].[none:country:nk]</column>
+          </slices>
+          <aggregation value='true' />
+        </view>
+        <style>
+          <style-rule element='cell'>
+            <format attr='width' field='[federated.17k3lcp0qwdcel116v4ap0thlqph].[mn:activation_date:ok]' value='75' />
+            <format attr='width' field='[federated.17k3lcp0qwdcel116v4ap0thlqph].[tmn:activation_date:ok]' value='70' />
+            <format attr='text-format' field='[federated.17k3lcp0qwdcel116v4ap0thlqph].[usr:Calculation_233835384171409413:qk]' value='p0.0%' />
+            <format attr='text-format' field='[federated.17k3lcp0qwdcel116v4ap0thlqph].[usr:% deals (copy)_233835384171634695:qk]' value='p0.0%' />
+            <format attr='text-format' field='[federated.17k3lcp0qwdcel116v4ap0thlqph].[usr:% ads (copy)_233835384171593734:qk]' value='p0.0%' />
+          </style-rule>
+          <style-rule element='label'>
+            <format attr='text-format' field='[federated.17k3lcp0qwdcel116v4ap0thlqph].[tmn:activation_date:ok]' value='*MMM-YY' />
+          </style-rule>
+        </style>
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Automatic' />
+            <encodings>
+              <text column='[federated.17k3lcp0qwdcel116v4ap0thlqph].[Multiple Values]' />
+            </encodings>
+            <style>
+              <style-rule element='mark'>
+                <format attr='mark-labels-cull' value='true' />
+                <format attr='mark-labels-show' value='true' />
+              </style-rule>
+              <style-rule element='pane'>
+                <format attr='minwidth' value='-1' />
+                <format attr='maxwidth' value='-1' />
+              </style-rule>
+            </style>
+          </pane>
+        </panes>
+        <rows>([federated.17k3lcp0qwdcel116v4ap0thlqph].[none:country:nk] / [federated.17k3lcp0qwdcel116v4ap0thlqph].[:Measure Names])</rows>
+        <cols>[federated.17k3lcp0qwdcel116v4ap0thlqph].[tmn:activation_date:ok]</cols>
+      </table>
+      <simple-id uuid='{32A48A4C-BA28-4E77-A7F6-7E29183690F5}' />
+    </worksheet>
+    <worksheet name='Sheet 2'>
+      <layout-options>
+        <title>
+          <formatted-text>
+            <run bold='true' fontcolor='#ffffff'>MoM % Activations with Sales Packages </run>
+          </formatted-text>
+        </title>
+      </layout-options>
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='ads deals % ' name='federated.17k3lcp0qwdcel116v4ap0thlqph' />
+          </datasources>
+          <datasource-dependencies datasource='federated.17k3lcp0qwdcel116v4ap0thlqph'>
+            <column caption='% deals' datatype='real' name='[% ads (copy)_233835384171593734]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='[Calculation_233835384170827776]/[Calculation_233835384171323396]' />
+            </column>
+            <column caption='% deal &amp; ads' datatype='real' name='[% deals (copy)_233835384171634695]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='[count ads (copy)_233835384171053058]/[Calculation_233835384171323396]' />
+            </column>
+            <column caption='count deal' datatype='integer' name='[Calculation_233835384170827776]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='COUNTD(IF [product] = &quot;Deal&quot; THEN [sf_opportunity_id] ELSE NULL END)' />
+            </column>
+            <column caption='# activations' datatype='integer' name='[Calculation_233835384171323396]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='COUNTD([sf_opportunity_id])' />
+            </column>
+            <column caption='% ads' datatype='real' name='[Calculation_233835384171409413]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='[count deal (copy)_233835384170987521]/[Calculation_233835384171323396]' />
+            </column>
+            <column datatype='date' name='[activation_date]' role='dimension' type='ordinal' />
+            <column caption='count deal &amp; ads' datatype='integer' name='[count ads (copy)_233835384171053058]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='COUNTD(IF [product] = &quot;Deal and Ads&quot; THEN [sf_opportunity_id] ELSE NULL END)' />
+            </column>
+            <column caption='count ads' datatype='integer' name='[count deal (copy)_233835384170987521]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='COUNTD(IF [product] = &quot;Ads&quot; THEN [sf_opportunity_id] ELSE NULL END)' />
+            </column>
+            <column datatype='string' name='[country]' role='dimension' semantic-role='[Country].[ISO3166_2]' type='nominal' />
+            <column-instance column='[activation_date]' derivation='MY' name='[my:activation_date:ok]' pivot='key' type='ordinal' />
+            <column-instance column='[country]' derivation='None' name='[none:country:nk]' pivot='key' type='nominal' />
+            <column-instance column='[user_type]' derivation='None' name='[none:user_type:nk]' pivot='key' type='nominal' />
+            <column-instance column='[vendor_grade]' derivation='None' name='[none:vendor_grade:nk]' pivot='key' type='nominal' />
+            <column datatype='string' name='[product]' role='dimension' type='nominal' />
+            <column aggregation='CountD' datatype='string' default-role='measure' default-type='quantitative' name='[sf_opportunity_id]' role='dimension' type='nominal' />
+            <column-instance column='[activation_date]' derivation='Month-Trunc' name='[tmn:activation_date:ok]' pivot='key' type='ordinal' />
+            <column datatype='string' name='[user_type]' role='dimension' type='nominal' />
+            <column-instance column='[% ads (copy)_233835384171593734]' derivation='User' name='[usr:% ads (copy)_233835384171593734:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[% deals (copy)_233835384171634695]' derivation='User' name='[usr:% deals (copy)_233835384171634695:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[Calculation_233835384171409413]' derivation='User' name='[usr:Calculation_233835384171409413:qk]' pivot='key' type='quantitative' />
+            <column datatype='string' name='[vendor_grade]' role='dimension' type='nominal' />
+          </datasource-dependencies>
+          <filter class='categorical' column='[federated.17k3lcp0qwdcel116v4ap0thlqph].[:Measure Names]'>
+            <groupfilter function='union' user:op='manual'>
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.17k3lcp0qwdcel116v4ap0thlqph].[usr:Calculation_233835384171409413:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.17k3lcp0qwdcel116v4ap0thlqph].[usr:\% deals (copy)_233835384171634695:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.17k3lcp0qwdcel116v4ap0thlqph].[usr:\% ads (copy)_233835384171593734:qk]&quot;' />
+            </groupfilter>
+          </filter>
+          <filter class='categorical' column='[federated.17k3lcp0qwdcel116v4ap0thlqph].[my:activation_date:ok]' filter-group='6'>
+            <groupfilter function='union' user:ui-domain='relevant' user:ui-enumeration='inclusive' user:ui-marker='enumerate'>
+              <groupfilter function='member' level='[my:activation_date:ok]' member='202501' />
+              <groupfilter function='member' level='[my:activation_date:ok]' member='202502' />
+              <groupfilter function='member' level='[my:activation_date:ok]' member='202503' />
+              <groupfilter function='member' level='[my:activation_date:ok]' member='202504' />
+              <groupfilter function='member' level='[my:activation_date:ok]' member='202505' />
+              <groupfilter function='member' level='[my:activation_date:ok]' member='202506' />
+              <groupfilter function='member' level='[my:activation_date:ok]' member='202507' />
+              <groupfilter function='member' level='[my:activation_date:ok]' member='202508' />
+            </groupfilter>
+          </filter>
+          <filter class='categorical' column='[federated.17k3lcp0qwdcel116v4ap0thlqph].[none:country:nk]' filter-group='4'>
+            <groupfilter function='level-members' level='[none:country:nk]' user:ui-enumeration='all' user:ui-marker='enumerate' />
+          </filter>
+          <filter class='categorical' column='[federated.17k3lcp0qwdcel116v4ap0thlqph].[none:user_type:nk]' filter-group='3'>
+            <groupfilter function='member' level='[none:user_type:nk]' member='&quot;field rep&quot;' user:ui-domain='relevant' user:ui-enumeration='inclusive' user:ui-marker='enumerate' />
+          </filter>
+          <filter class='categorical' column='[federated.17k3lcp0qwdcel116v4ap0thlqph].[none:vendor_grade:nk]' filter-group='5'>
+            <groupfilter function='level-members' level='[none:vendor_grade:nk]' user:ui-enumeration='all' user:ui-marker='enumerate' />
+          </filter>
+          <slices>
+            <column>[federated.17k3lcp0qwdcel116v4ap0thlqph].[my:activation_date:ok]</column>
+            <column>[federated.17k3lcp0qwdcel116v4ap0thlqph].[none:user_type:nk]</column>
+            <column>[federated.17k3lcp0qwdcel116v4ap0thlqph].[:Measure Names]</column>
+            <column>[federated.17k3lcp0qwdcel116v4ap0thlqph].[none:country:nk]</column>
+            <column>[federated.17k3lcp0qwdcel116v4ap0thlqph].[none:vendor_grade:nk]</column>
+          </slices>
+          <aggregation value='true' />
+        </view>
+        <style>
+          <style-rule element='axis'>
+            <format attr='display' class='0' field='[federated.17k3lcp0qwdcel116v4ap0thlqph].[Multiple Values]' scope='rows' value='false' />
+          </style-rule>
+          <style-rule element='cell'>
+            <format attr='text-format' field='[federated.17k3lcp0qwdcel116v4ap0thlqph].[Multiple Values]' value='p0.00%' />
+            <format attr='width' field='[federated.17k3lcp0qwdcel116v4ap0thlqph].[tmn:activation_date:ok]' value='77' />
+          </style-rule>
+          <style-rule element='refline'>
+            <format attr='fill-above' id='refline1' value='#00000000' />
+            <format attr='fill-below' id='refline1' value='#00000000' />
+            <format attr='fill-above' id='refline2' value='#00000000' />
+            <format attr='fill-below' id='refline2' value='#00000000' />
+            <format attr='fill-above' id='refline0' value='#00000000' />
+            <format attr='fill-below' id='refline0' value='#00000000' />
+            <format attr='stroke-size' id='refline0' value='3' />
+            <format attr='fill-above' id='refline0' value='#00000000' />
+            <format attr='fill-below' id='refline0' value='#00000000' />
+          </style-rule>
+          <style-rule element='title'>
+            <format attr='background-color' value='#a6007e' />
+          </style-rule>
+        </style>
+        <panes>
+          <pane id='4' selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Bar' />
+            <encodings>
+              <color column='[federated.17k3lcp0qwdcel116v4ap0thlqph].[:Measure Names]' />
+              <text column='[federated.17k3lcp0qwdcel116v4ap0thlqph].[Multiple Values]' />
+            </encodings>
+            <reference-line axis-column='[federated.17k3lcp0qwdcel116v4ap0thlqph].[Multiple Values]' enable-instant-analytics='true' formula='sum' id='refline0' label-type='value' scope='per-cell' value-column='[federated.17k3lcp0qwdcel116v4ap0thlqph].[Multiple Values]' z-order='1' />
+            <style>
+              <style-rule element='mark'>
+                <format attr='mark-labels-show' value='true' />
+                <format attr='mark-labels-cull' value='true' />
+              </style-rule>
+              <style-rule element='pane'>
+                <format attr='minwidth' value='-1' />
+                <format attr='maxwidth' value='-1' />
+              </style-rule>
+            </style>
+          </pane>
+        </panes>
+        <rows>[federated.17k3lcp0qwdcel116v4ap0thlqph].[Multiple Values]</rows>
+        <cols>[federated.17k3lcp0qwdcel116v4ap0thlqph].[tmn:activation_date:ok]</cols>
+      </table>
+      <simple-id uuid='{09C20C40-7E35-4FA9-8623-4BE74529F0C7}' />
+    </worksheet>
+    <worksheet name='Sheet 2 (2)'>
+      <layout-options>
+        <title>
+          <formatted-text>
+            <run bold='true' fontcolor='#ffffff'>Country View</run>
+          </formatted-text>
+        </title>
+      </layout-options>
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='ads deals % ' name='federated.17k3lcp0qwdcel116v4ap0thlqph' />
+          </datasources>
+          <datasource-dependencies datasource='federated.17k3lcp0qwdcel116v4ap0thlqph'>
+            <column datatype='date' name='[activation_date]' role='dimension' type='ordinal' />
+            <column datatype='string' name='[country]' role='dimension' semantic-role='[Country].[ISO3166_2]' type='nominal' />
+            <column-instance column='[sf_opportunity_id]' derivation='CountD' name='[ctd:sf_opportunity_id:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[activation_date]' derivation='MY' name='[my:activation_date:ok]' pivot='key' type='ordinal' />
+            <column-instance column='[country]' derivation='None' name='[none:country:nk]' pivot='key' type='nominal' />
+            <column-instance column='[product]' derivation='None' name='[none:product:nk]' pivot='key' type='nominal' />
+            <column-instance column='[sf_opportunity_id]' derivation='CountD' name='[pcto:ctd:sf_opportunity_id:qk:4]' pivot='key' type='quantitative'>
+              <table-calc ordering-type='Table' type='PctTotal' />
+            </column-instance>
+            <column datatype='string' name='[product]' role='dimension' type='nominal' />
+            <column aggregation='CountD' datatype='string' default-role='measure' default-type='quantitative' name='[sf_opportunity_id]' role='dimension' type='nominal' />
+          </datasource-dependencies>
+          <filter class='categorical' column='[federated.17k3lcp0qwdcel116v4ap0thlqph].[my:activation_date:ok]'>
+            <groupfilter function='member' level='[my:activation_date:ok]' member='202508' user:ui-domain='relevant' user:ui-enumeration='inclusive' user:ui-marker='enumerate' />
+          </filter>
+          <computed-sort column='[federated.17k3lcp0qwdcel116v4ap0thlqph].[none:country:nk]' direction='DESC' using='[federated.17k3lcp0qwdcel116v4ap0thlqph].[ctd:sf_opportunity_id:qk]' />
+          <filter class='categorical' column='[federated.17k3lcp0qwdcel116v4ap0thlqph].[none:product:nk]'>
+            <groupfilter function='union' user:ui-domain='relevant' user:ui-enumeration='inclusive' user:ui-marker='enumerate'>
+              <groupfilter function='member' level='[none:product:nk]' member='&quot;Ads&quot;' />
+              <groupfilter function='member' level='[none:product:nk]' member='&quot;Deal&quot;' />
+              <groupfilter function='member' level='[none:product:nk]' member='&quot;Deal and Ads&quot;' />
+            </groupfilter>
+          </filter>
+          <slices>
+            <column>[federated.17k3lcp0qwdcel116v4ap0thlqph].[none:product:nk]</column>
+            <column>[federated.17k3lcp0qwdcel116v4ap0thlqph].[my:activation_date:ok]</column>
+          </slices>
+          <aggregation value='true' />
+        </view>
+        <style>
+          <style-rule element='axis'>
+            <format attr='display' class='0' field='[federated.17k3lcp0qwdcel116v4ap0thlqph].[ctd:sf_opportunity_id:qk]' scope='rows' value='false' />
+          </style-rule>
+          <style-rule element='refline'>
+            <format attr='fill-above' id='refline0' value='#00000000' />
+            <format attr='fill-below' id='refline0' value='#00000000' />
+            <format attr='fill-above' id='refline1' value='#00000000' />
+            <format attr='fill-below' id='refline1' value='#00000000' />
+            <format attr='fill-above' id='refline2' value='#00000000' />
+            <format attr='fill-below' id='refline2' value='#00000000' />
+          </style-rule>
+          <style-rule element='title'>
+            <format attr='background-color' value='#a6007e' />
+          </style-rule>
+        </style>
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Bar' />
+            <encodings>
+              <color column='[federated.17k3lcp0qwdcel116v4ap0thlqph].[none:product:nk]' />
+              <text column='[federated.17k3lcp0qwdcel116v4ap0thlqph].[pcto:ctd:sf_opportunity_id:qk:4]' />
+            </encodings>
+            <reference-line axis-column='[federated.17k3lcp0qwdcel116v4ap0thlqph].[ctd:sf_opportunity_id:qk]' enable-instant-analytics='true' formula='sum' id='refline0' label-type='none' scope='per-cell' value-column='[federated.17k3lcp0qwdcel116v4ap0thlqph].[pcto:ctd:sf_opportunity_id:qk:4]' z-order='1' />
+            <reference-line axis-column='[federated.17k3lcp0qwdcel116v4ap0thlqph].[ctd:sf_opportunity_id:qk]' enable-instant-analytics='true' formula='sum' id='refline2' label-type='value' scope='per-cell' value-column='[federated.17k3lcp0qwdcel116v4ap0thlqph].[pcto:ctd:sf_opportunity_id:qk:4]' z-order='2' />
+            <style>
+              <style-rule element='mark'>
+                <format attr='mark-labels-show' value='true' />
+                <format attr='mark-labels-cull' value='true' />
+              </style-rule>
+              <style-rule element='pane'>
+                <format attr='minwidth' value='-1' />
+                <format attr='maxwidth' value='-1' />
+              </style-rule>
+            </style>
+          </pane>
+        </panes>
+        <rows total='true'>[federated.17k3lcp0qwdcel116v4ap0thlqph].[ctd:sf_opportunity_id:qk]</rows>
+        <cols>[federated.17k3lcp0qwdcel116v4ap0thlqph].[none:country:nk]</cols>
+      </table>
+      <simple-id uuid='{F1EDE22B-25C7-4F49-B700-A29806146FDE}' />
+    </worksheet>
+    <worksheet name='Sheet 2 (3)'>
+      <layout-options>
+        <title>
+          <formatted-text>
+            <run bold='true' fontcolor='#ffffff'>Country with Sales Packages </run>
+          </formatted-text>
+        </title>
+      </layout-options>
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='ads deals % ' name='federated.17k3lcp0qwdcel116v4ap0thlqph' />
+          </datasources>
+          <datasource-dependencies datasource='federated.17k3lcp0qwdcel116v4ap0thlqph'>
+            <column caption='% deals' datatype='real' name='[% ads (copy)_233835384171593734]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='[Calculation_233835384170827776]/[Calculation_233835384171323396]' />
+            </column>
+            <column caption='% deal &amp; ads' datatype='real' name='[% deals (copy)_233835384171634695]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='[count ads (copy)_233835384171053058]/[Calculation_233835384171323396]' />
+            </column>
+            <column caption='count deal' datatype='integer' name='[Calculation_233835384170827776]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='COUNTD(IF [product] = &quot;Deal&quot; THEN [sf_opportunity_id] ELSE NULL END)' />
+            </column>
+            <column caption='# activations' datatype='integer' name='[Calculation_233835384171323396]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='COUNTD([sf_opportunity_id])' />
+            </column>
+            <column caption='% ads' datatype='real' name='[Calculation_233835384171409413]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='[count deal (copy)_233835384170987521]/[Calculation_233835384171323396]' />
+            </column>
+            <column caption='sum total %' datatype='real' name='[Calculation_6531556514492227584]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='[Calculation_233835384171409413]+[% deals (copy)_233835384171634695]+[% ads (copy)_233835384171593734]' />
+            </column>
+            <column datatype='date' name='[activation_date]' role='dimension' type='ordinal' />
+            <column caption='count deal &amp; ads' datatype='integer' name='[count ads (copy)_233835384171053058]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='COUNTD(IF [product] = &quot;Deal and Ads&quot; THEN [sf_opportunity_id] ELSE NULL END)' />
+            </column>
+            <column caption='count ads' datatype='integer' name='[count deal (copy)_233835384170987521]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='COUNTD(IF [product] = &quot;Ads&quot; THEN [sf_opportunity_id] ELSE NULL END)' />
+            </column>
+            <column datatype='string' name='[country]' role='dimension' semantic-role='[Country].[ISO3166_2]' type='nominal' />
+            <column-instance column='[activation_date]' derivation='MY' name='[my:activation_date:ok]' pivot='key' type='ordinal' />
+            <column-instance column='[country]' derivation='None' name='[none:country:nk]' pivot='key' type='nominal' />
+            <column-instance column='[user_type]' derivation='None' name='[none:user_type:nk]' pivot='key' type='nominal' />
+            <column-instance column='[vendor_grade]' derivation='None' name='[none:vendor_grade:nk]' pivot='key' type='nominal' />
+            <column datatype='string' name='[product]' role='dimension' type='nominal' />
+            <column aggregation='CountD' datatype='string' default-role='measure' default-type='quantitative' name='[sf_opportunity_id]' role='dimension' type='nominal' />
+            <column datatype='string' name='[user_type]' role='dimension' type='nominal' />
+            <column-instance column='[% ads (copy)_233835384171593734]' derivation='User' name='[usr:% ads (copy)_233835384171593734:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[% deals (copy)_233835384171634695]' derivation='User' name='[usr:% deals (copy)_233835384171634695:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[Calculation_233835384171409413]' derivation='User' name='[usr:Calculation_233835384171409413:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[Calculation_6531556514492227584]' derivation='User' name='[usr:Calculation_6531556514492227584:qk]' pivot='key' type='quantitative' />
+            <column datatype='string' name='[vendor_grade]' role='dimension' type='nominal' />
+          </datasource-dependencies>
+          <filter class='categorical' column='[federated.17k3lcp0qwdcel116v4ap0thlqph].[:Measure Names]'>
+            <groupfilter function='union' user:op='manual'>
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.17k3lcp0qwdcel116v4ap0thlqph].[usr:Calculation_233835384171409413:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.17k3lcp0qwdcel116v4ap0thlqph].[usr:\% deals (copy)_233835384171634695:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.17k3lcp0qwdcel116v4ap0thlqph].[usr:\% ads (copy)_233835384171593734:qk]&quot;' />
+            </groupfilter>
+          </filter>
+          <filter class='categorical' column='[federated.17k3lcp0qwdcel116v4ap0thlqph].[my:activation_date:ok]'>
+            <groupfilter function='member' level='[my:activation_date:ok]' member='202508' user:ui-domain='relevant' user:ui-enumeration='inclusive' user:ui-marker='enumerate' />
+          </filter>
+          <filter class='categorical' column='[federated.17k3lcp0qwdcel116v4ap0thlqph].[none:country:nk]' filter-group='4'>
+            <groupfilter function='level-members' level='[none:country:nk]' user:ui-enumeration='all' user:ui-marker='enumerate' />
+          </filter>
+          <computed-sort column='[federated.17k3lcp0qwdcel116v4ap0thlqph].[none:country:nk]' direction='DESC' using='[federated.17k3lcp0qwdcel116v4ap0thlqph].[usr:Calculation_6531556514492227584:qk]' />
+          <filter class='categorical' column='[federated.17k3lcp0qwdcel116v4ap0thlqph].[none:user_type:nk]' filter-group='3'>
+            <groupfilter function='member' level='[none:user_type:nk]' member='&quot;field rep&quot;' user:ui-domain='relevant' user:ui-enumeration='inclusive' user:ui-marker='enumerate' />
+          </filter>
+          <filter class='categorical' column='[federated.17k3lcp0qwdcel116v4ap0thlqph].[none:vendor_grade:nk]' filter-group='5'>
+            <groupfilter function='level-members' level='[none:vendor_grade:nk]' user:ui-enumeration='all' user:ui-marker='enumerate' />
+          </filter>
+          <slices>
+            <column>[federated.17k3lcp0qwdcel116v4ap0thlqph].[my:activation_date:ok]</column>
+            <column>[federated.17k3lcp0qwdcel116v4ap0thlqph].[none:user_type:nk]</column>
+            <column>[federated.17k3lcp0qwdcel116v4ap0thlqph].[:Measure Names]</column>
+            <column>[federated.17k3lcp0qwdcel116v4ap0thlqph].[none:country:nk]</column>
+            <column>[federated.17k3lcp0qwdcel116v4ap0thlqph].[none:vendor_grade:nk]</column>
+          </slices>
+          <aggregation value='true' />
+        </view>
+        <style>
+          <style-rule element='axis'>
+            <format attr='display' class='0' field='[federated.17k3lcp0qwdcel116v4ap0thlqph].[Multiple Values]' scope='rows' value='false' />
+          </style-rule>
+          <style-rule element='cell'>
+            <format attr='text-format' field='[federated.17k3lcp0qwdcel116v4ap0thlqph].[Multiple Values]' value='p0.00%' />
+          </style-rule>
+          <style-rule element='refline'>
+            <format attr='fill-above' id='refline1' value='#00000000' />
+            <format attr='fill-below' id='refline1' value='#00000000' />
+            <format attr='fill-above' id='refline2' value='#00000000' />
+            <format attr='fill-below' id='refline2' value='#00000000' />
+            <format attr='fill-above' id='refline0' value='#00000000' />
+            <format attr='fill-below' id='refline0' value='#00000000' />
+            <format attr='stroke-size' id='refline0' value='3' />
+            <format attr='fill-above' id='refline0' value='#00000000' />
+            <format attr='fill-below' id='refline0' value='#00000000' />
+          </style-rule>
+          <style-rule element='title'>
+            <format attr='background-color' value='#a6007e' />
+          </style-rule>
+        </style>
+        <panes>
+          <pane id='4' selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Bar' />
+            <encodings>
+              <color column='[federated.17k3lcp0qwdcel116v4ap0thlqph].[:Measure Names]' />
+              <text column='[federated.17k3lcp0qwdcel116v4ap0thlqph].[Multiple Values]' />
+            </encodings>
+            <reference-line axis-column='[federated.17k3lcp0qwdcel116v4ap0thlqph].[Multiple Values]' enable-instant-analytics='true' formula='sum' id='refline0' label-type='value' scope='per-cell' value-column='[federated.17k3lcp0qwdcel116v4ap0thlqph].[Multiple Values]' z-order='1' />
+            <style>
+              <style-rule element='mark'>
+                <format attr='mark-labels-show' value='true' />
+                <format attr='mark-labels-cull' value='true' />
+              </style-rule>
+              <style-rule element='pane'>
+                <format attr='minwidth' value='-1' />
+                <format attr='maxwidth' value='-1' />
+              </style-rule>
+            </style>
+          </pane>
+        </panes>
+        <rows>[federated.17k3lcp0qwdcel116v4ap0thlqph].[Multiple Values]</rows>
+        <cols>[federated.17k3lcp0qwdcel116v4ap0thlqph].[none:country:nk]</cols>
+      </table>
+      <simple-id uuid='{9224BCBE-A9B8-44E6-81AA-AEC462C59AD4}' />
+    </worksheet>
+    <worksheet name='Sheet 4'>
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='ads deals % ' name='federated.17k3lcp0qwdcel116v4ap0thlqph' />
+          </datasources>
+          <datasource-dependencies datasource='federated.17k3lcp0qwdcel116v4ap0thlqph'>
+            <column caption='% deals' datatype='real' name='[% ads (copy)_233835384171593734]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='[Calculation_233835384170827776]/[Calculation_233835384171323396]' />
+            </column>
+            <column caption='% deal &amp; ads' datatype='real' name='[% deals (copy)_233835384171634695]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='[count ads (copy)_233835384171053058]/[Calculation_233835384171323396]' />
+            </column>
+            <column caption='count deal' datatype='integer' name='[Calculation_233835384170827776]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='COUNTD(IF [product] = &quot;Deal&quot; THEN [sf_opportunity_id] ELSE NULL END)' />
+            </column>
+            <column caption='# activations' datatype='integer' name='[Calculation_233835384171323396]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='COUNTD([sf_opportunity_id])' />
+            </column>
+            <column caption='% ads' datatype='real' name='[Calculation_233835384171409413]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='[count deal (copy)_233835384170987521]/[Calculation_233835384171323396]' />
+            </column>
+            <column datatype='date' name='[activation_date]' role='dimension' type='ordinal' />
+            <column caption='count deal &amp; ads' datatype='integer' name='[count ads (copy)_233835384171053058]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='COUNTD(IF [product] = &quot;Deal and Ads&quot; THEN [sf_opportunity_id] ELSE NULL END)' />
+            </column>
+            <column caption='count ads' datatype='integer' name='[count deal (copy)_233835384170987521]' role='measure' type='quantitative'>
+              <calculation class='tableau' formula='COUNTD(IF [product] = &quot;Ads&quot; THEN [sf_opportunity_id] ELSE NULL END)' />
+            </column>
+            <column-instance column='[activation_date]' derivation='MY' name='[my:activation_date:ok]' pivot='key' type='ordinal' />
+            <column-instance column='[user_type]' derivation='None' name='[none:user_type:nk]' pivot='key' type='nominal' />
+            <column datatype='string' name='[product]' role='dimension' type='nominal' />
+            <column aggregation='CountD' datatype='string' default-role='measure' default-type='quantitative' name='[sf_opportunity_id]' role='dimension' type='nominal' />
+            <column datatype='string' name='[user_type]' role='dimension' type='nominal' />
+            <column-instance column='[% ads (copy)_233835384171593734]' derivation='User' name='[usr:% ads (copy)_233835384171593734:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[% deals (copy)_233835384171634695]' derivation='User' name='[usr:% deals (copy)_233835384171634695:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[Calculation_233835384170827776]' derivation='User' name='[usr:Calculation_233835384170827776:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[Calculation_233835384171323396]' derivation='User' name='[usr:Calculation_233835384171323396:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[Calculation_233835384171409413]' derivation='User' name='[usr:Calculation_233835384171409413:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[count ads (copy)_233835384171053058]' derivation='User' name='[usr:count ads (copy)_233835384171053058:qk]' pivot='key' type='quantitative' />
+            <column-instance column='[count deal (copy)_233835384170987521]' derivation='User' name='[usr:count deal (copy)_233835384170987521:qk]' pivot='key' type='quantitative' />
+          </datasource-dependencies>
+          <filter class='categorical' column='[federated.17k3lcp0qwdcel116v4ap0thlqph].[my:activation_date:ok]'>
+            <groupfilter function='member' level='[my:activation_date:ok]' member='202508' user:ui-domain='relevant' user:ui-enumeration='inclusive' user:ui-marker='enumerate' />
+          </filter>
+          <filter class='categorical' column='[federated.17k3lcp0qwdcel116v4ap0thlqph].[none:user_type:nk]'>
+            <groupfilter function='member' level='[none:user_type:nk]' member='&quot;field rep&quot;' user:ui-domain='relevant' user:ui-enumeration='inclusive' user:ui-marker='enumerate' />
+          </filter>
+          <slices>
+            <column>[federated.17k3lcp0qwdcel116v4ap0thlqph].[my:activation_date:ok]</column>
+            <column>[federated.17k3lcp0qwdcel116v4ap0thlqph].[none:user_type:nk]</column>
+          </slices>
+          <aggregation value='true' />
+        </view>
+        <style>
+          <style-rule element='cell'>
+            <format attr='width' value='140' />
+            <format attr='text-format' field='[federated.17k3lcp0qwdcel116v4ap0thlqph].[usr:Calculation_233835384171409413:qk]' value='p0.00%' />
+            <format attr='text-format' field='[federated.17k3lcp0qwdcel116v4ap0thlqph].[usr:% ads (copy)_233835384171593734:qk]' value='p0.00%' />
+            <format attr='text-format' field='[federated.17k3lcp0qwdcel116v4ap0thlqph].[usr:% deals (copy)_233835384171634695:qk]' value='p0.00%' />
+          </style-rule>
+        </style>
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Automatic' />
+            <encodings>
+              <text column='[federated.17k3lcp0qwdcel116v4ap0thlqph].[usr:count deal (copy)_233835384170987521:qk]' />
+              <text column='[federated.17k3lcp0qwdcel116v4ap0thlqph].[usr:Calculation_233835384171409413:qk]' />
+              <text column='[federated.17k3lcp0qwdcel116v4ap0thlqph].[usr:Calculation_233835384170827776:qk]' />
+              <text column='[federated.17k3lcp0qwdcel116v4ap0thlqph].[usr:% ads (copy)_233835384171593734:qk]' />
+              <text column='[federated.17k3lcp0qwdcel116v4ap0thlqph].[usr:count ads (copy)_233835384171053058:qk]' />
+              <text column='[federated.17k3lcp0qwdcel116v4ap0thlqph].[usr:% deals (copy)_233835384171634695:qk]' />
+              <text column='[federated.17k3lcp0qwdcel116v4ap0thlqph].[usr:Calculation_233835384171323396:qk]' />
+            </encodings>
+            <style>
+              <style-rule element='mark'>
+                <format attr='mark-labels-show' value='true' />
+              </style-rule>
+              <style-rule element='pane'>
+                <format attr='minwidth' value='-1' />
+                <format attr='maxwidth' value='-1' />
+              </style-rule>
+            </style>
+          </pane>
+        </panes>
+        <rows />
+        <cols />
+      </table>
+      <simple-id uuid='{627EA087-CAFA-44E7-82E1-5FFB3FAE2C99}' />
+    </worksheet>
+  </worksheets>
+  <dashboards>
+    <dashboard _.fcp.AccessibleZoneTabOrder.true...enable-sort-zone-taborder='true' name='Sales Packages'>
+      <repository-location id='SalesPackages' path='/t/Foodora/workbooks/DraftSalesPackagesAdd-onsAdsDealsv1' revision='' site='Foodora' />
+      <style />
+      <size maxheight='1900' maxwidth='1000' minheight='1900' minwidth='1000' sizing-mode='fixed' />
+      <datasources>
+        <datasource caption='ads deals % ' name='federated.17k3lcp0qwdcel116v4ap0thlqph' />
+      </datasources>
+      <datasource-dependencies datasource='federated.17k3lcp0qwdcel116v4ap0thlqph'>
+        <column datatype='date' name='[activation_date]' role='dimension' type='ordinal' />
+        <column datatype='string' name='[country]' role='dimension' semantic-role='[Country].[ISO3166_2]' type='nominal' />
+        <column-instance column='[activation_date]' derivation='MY' name='[my:activation_date:ok]' pivot='key' type='ordinal' />
+        <column-instance column='[country]' derivation='None' name='[none:country:nk]' pivot='key' type='nominal' />
+        <column-instance column='[user_type]' derivation='None' name='[none:user_type:nk]' pivot='key' type='nominal' />
+        <column-instance column='[vendor_grade]' derivation='None' name='[none:vendor_grade:nk]' pivot='key' type='nominal' />
+        <column datatype='string' name='[user_type]' role='dimension' type='nominal' />
+        <column datatype='string' name='[vendor_grade]' role='dimension' type='nominal' />
+      </datasource-dependencies>
+      <zones>
+        <zone h='100000' id='4' type-v2='layout-basic' w='100000' x='0' y='0'>
+          <zone h='99158' id='7' param='horz' type-v2='layout-flow' w='98400' x='800' y='421'>
+            <zone h='99158' id='5' type-v2='layout-basic' w='82400' x='800' y='421'>
+              <zone h='41943' id='3' name='Sheet 1' w='82400' x='800' y='421'>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                  <format attr='background-color' value='#a6007e' />
+                </zone-style>
+              </zone>
+              <zone h='32414' id='17' name='Sheet 2' w='82400' x='800' y='42364'>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+              <zone h='24801' id='29' name='Sheet 2 (3)' w='82400' x='800' y='74778'>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+            </zone>
+            <zone fixed-size='160' h='99158' id='21' is-fixed='true' type-v2='layout-basic' w='16000' x='83200' y='421'>
+              <zone h='49575' id='33' is-fixed='true' type-v2='layout-basic' w='16000' x='83200' y='421'>
+                <zone h='41947' id='6' param='vert' type-v2='layout-flow' w='16000' x='83200' y='421'>
+                  <zone h='2737' id='8' mode='checkdropdown' name='Sheet 1' param='[federated.17k3lcp0qwdcel116v4ap0thlqph].[none:user_type:nk]' show-apply='true' type-v2='filter' values='database' w='16000' x='83200' y='421'>
+                    <zone-style>
+                      <format attr='border-color' value='#000000' />
+                      <format attr='border-style' value='none' />
+                      <format attr='border-width' value='0' />
+                      <format attr='margin' value='4' />
+                    </zone-style>
+                  </zone>
+                  <zone h='2737' id='9' mode='checkdropdown' name='Sheet 1' param='[federated.17k3lcp0qwdcel116v4ap0thlqph].[none:country:nk]' show-apply='true' type-v2='filter' values='database' w='16000' x='83200' y='3158'>
+                    <zone-style>
+                      <format attr='border-color' value='#000000' />
+                      <format attr='border-style' value='none' />
+                      <format attr='border-width' value='0' />
+                      <format attr='margin' value='4' />
+                    </zone-style>
+                  </zone>
+                  <zone h='2737' id='10' mode='checkdropdown' name='Sheet 1' param='[federated.17k3lcp0qwdcel116v4ap0thlqph].[none:vendor_grade:nk]' show-apply='true' type-v2='filter' values='relevant' w='16000' x='83200' y='5895'>
+                    <zone-style>
+                      <format attr='border-color' value='#000000' />
+                      <format attr='border-style' value='none' />
+                      <format attr='border-width' value='0' />
+                      <format attr='margin' value='4' />
+                    </zone-style>
+                  </zone>
+                  <zone h='2737' id='25' mode='checkdropdown' name='Sheet 1' param='[federated.17k3lcp0qwdcel116v4ap0thlqph].[my:activation_date:ok]' show-apply='true' type-v2='filter' values='database' w='16000' x='83200' y='8632'>
+                    <zone-style>
+                      <format attr='border-color' value='#000000' />
+                      <format attr='border-style' value='none' />
+                      <format attr='border-width' value='0' />
+                      <format attr='margin' value='4' />
+                    </zone-style>
+                  </zone>
+                  <zone h='30999' id='20' type-v2='empty' w='16000' x='83200' y='11369'>
+                    <zone-style>
+                      <format attr='border-color' value='#000000' />
+                      <format attr='border-style' value='none' />
+                      <format attr='border-width' value='0' />
+                      <format attr='margin' value='4' />
+                    </zone-style>
+                  </zone>
+                </zone>
+                <zone h='7628' id='34' param='vert' type-v2='layout-flow' w='16000' x='83200' y='42368'>
+                  <zone h='4526' id='32' name='Sheet 2' pane-specification-id='4' param='[federated.17k3lcp0qwdcel116v4ap0thlqph].[:Measure Names]' type-v2='color' w='16000' x='83200' y='42368'>
+                    <zone-style>
+                      <format attr='border-color' value='#000000' />
+                      <format attr='border-style' value='none' />
+                      <format attr='border-width' value='0' />
+                      <format attr='margin' value='4' />
+                    </zone-style>
+                  </zone>
+                </zone>
+              </zone>
+              <zone h='25425' id='22' param='vert' type-v2='layout-flow' w='16000' x='83200' y='49996'>
+                <zone h='1158' id='18' name='Sheet 2' pane-specification-id='1' param='[federated.17k3lcp0qwdcel116v4ap0thlqph].[none:product:nk]' type-v2='color' w='16000' x='83200' y='49996'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                  </zone-style>
+                </zone>
+              </zone>
+              <zone h='24158' id='43' mode='dropdown' name='Sheet 2 (3)' param='[federated.17k3lcp0qwdcel116v4ap0thlqph].[my:activation_date:ok]' show-title='false' type-v2='filter' values='database' w='16000' x='83200' y='75421'>
+                <zone-style>
+                  <format attr='border-color' value='#000000' />
+                  <format attr='border-style' value='none' />
+                  <format attr='border-width' value='0' />
+                  <format attr='margin' value='4' />
+                </zone-style>
+              </zone>
+            </zone>
+          </zone>
+          <zone-style>
+            <format attr='border-color' value='#000000' />
+            <format attr='border-style' value='none' />
+            <format attr='border-width' value='0' />
+            <format attr='margin' value='8' />
+          </zone-style>
+        </zone>
+      </zones>
+      <devicelayouts>
+        <devicelayout auto-generated='true' name='Phone'>
+          <size maxheight='1300' minheight='1300' sizing-mode='vscroll' />
+          <zones>
+            <zone h='100000' id='45' type-v2='layout-basic' w='100000' x='0' y='0'>
+              <zone h='99158' id='44' param='vert' type-v2='layout-flow' w='98400' x='800' y='421'>
+                <zone h='2737' id='8' mode='checkdropdown' name='Sheet 1' param='[federated.17k3lcp0qwdcel116v4ap0thlqph].[none:user_type:nk]' show-apply='true' type-v2='filter' values='database' w='16000' x='83200' y='421'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone h='2737' id='9' mode='checkdropdown' name='Sheet 1' param='[federated.17k3lcp0qwdcel116v4ap0thlqph].[none:country:nk]' show-apply='true' type-v2='filter' values='database' w='16000' x='83200' y='3158'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone h='2737' id='10' mode='checkdropdown' name='Sheet 1' param='[federated.17k3lcp0qwdcel116v4ap0thlqph].[none:vendor_grade:nk]' show-apply='true' type-v2='filter' values='relevant' w='16000' x='83200' y='5895'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone h='2737' id='25' mode='checkdropdown' name='Sheet 1' param='[federated.17k3lcp0qwdcel116v4ap0thlqph].[my:activation_date:ok]' show-apply='true' type-v2='filter' values='database' w='16000' x='83200' y='8632'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone fixed-size='280' h='41943' id='3' is-fixed='true' name='Sheet 1' w='82400' x='800' y='421'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                    <format attr='background-color' value='#a6007e' />
+                  </zone-style>
+                </zone>
+                <zone fixed-size='280' h='32414' id='17' is-fixed='true' name='Sheet 2' w='82400' x='800' y='42364'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone h='4526' id='32' name='Sheet 2' pane-specification-id='4' param='[federated.17k3lcp0qwdcel116v4ap0thlqph].[:Measure Names]' type-v2='color' w='16000' x='83200' y='42368'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone h='1158' id='18' name='Sheet 2' pane-specification-id='1' param='[federated.17k3lcp0qwdcel116v4ap0thlqph].[none:product:nk]' type-v2='color' w='16000' x='83200' y='49996'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone h='24158' id='43' mode='dropdown' name='Sheet 2 (3)' param='[federated.17k3lcp0qwdcel116v4ap0thlqph].[my:activation_date:ok]' show-title='false' type-v2='filter' values='database' w='16000' x='83200' y='75421'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+                <zone fixed-size='280' h='24801' id='29' is-fixed='true' name='Sheet 2 (3)' w='82400' x='800' y='74778'>
+                  <zone-style>
+                    <format attr='border-color' value='#000000' />
+                    <format attr='border-style' value='none' />
+                    <format attr='border-width' value='0' />
+                    <format attr='margin' value='4' />
+                    <format attr='padding' value='0' />
+                  </zone-style>
+                </zone>
+              </zone>
+              <zone-style>
+                <format attr='border-color' value='#000000' />
+                <format attr='border-style' value='none' />
+                <format attr='border-width' value='0' />
+                <format attr='margin' value='8' />
+              </zone-style>
+            </zone>
+          </zones>
+        </devicelayout>
+      </devicelayouts>
+      <simple-id uuid='{4B2ECF56-F9D9-4303-A1C6-CB9282929552}' />
+    </dashboard>
+  </dashboards>
+  <windows source-height='30'>
+    <window class='worksheet' name='Sheet 1'>
+      <cards>
+        <edge name='left'>
+          <strip size='160'>
+            <card type='pages' />
+            <card type='filters' />
+            <card type='marks' />
+            <card type='measures' />
+          </strip>
+        </edge>
+        <edge name='top'>
+          <strip size='2147483647'>
+            <card type='columns' />
+          </strip>
+          <strip size='2147483647'>
+            <card type='rows' />
+          </strip>
+          <strip size='2147483647'>
+            <card type='title' />
+          </strip>
+        </edge>
+      </cards>
+      <viewpoint>
+        <highlight>
+          <color-one-way>
+            <field>[federated.17k3lcp0qwdcel116v4ap0thlqph].[:Measure Names]</field>
+            <field>[federated.17k3lcp0qwdcel116v4ap0thlqph].[mn:activation_date:ok]</field>
+            <field>[federated.17k3lcp0qwdcel116v4ap0thlqph].[my:activation_date:ok]</field>
+            <field>[federated.17k3lcp0qwdcel116v4ap0thlqph].[none:country:nk]</field>
+            <field>[federated.17k3lcp0qwdcel116v4ap0thlqph].[none:product:nk]</field>
+            <field>[federated.17k3lcp0qwdcel116v4ap0thlqph].[none:user_type:nk]</field>
+            <field>[federated.17k3lcp0qwdcel116v4ap0thlqph].[none:vendor_grade:nk]</field>
+            <field>[federated.17k3lcp0qwdcel116v4ap0thlqph].[yr:activation_date:ok]</field>
+          </color-one-way>
+        </highlight>
+      </viewpoint>
+      <simple-id uuid='{62C09D24-0E41-4802-982E-D81813E9622A}' />
+    </window>
+    <window class='dashboard' maximized='true' name='Sales Packages'>
+      <viewpoints>
+        <viewpoint name='Sheet 1'>
+          <zoom type='fit-width' />
+        </viewpoint>
+        <viewpoint name='Sheet 2'>
+          <zoom type='entire-view' />
+          <highlight>
+            <color-one-way>
+              <field>[federated.17k3lcp0qwdcel116v4ap0thlqph].[:Measure Names]</field>
+              <field>[federated.17k3lcp0qwdcel116v4ap0thlqph].[none:product:nk]</field>
+            </color-one-way>
+          </highlight>
+        </viewpoint>
+        <viewpoint name='Sheet 2 (3)'>
+          <zoom type='entire-view' />
+        </viewpoint>
+      </viewpoints>
+      <active id='25' />
+      <simple-id uuid='{86E6A28B-B8DD-4DB1-BF8F-0D53000AB78A}' />
+    </window>
+    <window class='worksheet' name='Sheet 2'>
+      <cards>
+        <edge name='left'>
+          <strip size='160'>
+            <card type='pages' />
+            <card type='filters' />
+            <card type='marks' />
+            <card type='measures' />
+          </strip>
+        </edge>
+        <edge name='top'>
+          <strip size='2147483647'>
+            <card type='columns' />
+          </strip>
+          <strip size='2147483647'>
+            <card type='rows' />
+          </strip>
+          <strip size='2147483647'>
+            <card type='title' />
+          </strip>
+        </edge>
+        <edge name='right'>
+          <strip size='160'>
+            <card pane-specification-id='4' param='[federated.17k3lcp0qwdcel116v4ap0thlqph].[:Measure Names]' type='color' />
+          </strip>
+        </edge>
+      </cards>
+      <viewpoint>
+        <highlight>
+          <color-one-way>
+            <field>[federated.17k3lcp0qwdcel116v4ap0thlqph].[:Measure Names]</field>
+            <field>[federated.17k3lcp0qwdcel116v4ap0thlqph].[my:activation_date:ok]</field>
+            <field>[federated.17k3lcp0qwdcel116v4ap0thlqph].[none:product:nk]</field>
+            <field>[federated.17k3lcp0qwdcel116v4ap0thlqph].[none:user_type:nk]</field>
+            <field>[federated.17k3lcp0qwdcel116v4ap0thlqph].[tmn:activation_date:ok]</field>
+            <field>[federated.17k3lcp0qwdcel116v4ap0thlqph].[yr:activation_date:ok]</field>
+          </color-one-way>
+        </highlight>
+      </viewpoint>
+      <simple-id uuid='{08EE1A24-BE7A-4294-87FA-75F5E2CBF728}' />
+    </window>
+    <window class='worksheet' name='Sheet 2 (3)'>
+      <cards>
+        <edge name='left'>
+          <strip size='160'>
+            <card type='pages' />
+            <card type='filters' />
+            <card type='marks' />
+            <card type='measures' />
+          </strip>
+        </edge>
+        <edge name='top'>
+          <strip size='2147483647'>
+            <card type='columns' />
+          </strip>
+          <strip size='2147483647'>
+            <card type='rows' />
+          </strip>
+          <strip size='2147483647'>
+            <card type='title' />
+          </strip>
+        </edge>
+        <edge name='right'>
+          <strip size='160'>
+            <card pane-specification-id='4' param='[federated.17k3lcp0qwdcel116v4ap0thlqph].[:Measure Names]' type='color' />
+          </strip>
+        </edge>
+      </cards>
+      <viewpoint>
+        <highlight>
+          <color-one-way>
+            <field>[federated.17k3lcp0qwdcel116v4ap0thlqph].[:Measure Names]</field>
+            <field>[federated.17k3lcp0qwdcel116v4ap0thlqph].[my:activation_date:ok]</field>
+            <field>[federated.17k3lcp0qwdcel116v4ap0thlqph].[none:country:nk]</field>
+            <field>[federated.17k3lcp0qwdcel116v4ap0thlqph].[none:product:nk]</field>
+            <field>[federated.17k3lcp0qwdcel116v4ap0thlqph].[none:user_type:nk]</field>
+            <field>[federated.17k3lcp0qwdcel116v4ap0thlqph].[tmn:activation_date:ok]</field>
+            <field>[federated.17k3lcp0qwdcel116v4ap0thlqph].[yr:activation_date:ok]</field>
+          </color-one-way>
+        </highlight>
+      </viewpoint>
+      <simple-id uuid='{4E4EA2CC-E396-434F-8061-19CC9D35A06D}' />
+    </window>
+    <window class='worksheet' name='Sheet 2 (2)'>
+      <cards>
+        <edge name='left'>
+          <strip size='160'>
+            <card type='pages' />
+            <card type='filters' />
+            <card type='marks' />
+          </strip>
+        </edge>
+        <edge name='top'>
+          <strip size='2147483647'>
+            <card type='columns' />
+          </strip>
+          <strip size='2147483647'>
+            <card type='rows' />
+          </strip>
+          <strip size='31'>
+            <card type='title' />
+          </strip>
+        </edge>
+        <edge name='right'>
+          <strip size='160'>
+            <card pane-specification-id='0' param='[federated.17k3lcp0qwdcel116v4ap0thlqph].[none:product:nk]' type='color' />
+          </strip>
+        </edge>
+      </cards>
+      <viewpoint>
+        <highlight>
+          <color-one-way>
+            <field>[federated.17k3lcp0qwdcel116v4ap0thlqph].[my:activation_date:ok]</field>
+            <field>[federated.17k3lcp0qwdcel116v4ap0thlqph].[none:country:nk]</field>
+            <field>[federated.17k3lcp0qwdcel116v4ap0thlqph].[none:product:nk]</field>
+            <field>[federated.17k3lcp0qwdcel116v4ap0thlqph].[yr:activation_date:ok]</field>
+          </color-one-way>
+        </highlight>
+      </viewpoint>
+      <simple-id uuid='{F554DCFA-980B-459A-A10E-ABBB91B73E34}' />
+    </window>
+    <window class='worksheet' name='Sheet 4'>
+      <cards>
+        <edge name='left'>
+          <strip size='264'>
+            <card type='pages' />
+            <card type='filters' />
+            <card type='marks' />
+          </strip>
+        </edge>
+        <edge name='top'>
+          <strip size='2147483647'>
+            <card type='columns' />
+          </strip>
+          <strip size='2147483647'>
+            <card type='rows' />
+          </strip>
+          <strip size='2147483647'>
+            <card type='title' />
+          </strip>
+        </edge>
+      </cards>
+      <viewpoint>
+        <highlight>
+          <color-one-way>
+            <field>[federated.17k3lcp0qwdcel116v4ap0thlqph].[my:activation_date:ok]</field>
+            <field>[federated.17k3lcp0qwdcel116v4ap0thlqph].[none:user_type:nk]</field>
+            <field>[federated.17k3lcp0qwdcel116v4ap0thlqph].[usr:Calculation_6531556514504888322:nk]</field>
+          </color-one-way>
+        </highlight>
+      </viewpoint>
+      <simple-id uuid='{2077832D-549D-4A57-B902-E1BADB680CD4}' />
+    </window>
+  </windows>
+</workbook>
